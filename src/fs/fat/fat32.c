@@ -1395,8 +1395,14 @@ int32_t fat32_create_directory(const char *path){
     int32_t status=resolve_creation_parent(path,&parent,short_name);
     if(status<0) return status;
 
-    status=find_entry(parent,short_name,0);
-    if(status==0) return FS_ERROR_EXISTS;
+    struct fat32_entry_ref existing;
+    status=find_entry(parent,short_name,&existing);
+    if(status==0){
+        // Уже существует: директория -> успех, файл -> NOT_DIR,
+        // чтобы инсталлер не падал позже с непонятной -7.
+        if(existing.attributes&FAT32_ATTRIBUTE_DIRECTORY) return FS_ERROR_EXISTS;
+        return FS_ERROR_NOT_DIR;
+    }
     if(status!=FS_ERROR_NOT_FOUND) return status;
 
     uint32_t directory_cluster;
@@ -1839,7 +1845,19 @@ static bool write_format_metadata_at(uint32_t part_lba,
 
 static int32_t create_directory_checked(const char *path){
     int32_t status=fat32_create_directory(path);
-    return status==FS_ERROR_EXISTS?0:status;
+    if(status==FS_ERROR_EXISTS) return 0;
+    if(status==FS_ERROR_NOT_DIR){
+        // Файл мешает директории: пробуем удалить и создать заново.
+        // Это чинит повторные установки, где /EFI, /bin и т.д.
+        // остались файлами от битой разметки.
+        struct fat32_entry_ref entry;
+        if(resolve_entry(path,&entry,0)==0
+           && !(entry.attributes&FAT32_ATTRIBUTE_DIRECTORY)){
+            if(fat32_delete(path)==0) return fat32_create_directory(path);
+        }
+        return status;
+    }
+    return status;
 }
 
 static bool install_target_is_ext2;
@@ -1849,7 +1867,17 @@ static int32_t verify_installed_file(const char *path, uint32_t expected_size);
 static int32_t payload_mkdir(const char *path){
     if(install_target_is_ext2){
         int32_t status=ext2_create_directory(path);
-        return status==-5?0:status;
+        if(status==-5){
+            // Существует: проверяем что это директория, иначе вернём NOT_DIR
+            // вместо тихого успеха, который потом даст -7 в другом месте.
+            uint32_t ino;
+            if(ext2_dir_resolve(path,&ino)<0) return FS_ERROR_NOT_DIR;
+            uint8_t ibuf[256];
+            if(!ext2_inode_read(ino,ibuf)) return FS_ERROR_IO;
+            uint16_t mode=ext2_read_u16(ibuf);
+            return ((mode&0xF000)==EXT2_S_IFDIR)?0:FS_ERROR_NOT_DIR;
+        }
+        return status;
     }
     return create_directory_checked(path);
 }
@@ -2127,11 +2155,16 @@ static int32_t install_firmware_payload(void){
 }
 
 static int32_t install_program_payload(void){
-    if(payload_mkdir("/bin")<0
-       || payload_mkdir("/bin/program")<0
-       || payload_mkdir("/game")<0
-       || payload_mkdir("/lib")<0
-       || payload_mkdir("/include")<0) return FS_ERROR_IO;
+    {
+        static const char *required_dirs[]={"/bin","/bin/program","/game","/lib","/include"};
+        for(uint8_t i=0;i<sizeof(required_dirs)/sizeof(required_dirs[0]);i++){
+            int32_t st=payload_mkdir(required_dirs[i]);
+            if(st<0){
+                klogf(KLOG_ERROR,"install: mkdir %s failed %d",required_dirs[i],st);
+                return st;
+            }
+        }
+    }
     (void)payload_mkdir("/src");
     (void)payload_mkdir("/src/demo");
     (void)payload_mkdir("/demo");
@@ -2399,7 +2432,10 @@ static int32_t install_uefi_payload(void){
     };
     for(uint8_t index=0;index<sizeof(directories)/sizeof(directories[0]);index++){
         int32_t status=create_directory_checked(directories[index]);
-        if(status<0) return status;
+        if(status<0){
+            klogf(KLOG_ERROR,"install: mkdir %s failed %d",directories[index],status);
+            return status;
+        }
     }
 
     const void *kernel_image;
@@ -2583,6 +2619,10 @@ int32_t fat32_format_uefi_device_progress_ex(
         return FS_ERROR_TOO_SMALL;
     }
     if(!block_device_select((uint32_t)idx)) return FS_ERROR_INVALID;
+    // ESP всегда FAT32: сбрасываем флаг до копирования bootloader/kernel.
+    // Без сброса повторная установка FAT32 после EXT2 уходила в ext2_write_file
+    // на FAT-томе и падала с -7 (NOT_DIR) на 45% "Copying bootloader and kernel".
+    install_target_is_ext2=false;
     if(callback) callback(8,"Writing GPT partition table");
     klogf(KLOG_INFO,"fat32_uefi: %s total %u ESP %u sectors data %u sectors",
           device_name,total_sectors,FAT32_ESP_SECTORS,data_sectors);
