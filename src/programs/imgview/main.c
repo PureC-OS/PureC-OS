@@ -734,8 +734,9 @@ int main(void) {
         // strip leading spaces
         uint32_t start = 0;
         while (cmdline[start] == ' ' || cmdline[start] == '\t') start++;
-        // strip trailing whitespace/newlines
+        // strip trailing whitespace/newlines (clamp: cmdline[128], keep room for NUL)
         uint32_t end = (uint32_t)cmdlen;
+        if (end > sizeof(cmdline) - 1) end = sizeof(cmdline) - 1;
         while (end > start && (cmdline[end-1] == ' ' || cmdline[end-1] == '\n' ||
                                 cmdline[end-1] == '\r' || cmdline[end-1] == '\t')) end--;
         if (end > start) {
