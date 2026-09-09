@@ -21,6 +21,15 @@ struct image_data {
 
 static struct image_data g_image;
 
+// Load failure stage for the on-screen diagnosis (open/read/parse).
+// parse detail: 1=BMP header, 2=PNG, 3=PPM, 4=heap.
+static int g_load_stage;
+static int32_t g_load_error;
+#define LOAD_STAGE_OPEN 1
+#define LOAD_STAGE_READ 2
+#define LOAD_STAGE_PARSE 3
+#define LOAD_STAGE_HEAP 4
+
 static uint16_t read_u16_le(const uint8_t *p) {
     return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
 }
@@ -288,6 +297,18 @@ static const uint8_t png_dist_extra[30] = {
     0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13
 };
 
+// Huffman working tables live in BSS, not on the userspace stack:
+// lit+dist+cl tables are ~7KB each (~21KB total) and overflowed the
+// ring-3 stack, which is why PNG viewing died. Single-threaded viewer,
+// so shared globals are fine.
+static struct png_huff g_png_lit_huff;
+static struct png_huff g_png_dist_huff;
+static struct png_huff g_png_cl_huff;
+static uint8_t g_png_dyn_len[288 + 32];
+static uint8_t g_png_fixed_lit_len[288];
+static uint8_t g_png_fixed_dist_len[32];
+static bool g_png_fixed_ready = false;
+
 static bool png_inflate(const uint8_t *in, uint32_t in_size, uint8_t *out, uint32_t out_size, uint32_t *out_written) {
     *out_written = 0;
     if (in_size < 6) return false; // zlib header + adler
@@ -300,20 +321,19 @@ static bool png_inflate(const uint8_t *in, uint32_t in_size, uint8_t *out, uint3
     uint32_t out_pos = 0;
     bool final = false;
 
-    static uint8_t fixed_lit_len[288];
-    static uint8_t fixed_dist_len[32];
-    static bool fixed_ready = false;
-    if (!fixed_ready) {
-        for (int i = 0; i <= 143; i++) fixed_lit_len[i] = 8;
-        for (int i = 144; i <= 255; i++) fixed_lit_len[i] = 9;
-        for (int i = 256; i <= 279; i++) fixed_lit_len[i] = 7;
-        for (int i = 280; i <= 287; i++) fixed_lit_len[i] = 8;
-        for (int i = 0; i < 32; i++) fixed_dist_len[i] = 5;
-        fixed_ready = true;
+    if (!g_png_fixed_ready) {
+        for (int i = 0; i <= 143; i++) g_png_fixed_lit_len[i] = 8;
+        for (int i = 144; i <= 255; i++) g_png_fixed_lit_len[i] = 9;
+        for (int i = 256; i <= 279; i++) g_png_fixed_lit_len[i] = 7;
+        for (int i = 280; i <= 287; i++) g_png_fixed_lit_len[i] = 8;
+        for (int i = 0; i < 32; i++) g_png_fixed_dist_len[i] = 5;
+        g_png_fixed_ready = true;
     }
 
-    struct png_huff lit_huff, dist_huff;
-    uint8_t dyn_lit_len[288 + 32];
+    struct png_huff *lit_huff = &g_png_lit_huff;
+    struct png_huff *dist_huff = &g_png_dist_huff;
+    struct png_huff *cl_huff = &g_png_cl_huff;
+    uint8_t *dyn_lit_len = g_png_dyn_len;
 
     while (!final) {
         uint32_t bfinal, btype;
@@ -321,8 +341,8 @@ static bool png_inflate(const uint8_t *in, uint32_t in_size, uint8_t *out, uint3
         if (!png_br_bits(&br, 2, &btype)) return false;
         final = bfinal != 0;
 
-        struct png_huff *lit = &lit_huff;
-        struct png_huff *dist = &dist_huff;
+        struct png_huff *lit = lit_huff;
+        struct png_huff *dist = dist_huff;
         bool has_dist = true;
 
         if (btype == 0) {
@@ -341,8 +361,8 @@ static bool png_inflate(const uint8_t *in, uint32_t in_size, uint8_t *out, uint3
             br.byte_pos += 4 + len;
             continue;
         } else if (btype == 1) {
-            if (!png_huff_build(lit, fixed_lit_len, 288)) return false;
-            if (!png_huff_build(dist, fixed_dist_len, 32)) return false;
+            if (!png_huff_build(lit, g_png_fixed_lit_len, 288)) return false;
+            if (!png_huff_build(dist, g_png_fixed_dist_len, 32)) return false;
         } else if (btype == 2) {
             uint32_t hlit, hdist, hclen;
             if (!png_br_bits(&br, 5, &hlit)) return false;
@@ -357,13 +377,13 @@ static bool png_inflate(const uint8_t *in, uint32_t in_size, uint8_t *out, uint3
                 if (!png_br_bits(&br, 3, &v)) return false;
                 cl_len[cl_order[i]] = (uint8_t)v;
             }
-            struct png_huff cl_huff;
-            if (!png_huff_build(&cl_huff, cl_len, 19)) return false;
+            struct png_huff *cl = cl_huff;
+            if (!png_huff_build(cl, cl_len, 19)) return false;
             uint32_t total = hlit + hdist;
-            if (total > sizeof(dyn_lit_len)) return false;
+            if (total > 288 + 32) return false;
             for (uint32_t i = 0; i < total;) {
                 uint32_t sym;
-                if (!png_huff_decode(&br, &cl_huff, &sym)) return false;
+                if (!png_huff_decode(&br, cl, &sym)) return false;
                 if (sym <= 15) {
                     dyn_lit_len[i++] = (uint8_t)sym;
                 } else if (sym == 16) {
@@ -371,7 +391,10 @@ static bool png_inflate(const uint8_t *in, uint32_t in_size, uint8_t *out, uint3
                     if (i == 0 || !png_br_bits(&br, 2, &rep)) return false;
                     rep += 3;
                     if (i + rep > total) return false;
-                    for (uint32_t k = 0; k < rep; k++) dyn_lit_len[i++] = dyn_lit_len[i - 1];
+                    {
+                        uint8_t prev_len = dyn_lit_len[i - 1];
+                        for (uint32_t k = 0; k < rep; k++) dyn_lit_len[i++] = prev_len;
+                    }
                 } else if (sym == 17) {
                     uint32_t rep;
                     if (!png_br_bits(&br, 3, &rep)) return false;
@@ -569,26 +592,46 @@ static bool load_image_file(const char *path, struct image_data *img) {
     pc_copy(img->path, path, sizeof(img->path));
     img->loaded = false;
     img->pixels = NULL;
+    g_load_stage = LOAD_STAGE_OPEN;
+    g_load_error = 0;
 
     int32_t fd = pc_file_open(path);
-    if (fd < 0) return false;
+    if (fd < 0) { g_load_error = fd; return false; }
 
     uint8_t *buf = (uint8_t *)pc_heap_grow(MAX_IMAGE_FILE_SIZE);
     if (!buf) {
         (void)pc_file_close(fd);
+        g_load_stage = LOAD_STAGE_HEAP;
         return false;
     }
 
+    g_load_stage = LOAD_STAGE_READ;
     int32_t bytes_read = pc_file_read(fd, buf, MAX_IMAGE_FILE_SIZE);
     (void)pc_file_close(fd);
 
-    if (bytes_read <= 0) return false;
+    if (bytes_read <= 0) { g_load_error = bytes_read; return false; }
 
+    g_load_stage = LOAD_STAGE_PARSE;
     if (parse_bmp(buf, (uint32_t)bytes_read, img)) return true;
     if (parse_png(buf, (uint32_t)bytes_read, img)) return true;
     if (parse_ppm(buf, (uint32_t)bytes_read, img)) return true;
 
     return false;
+}
+
+// Tiny signed-decimal formatter (no snprintf in ring-3 libc).
+static void format_i32(char *out, uint32_t out_size, int32_t value) {
+    if (out_size < 2) return;
+    bool neg = value < 0;
+    uint32_t mag = neg ? (uint32_t)(-(int64_t)value) : (uint32_t)value;
+    char tmp[12];
+    uint32_t n = 0;
+    if (mag == 0) tmp[n++] = '0';
+    while (mag && n < sizeof(tmp)) { tmp[n++] = (char)('0' + mag % 10); mag /= 10; }
+    if (neg && n < sizeof(tmp)) tmp[n++] = '-';
+    uint32_t i = 0;
+    while (n && i + 1 < out_size) { out[i++] = tmp[--n]; }
+    out[i] = '\0';
 }
 
 static void draw_image_view(struct pg_window *window, const struct image_data *img) {
@@ -622,6 +665,26 @@ static void draw_image_view(struct pg_window *window, const struct image_data *i
             pg_window_text(window, 20, 96, "Supported: BMP (24-bit, 32-bit, 8-bit), PNG (8-bit RGB/RGBA/Gray), PPM (P6)", 0x00CCCCCC);
             pg_window_text(window, 20, 120, "File:", 0x00888888);
             pg_window_text(window, 68, 120, img->path, 0x00AAAAAA);
+            // Precise stage: open/read/parse/heap + OS error code.
+            {
+                char detail[96];
+                char code[16];
+                format_i32(code, sizeof(code), g_load_error);
+                if (g_load_stage == LOAD_STAGE_OPEN) {
+                    pc_copy(detail, "open failed err=", sizeof(detail));
+                } else if (g_load_stage == LOAD_STAGE_READ) {
+                    pc_copy(detail, "read failed err=", sizeof(detail));
+                } else if (g_load_stage == LOAD_STAGE_HEAP) {
+                    pc_copy(detail, "out of memory err=", sizeof(detail));
+                } else {
+                    pc_copy(detail, "decode failed (unsupported PNG variant?) err=", sizeof(detail));
+                }
+                uint32_t dl = pc_strlen(detail);
+                pc_copy(detail + dl, code, sizeof(detail) - dl);
+                pg_window_text(window, 20, 144, detail, 0x00CCAA44);
+                if (g_load_stage == LOAD_STAGE_OPEN)
+                    pg_window_text(window, 20, 168, "No file at this path. Install OS first, then open /demo/*.", 0x00888888);
+            }
         }
         return;
     }
