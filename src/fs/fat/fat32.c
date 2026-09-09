@@ -1049,6 +1049,38 @@ int32_t fat32_close(int32_t descriptor){
     return 0;
 }
 
+int64_t fat32_seek(int32_t descriptor, int64_t offset, uint32_t whence){
+    int32_t index=descriptor-FAT32_DESCRIPTOR_BASE;
+    if(index<0 || index>=FAT32_MAX_OPEN_FILES || !handles[index].used){
+        return FS_ERROR_INVALID;
+    }
+    if(whence!=SEEK_SET && whence!=SEEK_CUR && whence!=SEEK_END){
+        return FS_ERROR_INVALID;
+    }
+    struct fat32_handle *handle=&handles[index];
+    int64_t base=0;
+    if(whence==SEEK_CUR) base=(int64_t)handle->position;
+    else if(whence==SEEK_END) base=(int64_t)handle->size;
+    int64_t target=base+offset;
+    if(target<0) return FS_ERROR_INVALID;
+    handle->position=(uint32_t)(target>0xFFFFFFFFLL ? 0xFFFFFFFFLL : target);
+    // fat32_read only walks the cluster chain forward, so any seek must
+    // re-anchor the cursor at the first cluster; reads re-walk from there.
+    handle->current_cluster=handle->first_cluster;
+    handle->cluster_index=0;
+    return (int64_t)handle->position;
+}
+
+int32_t fat32_stat(const char *path, uint64_t *size, bool *is_directory){
+    if(!path || !path[0]) return FS_ERROR_INVALID;
+    struct fat32_entry_ref entry;
+    int32_t status=resolve_entry(path,&entry,0);
+    if(status<0) return status;
+    if(size) *size=entry.size;
+    if(is_directory) *is_directory=(entry.attributes&FAT32_ATTRIBUTE_DIRECTORY)!=0;
+    return 0;
+}
+
 int32_t fat32_delete(const char *path){
     struct fat32_entry_ref entry;
     int32_t status=resolve_entry(path,&entry,0);

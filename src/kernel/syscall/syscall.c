@@ -341,6 +341,24 @@ int64_t syscall_handler(struct syscall_regs *r){
             filesystem_syscall_unlock();
             return result;
         }
+        case SYS_FILE_SEEK: {
+            int32_t descriptor=process_fd_resolve((int32_t)a1);
+            if(descriptor<0) return -1;
+            filesystem_syscall_lock();
+            int64_t result=vfs_seek(descriptor,(int64_t)a2,(uint32_t)a3);
+            filesystem_syscall_unlock();
+            return result;
+        }
+        case SYS_FILE_STAT: {
+            if(!readable_string((const char*)(uintptr_t)a1)
+               || !writable((void*)(uintptr_t)a2,sizeof(struct file_stat_info)))
+                return -1;
+            filesystem_syscall_lock();
+            int32_t result=vfs_stat((const char*)(uintptr_t)a1,
+                                    (struct file_stat_info*)(uintptr_t)a2);
+            filesystem_syscall_unlock();
+            return result;
+        }
         case SYS_FILE_CLOSE: {
             filesystem_syscall_lock();
             int32_t result=process_fd_close((int32_t)a1);

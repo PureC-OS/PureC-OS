@@ -119,6 +119,10 @@ int32_t ext2_read(int32_t d, void *b, uint32_t c) {
     return ext2_file_read(d, b, c);
 }
 
+int64_t ext2_seek(int32_t d, int64_t offset, uint32_t whence) {
+    return ext2_file_seek(d, offset, whence);
+}
+
 int32_t ext2_close(int32_t d) {
     return ext2_file_close(d);
 }

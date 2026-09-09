@@ -11,6 +11,7 @@ bool ext2_is_mounted(void);
 const char *ext2_device_name(void);
 int32_t ext2_open(const char *path);
 int32_t ext2_read(int32_t descriptor, void *buffer, uint32_t count);
+int64_t ext2_seek(int32_t descriptor, int64_t offset, uint32_t whence);
 int32_t ext2_close(int32_t descriptor);
 int32_t ext2_delete(const char *path);
 int32_t ext2_rename(const char *path, const char *new_name);

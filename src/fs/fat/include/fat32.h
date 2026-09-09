@@ -12,6 +12,8 @@ bool fat32_is_mounted(void);
 const char *fat32_device_name(void);
 int32_t fat32_open(const char *path);
 int32_t fat32_read(int32_t descriptor, void *buffer, uint32_t count);
+int64_t fat32_seek(int32_t descriptor, int64_t offset, uint32_t whence);
+int32_t fat32_stat(const char *path, uint64_t *size, bool *is_directory);
 int32_t fat32_close(int32_t descriptor);
 int32_t fat32_delete(const char *path);
 int32_t fat32_rename(const char *path, const char *new_name);

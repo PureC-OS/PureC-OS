@@ -367,6 +367,15 @@ struct fat32_custom_format_request {
 #define SYS_EXT2_INODE 272
 #define SYS_EXT2_SUPER 273
 #define SYS_EXT2_BLOCKS 274
+#define SYS_FILE_SEEK 275
+#define SYS_FILE_STAT 276
+
+// File status for SYS_FILE_STAT (also used by the TCC port's stat()).
+struct file_stat_info {
+    uint64_t size;
+    uint32_t is_directory;
+    uint32_t reserved;
+};
 
 struct ext2_stat_info {
     uint32_t ino;

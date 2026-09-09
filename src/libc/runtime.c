@@ -196,6 +196,16 @@ int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity){
         (uint64_t)(uintptr_t)buffer,capacity);
 }
 
+int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence){
+    return (int64_t)pc_syscall(SYS_FILE_SEEK,(uint32_t)descriptor,
+        (uint64_t)offset,whence);
+}
+
+int32_t pc_file_stat(const char *path, struct file_stat_info *out){
+    return (int32_t)pc_syscall(SYS_FILE_STAT,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)out,0);
+}
+
 int32_t pc_file_close(int32_t descriptor){
     return (int32_t)pc_syscall(SYS_FILE_CLOSE,(uint32_t)descriptor,0,0);
 }

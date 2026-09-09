@@ -25,6 +25,8 @@ void vfs_set_active_fs(uint8_t fs_type);
 const char *vfs_fs_type_name(uint8_t fs_type);
 int32_t vfs_open(const char *path);
 int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count);
+int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence);
+int32_t vfs_stat(const char *path, struct file_stat_info *out);
 int32_t vfs_close(int32_t descriptor);
 int32_t vfs_delete(const char *path);
 int32_t vfs_rename(const char *path, const char *new_name);

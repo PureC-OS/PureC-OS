@@ -1,4 +1,5 @@
 #include "include/ext2_types.h"
+#include "../types/fs_types.h"
 #include "include/ext2_block.h"
 #include "include/ext2_inode.h"
 #include "include/ext2_dir.h"
@@ -63,6 +64,28 @@ int32_t ext2_file_read(int32_t descriptor, void *buffer, uint32_t count) {
         h->position += (uint32_t)got;
     }
     return got;
+}
+
+int64_t ext2_file_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
+    int idx = descriptor - EXT2_DESCRIPTOR_BASE;
+    if (idx < 0 || idx >= EXT2_MAX_OPEN || !g_handles[idx].used) {
+        return -3;
+    }
+    if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END) {
+        return -3;
+    }
+    struct ext2_handle *h = &g_handles[idx];
+    int64_t base = 0;
+    if (whence == SEEK_CUR) base = (int64_t)h->position;
+    else if (whence == SEEK_END) base = (int64_t)h->size;
+    int64_t target = base + offset;
+    if (target < 0) {
+        return -3;
+    }
+    // ext2 reads walk block pointers from the inode on every call, so no
+    // cached cluster state needs resyncing (unlike FAT32).
+    h->position = (uint32_t)(target > 0xFFFFFFFFLL ? 0xFFFFFFFFLL : target);
+    return (int64_t)h->position;
 }
 
 static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size) {
