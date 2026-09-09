@@ -7,6 +7,7 @@
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/panic.h"
 #include "../../arch/x86_64/mmio.h"
+#include "../../arch/x86_64/fpu.h"
 #include "../../lib/string.h"
 #include "init.h"
 #include "../process/process.h"
@@ -41,6 +42,7 @@ void kernel_main(struct limine_framebuffer *fb) {
     pmm_init(memmap_response_ptr,hhdm_offset_global);
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
     vmm_init();
+    fpu_init();
     process_init();
 
     // GDT/IDT уже настроены в boot.c, но проверяем инт3 как linux-like selftest

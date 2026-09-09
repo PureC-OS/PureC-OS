@@ -235,10 +235,61 @@ int atoi(const char *text) { return (int)strtol(text, 0, 10); }
 long atol(const char *text) { return strtol(text, 0, 10); }
 long long atoll(const char *text) { return (long long)strtol(text, 0, 10); }
 
-// NOTE: strtod is intentionally absent. Userspace is built with
-// -mgeneral-regs-only (no SSE, kernel keeps no FPU state), so doubles
-// cannot be returned safely. TCC float literals will need an -msoft-float
-// experiment in the TCC phase; until then only integer conversions exist.
+double strtod(const char *text, char **end) {
+    const char *p = convert_skip(text);
+    bool negative = false;
+    if (*p == '+' || *p == '-') { negative = *p == '-'; p++; }
+    // Minimal inf/nan (case-insensitive) for compiler sources.
+    if ((p[0] == 'i' || p[0] == 'I') && (p[1] == 'n' || p[1] == 'N')
+        && (p[2] == 'f' || p[2] == 'F')) {
+        p += 3;
+        if ((p[0] == 'i' || p[0] == 'I') && (p[1] == 'n' || p[1] == 'N')
+            && (p[2] == 'i' || p[2] == 'I') && (p[3] == 'n' || p[3] == 'N')
+            && (p[4] == 'i' || p[4] == 'I') && (p[5] == 't' || p[5] == 'T')
+            && (p[6] == 'y' || p[6] == 'Y')) p += 5;
+        if (end) *end = (char *)p;
+        double inf = 1e308 * 10.0;
+        return negative ? -inf : inf;
+    }
+    if ((p[0] == 'n' || p[0] == 'N') && (p[1] == 'a' || p[1] == 'A')
+        && (p[2] == 'n' || p[2] == 'N')) {
+        p += 3;
+        if (*p == '(') { p++; while (*p && *p != ')') p++; if (*p) p++; }
+        if (end) *end = (char *)p;
+        return 0.0 / 0.0 * (negative ? -1.0 : 1.0);
+    }
+    double value = 0.0;
+    bool any = false;
+    while (isdigit((unsigned char)*p)) { any = true; value = value * 10.0 + (*p - '0'); p++; }
+    if (*p == '.') {
+        p++;
+        double place = 0.1;
+        while (isdigit((unsigned char)*p)) {
+            any = true; value += (*p - '0') * place; place *= 0.1; p++;
+        }
+    }
+    if (!any) { if (end) *end = (char *)text; return 0.0; }
+    if (*p == 'e' || *p == 'E') {
+        const char *e = p + 1;
+        bool eneg = false;
+        if (*e == '+' || *e == '-') { eneg = *e == '-'; e++; }
+        if (isdigit((unsigned char)*e)) {
+            int exp = 0;
+            while (isdigit((unsigned char)*e)) { exp = exp * 10 + (*e - '0'); e++; }
+            double factor = 1.0;
+            while (exp > 0) {
+                if (exp >= 8) { factor *= 1e8; exp -= 8; }
+                else { factor *= 10.0; exp--; }
+                if (factor > 1e308) break;
+            }
+            value = eneg ? value / factor : value * factor;
+            p = e;
+        }
+    }
+    if (end) *end = (char *)p;
+    if (value > 1e308) { errno = ERANGE; value = 1e308 * 10.0; }
+    return negative ? -value : value;
+}
 
 // ---- misc ----
 

@@ -12,6 +12,9 @@ CPPFLAGS := -I$(ROOT_DIR)/src
 DEPFLAGS := -MMD -MP
 COMMON_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fno-pic \
 	-m64 -mno-red-zone
+# Userspace may use SSE/doubles: the kernel eagerly saves/restores FPU
+# state on every context switch (arch/x86_64/fpu.c). The KERNEL keeps
+# -mgeneral-regs-only so interrupt paths can never clobber user FPU state.
 USER_CFLAGS := $(COMMON_CFLAGS) -mcmodel=small
 KERNEL_CFLAGS := $(COMMON_CFLAGS) -mcmodel=kernel -mgeneral-regs-only
 KERNEL_CXXFLAGS := $(KERNEL_CFLAGS) -std=c++20 -fno-exceptions -fno-rtti

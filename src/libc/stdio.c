@@ -521,6 +521,130 @@ static void format_unsigned(struct fmt_sink *sink, unsigned long long value,
     }
 }
 
+static const unsigned long long printf_pow10[19] = {
+    1ULL, 10ULL, 100ULL, 1000ULL, 10000ULL, 100000ULL, 1000000ULL,
+    10000000ULL, 100000000ULL, 1000000000ULL, 10000000000ULL,
+    100000000000ULL, 1000000000000ULL, 10000000000000ULL,
+    100000000000000ULL, 1000000000000000ULL, 10000000000000000ULL,
+    100000000000000000ULL, 1000000000000000000ULL
+};
+
+// sign must already be emitted by the caller when zero==false; when
+// zero==true the sign goes first, then zero padding (mirrors integers).
+static void format_double(struct fmt_sink *sink, double value, int precision,
+                          int width, bool left, bool zero, bool plus,
+                          bool space, char spec) {
+    uint64_t bits = 0;
+    memcpy(&bits, &value, sizeof(bits));
+    bool negative = (bits >> 63) != 0;
+    bool scientific = spec == 'e' || spec == 'E';
+    char exp_mark = spec == 'E' ? 'E' : 'e';
+    char sign = 0;
+    if (negative) sign = '-';
+    else if (plus) sign = '+';
+    else if (space) sign = ' ';
+    if (((bits >> 52) & 0x7FF) == 0x7FF) {
+        bool is_nan = (bits & 0xFFFFFFFFFFFFFULL) != 0;
+        bool upper = spec == 'F' || spec == 'E';
+        const char *text = is_nan ? (upper ? "NAN" : "nan")
+                                  : (upper ? "INF" : "inf");
+        if (is_nan && !negative) sign = 0;
+        int count = 3;
+        int pad = width > count + (sign ? 1 : 0) ? width - count - (sign ? 1 : 0) : 0;
+        if (!left) { for (int i = 0; i < pad; i++) sink_putc(sink, ' '); }
+        if (sign) sink_putc(sink, sign);
+        sink_write(sink, text, 3);
+        if (left) { for (int i = 0; i < pad; i++) sink_putc(sink, ' '); }
+        return;
+    }
+    if (precision < 0) precision = 6;
+    if (precision > 18) precision = 18;
+    double magnitude = negative ? -value : value;
+    // Fixed notation overflows u64 past 2^63; delegate those to %e.
+    if (!scientific && magnitude >= 9.223372036854776e18) scientific = true;
+    int decimal_exp = 0;
+    unsigned long long int_part = 0;
+    unsigned long long frac_part = 0;
+    if (scientific) {
+        if (magnitude == 0.0) {
+            int_part = 0;
+            frac_part = 0;
+            decimal_exp = 0;
+        } else {
+            while (magnitude >= 10.0) { magnitude /= 10.0; decimal_exp++; }
+            while (magnitude < 1.0) { magnitude *= 10.0; decimal_exp--; }
+            unsigned long long scaled =
+                (unsigned long long)(magnitude * (double)printf_pow10[precision] + 0.5);
+            if (scaled >= printf_pow10[precision] * 10ULL) {
+                scaled /= 10ULL;
+                decimal_exp++;
+            }
+            int_part = scaled / printf_pow10[precision];
+            frac_part = scaled % printf_pow10[precision];
+        }
+    } else {
+        int_part = (unsigned long long)magnitude;
+        double frac = magnitude - (double)int_part;
+        frac_part = (unsigned long long)(frac * (double)printf_pow10[precision] + 0.5);
+        if (frac_part >= printf_pow10[precision]) {
+            frac_part = 0;
+            int_part++;
+        }
+    }
+    // Digit count of the integer part.
+    char reversed[24];
+    int int_digits = 0;
+    if (int_part == 0) reversed[int_digits++] = '0';
+    else {
+        unsigned long long tmp = int_part;
+        while (tmp) { reversed[int_digits++] = (char)('0' + tmp % 10); tmp /= 10; }
+    }
+    int total = int_digits + (sign ? 1 : 0);
+    // Plain %f omits the point at precision 0.
+    int point = precision > 0 ? 1 : 0;
+    total += point + precision;
+    int exp_len = 0;
+    if (scientific) {
+        int e = decimal_exp < 0 ? -decimal_exp : decimal_exp;
+        exp_len = 2 + 1; // 'e', sign, at least 2 digits
+        if (e >= 100) exp_len++;
+    }
+    total += exp_len;
+    int pad = width > total ? width - total : 0;
+    char pad_char = (zero && !left) ? '0' : ' ';
+    if (!left) {
+        if (pad_char == '0') {
+            if (sign) sink_putc(sink, sign);
+            for (int i = 0; i < pad; i++) sink_putc(sink, '0');
+        } else {
+            for (int i = 0; i < pad; i++) sink_putc(sink, ' ');
+            if (sign) sink_putc(sink, sign);
+        }
+    } else {
+        if (sign) sink_putc(sink, sign);
+    }
+    for (int i = int_digits - 1; i >= 0; i--) sink_putc(sink, reversed[i]);
+    if (point) {
+        sink_putc(sink, '.');
+        unsigned long long divisor = printf_pow10[precision ? precision - 1 : 0];
+        for (int i = 0; i < precision; i++) {
+            sink_putc(sink, (char)('0' + (frac_part / divisor) % 10));
+            divisor /= 10;
+        }
+    }
+    if (scientific) {
+        int e = decimal_exp < 0 ? -decimal_exp : decimal_exp;
+        sink_putc(sink, exp_mark);
+        sink_putc(sink, decimal_exp < 0 ? '-' : '+');
+        if (e >= 100) sink_putc(sink, (char)('0' + e / 100));
+        sink_putc(sink, (char)('0' + (e / 10) % 10));
+        sink_putc(sink, (char)('0' + e % 10));
+    }
+    if (left) {
+        for (int i = 0; i < pad; i++) sink_putc(sink, ' ');
+    }
+}
+
 static void format_signed(struct fmt_sink *sink, long long value, int width,
                           int precision, bool left, bool zero, bool plus, bool space) {
     bool negative = value < 0;
@@ -670,8 +794,17 @@ static int format_core(struct fmt_sink *sink, const char *format, va_list args) 
             case '%':
                 sink_putc(sink, '%');
                 break;
+            case 'f':
+            case 'F':
+            case 'e':
+            case 'E': {
+                double value = va_arg(args, double);
+                format_double(sink, value, precision, width, left, zero,
+                              plus, space, spec);
+                break;
+            }
             default:
-                // Unknown (incl. float %f/%e/%g without SSE/FPU support):
+                // Unknown (incl. %g/%G/%a without FP-string support):
                 // print literally so output stays aligned and debuggable.
                 sink_putc(sink, '%');
                 sink_putc(sink, spec);

@@ -19,8 +19,8 @@ long atol(const char *text);
 long long atoll(const char *text);
 long strtol(const char *text, char **end, int base);
 unsigned long strtoul(const char *text, char **end, int base);
-// NOTE: no strtod yet — userspace forbids SSE (-mgeneral-regs-only) and
-// the kernel keeps no FPU state. Deferred to an -msoft-float experiment.
+// Available: userspace may use SSE (kernel switches FPU per thread).
+double strtod(const char *text, char **end);
 int abs(int value);
 long labs(long value);
 void qsort(void *base, size_t count, size_t size,

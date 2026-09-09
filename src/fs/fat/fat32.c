@@ -2454,7 +2454,17 @@ static int32_t install_program_payload(void){
         if(status>=0) (void)payload_verify_file("/bin/program/hello",(uint32_t)hello_size);
         else klogf(KLOG_WARN,"install: write hello failed %d (non-fatal)",status);
     }
-    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
+    {
+        // FPU self-test (optional like hello).
+        const void *fpu_image = 0;
+        uint64_t fpu_size = 0;
+        if(boot_get_module("/bin/program/fputest",&fpu_image,&fpu_size)
+           && fpu_image && fpu_size && fpu_size<=UINT32_MAX){
+            status=payload_write_file("/bin/program/fputest",fpu_image,(uint32_t)fpu_size);
+            if(status>=0) (void)payload_verify_file("/bin/program/fputest",(uint32_t)fpu_size);
+            else klogf(KLOG_WARN,"install: write fputest failed %d (non-fatal)",status);
+        }
+    }    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
     if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){
         // "screenshot.bmp" (14 chars) is not 8.3: write via LFN entry +
         // 8.3 alias, otherwise fat32_create_file rejects it and the file

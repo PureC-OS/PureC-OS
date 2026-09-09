@@ -3,6 +3,7 @@
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
+#include "../../arch/x86_64/fpu.h"
 #include "../../mm/vmm.h"
 #include "../../lib/string.h"
 
@@ -150,6 +151,7 @@ void scheduler_init(void){
     idle->entry = idle_thread_func;
     idle->address_space=vmm_kernel_address_space();
     idle->rsp=create_initial_stack(idle);
+    fpu_thread_init(idle->fpu_state);
     current = idle;
     initialized = true;
     klogf(KLOG_OK, "sched: initialized, cores=%u max_threads=%u stack=%u", core_count, SCHEDULER_MAX_THREADS, SCHEDULER_STACK_SIZE);
@@ -203,6 +205,7 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
     else strncpy(t->name, "thread", sizeof(t->name)-1);
 
     t->rsp=create_initial_stack(t);
+    fpu_thread_init(t->fpu_state);
 
     if(affinity>=0 && (uint32_t)affinity>=core_count){
         klogf(KLOG_WARN, "sched: thread %u affinity %d exceeds core count %u, using any", t->id, affinity, core_count);
@@ -310,6 +313,9 @@ void scheduler_yield(void){
     next->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     activate_thread(next);
     validate_switch_target(prev, next);
+    // Eager FPU switch while preemption is off (see block/exit below).
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
     // klogf(KLOG_DEBUG, "sched: yield %u (%s) -> %u (%s)", prev->id, prev->name, next->id, next->name);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
@@ -350,6 +356,11 @@ void scheduler_block(void){
     current = next;
     activate_thread(next);
     validate_switch_target(prev, next);
+    // Eager FPU switch while preemption is off; the kernel itself never
+    // touches FPU registers (still -mgeneral-regs-only), so save/restore
+    // here fully isolates thread FP state.
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
@@ -383,6 +394,11 @@ void scheduler_exit(void){
     current = next;
     activate_thread(next);
     validate_switch_target(prev, next);
+    // Eager FPU switch while preemption is off; the kernel itself never
+    // touches FPU registers (still -mgeneral-regs-only), so save/restore
+    // here fully isolates thread FP state.
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
     for(;;) __asm__ volatile("hlt");

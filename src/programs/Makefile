@@ -44,7 +44,8 @@ GENERAL_SOURCES := \
 	monitor/main.c \
 	disks/main.c \
 	logview/main.c \
-	imgview/main.c
+ 	imgview/main.c \
+ 	fputest/main.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
@@ -72,7 +73,8 @@ TARGETS := \
 	$(PROGRAM_DIR)/logview \
  	$(PROGRAM_DIR)/hexedit \
  	$(PROGRAM_DIR)/imgview \
- 	$(PROGRAM_DIR)/hello
+ 	$(PROGRAM_DIR)/hello \
+ 	$(PROGRAM_DIR)/fputest
 
 .NOTPARALLEL:
 .PHONY: all hexedit
@@ -81,8 +83,8 @@ hexedit: $(PROGRAM_DIR)/hexedit
 
 -include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d)
 
-$(GENERAL_OBJECTS): PRIVATE_CFLAGS := -mgeneral-regs-only
-$(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -mgeneral-regs-only -std=c++20 -fno-exceptions -fno-rtti
+$(GENERAL_OBJECTS): PRIVATE_CFLAGS :=
+$(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -std=c++20 -fno-exceptions -fno-rtti
 
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
@@ -161,11 +163,15 @@ $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
+$(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
 # Hosted demo: standard main() + crt0 + hosted headers (TCC migration
 # proving ground). Built with the same toolchain, linked against crt0.o.
 $(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -mgeneral-regs-only -c $< -o $@
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
 $(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

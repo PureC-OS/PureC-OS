@@ -7,8 +7,8 @@
 // - Reads are served from the same buffer; the kernel fd is closed
 //   right after preload, keeping fd usage at zero during parsing.
 // - stdout/stderr go through raw SYS_WRITE (console); stdin through
-//   blocking SYS_GETCHAR. No float formats (%f/%e/%g): userspace is
-//   built without SSE and the kernel keeps no FPU state.
+//   blocking SYS_GETCHAR. Float formats %f/%F/%e/%E are supported
+//   (userspace may use SSE: the kernel switches FPU per thread).
 
 #include <stddef.h>
 #include <stdarg.h>
