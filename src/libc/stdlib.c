@@ -235,6 +235,19 @@ int atoi(const char *text) { return (int)strtol(text, 0, 10); }
 long atol(const char *text) { return strtol(text, 0, 10); }
 long long atoll(const char *text) { return (long long)strtol(text, 0, 10); }
 
+// intmax_t is 64-bit here (see hosted/inttypes.h).
+long long strtoimax(const char *text, char **end, int base) {
+    return (long long)strtol(text, end, base);
+}
+
+unsigned long long strtoumax(const char *text, char **end, int base) {
+    return (unsigned long long)strtoul(text, end, base);
+}
+
+long long imaxabs(long long value) {
+    return value < 0 ? -value : value;
+}
+
 double strtod(const char *text, char **end) {
     const char *p = convert_skip(text);
     bool negative = false;
