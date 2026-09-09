@@ -70,8 +70,9 @@ TARGETS := \
 	$(PROGRAM_DIR)/monitor \
 	$(PROGRAM_DIR)/disks \
 	$(PROGRAM_DIR)/logview \
-	$(PROGRAM_DIR)/hexedit \
-	$(PROGRAM_DIR)/imgview
+ 	$(PROGRAM_DIR)/hexedit \
+ 	$(PROGRAM_DIR)/imgview \
+ 	$(PROGRAM_DIR)/hello
 
 .NOTPARALLEL:
 .PHONY: all hexedit
@@ -159,3 +160,13 @@ $(PROGRAM_DIR)/hexedit: $(GENERAL_CPP_OBJECTS) $(LIBPUREGUI) $(LIBPUREFS) $(LIBP
 $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+# Hosted demo: standard main() + crt0 + hosted headers (TCC migration
+# proving ground). Built with the same toolchain, linked against crt0.o.
+$(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -mgeneral-regs-only -c $< -o $@
+
+$(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)

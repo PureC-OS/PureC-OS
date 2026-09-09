@@ -2204,6 +2204,8 @@ static int32_t install_program_payload(void){
     const void *gui_demo_image;
     const void *nano_image,*system_image,*files_image,*library_image;
     const void *settings_image,*monitor_image,*disks_image,*tetris_image,*logview_image,*hexedit_image,*imgview_image;
+    const void *hello_image;
+    uint64_t hello_size = 0;
     uint64_t init_size,installer_size,snake_size,terminal_size,nano_size;
     uint64_t system_size,files_size;
     uint64_t library_size,gui_demo_size;
@@ -2211,6 +2213,12 @@ static int32_t install_program_payload(void){
     if(!boot_get_module("/bin/program/imgview",&imgview_image,&imgview_size)){
         klog(KLOG_WARN,"install: missing /bin/program/imgview (non-fatal)");
         imgview_image=0; imgview_size=0;
+    }
+    // Hosted hello-world demo (standard main() + crt0 proving ground).
+    // Optional like imgview: older ISOs simply lack the module.
+    if(!boot_get_module("/bin/program/hello",&hello_image,&hello_size)){
+        klog(KLOG_WARN,"install: missing /bin/program/hello (non-fatal)");
+        hello_image=0; hello_size=0;
     }
     if(!boot_get_module("/bin/init",&init_image,&init_size)){
         klog(KLOG_ERROR,"install: missing /bin/init");
@@ -2429,8 +2437,7 @@ static int32_t install_program_payload(void){
         if(status<0) return status;
     }
     if(imgview_image && imgview_size){
-        status=payload_write_file("/bin/program/imgview",imgview_image,(uint32_t)imgview_size);
-        if(status<0){
+        status=payload_write_file("/bin/program/imgview",imgview_image,(uint32_t)imgview_size);        if(status<0){
             klogf(KLOG_ERROR,"install: write imgview failed %d, removing partial file",status);
             (void)fat32_delete("/bin/program/imgview");
             return status;
@@ -2441,6 +2448,11 @@ static int32_t install_program_payload(void){
             (void)fat32_delete("/bin/program/imgview");
             return status;
         }
+    }
+    if(hello_image && hello_size && hello_size<=UINT32_MAX){
+        status=payload_write_file("/bin/program/hello",hello_image,(uint32_t)hello_size);
+        if(status>=0) (void)payload_verify_file("/bin/program/hello",(uint32_t)hello_size);
+        else klogf(KLOG_WARN,"install: write hello failed %d (non-fatal)",status);
     }
     const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
     if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){
