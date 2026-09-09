@@ -409,8 +409,13 @@ void perror(const char *prefix) {
     fputc('\n', stderr);
 }
 
-int remove(const char *path) {
-    if (!path) { errno = EINVAL; return -1; }
+// Internal accessor for unistd.c fstat(): FILE layout stays private to
+// this TU, no header cycle.
+const char *stdio_stream_path(const FILE *stream) {
+    return stream ? stream->path : 0;
+}
+
+int remove(const char *path) {    if (!path) { errno = EINVAL; return -1; }
     if (pc_file_delete(path) < 0) { errno = ENOENT; return -1; }
     return 0;
 }
