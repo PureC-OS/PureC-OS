@@ -1,7 +1,9 @@
 #include "panic.h"
 #include "boot_diag.h"
 #include "klog.h"
+#include "../process/scheduler.h"
 #include <stdbool.h>
+#include <stddef.h>
 
 static volatile bool panic_active = false;
 
@@ -36,6 +38,39 @@ static void panic_begin(void){
           (unsigned int)boot_diag_current_stage(), boot_diag_current_detail());
 }
 
+static void panic_current_thread(void){
+    struct thread *t = scheduler_current_thread();
+    if(!t){
+        klog(KLOG_ERROR, "thread: <none> (scheduler not running)");
+        return;
+    }
+    uint64_t rsp = t->rsp;
+    klogf(KLOG_ERROR, "thread: id=%u name=%s rsp=0x%016llx entry=%p state=%u",
+          t->id, t->name[0] ? t->name : "?", rsp, t->entry,
+          (unsigned int)t->state);
+}
+
+static void panic_backtrace(void){
+    uint64_t rsp;
+    __asm__ volatile("mov %%rsp, %0" : "=r"(rsp));
+    klogf(KLOG_ERROR, "rsp=0x%016llx backtrace:", rsp);
+    // Dump 16 stack words; mark canonical kernel-text candidates.
+    // Faulty RIP like 0x8000 usually comes from a corrupted ret slot,
+    // so the dump shows who overwrote it.
+    for(int i=0;i<16;i++){
+        uint64_t addr = rsp + (uint64_t)i*8ULL;
+        uint64_t val = 0;
+        // Avoid nested fault if stack itself is unmapped: probe via
+        // simple canonical-range check on the stack address.
+        if(addr < 0xffff800000000000ULL) break;
+        __asm__ volatile("" ::: "memory");
+        val = *(volatile uint64_t*)(uintptr_t)addr;
+        const char *mark = (val >= 0xffffffff80000000ULL) ? " <kernel-text?>"
+                         : (val == 0x8000ULL) ? " <== 0x8000 poison?"
+                         : "";
+        klogf(KLOG_ERROR, "  [%d] 0x%016llx: 0x%016llx%s", i, addr, val, mark);
+    }
+}
 static void panic_control_registers(void){
     uint64_t cr0, cr3, cr4;
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -47,7 +82,9 @@ static void panic_control_registers(void){
 void kernel_panic(const char *reason){
     panic_begin();
     klogf(KLOG_ERROR, "Reason: %s", reason ? reason : "unknown fatal error");
+    panic_current_thread();
     panic_control_registers();
+    panic_backtrace();
     klog(KLOG_ERROR, "CPU halted. Photograph this screen and report the last BOOT stage.");
     panic_halt();
 }
@@ -73,6 +110,7 @@ void kernel_panic_exception(uint64_t vector,
               (error_code & 16) ? "yes" : "no");
     }
     panic_control_registers();
+    panic_current_thread();
     if(regs){
         klogf(KLOG_ERROR, "rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx",
               regs->rax, regs->rbx, regs->rcx, regs->rdx);
@@ -83,6 +121,7 @@ void kernel_panic_exception(uint64_t vector,
         klogf(KLOG_ERROR, "r12=%016llx r13=%016llx r14=%016llx r15=%016llx",
               regs->r12, regs->r13, regs->r14, regs->r15);
     }
+    panic_backtrace();
     klog(KLOG_ERROR, "CPU halted. Photograph this panic screen for debugging.");
     panic_halt();
 }

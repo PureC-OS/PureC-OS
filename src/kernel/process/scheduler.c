@@ -25,11 +25,53 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
 
 extern void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp);
 
+static bool kernel_text_address_valid(uint64_t address){
+    // Kernel linked at 0xffffffff80000000 (higher half).
+    // Trampoline / thread entry must live there; 0x8000 etc. = corruption.
+    return address >= 0xffffffff80000000ULL;
+}
+
+static bool thread_stack_valid(const struct thread *thread){
+    if(!thread) return false;
+    uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
+    uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
+    // RSP must point inside own stack, 16-byte aligned area.
+    if(thread->rsp < stack_base+64 || thread->rsp >= stack_top) return false;
+    if(thread->rsp & 0x7ULL) return false;
+    return true;
+}
+
 static bool thread_stack_return_valid(uint64_t rsp){
     if(!rsp) return false;
+    // RSP must be readable kernel memory; probe via canonical high-half check
+    // done by caller with thread_stack_valid(). Here only check return slot.
     uint64_t *slot=(uint64_t*)rsp;
     uint64_t return_address=slot[6];
-    return return_address!=0;
+    // Zero = never initialized; low address like 0x8000 = stack corruption
+    // (e.g. interrupt frame popped from wrong stack after bad switch).
+    if(!kernel_text_address_valid(return_address)) return false;
+    return true;
+}
+
+static void validate_switch_target(const struct thread *prev,
+                                     const struct thread *next){
+    if(!next){
+        kernel_panic("scheduler: null next thread");
+    }
+    if(!thread_stack_valid(next)){
+        klogf(KLOG_ERROR, "sched: bad RSP=%llx for thread %u (%s) stack=[%llx..%llx)",
+              next->rsp, next->id, next->name,
+              (uint64_t)(uintptr_t)next->stack,
+              (uint64_t)(uintptr_t)(next->stack+SCHEDULER_STACK_SIZE));
+        kernel_panic("scheduler context switch target has invalid RSP");
+    }
+    if(!thread_stack_return_valid(next->rsp)){
+        uint64_t *slot=(uint64_t*)next->rsp;
+        klogf(KLOG_ERROR, "sched: bad return=%llx for thread %u (%s) prev=%u (%s)",
+              slot[6], next->id, next->name,
+              prev ? prev->id : 0xFFFFFFFFu, prev ? prev->name : "?");
+        kernel_panic("scheduler context switch target has invalid stack");
+    }
 }
 
 static void idle_thread_func(void *arg){
@@ -234,9 +276,7 @@ void scheduler_yield(void){
     prev->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     next->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     activate_thread(next);
-    if(!thread_stack_return_valid(next->rsp)){
-        kernel_panic("scheduler context switch target has invalid stack");
-    }
+    validate_switch_target(prev, next);
     // klogf(KLOG_DEBUG, "sched: yield %u (%s) -> %u (%s)", prev->id, prev->name, next->id, next->name);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
@@ -267,6 +307,7 @@ void scheduler_block(void){
     next->state = THREAD_RUNNING;
     current = next;
     activate_thread(next);
+    validate_switch_target(prev, next);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
@@ -299,6 +340,7 @@ void scheduler_exit(void){
     next->state = THREAD_RUNNING;
     current = next;
     activate_thread(next);
+    validate_switch_target(prev, next);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
     for(;;) __asm__ volatile("hlt");
