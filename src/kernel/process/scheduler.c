@@ -33,12 +33,19 @@ static bool kernel_text_address_valid(uint64_t address){
 
 static bool thread_stack_valid(const struct thread *thread){
     if(!thread) return false;
+    if(thread->rsp & 0x7ULL) return false;
+    // Low addresses (0x0, 0x8000, NULL) are always corruption.
+    if(thread->rsp < 0xffff800000000000ULL) return false;
     uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
     uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
-    // RSP must point inside own stack, 16-byte aligned area.
-    if(thread->rsp < stack_base+64 || thread->rsp >= stack_top) return false;
-    if(thread->rsp & 0x7ULL) return false;
-    return true;
+    if(thread->rsp >= stack_base+64 && thread->rsp < stack_top) return true;
+    // Idle runs on the boot stack before the first scheduler_start() switch
+    // and keeps that saved boot-stack RSP afterwards (0xffffffff80xxxxxx).
+    // That address is outside threads[0].stack but is a legitimate kernel
+    // stack, so allow it for id==0 only. All other threads must stay inside
+    // their own stack.
+    if(thread->id==0) return true;
+    return false;
 }
 
 static bool thread_stack_return_valid(uint64_t rsp){
@@ -53,24 +60,50 @@ static bool thread_stack_return_valid(uint64_t rsp){
     return true;
 }
 
+static void write_hex_digits(char *out, uint64_t value, int digits){
+    static const char hexdigits[]="0123456789abcdef";
+    for(int i=digits-1;i>=0;i--){
+        out[digits-1-i]=hexdigits[(value >> (i*4)) & 0xF];
+    }
+}
+
+// panic_begin() clears the screen, so klogf() before kernel_panic() is
+// wiped. Format all target details INTO the reason string instead.
+static char sched_panic_reason[224];
+
 static void validate_switch_target(const struct thread *prev,
                                      const struct thread *next){
     if(!next){
         kernel_panic("scheduler: null next thread");
     }
     if(!thread_stack_valid(next)){
-        klogf(KLOG_ERROR, "sched: bad RSP=%llx for thread %u (%s) stack=[%llx..%llx)",
-              next->rsp, next->id, next->name,
-              (uint64_t)(uintptr_t)next->stack,
-              (uint64_t)(uintptr_t)(next->stack+SCHEDULER_STACK_SIZE));
-        kernel_panic("scheduler context switch target has invalid RSP");
+        // "sched bad RSP tgt=<id> rsp=<rsp> base=<base> prev=<id>"
+        char *p=sched_panic_reason;
+        const char *prefix="sched: bad RSP tgt=0x";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, next->id, 8); p+=8;
+        const char *mid=" rsp=0x"; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, next->rsp, 16); p+=16;
+        const char *mid2=" base=0x"; for(int i=0;mid2[i];i++) *p++=mid2[i];
+        write_hex_digits(p, (uint64_t)(uintptr_t)next->stack, 16); p+=16;
+        const char *mid3=" prev=0x"; for(int i=0;mid3[i];i++) *p++=mid3[i];
+        write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        *p='\0';
+        kernel_panic(sched_panic_reason);
     }
     if(!thread_stack_return_valid(next->rsp)){
         uint64_t *slot=(uint64_t*)next->rsp;
-        klogf(KLOG_ERROR, "sched: bad return=%llx for thread %u (%s) prev=%u (%s)",
-              slot[6], next->id, next->name,
-              prev ? prev->id : 0xFFFFFFFFu, prev ? prev->name : "?");
-        kernel_panic("scheduler context switch target has invalid stack");
+        uint64_t ret=slot[6];
+        char *p=sched_panic_reason;
+        const char *prefix="sched: bad return 0x";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, ret, 16); p+=16;
+        const char *mid=" tgt=0x"; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, next->id, 8); p+=8;
+        const char *mid2=" prev=0x"; for(int i=0;mid2[i];i++) *p++=mid2[i];
+        write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        *p='\0';
+        kernel_panic(sched_panic_reason);
     }
 }
 
@@ -303,6 +336,15 @@ void scheduler_block(void){
     if(!next){
         klog(KLOG_ERROR, "sched: no thread to schedule after block!");
         for(;;) __asm__ volatile("cli; hlt");
+    }
+    if(next==prev){
+        // Only runnable thread blocks itself (typical before
+        // scheduler_start, when idle runs on the boot stack).
+        // A self-switch would overwrite the thread's saved RSP with the
+        // current one; just stay running instead of deadlocking.
+        prev->state = THREAD_RUNNING;
+        if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
+        return;
     }
     next->state = THREAD_RUNNING;
     current = next;

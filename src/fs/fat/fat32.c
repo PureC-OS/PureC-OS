@@ -24,7 +24,7 @@
 #define FAT32_END_OF_CHAIN        0x0FFFFFF8
 #define FAT32_MAX_OPEN_FILES      16
 #define FAT32_DESCRIPTOR_BASE     3
-#define FAT32_MAX_COMPONENT       12
+#define FAT32_MAX_COMPONENT       255
 #define FAT32_FORMAT_RESERVED_SECTORS 32
 #define FAT32_FORMAT_FAT_COUNT         2
 #define FAT32_FORMAT_BLANK_SCAN        2048
@@ -2402,8 +2402,13 @@ static int32_t install_program_payload(void){
     }
     const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
     if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){
-        (void)payload_write_file("/src/demo/screenshot.bmp",demo_bmp,(uint32_t)demo_bmp_sz);
-        (void)payload_write_file("/demo/screenshot.bmp",demo_bmp,(uint32_t)demo_bmp_sz);
+        // "screenshot.bmp" (14 chars) is not 8.3: write via LFN entry +
+        // 8.3 alias, otherwise fat32_create_file rejects it and the file
+        // silently never lands on disk (imgview default path then fails).
+        if(payload_write_alias("/src/demo","screenshot.bmp","/src/demo/SCREEN~1.BMP","SCREEN~1.BMP",demo_bmp,(uint32_t)demo_bmp_sz)<0)
+            klog(KLOG_WARN,"install: write /src/demo/screenshot.bmp failed (non-fatal)");
+        if(payload_write_alias("/demo","screenshot.bmp","/demo/SCREEN~1.BMP","SCREEN~1.BMP",demo_bmp,(uint32_t)demo_bmp_sz)<0)
+            klog(KLOG_WARN,"install: write /demo/screenshot.bmp failed (non-fatal)");
     }
     if(boot_get_module("/src/demo/image.png",&demo_png,&demo_png_sz) && demo_png && demo_png_sz<=UINT32_MAX){
         (void)payload_write_file("/src/demo/image.png",demo_png,(uint32_t)demo_png_sz);
