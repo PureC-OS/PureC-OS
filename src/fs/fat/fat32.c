@@ -2398,7 +2398,17 @@ static int32_t install_program_payload(void){
     }
     if(imgview_image && imgview_size){
         status=payload_write_file("/bin/program/imgview",imgview_image,(uint32_t)imgview_size);
-        if(status>=0) (void)payload_verify_file("/bin/program/imgview",(uint32_t)imgview_size);
+        if(status<0){
+            klogf(KLOG_ERROR,"install: write imgview failed %d, removing partial file",status);
+            (void)fat32_delete("/bin/program/imgview");
+            return status;
+        }
+        status=payload_verify_file("/bin/program/imgview",(uint32_t)imgview_size);
+        if(status<0){
+            klogf(KLOG_ERROR,"install: verify imgview failed %d, removing partial file",status);
+            (void)fat32_delete("/bin/program/imgview");
+            return status;
+        }
     }
     const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
     if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){

@@ -723,7 +723,7 @@ static void draw_image_view(struct pg_window *window, const struct image_data *i
     }
 }
 
-int main(void) {
+void _start(void) {
     char cmdline[128];
     char path[128] = "/src/demo/screenshot.bmp";
     bool explicit_path = false;
@@ -767,7 +767,7 @@ int main(void) {
     }
 
     struct pc_display_info display;
-    if (!pc_display_get_info(&display) || !display.available) return 1;
+    if (!pc_display_get_info(&display) || !display.available) pc_exit(1);
 
     uint32_t win_w = g_image.loaded ? g_image.width + 16 : 640;
     uint32_t win_h = g_image.loaded ? g_image.height + 40 : 400;
@@ -789,7 +789,7 @@ int main(void) {
     }
     pc_copy(title + tlen, basename, sizeof(title) - tlen);
 
-    if (!pg_window_center(&window, title, win_w, win_h)) return 1;
+    if (!pg_window_center(&window, title, win_w, win_h)) pc_exit(1);
 
     struct pg_event event = {.type = PG_EVENT_NONE};
     pg_window_begin(&window);
@@ -812,5 +812,5 @@ int main(void) {
     }
 
     pg_window_close(&window);
-    return 0;
+    pc_exit(0);
 }
