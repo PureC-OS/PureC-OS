@@ -25,6 +25,27 @@
 
 static uint32_t umin(uint32_t a, uint32_t b){ return a<b ? a : b; }
 
+static bool point_inside(int32_t px, int32_t py,
+                         uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    return px>=(int32_t)x && py>=(int32_t)y
+        && px<(int32_t)(x+w) && py<(int32_t)(y+h);
+}
+
+
+static bool login_button_hover(const struct pg_window *window,
+                               int32_t mx, int32_t my){
+    uint32_t cw=window->client.width;
+    uint32_t ch=window->client.height;
+    uint32_t dw=umin(DIALOG_W,cw>16 ? cw-16 : cw);
+    uint32_t dx=cw>dw ? (cw-dw)/2 : 0;
+    uint32_t dy=ch>DIALOG_H ? (ch-DIALOG_H)/2 : 0;
+    uint32_t bx=dx+(dw>BUTTON_W ? (dw-BUTTON_W)/2 : 0);
+    uint32_t by=dy+DIALOG_H-100;
+    return point_inside(mx, my,
+                        window->client.x+bx, window->client.y+by,
+                        BUTTON_W, BUTTON_H);
+}
+
 /* Draw one frame. Returns true when the user requested login. */
 static bool draw_login(struct pg_window *window, const struct pg_event *event,
                        bool farewell){
@@ -77,6 +98,7 @@ static int login_main(void){
     /* Gate window: no X/Esc/minimize dismissal (enforced by libgui). */
     pg_window_set_closable(&window,false);
     (void)draw_login(&window,&event,false);
+    bool last_hover=login_button_hover(&window, event.x, event.y);
     while(pg_window_is_open(&window)){
         /* Pin the fullscreen frame: no dragging it away. */
         if(window.frame.x!=0 || window.frame.y!=0)
@@ -89,8 +111,19 @@ static int login_main(void){
         if(event.type==PG_EVENT_KEY
            && (event.key=='\r' || event.key=='\n'))
             farewell=true;
-        else if(draw_login(&window,&event,farewell))
-            farewell=true;
+        else if(event.type==PG_EVENT_MOUSE_MOVE){
+            bool hover=login_button_hover(&window, event.x, event.y);
+            if(hover==last_hover){
+                event.type=PG_EVENT_NONE;
+                continue;
+            }
+            last_hover=hover;
+            (void)draw_login(&window,&event,farewell);
+        } else {
+            if(draw_login(&window,&event,farewell))
+                farewell=true;
+            last_hover=login_button_hover(&window, event.x, event.y);
+        }
         if(farewell){
             (void)draw_login(&window,&event,true);
             pc_sleep(250);
