@@ -122,6 +122,20 @@ int close(int fd) {
     return fclose(stream);
 }
 
+// Shares the FILE* owned by the fd slot (same model as the kernel fd
+// table pointing at one VFS handle). Close exactly once, through either
+// handle: fclose() on an already-removed stream fails safely.
+FILE *fdopen(int fd, const char *mode) {
+    (void)mode;
+    if (fd < 3) {
+        errno = EBADF;
+        return 0;
+    }
+    FILE *stream = fd_lookup(fd);
+    if (!stream) return 0;
+    return stream;
+}
+
 off_t lseek(int fd, off_t offset, int origin) {
     if (fd < 3) { errno = ESPIPE; return -1; }
     FILE *stream = fd_lookup(fd);
@@ -188,7 +202,6 @@ unsigned int sleep(unsigned int seconds) {
     pc_sleep((uint32_t)ms);
     return 0;
 }
-
 char *getcwd(char *buffer, size_t capacity) {
     // No kernel cwd; the shell keeps logical location in $PWD.
     static char fallback[] = "/";
@@ -201,6 +214,15 @@ char *getcwd(char *buffer, size_t capacity) {
     if (pwd[n]) { errno = ERANGE; return 0; }
     buffer[n] = '\0';
     return buffer;
+}
+
+int execvp(const char *file, char *const *argv) {
+    // No fork/exec-search on PureC OS: only absolute module paths via
+    // the process spawner. Used by TCC's cross-driver tool only.
+    (void)file;
+    (void)argv;
+    errno = ENOSYS;
+    return -1;
 }
 
 // ---- mmap family: ENOSYS until the executable-memory syscall lands ----
@@ -243,4 +265,66 @@ void assert_fail(const char *expression, const char *file, int line) {
     pc_write(number);
     pc_write("\n");
     pc_exit(134);
+}
+
+// No symlinks exist on PureC filesystems, so lexical normalization is
+// exact: prepend $PWD for relative paths, collapse // and /./, resolve
+// /../ by popping, strip the trailing slash (root kept).
+char *realpath(const char *path, char *resolved) {
+    if (!path || !path[0]) { errno = EINVAL; return 0; }
+    char combined[512];
+    size_t n = 0;
+    bool truncated = false;
+    if (path[0] != '/') {
+        char cwd[256];
+        if (!getcwd(cwd, sizeof(cwd))) return 0;
+        for (size_t i = 0; cwd[i]; i++) {
+            if (n + 1 >= sizeof(combined)) { truncated = true; break; }
+            combined[n++] = cwd[i];
+        }
+        if (!truncated && n + 1 < sizeof(combined)
+            && !(n > 0 && combined[n - 1] == '/'))
+            combined[n++] = '/';
+    }
+    for (size_t i = 0; !truncated && path[i]; i++) {
+        if (n + 1 >= sizeof(combined)) { truncated = true; break; }
+        combined[n++] = path[i];
+    }
+    if (truncated) { errno = ENAMETOOLONG; return 0; }
+    combined[n] = '\0';
+    // In-place collapse into out.
+    char out[512];
+    size_t w = 0;
+    for (size_t r = 0; combined[r]; ) {
+        if (combined[r] == '/') {
+            while (combined[r] == '/') r++;
+            if (!combined[r]) break; // trailing slash, drop it
+            if (combined[r] == '.' && (combined[r + 1] == '/' || !combined[r + 1])) {
+                r += combined[r + 1] ? 2 : 1;
+                continue;
+            }
+            if (combined[r] == '.' && combined[r + 1] == '.'
+                && (combined[r + 2] == '/' || !combined[r + 2])) {
+                r += combined[r + 2] ? 3 : 2;
+                while (w > 1 && out[w - 1] != '/') w--; // pop one level
+                if (w > 1) w--; // drop the slash too (keep root)
+                continue;
+            }
+            out[w++] = '/';
+            continue;
+        }
+        out[w++] = combined[r++];
+        if (w + 1 >= sizeof(out)) { errno = ENAMETOOLONG; return 0; }
+    }
+    if (!w) out[w++] = '/';
+    out[w] = '\0';
+    if (resolved) {
+        // Sized caller buffer (assumed big enough, like PATH_MAX users).
+        memcpy(resolved, out, w + 1);
+        return resolved;
+    }
+    char *fresh = (char *)malloc(w + 1);
+    if (!fresh) return 0;
+    memcpy(fresh, out, w + 1);
+    return fresh;
 }

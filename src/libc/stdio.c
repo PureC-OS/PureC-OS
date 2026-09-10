@@ -192,6 +192,13 @@ int fclose(FILE *stream) {
         errno = EINVAL;
         return EOF;
     }
+    // Shared ownership with fdopen(): the stream may already be gone.
+    // Membership probe touches only the registry, never the pointer.
+    bool known = false;
+    for (uint32_t i = 0; i < FOPEN_MAX; i++) {
+        if (open_registry[i] == stream) { known = true; break; }
+    }
+    if (!known) { errno = EBADF; return EOF; }
     int result = fflush(stream);
     if (stream->fd >= 0) pc_file_close(stream->fd);
     free(stream->buffer);

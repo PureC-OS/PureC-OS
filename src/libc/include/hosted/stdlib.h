@@ -19,8 +19,11 @@ long atol(const char *text);
 long long atoll(const char *text);
 long strtol(const char *text, char **end, int base);
 unsigned long strtoul(const char *text, char **end, int base);
+unsigned long long strtoull(const char *text, char **end, int base);
 // Available: userspace may use SSE (kernel switches FPU per thread).
 double strtod(const char *text, char **end);
+float strtof(const char *text, char **end);
+long double strtold(const char *text, char **end);
 int abs(int value);
 long labs(long value);
 void qsort(void *base, size_t count, size_t size,
@@ -28,5 +31,6 @@ void qsort(void *base, size_t count, size_t size,
 int rand(void);
 void srand(unsigned int seed);
 char *getenv(const char *name);
+char *realpath(const char *path, char *resolved);
 void exit(int status);
 void abort(void);

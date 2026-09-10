@@ -3,6 +3,7 @@
 // (tcc -dt, __DATE__-style stamping) and timeouts.
 
 #include "include/hosted/time.h"
+#include "include/hosted/sys/time.h"
 #include "include/hosted/stdio.h"
 #include "include/hosted/string.h"
 #include "include/hosted/errno.h"
@@ -25,6 +26,18 @@ time_t time(time_t *result) {
 
 clock_t clock(void) {
     return (clock_t)time_uptime_ms(); // CLOCKS_PER_SEC == 1000
+}
+
+int gettimeofday(struct timeval *tv, void *tz) {
+    if (!tv) {
+        errno = EINVAL;
+        return -1;
+    }
+    uint64_t ms = time_uptime_ms();
+    tv->tv_sec = (time_t)(ms / 1000ULL);
+    tv->tv_usec = (suseconds_t)((ms % 1000ULL) * 1000ULL);
+    (void)tz; // no zones on PureC OS
+    return 0;
 }
 
 static bool time_is_leap(long year) {

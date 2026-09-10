@@ -193,8 +193,7 @@ long strtol(const char *text, char **end, int base) {
     return negative ? -(long)magnitude : (long)magnitude;
 }
 
-unsigned long strtoul(const char *text, char **end, int base) {
-    const char *p = convert_skip(text);
+unsigned long strtoul(const char *text, char **end, int base) {    const char *p = convert_skip(text);
     bool negative = false;
     if (*p == '+' || *p == '-') { negative = *p == '-'; p++; }
     if (base == 0) {
@@ -234,6 +233,11 @@ unsigned long strtoul(const char *text, char **end, int base) {
 int atoi(const char *text) { return (int)strtol(text, 0, 10); }
 long atol(const char *text) { return strtol(text, 0, 10); }
 long long atoll(const char *text) { return (long long)strtol(text, 0, 10); }
+
+// unsigned long is 64-bit here, same range as unsigned long long.
+unsigned long long strtoull(const char *text, char **end, int base) {
+    return (unsigned long long)strtoul(text, end, base);
+}
 
 // intmax_t is 64-bit here (see hosted/inttypes.h).
 long long strtoimax(const char *text, char **end, int base) {
@@ -302,6 +306,25 @@ double strtod(const char *text, char **end) {
     if (end) *end = (char *)p;
     if (value > 1e308) { errno = ERANGE; value = 1e308 * 10.0; }
     return negative ? -value : value;
+}
+
+float strtof(const char *text, char **end) {
+    // Clamp through double; beyond float range becomes inf (ERANGE).
+    errno = 0;
+    double value = strtod(text, end);
+    if (value > 3.402823466e38 || value < -3.402823466e38) {
+        errno = ERANGE;
+        return value < 0 ? -(3.402823466e38f * 2.0f) : 3.402823466e38f * 2.0f;
+    }
+    return (float)value;
+}
+
+long double strtold(const char *text, char **end) {
+    // Long-double range exceeds double; literals outside double range
+    // clamp to infinity (documented TCC-port limitation).
+    errno = 0;
+    double value = strtod(text, end);
+    return (long double)value;
 }
 
 // ---- misc ----

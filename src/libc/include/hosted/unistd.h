@@ -18,6 +18,8 @@
 typedef long off_t;
 typedef long ssize_t;
 
+extern char **environ;
+
 ssize_t read(int fd, void *buffer, size_t count);
 ssize_t write(int fd, const void *buffer, size_t count);
 int close(int fd);
@@ -27,6 +29,7 @@ int access(const char *path, int mode);
 int isatty(int fd);
 unsigned int sleep(unsigned int seconds);
 char *getcwd(char *buffer, size_t capacity);
+int execvp(const char *file, char *const *argv);
 
 #define F_OK 0
 #define R_OK 4

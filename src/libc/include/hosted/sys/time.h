@@ -1,7 +1,7 @@
 #pragma once
 // PureC hosted libc: sys/time (uptime-based wall clock).
 
-#include <time.h>
+#include "../time.h"
 
 typedef long suseconds_t;
 
