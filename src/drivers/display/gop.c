@@ -825,4 +825,3 @@ void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){
         maybe_present();
     }
 }
-}

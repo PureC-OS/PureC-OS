@@ -170,16 +170,16 @@ void mouse_begin_framebuffer_update(void){
 void mouse_end_framebuffer_update(void){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    bool present_now=false;
+    bool outermost=false;
     if(framebuffer_update_depth){
         framebuffer_update_depth--;
-        if(framebuffer_update_depth==0) present_now=true;
+        if(framebuffer_update_depth==0) outermost=true;
     }
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
-    if(present_now){
-        gop_end_batch();
+
+    gop_end_batch();
+    if(outermost)
         draw_cursor(state.x,state.y);
-    }
 }
 
 static inline bool cursor_inside(int dx, int dy){
