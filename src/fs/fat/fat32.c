@@ -1922,8 +1922,7 @@ static int32_t payload_write_file(const char *path, const void *data, uint32_t s
 static int32_t payload_write_alias(const char *directory, const char *long_name,
                                    const char *alias_path, const char *alias_name,
                                    const void *data, uint32_t size){
-    if(install_target_is_ext2){
-        (void)alias_path;
+    if(install_target_is_ext2){        (void)alias_path;
         (void)alias_name;
         char full_path[256];
         uint32_t dlen = (uint32_t)strlen(directory);
@@ -1937,6 +1936,28 @@ static int32_t payload_write_alias(const char *directory, const char *long_name,
         memcpy(full_path + dlen, long_name, nlen);
         full_path[dlen + nlen] = '\0';
         return ext2_write_file(full_path, data, size);
+    }
+    // If the "long" name is already valid 8.3, resolve_entry() will look
+    // it up via the SHORT path (find_entry), so a LFN+alias pair would
+    // make it invisible (ucontext.h and stdalign.h hit exactly this:
+    // 8-letter base written as UCONTE~1.H-style alias, looked up as
+    // UCONTEXT.H -> NOT_FOUND). Write such names directly instead.
+    {
+        uint8_t probe[11];
+        if(make_short_name(long_name, probe)){
+            char full_path[256];
+            uint32_t dlen = (uint32_t)strlen(directory);
+            uint32_t nlen = (uint32_t)strlen(long_name);
+            if(dlen + 1 + nlen >= sizeof(full_path)) return FS_ERROR_INVALID;
+            memcpy(full_path, directory, dlen);
+            if(dlen == 0 || full_path[dlen-1] != '/') {
+                full_path[dlen] = '/';
+                dlen++;
+            }
+            memcpy(full_path + dlen, long_name, nlen);
+            full_path[dlen + nlen] = '\0';
+            return fat32_write_file_direct(full_path, data, size);
+        }
     }
     return write_lfn_file(directory, long_name, alias_path, alias_name, data, size);
 }
@@ -2183,6 +2204,113 @@ static int32_t install_firmware_payload(void){
         }
     }
     klog(KLOG_OK, "install: firmware payload complete");
+    return 0;
+}
+
+struct header_module {
+    const char *module;    // boot module path; also the dest path
+    const char *directory; // FAT directory owning the LFN entry
+    const char *name;      // long file name
+    const char *alias_path; // full 8.3 alias path, or 0 for direct write
+    const char *alias_name;
+    bool required;         // missing/broken required file aborts install
+};
+
+static int32_t install_header_module(const struct header_module *entry){
+    const void *data;
+    uint64_t size;
+    if(!boot_get_module(entry->module,&data,&size) || !data || !size
+       || size>256*1024U){
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: header module %s missing (%s)",
+              entry->module, entry->required ? "aborting" : "non-fatal, skipped");
+        return entry->required ? FS_ERROR_NOT_FOUND : 0;
+    }
+    int32_t status;
+    if(entry->alias_path){
+        status=payload_write_alias(entry->directory,entry->name,
+                                   entry->alias_path,entry->alias_name,
+                                   data,(uint32_t)size);
+    } else {
+        status=payload_write_file(entry->module,data,(uint32_t)size);
+    }
+    if(status<0){
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: write %s failed %d (%s)",
+              entry->module,status,entry->required ? "aborting" : "non-fatal, skipped");
+        return entry->required ? status : 0;
+    }
+    // Verify by the long path: resolves via LFN on FAT32 and natively
+    // on ext2 (where the alias never exists).
+    status=payload_verify_file(entry->module,(uint32_t)size);
+    if(status<0){
+        // Diagnostic split (FAT32 only): verify the 8.3 alias too.
+        // LFN-fail + alias-ok means the entry landed but LFN lookup
+        // missed it; both failing means the write itself never landed.
+        int32_t alias_status = 0;
+        if(entry->alias_path && !install_target_is_ext2)
+            alias_status=payload_verify_file(entry->alias_path,(uint32_t)size);
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: verify %s failed %d (alias %s -> %d) (%s)",
+              entry->module,status,
+              entry->alias_path ? entry->alias_path : "-",
+              entry->alias_path ? alias_status : 0,
+              entry->required ? "aborting" : "non-fatal, skipped");
+        if(entry->required) return status;
+    }
+    return 0;
+}
+
+// Hosted libc headers (-> /include), crt0.o (-> /lib) and TCC bundled
+// headers (-> /lib/tcc/include) so `tcc -o test test.c` finds everything
+// on the installed system. Long (>8.3) names go through LFN aliases.
+static int32_t install_dev_headers(void){
+    static const char *header_dirs[]={"/include/sys","/lib/tcc","/lib/tcc/include"};
+    for(uint8_t i=0;i<sizeof(header_dirs)/sizeof(header_dirs[0]);i++){
+        int32_t st=payload_mkdir(header_dirs[i]);
+        if(st<0){
+            klogf(KLOG_ERROR,"install: mkdir %s failed %d",header_dirs[i],st);
+            return st;
+        }
+    }
+    static const struct header_module modules[]={
+        {"/include/assert.h","/include","assert.h",0,0,true},
+        {"/include/ctype.h","/include","ctype.h",0,0,true},
+        {"/include/dlfcn.h","/include","dlfcn.h",0,0,true},
+        {"/include/errno.h","/include","errno.h",0,0,true},
+        {"/include/fcntl.h","/include","fcntl.h",0,0,true},
+        {"/include/inttypes.h","/include","inttypes.h",0,0,true},
+        {"/include/math.h","/include","math.h",0,0,true},
+        {"/include/setjmp.h","/include","setjmp.h",0,0,true},
+        {"/include/signal.h","/include","signal.h",0,0,true},
+        {"/include/stdio.h","/include","stdio.h",0,0,true},
+        {"/include/stdlib.h","/include","stdlib.h",0,0,true},
+        {"/include/string.h","/include","string.h",0,0,true},
+        {"/include/time.h","/include","time.h",0,0,true},
+        {"/include/unistd.h","/include","unistd.h",0,0,true},
+        {"/include/sys/stat.h","/include/sys","stat.h",0,0,true},
+        {"/include/sys/time.h","/include/sys","time.h",0,0,true},
+        {"/include/sys/mman.h","/include/sys","mman.h",0,0,true},
+        {"/include/sys/ucontext.h","/include/sys","ucontext.h",0,0,true},
+        {"/lib/crt0.o","/lib","crt0.o",0,0,true},
+        {"/lib/tcc/include/float.h","/lib/tcc/include","float.h",0,0,false},
+        {"/lib/tcc/include/stdarg.h","/lib/tcc/include","stdarg.h",0,0,false},
+        {"/lib/tcc/include/stdbool.h","/lib/tcc/include","stdbool.h",0,0,false},
+        {"/lib/tcc/include/stddef.h","/lib/tcc/include","stddef.h",0,0,false},
+        {"/lib/tcc/include/tgmath.h","/lib/tcc/include","tgmath.h",0,0,false},
+        {"/lib/tcc/include/tccdefs.h","/lib/tcc/include","tccdefs.h",0,0,false},
+        {"/lib/tcc/include/varargs.h","/lib/tcc/include","varargs.h",0,0,false},
+        {"/lib/tcc/include/stdalign.h","/lib/tcc/include","stdalign.h",0,0,false},
+        {"/lib/tcc/include/stdatomic.h","/lib/tcc/include","stdatomic.h",
+         "/lib/tcc/include/STDATO~1.H","STDATO~1.H",false},
+        {"/lib/tcc/include/stdnoreturn.h","/lib/tcc/include","stdnoreturn.h",
+         "/lib/tcc/include/STDNOR~1.H","STDNOR~1.H",false},
+    };
+    for(uint32_t i=0;i<sizeof(modules)/sizeof(modules[0]);i++){
+        int32_t status=install_header_module(&modules[i]);
+        if(status<0) return status;
+    }
+    klog(KLOG_OK,"install: dev headers ready");
     return 0;
 }
 
@@ -2464,7 +2592,33 @@ static int32_t install_program_payload(void){
             if(status>=0) (void)payload_verify_file("/bin/program/fputest",(uint32_t)fpu_size);
             else klogf(KLOG_WARN,"install: write fputest failed %d (non-fatal)",status);
         }
-    }    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
+    }
+    {
+        // TCC port: compiler binary (optional, needs the tcc/ tree at
+        // ISO build time). Missing module = skip; broken write = abort
+        // like imgview so no corrupt compiler lands on disk.
+        const void *tcc_image = 0;
+        uint64_t tcc_size = 0;
+        if(boot_get_module("/bin/program/tcc",&tcc_image,&tcc_size)
+           && tcc_image && tcc_size && tcc_size<=UINT32_MAX){
+            status=payload_write_file("/bin/program/tcc",tcc_image,(uint32_t)tcc_size);
+            if(status<0){
+                klogf(KLOG_ERROR,"install: write tcc failed %d, removing partial file",status);
+                (void)fat32_delete("/bin/program/tcc");
+                return status;
+            }
+            status=payload_verify_file("/bin/program/tcc",(uint32_t)tcc_size);
+            if(status<0){
+                klogf(KLOG_ERROR,"install: verify tcc failed %d, removing partial file",status);
+                (void)fat32_delete("/bin/program/tcc");
+                return status;
+            }
+        } else {
+            klog(KLOG_WARN,"install: missing /bin/program/tcc (non-fatal)");
+        }
+    }
+    status=install_dev_headers();
+    if(status<0) return status;    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
     if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){
         // "screenshot.bmp" (14 chars) is not 8.3: write via LFN entry +
         // 8.3 alias, otherwise fat32_create_file rejects it and the file

@@ -80,12 +80,25 @@ iso: kernel programs
 	cp "$(ROOT_DIR)/src/libgui/include/pguiw.h" "$(ISO_ROOT)/include/pguiw.h"; \
 	cp "$(ROOT_DIR)/src/libfs/include/purefs.h" "$(ISO_ROOT)/include/purefs.h"; \
 	cp "$(ROOT_DIR)/src/libaudio/include/pureaudio.h" "$(ISO_ROOT)/include/pureaudio.h"; \
+	mkdir -p "$(ISO_ROOT)/include/sys" "$(ISO_ROOT)/lib/tcc/include"; \
+	for header in assert ctype dlfcn errno fcntl inttypes math setjmp signal stdio stdlib string time unistd; do \
+		cp "$(ROOT_DIR)/src/libc/include/hosted/$$header.h" "$(ISO_ROOT)/include/$$header.h"; \
+	done; \
+	for header in stat time mman ucontext; do \
+		cp "$(ROOT_DIR)/src/libc/include/hosted/sys/$$header.h" "$(ISO_ROOT)/include/sys/$$header.h"; \
+	done; \
+	cp "$(LIB_DIR)/crt0.o" "$(ISO_ROOT)/lib/crt0.o"; \
+	if [ -f "$(PROGRAM_DIR)/tcc" ]; then cp "$(PROGRAM_DIR)/tcc" "$(ISO_ROOT)/bin/program/tcc"; fi; \
+	if [ -d "$(ROOT_DIR)/tcc/include" ]; then cp "$(ROOT_DIR)"/tcc/include/*.h "$(ISO_ROOT)/lib/tcc/include/"; fi; \
 	if [ -d "$(ROOT_DIR)/src/demo" ]; then cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; fi; \
 	if [ -f "$(ROOT_DIR)/src/demo/screenshot.bmp" ]; then cp "$(ROOT_DIR)/src/demo/screenshot.bmp" "$(ISO_ROOT)/demo/screenshot.bmp"; fi; \
 	if [ -f "$(BIN_DIR)/modules/ext2.elf" ]; then cp "$(BIN_DIR)/modules/ext2.elf" "$(ISO_ROOT)/bin/modules/ext2.elf"; fi; \
 	if [ -f "$(BIN_DIR)/modules/ext2.ko" ]; then cp "$(BIN_DIR)/modules/ext2.ko" "$(ISO_ROOT)/bin/modules/ext2.ko"; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \
+	if [ -f "$(PROGRAM_DIR)/tcc" ]; then \
+		sed -i "/module_path: boot():\/bin\/program\/hello/r $(ROOT_DIR)/mk/tcc/limine-modules.txt" "$(ISO_ROOT)/boot/limine/limine.conf" "$(ISO_ROOT)/limine.conf"; \
+	fi; \
 	cp "$$limine_share/limine-bios.sys" "$(ISO_ROOT)/boot/limine/limine-bios.sys"; \
 	cp "$$limine_share/limine-bios-cd.bin" "$(ISO_ROOT)/boot/limine/limine-bios-cd.bin"; \
 	cp "$$limine_share/limine-uefi-cd.bin" "$(ISO_ROOT)/boot/limine/limine-uefi-cd.bin"; \
