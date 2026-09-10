@@ -36,12 +36,13 @@ GENERAL_SOURCES := \
 	files/model.c \
 	files/path.c \
 	files/view.c \
-	settings/main.c \
-	settings/core/model.c \
-	settings/core/app.c \
-	settings/pages/audio.c \
-	settings/pages/wifi.c \
-	monitor/main.c \
+ 	settings/main.c \
+ 	settings/core/model.c \
+ 	settings/core/app.c \
+ 	settings/pages/audio.c \
+ 	settings/pages/wifi.c \
+	login/main.c \
+ 	monitor/main.c \
 	disks/main.c \
 	logview/main.c \
  	imgview/main.c \
@@ -66,9 +67,10 @@ TARGETS := \
 	$(PROGRAM_DIR)/nano \
 	$(PROGRAM_DIR)/system \
 	$(PROGRAM_DIR)/gui-demo \
-	$(PROGRAM_DIR)/files \
-	$(PROGRAM_DIR)/settings \
-	$(PROGRAM_DIR)/monitor \
+ 	$(PROGRAM_DIR)/files \
+ 	$(PROGRAM_DIR)/settings \
+	$(PROGRAM_DIR)/login \
+ 	$(PROGRAM_DIR)/monitor \
 	$(PROGRAM_DIR)/disks \
 	$(PROGRAM_DIR)/logview \
  	$(PROGRAM_DIR)/hexedit \
@@ -148,6 +150,10 @@ $(PROGRAM_DIR)/settings: $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/mod
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/monitor: $(OBJ_DIR)/monitor/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

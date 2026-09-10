@@ -30,8 +30,13 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
         int32_t key=pc_try_getchar();
         if(key>=0){
             event->key=key;
-            event->type=key==27 ? PG_EVENT_CLOSE : PG_EVENT_KEY;
-            if(event->type==PG_EVENT_CLOSE) pg_window_close(window);
+            /* Gate windows (login) cannot be dismissed with Esc. */
+            if(key==27 && window->closable){
+                event->type=PG_EVENT_CLOSE;
+                pg_window_close(window);
+            }else{
+                event->type=PG_EVENT_KEY;
+            }
             return true;
         }
         int32_t special=pc_try_get_special();
@@ -92,11 +97,16 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
         bool was_dragging=window->dragging;
         window->dragging=false;
         if(!was_dragging && pg_internal_point_inside(mouse.x,mouse.y,&close)){
-            event->type=PG_EVENT_CLOSE;
-            pg_window_close(window);
-            return true;
+            /* Gate windows (login) cannot be closed or minimized. */
+            if(window->closable){
+                event->type=PG_EVENT_CLOSE;
+                pg_window_close(window);
+                return true;
+            }
+            event->type=PG_EVENT_NONE;
+            return false;
         }
-        if(!was_dragging
+        if(window->closable && !was_dragging
            && pg_internal_point_inside(mouse.x,mouse.y,&minimize)){
             window->minimized=!window->minimized;
             (void)pg_internal_update_registered_frame(window);

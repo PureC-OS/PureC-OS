@@ -69,6 +69,9 @@ struct pg_window {
     bool focused;
     bool registered;
     bool repainting;
+    /* Gate windows (login screen): library must not auto-close on
+     * X/Esc nor auto-minimize; default true, change via setter. */
+    bool closable;
 };
 
 const char *pg_version(void);
@@ -81,6 +84,7 @@ bool pg_window_center(struct pg_window *window, const char *title,
 void pg_window_begin(struct pg_window *window);
 void pg_window_end(struct pg_window *window);
 void pg_window_close(struct pg_window *window);
+void pg_window_set_closable(struct pg_window *window, bool closable);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
 void pg_window_minimize(struct pg_window *window);
 void pg_window_restore(struct pg_window *window);

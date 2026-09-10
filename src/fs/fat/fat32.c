@@ -2333,7 +2333,9 @@ static int32_t install_program_payload(void){
     const void *nano_image,*system_image,*files_image,*library_image;
     const void *settings_image,*monitor_image,*disks_image,*tetris_image,*logview_image,*hexedit_image,*imgview_image;
     const void *hello_image;
+    const void *login_image;
     uint64_t hello_size = 0;
+    uint64_t login_size = 0;
     uint64_t init_size,installer_size,snake_size,terminal_size,nano_size;
     uint64_t system_size,files_size;
     uint64_t library_size,gui_demo_size;
@@ -2347,6 +2349,11 @@ static int32_t install_program_payload(void){
     if(!boot_get_module("/bin/program/hello",&hello_image,&hello_size)){
         klog(KLOG_WARN,"install: missing /bin/program/hello (non-fatal)");
         hello_image=0; hello_size=0;
+    }
+    // Login gate (optional like hello: older ISOs simply lack the module).
+    if(!boot_get_module("/bin/program/login",&login_image,&login_size)){
+        klog(KLOG_WARN,"install: missing /bin/program/login (non-fatal)");
+        login_image=0; login_size=0;
     }
     if(!boot_get_module("/bin/init",&init_image,&init_size)){
         klog(KLOG_ERROR,"install: missing /bin/init");
@@ -2581,6 +2588,11 @@ static int32_t install_program_payload(void){
         status=payload_write_file("/bin/program/hello",hello_image,(uint32_t)hello_size);
         if(status>=0) (void)payload_verify_file("/bin/program/hello",(uint32_t)hello_size);
         else klogf(KLOG_WARN,"install: write hello failed %d (non-fatal)",status);
+    }
+    if(login_image && login_size && login_size<=UINT32_MAX){
+        status=payload_write_file("/bin/program/login",login_image,(uint32_t)login_size);
+        if(status>=0) (void)payload_verify_file("/bin/program/login",(uint32_t)login_size);
+        else klogf(KLOG_WARN,"install: write login failed %d (non-fatal)",status);
     }
     {
         // FPU self-test (optional like hello).

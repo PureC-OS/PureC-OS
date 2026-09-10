@@ -527,6 +527,7 @@ void userspace_init(void){
     desktop_apps_init();
     installer_icon_visible=!installation_present();
     klog_set_screen_enabled(false);
+    (void)userspace_run_detached("/bin/program/login",0);
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT, "userspace: initialization complete");
 }
 

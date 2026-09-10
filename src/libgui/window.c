@@ -48,6 +48,7 @@ bool pg_window_init(struct pg_window *window, const char *title,
     window->focused=true;
     window->registered=false;
     window->repainting=false;
+    window->closable=true;
     update_client_rect(window);
     struct gui_window_request request={x,y,width,height};
     if(!pc_gui_window_register(&request)){
@@ -120,6 +121,10 @@ void pg_window_close(struct pg_window *window){
         window->registered=false;
     }
     pc_desktop_redraw();
+}
+
+void pg_window_set_closable(struct pg_window *window, bool closable){
+    if(window) window->closable=closable;
 }
 
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y){
