@@ -130,7 +130,12 @@ struct mouse_debug_state mouse_get_debug_state(void){ return *(const struct mous
 
 void mouse_set_debug_overlay(bool enabled){
     if(enabled==debug_overlay_enabled) return;
-    if(gop_is_available() && !first_draw) restore_bg(old_x,old_y);
+    if(gop_is_available() && !first_draw){
+        if(gop_has_backbuffer())
+            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
+        else
+            restore_bg(old_x,old_y);
+    }
     debug_overlay_enabled=enabled;
     first_draw=true;
 }
@@ -143,12 +148,20 @@ void mouse_redraw(void){
 }
 
 void mouse_begin_framebuffer_update(void){
+    // Сначала открываем GOP-batch без cli чтобы ленивая аллокация
+    // backbuffer не держала прерывания выключенными на миллисекунды.
+    gop_begin_batch();
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
     debug_state.interrupts_enabled=(flags&(1ULL<<9))!=0;
     if(framebuffer_update_depth==0){
-        if(gop_is_available() && !first_draw) restore_bg(old_x,old_y);
-        first_draw=true;
+        // С backbuffer курсор не прячем здесь: present в end сам
+        // перезапишет сцену без курсора. Без backbuffer прячем сразу,
+        // иначе сцена будет рисоваться поверх курсора и оставит мусор.
+        if(!gop_has_backbuffer()){
+            if(gop_is_available() && !first_draw) restore_bg(old_x,old_y);
+            first_draw=true;
+        }
     }
     framebuffer_update_depth++;
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
@@ -157,11 +170,28 @@ void mouse_begin_framebuffer_update(void){
 void mouse_end_framebuffer_update(void){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    bool present_now=false;
     if(framebuffer_update_depth){
         framebuffer_update_depth--;
-        if(framebuffer_update_depth==0) draw_cursor(state.x,state.y);
+        if(framebuffer_update_depth==0) present_now=true;
     }
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    if(present_now){
+        gop_end_batch();
+        draw_cursor(state.x,state.y);
+    }
+}
+
+static inline bool cursor_inside(int dx, int dy){
+    if(dy==0 && dx<8) return true;
+    if(dy<8 && dx<=dy) return true;
+    if(dy>=8 && dy<10 && dx<3) return true;
+    return false;
+}
+
+static inline uint32_t cursor_pixel(int dx, int dy){
+    bool border = (dx==0 || dy==0 || dx==dy || (dy>=8 && (dx==0||dx==2)));
+    return border ? cursor_border : cursor_color;
 }
 
 // Рисует курсор как в Linux: стрелка 12x12
@@ -183,6 +213,28 @@ static void draw_cursor(int32_t x,int32_t y){
         first_draw=false;
         return;
     }
+    if(gop_has_backbuffer()){
+        // Сцена без курсора лежит в backbuffer: стирание = blit сцены.
+        // bg_buf не используем - он протухает при перерисовке сцены.
+        if(!first_draw
+           && (x!=old_x || y!=old_y)){
+            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
+        } else if(!first_draw){
+            // Позиция та же (например present после redraw уже стер),
+            // все равно восстанавливаем фон чтобы убрать старый курсор.
+            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
+        }
+        first_draw=false;
+        for(int dy=0;dy<CURS_H;dy++){
+            for(int dx=0;dx<CURS_W;dx++){
+                if(cursor_inside(dx,dy))
+                    gop_put_pixel_front((uint32_t)(x+dx), (uint32_t)(y+dy),
+                                        cursor_pixel(dx,dy));
+            }
+        }
+        old_x=x; old_y=y;
+        return;
+    }
     if(!first_draw){
         restore_bg(old_x, old_y);
     }
@@ -190,15 +242,9 @@ static void draw_cursor(int32_t x,int32_t y){
     first_draw=false;
     for(int dy=0;dy<CURS_H;dy++){
         for(int dx=0;dx<CURS_W;dx++){
-            bool inside = false;
-            if(dy==0 && dx<8) inside=true;
-            else if(dy<8 && dx<=dy) inside=true;
-            else if(dy>=8 && dy<10 && dx<3) inside=true;
-            if(inside){
-                // рамка
-                bool border = (dx==0 || dy==0 || dx==dy || (dy>=8 && (dx==0||dx==2)));
-                uint32_t c = border ? cursor_border : cursor_color;
-                gop_put_pixel((uint32_t)(x+dx), (uint32_t)(y+dy), c);
+            if(cursor_inside(dx,dy)){
+                gop_put_pixel((uint32_t)(x+dx), (uint32_t)(y+dy),
+                              cursor_pixel(dx,dy));
             }
         }
     }
@@ -248,8 +294,30 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy){
 }
 
 static void refresh_mouse_ui(void){
+    // Вызывается под cli из mouse_handle_relative (IRQ/poll).
+    // Во время пакетного рисования сцены курсор не трогаем:
+    // mouse_end дорисует его в новой позиции одним махом.
     if(framebuffer_update_depth) return;
-    if(gop_is_available() && !first_draw) restore_bg(old_x, old_y);
+    if(!gop_is_available()){
+        draw_cursor(state.x, state.y);
+        return;
+    }
+    if(gop_has_backbuffer()){
+        // Стираем старый курсор блитом сцены, затем оверлей (в backbuffer
+        // + present) и новый курсор поверх. Без промежуточных clear'ов -
+        // поэтому движения мыши больше не мигают.
+        if(!first_draw)
+            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
+        first_draw=true;
+        if(debug_overlay_enabled){
+            gop_begin_batch();
+            draw_debug_overlay();
+            gop_end_batch();
+        }
+        draw_cursor(state.x, state.y);
+        return;
+    }
+    if(!first_draw) restore_bg(old_x, old_y);
     first_draw=true;
     if(debug_overlay_enabled) draw_debug_overlay();
     draw_cursor(state.x, state.y);

@@ -1,10 +1,20 @@
 #include "gop.h"
 #include "vga.h"
 #include "../../lib/string.h"
+#include "../../mm/pmm.h"
 #include <stdint.h>
 #include <stddef.h>
 
 static struct gop_state gop = {0};
+
+static uint32_t *backbuffer = 0;
+static uint64_t backbuffer_phys = 0;
+static uint64_t backbuffer_pages = 0;
+static uint32_t backbuffer_width = 0;
+static uint32_t backbuffer_height = 0;
+static uint32_t batch_depth = 0;
+static bool dirty_valid = false;
+static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 static uint32_t cur_x=12, cur_y=12;
 static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
 static enum gop_font_face font_face=GOP_FONT_CLEAN;
@@ -138,6 +148,17 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
     gop.bpp = fb->bpp;
     gop.available = true;
     cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    if(backbuffer
+       && (backbuffer_width!=gop.width || backbuffer_height!=gop.height)){
+        pmm_free_contiguous(backbuffer_phys, backbuffer_pages);
+        backbuffer=0;
+        backbuffer_phys=0;
+        backbuffer_pages=0;
+        backbuffer_width=0;
+        backbuffer_height=0;
+        dirty_valid=false;
+        batch_depth=0;
+    }
 }
 
 void gop_init_from_multiboot(void *mbi){
@@ -191,63 +212,7 @@ const char *gop_get_protocol_name(void){
 void gop_set_font_face(enum gop_font_face face){ font_face=face; }
 enum gop_font_face gop_get_font_face(void){ return font_face; }
 
-static void gop_scroll(void){
-    if(!gop.available || !gop.addr) return;
-    const uint32_t line_h = 10;
-    if(gop.height <= line_h) { gop_clear(bg); return; }
-    if(gop.bpp==24){
-        uint8_t *base=(uint8_t*)gop.addr;
-        uint32_t pitch_bytes=gop.pitch*3;
-        for(uint32_t y=0; y + line_h < gop.height; y++){
-            memcpy(base + y*pitch_bytes, base + (y+line_h)*pitch_bytes, pitch_bytes);
-        }
-        for(uint32_t y=gop.height-line_h; y<gop.height; y++){
-            uint8_t *line=base + y*pitch_bytes;
-            for(uint32_t x=0;x<gop.width;x++){ line[x*3+0]=(uint8_t)(bg&0xFF); line[x*3+1]=(uint8_t)((bg>>8)&0xFF); line[x*3+2]=(uint8_t)((bg>>16)&0xFF); }
-        }
-    } else if(gop.bpp==16){
-        uint16_t *base16=(uint16_t*)gop.addr;
-        uint16_t r=(bg>>19)&0x1F; uint16_t g=(bg>>10)&0x3F; uint16_t b=(bg>>3)&0x1F; uint16_t v=(r<<11)|(g<<5)|b;
-        for(uint32_t y=0; y+line_h<gop.height; y++) memcpy(&base16[y*gop.pitch], &base16[(y+line_h)*gop.pitch], gop.pitch*sizeof(uint16_t));
-        for(uint32_t y=gop.height-line_h; y<gop.height; y++) for(uint32_t x=0;x<gop.width;x++) base16[y*gop.pitch+x]=v;
-    } else {
-        for(uint32_t y=0; y + line_h < gop.height; y++){
-            memcpy(&gop.addr[y * gop.pitch], &gop.addr[(y + line_h) * gop.pitch], gop.pitch * sizeof(uint32_t));
-        }
-        for(uint32_t y = gop.height - line_h; y < gop.height; y++){
-            for(uint32_t x=0; x < gop.pitch; x++) gop.addr[y * gop.pitch + x] = bg;
-        }
-    }
-    if(cur_y >= line_h) cur_y -= line_h;
-    else cur_y = 12;
-}
-
-static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c){
-    if(!gop.available || !gop.addr) return;
-    if(x>=gop.width || y>=gop.height) return;
-    if(gop.bpp==24){
-        // 24bpp BGR (little endian): byte0 Blue, byte1 Green, byte2 Red
-        uint8_t *base = (uint8_t*)gop.addr;
-        uint32_t pitch_bytes = gop.pitch * 3;
-        uint8_t *pixel = base + y * pitch_bytes + x * 3;
-        pixel[0] = (uint8_t)(c & 0xFF);
-        pixel[1] = (uint8_t)((c >> 8) & 0xFF);
-        pixel[2] = (uint8_t)((c >> 16) & 0xFF);
-        return;
-    }
-    if(gop.bpp==16){
-        uint16_t r = (c >> 19) & 0x1F;
-        uint16_t g = (c >> 10) & 0x3F;
-        uint16_t b = (c >> 3) & 0x1F;
-        uint16_t v = (r << 11) | (g << 5) | b;
-        uint16_t *base16 = (uint16_t*)gop.addr;
-        base16[y * gop.pitch + x] = v;
-        return;
-    }
-    gop.addr[y*gop.pitch + x]=c;
-}
-
-uint32_t gop_get_pixel(uint32_t x, uint32_t y){
+static uint32_t front_read_32(uint32_t x, uint32_t y){
     if(!gop.available || !gop.addr || x>=gop.width || y>=gop.height) return 0;
     if(gop.bpp==24){
         uint8_t *base = (uint8_t*)gop.addr;
@@ -259,20 +224,283 @@ uint32_t gop_get_pixel(uint32_t x, uint32_t y){
         uint16_t *base16 = (uint16_t*)gop.addr;
         uint16_t v = base16[y * gop.pitch + x];
         uint32_t r = (v >> 11) & 0x1F;
-        uint32_t g = (v >> 5) & 0x3F;
+        uint32_t gg = (v >> 5) & 0x3F;
         uint32_t b = v & 0x1F;
         r = (r << 3) | (r >> 2);
-        g = (g << 2) | (g >> 4);
+        gg = (gg << 2) | (gg >> 4);
         b = (b << 3) | (b >> 2);
-        return (r << 16) | (g << 8) | b;
+        return (r << 16) | (gg << 8) | b;
     }
     return gop.addr[y*gop.pitch + x];
 }
 
-void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color){ put_pixel(x, y, color); }
+static void front_write_32(uint32_t x, uint32_t y, uint32_t c){
+    if(!gop.available || !gop.addr) return;
+    if(x>=gop.width || y>=gop.height) return;
+    if(gop.bpp==24){
+        uint8_t *base = (uint8_t*)gop.addr;
+        uint32_t pitch_bytes = gop.pitch * 3;
+        uint8_t *pixel = base + y * pitch_bytes + x * 3;
+        pixel[0] = (uint8_t)(c & 0xFF);
+        pixel[1] = (uint8_t)((c >> 8) & 0xFF);
+        pixel[2] = (uint8_t)((c >> 16) & 0xFF);
+        return;
+    }
+    if(gop.bpp==16){
+        uint16_t r = (c >> 19) & 0x1F;
+        uint16_t gg = (c >> 10) & 0x3F;
+        uint16_t b = (c >> 3) & 0x1F;
+        uint16_t v = (r << 11) | (gg << 5) | b;
+        uint16_t *base16 = (uint16_t*)gop.addr;
+        base16[y * gop.pitch + x] = v;
+        return;
+    }
+    gop.addr[y*gop.pitch + x]=c;
+}
+
+static bool ensure_backbuffer(void){
+    if(backbuffer) return true;
+    if(!gop.available || !gop.addr || !gop.width || !gop.height) return false;
+    if(!pmm_is_ready()) return false;
+    uint64_t pixels = (uint64_t)gop.width * (uint64_t)gop.height;
+    if(!pixels || pixels > (64ULL*1024ULL*1024ULL)) return false;
+    uint64_t bytes = pixels * 4ULL;
+    uint64_t pages = (bytes + 4095ULL) / 4096ULL;
+    if(!pages || pages > 0x100000ULL) return false;
+    uint64_t phys = pmm_allocate_contiguous(pages);
+    if(!phys) return false;
+    uint32_t *virt = (uint32_t*)pmm_physical_to_virtual(phys);
+    for(uint32_t y=0; y<gop.height; y++){
+        for(uint32_t x=0; x<gop.width; x++){
+            virt[(uint64_t)y * gop.width + x] = front_read_32(x, y);
+        }
+    }
+    backbuffer = virt;
+    backbuffer_phys = phys;
+    backbuffer_pages = pages;
+    backbuffer_width = gop.width;
+    backbuffer_height = gop.height;
+    dirty_valid = false;
+    return true;
+}
+
+static void dirty_expand(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    if(!backbuffer || !w || !h) return;
+    if(x>=gop.width || y>=gop.height) return;
+    uint32_t x1 = x + w;
+    uint32_t y1 = y + h;
+    if(x1 > gop.width) x1 = gop.width;
+    if(y1 > gop.height) y1 = gop.height;
+    if(x1<=x || y1<=y) return;
+    if(!dirty_valid){
+        dirty_x0=x; dirty_y0=y; dirty_x1=x1; dirty_y1=y1;
+        dirty_valid=true;
+        return;
+    }
+    if(x<dirty_x0) dirty_x0=x;
+    if(y<dirty_y0) dirty_y0=y;
+    if(x1>dirty_x1) dirty_x1=x1;
+    if(y1>dirty_y1) dirty_y1=y1;
+}
+
+static inline void maybe_present(void){
+    if(batch_depth==0) gop_present();
+}
+
+void gop_begin_batch(void){
+    batch_depth++;
+}
+
+void gop_end_batch(void){
+    if(batch_depth){
+        batch_depth--;
+        if(batch_depth==0) gop_present();
+    }
+}
+
+bool gop_has_backbuffer(void){ return backbuffer!=0; }
+
+void gop_present(void){
+    if(!gop.available || !gop.addr || !backbuffer) return;
+    if(!dirty_valid) return;
+    if(dirty_x0>=gop.width || dirty_y0>=gop.height){
+        dirty_valid=false;
+        return;
+    }
+    uint32_t x0=dirty_x0, y0=dirty_y0, x1=dirty_x1, y1=dirty_y1;
+    if(x1>gop.width) x1=gop.width;
+    if(y1>gop.height) y1=gop.height;
+    if(x0>=x1 || y0>=y1){ dirty_valid=false; return; }
+    dirty_valid=false;
+    uint32_t span = x1 - x0;
+    if(gop.bpp==24){
+        uint8_t *base = (uint8_t*)gop.addr;
+        uint32_t pitch_bytes = gop.pitch * 3;
+        for(uint32_t y=y0; y<y1; y++){
+            uint8_t *dst = base + y*pitch_bytes + x0*3;
+            uint32_t *src = &backbuffer[(uint64_t)y * backbuffer_width + x0];
+            for(uint32_t i=0;i<span;i++){
+                uint32_t c = src[i];
+                dst[i*3+0]=(uint8_t)(c&0xFF);
+                dst[i*3+1]=(uint8_t)((c>>8)&0xFF);
+                dst[i*3+2]=(uint8_t)((c>>16)&0xFF);
+            }
+        }
+        return;
+    }
+    if(gop.bpp==16){
+        uint16_t *base16=(uint16_t*)gop.addr;
+        for(uint32_t y=y0; y<y1; y++){
+            uint16_t *dst = &base16[(uint64_t)y * gop.pitch + x0];
+            uint32_t *src = &backbuffer[(uint64_t)y * backbuffer_width + x0];
+            for(uint32_t i=0;i<span;i++){
+                uint32_t c = src[i];
+                uint16_t r=(c>>19)&0x1F, gg=(c>>10)&0x3F, b=(c>>3)&0x1F;
+                dst[i]=(r<<11)|(gg<<5)|b;
+            }
+        }
+        return;
+    }
+    for(uint32_t y=y0; y<y1; y++){
+        memcpy(&gop.addr[(uint64_t)y * gop.pitch + x0],
+               &backbuffer[(uint64_t)y * backbuffer_width + x0],
+               (uint64_t)span * sizeof(uint32_t));
+    }
+}
+
+
+void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    if(!gop.available || !gop.addr || !backbuffer || !w || !h) return;
+    if(x>=gop.width || y>=gop.height) return;
+    if(x+w>gop.width) w=gop.width-x;
+    if(y+h>gop.height) h=gop.height-y;
+    if(!w || !h) return;
+    if(gop.bpp==24){
+        uint8_t *base=(uint8_t*)gop.addr;
+        uint32_t pitch_bytes=gop.pitch*3;
+        for(uint32_t row=0;row<h;row++){
+            uint8_t *dst=base+(uint64_t)(y+row)*pitch_bytes+x*3;
+            uint32_t *src=&backbuffer[(uint64_t)(y+row)*backbuffer_width+x];
+            for(uint32_t i=0;i<w;i++){
+                uint32_t c=src[i];
+                dst[i*3+0]=(uint8_t)(c&0xFF);
+                dst[i*3+1]=(uint8_t)((c>>8)&0xFF);
+                dst[i*3+2]=(uint8_t)((c>>16)&0xFF);
+            }
+        }
+        return;
+    }
+    if(gop.bpp==16){
+        uint16_t *base16=(uint16_t*)gop.addr;
+        for(uint32_t row=0;row<h;row++){
+            uint16_t *dst=&base16[(uint64_t)(y+row)*gop.pitch+x];
+            uint32_t *src=&backbuffer[(uint64_t)(y+row)*backbuffer_width+x];
+            for(uint32_t i=0;i<w;i++){
+                uint32_t c=src[i];
+                uint16_t r=(c>>19)&0x1F, gg=(c>>10)&0x3F, b=(c>>3)&0x1F;
+                dst[i]=(r<<11)|(gg<<5)|b;
+            }
+        }
+        return;
+    }
+    for(uint32_t row=0;row<h;row++){
+        memcpy(&gop.addr[(uint64_t)(y+row)*gop.pitch+x],
+               &backbuffer[(uint64_t)(y+row)*backbuffer_width+x],
+               (uint64_t)w*sizeof(uint32_t));
+    }
+}
+
+// Курсор всегда поверх сцены: пишет строго во front, backbuffer не пачкает.
+void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
+    front_write_32(x, y, color);
+}
+
+static void gop_scroll(void){
+    if(!gop.available || !gop.addr) return;
+    const uint32_t line_h = 10;
+    if(gop.height <= line_h) { gop_clear(bg); return; }
+    if(ensure_backbuffer()){
+        for(uint32_t y=0; y + line_h < gop.height; y++){
+            memmove(&backbuffer[(uint64_t)y * backbuffer_width],
+                    &backbuffer[(uint64_t)(y + line_h) * backbuffer_width],
+                    (uint64_t)gop.width * sizeof(uint32_t));
+        }
+        for(uint32_t y=gop.height-line_h; y<gop.height; y++){
+            for(uint32_t x=0; x<gop.width; x++)
+                backbuffer[(uint64_t)y * backbuffer_width + x] = bg;
+        }
+        dirty_expand(0, 0, gop.width, gop.height);
+        maybe_present();
+    } else if(gop.bpp==24){
+        uint8_t *base=(uint8_t*)gop.addr;
+        uint32_t pitch_bytes=gop.pitch*3;
+        for(uint32_t y=0; y + line_h < gop.height; y++){
+            memmove(base + y*pitch_bytes, base + (y+line_h)*pitch_bytes, pitch_bytes);
+        }
+        for(uint32_t y=gop.height-line_h; y<gop.height; y++){
+            uint8_t *line=base + y*pitch_bytes;
+            for(uint32_t x=0;x<gop.width;x++){ line[x*3+0]=(uint8_t)(bg&0xFF); line[x*3+1]=(uint8_t)((bg>>8)&0xFF); line[x*3+2]=(uint8_t)((bg>>16)&0xFF); }
+        }
+    } else if(gop.bpp==16){
+        uint16_t *base16=(uint16_t*)gop.addr;
+        uint16_t r=(bg>>19)&0x1F; uint16_t g=(bg>>10)&0x3F; uint16_t b=(bg>>3)&0x1F; uint16_t v=(r<<11)|(g<<5)|b;
+        for(uint32_t y=0; y+line_h<gop.height; y++) memmove(&base16[y*gop.pitch], &base16[(y+line_h)*gop.pitch], gop.pitch*sizeof(uint16_t));
+        for(uint32_t y=gop.height-line_h; y<gop.height; y++) for(uint32_t x=0;x<gop.width;x++) base16[y*gop.pitch+x]=v;
+    } else {
+        for(uint32_t y=0; y + line_h < gop.height; y++){
+            memmove(&gop.addr[y * gop.pitch], &gop.addr[(y + line_h) * gop.pitch], gop.pitch * sizeof(uint32_t));
+        }
+        for(uint32_t y = gop.height - line_h; y < gop.height; y++){
+            for(uint32_t x=0; x < gop.pitch; x++) gop.addr[y * gop.pitch + x] = bg;
+        }
+    }
+    if(cur_y >= line_h) cur_y -= line_h;
+    else cur_y = 12;
+}
+
+// Сценовый пиксель: в backbuffer если активен, иначе напрямую во front.
+// Dirty-отметку делает вызывающий высокоуровневый примитив.
+static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c){
+    if(!gop.available || !gop.addr) return;
+    if(x>=gop.width || y>=gop.height) return;
+    if(backbuffer){
+        backbuffer[(uint64_t)y * backbuffer_width + x]=c;
+        return;
+    }
+    front_write_32(x, y, c);
+}
+
+uint32_t gop_get_pixel(uint32_t x, uint32_t y){
+    if(!gop.available || !gop.addr || x>=gop.width || y>=gop.height) return 0;
+    if(backbuffer)
+        return backbuffer[(uint64_t)y * backbuffer_width + x];
+    return front_read_32(x, y);
+}
+
+void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color){
+    if(!gop.available || !gop.addr) return;
+    if(x>=gop.width || y>=gop.height) return;
+    if(ensure_backbuffer()){
+        backbuffer[(uint64_t)y * backbuffer_width + x]=color;
+        dirty_expand(x, y, 1, 1);
+        maybe_present();
+        return;
+    }
+    front_write_32(x, y, color);
+}
 
 void gop_clear(uint32_t color){
     if(!gop.available){ vga_clear(); return; }
+    if(ensure_backbuffer()){
+        for(uint32_t y=0;y<gop.height;y++){
+            uint32_t *line=&backbuffer[(uint64_t)y*backbuffer_width];
+            for(uint32_t x=0;x<gop.width;x++) line[x]=color;
+        }
+        dirty_expand(0, 0, gop.width, gop.height);
+        maybe_present();
+        cur_x=12; cur_y=12; bg=color;
+        return;
+    }
     if(gop.bpp==24){
         uint8_t *base = (uint8_t*)gop.addr;
         uint32_t pitch_bytes = gop.pitch * 3;
@@ -332,16 +560,20 @@ static void draw_char_sized(char c, uint32_t x, uint32_t y, uint32_t size,
 
 void gop_putc(char c){
     if(!gop.available){ vga_putc(c); return; }
+    (void)ensure_backbuffer();
     if(c=='\b'){
         if(cur_x>12) cur_x-=8;
         draw_char(' ',cur_x,cur_y);
+        if(backbuffer){ dirty_expand(cur_x, cur_y, 8, 8); maybe_present(); }
         return;
     }
     if(c=='\n'){ cur_x=12; cur_y+=10; if(cur_y+8 >= gop.height) gop_scroll(); return; }
     if(c=='\r'){ cur_x=12; return; }
     if(cur_x+8 >= gop.width){ cur_x=12; cur_y+=10; if(cur_y+8 >= gop.height) gop_scroll(); }
     if(cur_y+8 >= gop.height) gop_scroll();
-    draw_char(c,cur_x,cur_y); cur_x+=8;
+    draw_char(c,cur_x,cur_y);
+    if(backbuffer){ dirty_expand(cur_x, cur_y, 8, 8); maybe_present(); }
+    cur_x+=8;
 }
 void gop_write(const char *s){ while(*s) gop_putc(*s++); }
 void gop_write_hex(uint64_t v){ const char*h="0123456789ABCDEF"; gop_write("0x"); for(int i=60;i>=0;i-=4) gop_putc(h[(v>>i)&0xF]); }
@@ -377,6 +609,7 @@ bool gop_console_configure(uint32_t x, uint32_t y,
         user_console.cursor_column=user_console.columns-1;
     if(user_console.cursor_row>=user_console.rows)
         user_console.cursor_row=user_console.rows-1;
+    gop_begin_batch();
     gop_draw_rect(x,y,width,height,background);
     uint32_t saved_fg=fg,saved_bg=bg;
     fg=foreground;
@@ -390,6 +623,8 @@ bool gop_console_configure(uint32_t x, uint32_t y,
     }
     fg=saved_fg;
     bg=saved_bg;
+    if(backbuffer){ dirty_expand(x, y, width, height); }
+    gop_end_batch();
     return true;
 }
 
@@ -408,6 +643,7 @@ void gop_console_disable(void){ user_console.active=false; }
 
 void gop_console_putc(char character){
     if(!user_console.active){ gop_putc(character); return; }
+    (void)ensure_backbuffer();
     if(character=='\b'){
         if(user_console.cursor_column){
             user_console.cursor_column--;
@@ -416,10 +652,12 @@ void gop_console_putc(char character){
             uint32_t saved_fg=fg,saved_bg=bg;
             fg=user_console.foreground;
             bg=user_console.background;
-            draw_char(' ',user_console.x+user_console.cursor_column*8,
-                       user_console.y+user_console.cursor_row*10);
+            uint32_t cx=user_console.x+user_console.cursor_column*8;
+            uint32_t cy=user_console.y+user_console.cursor_row*10;
+            draw_char(' ',cx,cy);
             fg=saved_fg;
             bg=saved_bg;
+            if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
         }
         return;
     }
@@ -439,10 +677,12 @@ void gop_console_putc(char character){
         uint32_t saved_fg=fg,saved_bg=bg;
         fg=user_console.foreground;
         bg=user_console.background;
-        draw_char(character,user_console.x+user_console.cursor_column*8,
-                   user_console.y+user_console.cursor_row*10);
+        uint32_t cx=user_console.x+user_console.cursor_column*8;
+        uint32_t cy=user_console.y+user_console.cursor_row*10;
+        draw_char(character,cx,cy);
         fg=saved_fg;
         bg=saved_bg;
+        if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
         user_console.cursor_column++;
     }
 scroll:
@@ -458,33 +698,64 @@ scroll:
     }
 }
 void gop_draw_text_at(uint32_t x, uint32_t y, const char *text, uint32_t text_fg, uint32_t text_bg){
-    if(!gop.available) return;
+    if(!gop.available || !text) return;
+    (void)ensure_backbuffer();
     uint32_t saved_fg=fg, saved_bg=bg;
+    uint32_t start_x=x;
     fg=text_fg; bg=text_bg;
     while(*text){
         if(*text=='\n'){ x=12; y+=10; }
-        else { draw_char(*text, x, y); x+=8; }
+        else { draw_char(*text, x, y); if(backbuffer) dirty_expand(x, y, 8, 8); x+=8; }
         text++;
     }
     fg=saved_fg; bg=saved_bg;
+    if(backbuffer){
+        if(x>start_x) dirty_expand(start_x, y, x-start_x, 8);
+        maybe_present();
+    }
 }
 void gop_draw_text_sized_at(uint32_t x, uint32_t y, const char *text,
                             uint32_t text_fg, uint32_t text_bg, uint32_t size){
     if(!gop.available || !text || size==0) return;
+    (void)ensure_backbuffer();
     uint32_t initial_x=x;
+    uint32_t min_x=x, max_x=x, min_y=y, max_y=y+size;
     while(*text){
         if(*text=='\n'){
             x=initial_x;
             y+=size+3;
+            if(y+size>max_y) max_y=y+size;
         } else {
             draw_char_sized(*text, x, y, size, text_fg, text_bg);
             x+=size;
+            if(x>max_x) max_x=x;
+            if(y<min_y) min_y=y;
+            if(y+size>max_y) max_y=y+size;
         }
         text++;
     }
+    if(backbuffer && max_x>min_x && max_y>min_y){
+        dirty_expand(min_x, min_y, max_x-min_x, max_y-min_y);
+        maybe_present();
+    }
 }
 void gop_draw_rect(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t c){
-    for(uint32_t dy=0;dy<h;dy++) for(uint32_t dx=0;dx<w;dx++) put_pixel(x+dx,y+dy,c);
+    if(!gop.available || !gop.addr || !w || !h) return;
+    if(x>=gop.width || y>=gop.height) return;
+    uint32_t cw=w, ch=h;
+    if(x+cw>gop.width) cw=gop.width-x;
+    if(y+ch>gop.height) ch=gop.height-y;
+    if(!cw || !ch) return;
+    if(ensure_backbuffer()){
+        for(uint32_t dy=0;dy<ch;dy++){
+            uint32_t *line=&backbuffer[(uint64_t)(y+dy)*backbuffer_width+x];
+            for(uint32_t dx=0;dx<cw;dx++) line[dx]=c;
+        }
+        dirty_expand(x, y, cw, ch);
+        maybe_present();
+        return;
+    }
+    for(uint32_t dy=0;dy<ch;dy++) for(uint32_t dx=0;dx<cw;dx++) front_write_32(x+dx,y+dy,c);
 }
 void gop_scroll_rect_up(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                         uint32_t amount, uint32_t fill_color){
@@ -495,22 +766,36 @@ void gop_scroll_rect_up(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
         gop_draw_rect(x,y,w,h,fill_color);
         return;
     }
+    if(ensure_backbuffer()){
+        for(uint32_t row=0; row+amount<h; row++){
+            memmove(&backbuffer[(uint64_t)(y+row)*backbuffer_width+x],
+                    &backbuffer[(uint64_t)(y+row+amount)*backbuffer_width+x],
+                    (uint64_t)w*sizeof(uint32_t));
+        }
+        for(uint32_t row=h-amount; row<h; row++){
+            uint32_t *line=&backbuffer[(uint64_t)(y+row)*backbuffer_width+x];
+            for(uint32_t i=0;i<w;i++) line[i]=fill_color;
+        }
+        dirty_expand(x, y, w, h);
+        maybe_present();
+        return;
+    }
     if(gop.bpp==24){
         uint8_t *base=(uint8_t*)gop.addr;
         uint32_t pitch_bytes=gop.pitch*3;
         for(uint32_t row=0; row+amount<h; row++){
             uint8_t *dst=base + (y+row)*pitch_bytes + x*3;
             uint8_t *src=base + (y+row+amount)*pitch_bytes + x*3;
-            memcpy(dst, src, w*3);
+            memmove(dst, src, w*3);
         }
     } else if(gop.bpp==16){
         uint16_t *base16=(uint16_t*)gop.addr;
         for(uint32_t row=0; row+amount<h; row++){
-            memcpy(&base16[(y+row)*gop.pitch+x], &base16[(y+row+amount)*gop.pitch+x], w*sizeof(uint16_t));
+            memmove(&base16[(y+row)*gop.pitch+x], &base16[(y+row+amount)*gop.pitch+x], w*sizeof(uint16_t));
         }
     } else {
         for(uint32_t row=0; row+amount<h; row++){
-            memcpy(&gop.addr[(y+row)*gop.pitch+x],
+            memmove(&gop.addr[(y+row)*gop.pitch+x],
                    &gop.addr[(y+row+amount)*gop.pitch+x],
                    w*sizeof(uint32_t));
         }
@@ -518,7 +803,26 @@ void gop_scroll_rect_up(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
     gop_draw_rect(x, y+h-amount, w, amount, fill_color);
 }
 void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){
-    int dx = (x1>x0)?x1-x0:x0-x1, dy=(y1>y0)?y1-y0:y0-y1;
+    if(!gop.available || !gop.addr) return;
+    (void)ensure_backbuffer();
+    uint32_t min_x=x0<x1?x0:x1, max_x=x0<x1?x1:x0;
+    uint32_t min_y=y0<y1?y0:y1, max_y=y0<y1?y1:y0;
+    int dx = (x1>x0)?(int)(x1-x0):(int)(x0-x1);
+    int dy=(y1>y0)?(int)(y1-y0):(int)(y0-y1);
     int sx=(x0<x1)?1:-1, sy=(y0<y1)?1:-1; int err=dx-dy;
-    while(1){ put_pixel(x0,y0,c); if(x0==x1&&y0==y1) break; int e2=2*err; if(e2>-dy){err-=dy;x0+=sx;} if(e2<dx){err+=dx;y0+=sy;}}
+    uint32_t guard=0;
+    while(1){
+        put_pixel(x0,y0,c);
+        if(x0==x1&&y0==y1) break;
+        int e2=2*err; if(e2>-dy){err-=dy;x0+=sx;} if(e2<dx){err+=dx;y0+=sy;}
+        if(++guard>(gop.width+gop.height+16)) break;
+    }
+    if(backbuffer){
+        // +1 чтобы покрыть конечные пиксели.
+        uint32_t w=(max_x>=min_x)?(max_x-min_x+1):1;
+        uint32_t h=(max_y>=min_y)?(max_y-min_y+1):1;
+        dirty_expand(min_x, min_y, w, h);
+        maybe_present();
+    }
+}
 }
