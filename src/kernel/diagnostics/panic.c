@@ -56,14 +56,10 @@ static void panic_backtrace(void){
     uint64_t rsp;
     __asm__ volatile("mov %%rsp, %0" : "=r"(rsp));
     klogf(KLOG_ERROR, "rsp=0x%016llx backtrace:", rsp);
-    // Dump 16 stack words; mark canonical kernel-text candidates.
-    // Faulty RIP like 0x8000 usually comes from a corrupted ret slot,
-    // so the dump shows who overwrote it.
+
     for(int i=0;i<16;i++){
         uint64_t addr = rsp + (uint64_t)i*8ULL;
         uint64_t val = 0;
-        // Avoid nested fault if stack itself is unmapped: probe via
-        // simple canonical-range check on the stack address.
         if(addr < 0xffff800000000000ULL) break;
         __asm__ volatile("" ::: "memory");
         val = *(volatile uint64_t*)(uintptr_t)addr;
