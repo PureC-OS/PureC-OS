@@ -5,6 +5,7 @@
 #include "syscall.h"
 #include "audio.h"
 #include "display.h"
+#include "../drivers/display/gop.h"
 #include "../drivers/input/keyboard.h"
 #include "../drivers/mouse/ps2_mouse.h"
 #include "../drivers/mouse/usb_mouse.h"
@@ -307,9 +308,13 @@ static void wait_for_managed_repaint(void){
 }
 
 static void redraw_managed_scene(uint32_t excluded_pid){
+    mouse_begin_framebuffer_update();
+    gop_begin_compose();
     redraw_scene();
     window_manager_request_repaint(excluded_pid);
     wait_for_managed_repaint();
+    gop_end_compose();
+    mouse_end_framebuffer_update();
 }
 
 static bool service_desktop_redraw(void){

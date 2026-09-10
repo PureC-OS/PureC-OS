@@ -1,6 +1,7 @@
 #include "panic.h"
 #include "boot_diag.h"
 #include "klog.h"
+#include "../../drivers/display/gop.h"
 #include "../process/scheduler.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -29,6 +30,7 @@ static void panic_begin(void){
     __asm__ volatile("cli");
     if(panic_active) panic_halt();
     panic_active = true;
+    gop_cancel_compose();
     klog_set_screen_enabled(true);
     klog_clear();
     klog(KLOG_ERROR, "============================================================");

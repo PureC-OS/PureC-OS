@@ -54,6 +54,9 @@ void gop_scroll_rect_up(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
 void gop_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color);
 void gop_begin_batch(void);
 void gop_end_batch(void);
+void gop_begin_compose(void);
+void gop_end_compose(void);
+void gop_cancel_compose(void);
 void gop_present(void);
 bool gop_has_backbuffer(void);
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h);

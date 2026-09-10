@@ -13,6 +13,7 @@ static uint64_t backbuffer_pages = 0;
 static uint32_t backbuffer_width = 0;
 static uint32_t backbuffer_height = 0;
 static uint32_t batch_depth = 0;
+static uint32_t compose_depth = 0;
 static bool dirty_valid = false;
 static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 static uint32_t cur_x=12, cur_y=12;
@@ -158,6 +159,7 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
         backbuffer_height=0;
         dirty_valid=false;
         batch_depth=0;
+        compose_depth=0;
     }
 }
 
@@ -304,7 +306,7 @@ static void dirty_expand(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
 }
 
 static inline void maybe_present(void){
-    if(batch_depth==0) gop_present();
+    if(batch_depth==0 && compose_depth==0) gop_present();
 }
 
 void gop_begin_batch(void){
@@ -314,8 +316,27 @@ void gop_begin_batch(void){
 void gop_end_batch(void){
     if(batch_depth){
         batch_depth--;
-        if(batch_depth==0) gop_present();
+        if(batch_depth==0 && compose_depth==0) gop_present();
     }
+}
+
+void gop_begin_compose(void){
+    compose_depth++;
+}
+
+void gop_end_compose(void){
+    if(compose_depth){
+        compose_depth--;
+        if(compose_depth==0 && batch_depth==0) gop_present();
+    }
+}
+
+// Аварийный сброс для panic: иначе экран паники не пробьется через
+// подавление present'ов. Сбрасываем и batch - пара outer end после
+// этого безвредна (gop_end_batch терпит ноль).
+void gop_cancel_compose(void){
+    compose_depth=0;
+    batch_depth=0;
 }
 
 bool gop_has_backbuffer(void){ return backbuffer!=0; }
