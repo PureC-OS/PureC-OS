@@ -3,18 +3,25 @@
 <img src="/docs/logo/purec-01-catppuccin-dark.svg" alt="PureC OS Logo" width="256" height="256" style="display: block; margin: 0 auto;" />
 
 
-PureC OS - это простая 64-битная операционная система, написанная на C и ассемблере. Она включает в себя 
+PureC OS - это простая 64-битная операционная система, написанная на C и ассемблере x86_64 И немного C++20. Она включает в себя 
 - UserSpace
 - Интернет поддержка только в VirtualBox Инетрфейс только Intel Pro 100 82540EM
 - Файлловую систему FAT32 и VFS и EXT2 
 - Реализованы драйверы экрана, клавиатуры и диска
 - Реализованы драйверы USB
 - User Программы В Ring 3
+- У purec Syscall ~100
+- Начали Портировать TCC в PureC OS
 
----
+--- 
 
-## На протяжении 2 дней мы с OpenCode портируем компилятор TCC в PureC OS
-
+## Toolschain PureC OS
+- gcc (GCC) 16.2.1 20260810
+- g++ 16.2.1 20260810
+- nasm 3.02 compiled on Jun 30 2026
+- Limine 12.8.0
+- VirtualBox Version 7.2.16 r174877
+- Cross-Compiler x86_64-elf-gcc (GCC) 15.2.0
 
 
 ## Сборка и запуск
