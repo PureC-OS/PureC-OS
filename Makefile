@@ -6,11 +6,13 @@ LIB_DIR := $(BIN_DIR)/lib
 ISO_ROOT := $(BIN_DIR)/iso_root
 ISO_IMAGE := $(BIN_DIR)/purec_limine.iso
 LIMINE_CONFIG := $(ROOT_DIR)/src/boot/limine.conf
+CRYPT_DIR := $(ROOT_DIR)/libxcrypt
+CRYPT_REPO := https://github.com/PureC-OS/libxcrypt.git
 
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit clean help
+.PHONY: all libraries programs kernel crypt-fetch iso hexedit clean help
 
 all: iso
 
@@ -26,9 +28,18 @@ programs: libraries
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
 
-kernel:
+kernel: crypt-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
+	$(MAKE) -C $(CRYPT_DIR) module
+
+# Fetch the password-hashing sources if they are missing (fresh clone of
+# the OS repo does not include the nested libxcrypt checkout).
+crypt-fetch:
+	@if [ ! -f "$(CRYPT_DIR)/src/sha512.c" ]; then \
+		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
+		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
+	fi
 
 iso: kernel programs
 	@set -eu; \
@@ -94,6 +105,8 @@ iso: kernel programs
 	if [ -f "$(ROOT_DIR)/src/demo/screenshot.bmp" ]; then cp "$(ROOT_DIR)/src/demo/screenshot.bmp" "$(ISO_ROOT)/demo/screenshot.bmp"; fi; \
 	if [ -f "$(BIN_DIR)/modules/ext2.elf" ]; then cp "$(BIN_DIR)/modules/ext2.elf" "$(ISO_ROOT)/bin/modules/ext2.elf"; fi; \
 	if [ -f "$(BIN_DIR)/modules/ext2.ko" ]; then cp "$(BIN_DIR)/modules/ext2.ko" "$(ISO_ROOT)/bin/modules/ext2.ko"; fi; \
+	if [ -f "$(BIN_DIR)/modules/crypt.elf" ]; then cp "$(BIN_DIR)/modules/crypt.elf" "$(ISO_ROOT)/bin/modules/crypt.elf"; fi; \
+	if [ -f "$(BIN_DIR)/modules/crypt.ko" ]; then cp "$(BIN_DIR)/modules/crypt.ko" "$(ISO_ROOT)/bin/modules/crypt.ko"; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \
 	if [ -f "$(PROGRAM_DIR)/tcc" ]; then \

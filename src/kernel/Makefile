@@ -7,6 +7,14 @@ TARGET := $(KERNEL_DIR)/kernel-limine.elf
 FALLBACK := $(KERNEL_DIR)/kernel-fallback.elf
 LINKER_SCRIPT := $(ROOT_DIR)/linker-limine.ld
 
+# Password-hashing library (separate libxcrypt repo). Its freestanding
+# sources are compiled straight into the kernel image; the top-level
+# Makefile additionally ships them as a loadable bin/modules/crypt.ko.
+CRYPT_DIR := $(ROOT_DIR)/libxcrypt
+CRYPT_REPO ?= https://github.com/PureC-OS/libxcrypt.git
+CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
+CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
+
 C_SOURCES := \
 	boot/boot.c \
 	kernel/core/kernel.c \
@@ -88,13 +96,21 @@ ASM_SOURCES := \
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPP_OBJECTS := $(CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS)
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(CRYPT_OBJECTS)
 
-.PHONY: all
-all: $(TARGET)
+.PHONY: all crypt-fetch
+all: crypt-fetch $(TARGET)
 	@if [ ! -f $(FALLBACK) ]; then cp $(TARGET) $(FALLBACK); fi
 
--include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d)
+# Fetch libxcrypt on demand so a direct `make -C src/kernel` also works
+# on a fresh checkout without the nested repo.
+crypt-fetch:
+	@if [ ! -f $(CRYPT_DIR)/src/sha512.c ]; then \
+		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
+		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
+	fi
+
+-include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d)
 
 $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -105,6 +121,11 @@ $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
+
+# libxcrypt lives outside src/, hence the explicit rule (same flags).
+$(OBJ_DIR)/libxcrypt/%.o: $(CRYPT_DIR)/src/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.cpp
 	@mkdir -p $(@D)

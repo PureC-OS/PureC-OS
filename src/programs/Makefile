@@ -176,11 +176,11 @@ $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 ifneq ($(TCC_PRESENT),)
-TCC_PATCH_MARK := TARGETOS_PureC
+TCC_PATCH_MARK := TCC_TARGET_PUREC
 $(OBJ_DIR)/tcc/.patched: $(ROOT_DIR)/mk/tcc/purec-target.patch
 	@mkdir -p $(@D)
 	if ! grep -q "$(TCC_PATCH_MARK)" $(ROOT_DIR)/tcc/tccelf.c 2>/dev/null; then \
-		patch -p1 -d $(ROOT_DIR)/tcc < $(ROOT_DIR)/mk/tcc/purec-target.patch; \
+		patch -N --forward -p1 -d $(ROOT_DIR)/tcc < $(ROOT_DIR)/mk/tcc/purec-target.patch; \
 	fi
 	@touch $@
 
