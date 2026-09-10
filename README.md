@@ -12,6 +12,7 @@ PureC OS - это простая 64-битная операционная сис
 - User Программы В Ring 3
 - У purec Syscall ~100
 - Начали Портировать TCC в PureC OS
+- Есть Login Screen и Login Gate (Ring-3) [Это на будущее]
 
 --- 
 
@@ -22,6 +23,7 @@ PureC OS - это простая 64-битная операционная сис
 - Limine 12.8.0
 - VirtualBox Version 7.2.16 r174877
 - Cross-Compiler x86_64-elf-gcc (GCC) 15.2.0
+- GNU Make 4.4.1
 
 
 ## Сборка и запуск
@@ -175,6 +177,14 @@ sudo modprobe vboxdrv
 
 </details>
 
+
+---
+
+# Fix 
+
+В скором времени будет сделан fix Framebuffer и Gop Это будет сделано что бы экран не мирцал при перемещении окон в UserSpace.
+А так же будет сделана миграция UserSpace в Ring 3.
+И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3.
 
 --- 
 
