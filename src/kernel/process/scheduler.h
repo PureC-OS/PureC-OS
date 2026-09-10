@@ -33,6 +33,8 @@ struct thread {
     struct process *process;
     bool user_mode;
     uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
+    // Eager-switched FPU/SSE state (fxsave area, 16-byte aligned).
+    uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
 
 void scheduler_init(void);

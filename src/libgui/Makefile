@@ -24,4 +24,4 @@ $(WIDGET_TARGET): $(WIDGET_OBJECT)
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/libgui/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -mgeneral-regs-only -c $< -o $@
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@

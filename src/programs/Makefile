@@ -44,7 +44,8 @@ GENERAL_SOURCES := \
 	monitor/main.c \
 	disks/main.c \
 	logview/main.c \
-	imgview/main.c
+ 	imgview/main.c \
+ 	fputest/main.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
@@ -70,18 +71,28 @@ TARGETS := \
 	$(PROGRAM_DIR)/monitor \
 	$(PROGRAM_DIR)/disks \
 	$(PROGRAM_DIR)/logview \
-	$(PROGRAM_DIR)/hexedit \
-	$(PROGRAM_DIR)/imgview
+ 	$(PROGRAM_DIR)/hexedit \
+ 	$(PROGRAM_DIR)/imgview \
+ 	$(PROGRAM_DIR)/hello \
+ 	$(PROGRAM_DIR)/fputest
+
+# TCC (TinyCC) port: only when the user-cloned tcc/ tree is present
+# (it is git-ignored). Builds the amalgamated tcc.c with SSE enabled
+# (TCC needs doubles) against the hosted libc.
+TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
+ifneq ($(TCC_PRESENT),)
+TARGETS += $(PROGRAM_DIR)/tcc
+endif
 
 .NOTPARALLEL:
 .PHONY: all hexedit
 all: $(TARGETS)
 hexedit: $(PROGRAM_DIR)/hexedit
 
--include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d)
+-include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
 
-$(GENERAL_OBJECTS): PRIVATE_CFLAGS := -mgeneral-regs-only
-$(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -mgeneral-regs-only -std=c++20 -fno-exceptions -fno-rtti
+$(GENERAL_OBJECTS): PRIVATE_CFLAGS :=
+$(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -std=c++20 -fno-exceptions -fno-rtti
 
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
@@ -159,3 +170,27 @@ $(PROGRAM_DIR)/hexedit: $(GENERAL_CPP_OBJECTS) $(LIBPUREGUI) $(LIBPUREFS) $(LIBP
 $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+ifneq ($(TCC_PRESENT),)
+$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -c $< -o $@
+
+$(PROGRAM_DIR)/tcc: $(OBJ_DIR)/tcc/tcc.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/tcc/tcc.o $(LIBPUREC)
+endif
+
+# Hosted demo: standard main() + crt0 + hosted headers (TCC migration
+# proving ground). Built with the same toolchain, linked against crt0.o.
+$(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)

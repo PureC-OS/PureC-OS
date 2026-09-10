@@ -50,6 +50,8 @@ void *pc_heap_grow(uint64_t size);
 bool pc_file_exists(const char *path);
 int32_t pc_file_open(const char *path);
 int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity);
+int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence);
+int32_t pc_file_stat(const char *path, struct file_stat_info *out);
 int32_t pc_file_close(int32_t descriptor);
 int32_t pc_file_write(const char *path, const void *buffer, uint32_t size);
 int32_t pc_directory_list(const char *path,

@@ -2,6 +2,10 @@
 #include "./fat/include/fat32.h"
 #include "./ext2/include/ext2.h"
 #include "./ext2/include/ext2_debug.h"
+#include "./ext2/include/ext2_dir.h"
+#include "./ext2/include/ext2_inode.h"
+#include "./ext2/include/ext2_block.h"
+#include "./ext2/include/ext2_types.h"
 #include "../lib/string.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../drivers/storage/block_device.h"
@@ -180,6 +184,78 @@ int32_t vfs_close(int32_t descriptor) {
     else if (h->type == VFS_HANDLE_EXT2) r = ext2_close(h->backend_descriptor);
     memset(h, 0, sizeof(*h));
     return r;
+}
+
+int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
+    if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END)
+        return FS_ERROR_INVALID;
+    struct vfs_handle *h = get_handle(descriptor);
+    if (!h) return FS_ERROR_INVALID;
+    if (h->type == VFS_HANDLE_EXT2)
+        return ext2_seek(h->backend_descriptor, offset, whence);
+    if (h->type == VFS_HANDLE_FAT32)
+        return fat32_seek(h->backend_descriptor, offset, whence);
+    if (h->type == VFS_HANDLE_KLOG) {
+        uint64_t total = klog_total_bytes();
+        int64_t base = 0;
+        if (whence == SEEK_CUR) base = (int64_t)h->klog_cursor;
+        else if (whence == SEEK_END) base = (int64_t)total;
+        int64_t target = base + offset;
+        if (target < 0) target = 0;
+        if ((uint64_t)target > total) target = (int64_t)total;
+        h->klog_cursor = (uint64_t)target;
+        return target;
+    }
+    if (h->type != VFS_HANDLE_KERNEL_FILE) return FS_ERROR_INVALID;
+    int64_t base = 0;
+    if (whence == SEEK_CUR) base = (int64_t)h->position;
+    else if (whence == SEEK_END) base = (int64_t)h->size;
+    int64_t target = base + offset;
+    if (target < 0) return FS_ERROR_INVALID;
+    h->position = (uint32_t)(target > 0xFFFFFFFFLL ? 0xFFFFFFFFLL : target);
+    return (int64_t)h->position;
+}
+
+int32_t vfs_stat(const char *path, struct file_stat_info *out) {
+    if (!path || !path[0] || !out) return FS_ERROR_INVALID;
+    const struct kernel_file *kf = find_kernel_file(path);
+    if (kf) {
+        out->size = (uint64_t)strlen(kf->content);
+        out->is_directory = 0;
+        out->reserved = 0;
+        return 0;
+    }
+    if (path_equals(path, "/kernel")) {
+        out->size = 0;
+        out->is_directory = 1;
+        out->reserved = 0;
+        return 0;
+    }
+    if (is_klog_path(path)) {
+        out->size = klog_total_bytes();
+        out->is_directory = 0;
+        out->reserved = 0;
+        return 0;
+    }
+    if (vfs_active_fs == VFS_FS_EXT2) {
+        uint32_t ino;
+        int32_t st = ext2_dir_resolve(path, &ino);
+        if (st < 0) return st;
+        uint8_t ib[256];
+        if (!ext2_inode_read(ino, ib)) return FS_ERROR_IO;
+        out->size = ext2_read_u32(ib + 4);
+        out->is_directory = ((ext2_read_u16(ib) & 0xF000) == EXT2_S_IFDIR) ? 1 : 0;
+        out->reserved = 0;
+        return 0;
+    }
+    uint64_t size = 0;
+    bool is_dir = false;
+    int32_t st = fat32_stat(path, &size, &is_dir);
+    if (st < 0) return st;
+    out->size = size;
+    out->is_directory = is_dir ? 1 : 0;
+    out->reserved = 0;
+    return 0;
 }
 
 int32_t vfs_delete(const char *path) {

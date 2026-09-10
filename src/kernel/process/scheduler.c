@@ -3,6 +3,7 @@
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
+#include "../../arch/x86_64/fpu.h"
 #include "../../mm/vmm.h"
 #include "../../lib/string.h"
 
@@ -25,11 +26,86 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
 
 extern void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp);
 
+static bool kernel_text_address_valid(uint64_t address){
+    // Kernel linked at 0xffffffff80000000 (higher half).
+    // Trampoline / thread entry must live there; 0x8000 etc. = corruption.
+    return address >= 0xffffffff80000000ULL;
+}
+
+static bool thread_stack_valid(const struct thread *thread){
+    if(!thread) return false;
+    if(thread->rsp & 0x7ULL) return false;
+    // Low addresses (0x0, 0x8000, NULL) are always corruption.
+    if(thread->rsp < 0xffff800000000000ULL) return false;
+    uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
+    uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
+    if(thread->rsp >= stack_base+64 && thread->rsp < stack_top) return true;
+    // Idle runs on the boot stack before the first scheduler_start() switch
+    // and keeps that saved boot-stack RSP afterwards (0xffffffff80xxxxxx).
+    // That address is outside threads[0].stack but is a legitimate kernel
+    // stack, so allow it for id==0 only. All other threads must stay inside
+    // their own stack.
+    if(thread->id==0) return true;
+    return false;
+}
+
 static bool thread_stack_return_valid(uint64_t rsp){
     if(!rsp) return false;
+    // RSP must be readable kernel memory; probe via canonical high-half check
+    // done by caller with thread_stack_valid(). Here only check return slot.
     uint64_t *slot=(uint64_t*)rsp;
     uint64_t return_address=slot[6];
-    return return_address!=0;
+    // Zero = never initialized; low address like 0x8000 = stack corruption
+    // (e.g. interrupt frame popped from wrong stack after bad switch).
+    if(!kernel_text_address_valid(return_address)) return false;
+    return true;
+}
+
+static void write_hex_digits(char *out, uint64_t value, int digits){
+    static const char hexdigits[]="0123456789abcdef";
+    for(int i=digits-1;i>=0;i--){
+        out[digits-1-i]=hexdigits[(value >> (i*4)) & 0xF];
+    }
+}
+
+// panic_begin() clears the screen, so klogf() before kernel_panic() is
+// wiped. Format all target details INTO the reason string instead.
+static char sched_panic_reason[224];
+
+static void validate_switch_target(const struct thread *prev,
+                                     const struct thread *next){
+    if(!next){
+        kernel_panic("scheduler: null next thread");
+    }
+    if(!thread_stack_valid(next)){
+        // "sched bad RSP tgt=<id> rsp=<rsp> base=<base> prev=<id>"
+        char *p=sched_panic_reason;
+        const char *prefix="sched: bad RSP tgt=0x";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, next->id, 8); p+=8;
+        const char *mid=" rsp=0x"; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, next->rsp, 16); p+=16;
+        const char *mid2=" base=0x"; for(int i=0;mid2[i];i++) *p++=mid2[i];
+        write_hex_digits(p, (uint64_t)(uintptr_t)next->stack, 16); p+=16;
+        const char *mid3=" prev=0x"; for(int i=0;mid3[i];i++) *p++=mid3[i];
+        write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        *p='\0';
+        kernel_panic(sched_panic_reason);
+    }
+    if(!thread_stack_return_valid(next->rsp)){
+        uint64_t *slot=(uint64_t*)next->rsp;
+        uint64_t ret=slot[6];
+        char *p=sched_panic_reason;
+        const char *prefix="sched: bad return 0x";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, ret, 16); p+=16;
+        const char *mid=" tgt=0x"; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, next->id, 8); p+=8;
+        const char *mid2=" prev=0x"; for(int i=0;mid2[i];i++) *p++=mid2[i];
+        write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        *p='\0';
+        kernel_panic(sched_panic_reason);
+    }
 }
 
 static void idle_thread_func(void *arg){
@@ -75,6 +151,7 @@ void scheduler_init(void){
     idle->entry = idle_thread_func;
     idle->address_space=vmm_kernel_address_space();
     idle->rsp=create_initial_stack(idle);
+    fpu_thread_init(idle->fpu_state);
     current = idle;
     initialized = true;
     klogf(KLOG_OK, "sched: initialized, cores=%u max_threads=%u stack=%u", core_count, SCHEDULER_MAX_THREADS, SCHEDULER_STACK_SIZE);
@@ -128,6 +205,7 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
     else strncpy(t->name, "thread", sizeof(t->name)-1);
 
     t->rsp=create_initial_stack(t);
+    fpu_thread_init(t->fpu_state);
 
     if(affinity>=0 && (uint32_t)affinity>=core_count){
         klogf(KLOG_WARN, "sched: thread %u affinity %d exceeds core count %u, using any", t->id, affinity, core_count);
@@ -234,9 +312,10 @@ void scheduler_yield(void){
     prev->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     next->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     activate_thread(next);
-    if(!thread_stack_return_valid(next->rsp)){
-        kernel_panic("scheduler context switch target has invalid stack");
-    }
+    validate_switch_target(prev, next);
+    // Eager FPU switch while preemption is off (see block/exit below).
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
     // klogf(KLOG_DEBUG, "sched: yield %u (%s) -> %u (%s)", prev->id, prev->name, next->id, next->name);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
@@ -264,9 +343,24 @@ void scheduler_block(void){
         klog(KLOG_ERROR, "sched: no thread to schedule after block!");
         for(;;) __asm__ volatile("cli; hlt");
     }
+    if(next==prev){
+        // Only runnable thread blocks itself (typical before
+        // scheduler_start, when idle runs on the boot stack).
+        // A self-switch would overwrite the thread's saved RSP with the
+        // current one; just stay running instead of deadlocking.
+        prev->state = THREAD_RUNNING;
+        if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
+        return;
+    }
     next->state = THREAD_RUNNING;
     current = next;
     activate_thread(next);
+    validate_switch_target(prev, next);
+    // Eager FPU switch while preemption is off; the kernel itself never
+    // touches FPU registers (still -mgeneral-regs-only), so save/restore
+    // here fully isolates thread FP state.
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
@@ -299,6 +393,12 @@ void scheduler_exit(void){
     next->state = THREAD_RUNNING;
     current = next;
     activate_thread(next);
+    validate_switch_target(prev, next);
+    // Eager FPU switch while preemption is off; the kernel itself never
+    // touches FPU registers (still -mgeneral-regs-only), so save/restore
+    // here fully isolates thread FP state.
+    fpu_save(prev->fpu_state);
+    fpu_restore(next->fpu_state);
     scheduler_asm_switch(&prev->rsp, &next->rsp);
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
     for(;;) __asm__ volatile("hlt");

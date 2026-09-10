@@ -24,7 +24,7 @@
 #define FAT32_END_OF_CHAIN        0x0FFFFFF8
 #define FAT32_MAX_OPEN_FILES      16
 #define FAT32_DESCRIPTOR_BASE     3
-#define FAT32_MAX_COMPONENT       12
+#define FAT32_MAX_COMPONENT       255
 #define FAT32_FORMAT_RESERVED_SECTORS 32
 #define FAT32_FORMAT_FAT_COUNT         2
 #define FAT32_FORMAT_BLANK_SCAN        2048
@@ -1049,6 +1049,38 @@ int32_t fat32_close(int32_t descriptor){
     return 0;
 }
 
+int64_t fat32_seek(int32_t descriptor, int64_t offset, uint32_t whence){
+    int32_t index=descriptor-FAT32_DESCRIPTOR_BASE;
+    if(index<0 || index>=FAT32_MAX_OPEN_FILES || !handles[index].used){
+        return FS_ERROR_INVALID;
+    }
+    if(whence!=SEEK_SET && whence!=SEEK_CUR && whence!=SEEK_END){
+        return FS_ERROR_INVALID;
+    }
+    struct fat32_handle *handle=&handles[index];
+    int64_t base=0;
+    if(whence==SEEK_CUR) base=(int64_t)handle->position;
+    else if(whence==SEEK_END) base=(int64_t)handle->size;
+    int64_t target=base+offset;
+    if(target<0) return FS_ERROR_INVALID;
+    handle->position=(uint32_t)(target>0xFFFFFFFFLL ? 0xFFFFFFFFLL : target);
+    // fat32_read only walks the cluster chain forward, so any seek must
+    // re-anchor the cursor at the first cluster; reads re-walk from there.
+    handle->current_cluster=handle->first_cluster;
+    handle->cluster_index=0;
+    return (int64_t)handle->position;
+}
+
+int32_t fat32_stat(const char *path, uint64_t *size, bool *is_directory){
+    if(!path || !path[0]) return FS_ERROR_INVALID;
+    struct fat32_entry_ref entry;
+    int32_t status=resolve_entry(path,&entry,0);
+    if(status<0) return status;
+    if(size) *size=entry.size;
+    if(is_directory) *is_directory=(entry.attributes&FAT32_ATTRIBUTE_DIRECTORY)!=0;
+    return 0;
+}
+
 int32_t fat32_delete(const char *path){
     struct fat32_entry_ref entry;
     int32_t status=resolve_entry(path,&entry,0);
@@ -1395,8 +1427,14 @@ int32_t fat32_create_directory(const char *path){
     int32_t status=resolve_creation_parent(path,&parent,short_name);
     if(status<0) return status;
 
-    status=find_entry(parent,short_name,0);
-    if(status==0) return FS_ERROR_EXISTS;
+    struct fat32_entry_ref existing;
+    status=find_entry(parent,short_name,&existing);
+    if(status==0){
+        // Уже существует: директория -> успех, файл -> NOT_DIR,
+        // чтобы инсталлер не падал позже с непонятной -7.
+        if(existing.attributes&FAT32_ATTRIBUTE_DIRECTORY) return FS_ERROR_EXISTS;
+        return FS_ERROR_NOT_DIR;
+    }
     if(status!=FS_ERROR_NOT_FOUND) return status;
 
     uint32_t directory_cluster;
@@ -1839,7 +1877,19 @@ static bool write_format_metadata_at(uint32_t part_lba,
 
 static int32_t create_directory_checked(const char *path){
     int32_t status=fat32_create_directory(path);
-    return status==FS_ERROR_EXISTS?0:status;
+    if(status==FS_ERROR_EXISTS) return 0;
+    if(status==FS_ERROR_NOT_DIR){
+        // Файл мешает директории: пробуем удалить и создать заново.
+        // Это чинит повторные установки, где /EFI, /bin и т.д.
+        // остались файлами от битой разметки.
+        struct fat32_entry_ref entry;
+        if(resolve_entry(path,&entry,0)==0
+           && !(entry.attributes&FAT32_ATTRIBUTE_DIRECTORY)){
+            if(fat32_delete(path)==0) return fat32_create_directory(path);
+        }
+        return status;
+    }
+    return status;
 }
 
 static bool install_target_is_ext2;
@@ -1849,7 +1899,17 @@ static int32_t verify_installed_file(const char *path, uint32_t expected_size);
 static int32_t payload_mkdir(const char *path){
     if(install_target_is_ext2){
         int32_t status=ext2_create_directory(path);
-        return status==-5?0:status;
+        if(status==-5){
+            // Существует: проверяем что это директория, иначе вернём NOT_DIR
+            // вместо тихого успеха, который потом даст -7 в другом месте.
+            uint32_t ino;
+            if(ext2_dir_resolve(path,&ino)<0) return FS_ERROR_NOT_DIR;
+            uint8_t ibuf[256];
+            if(!ext2_inode_read(ino,ibuf)) return FS_ERROR_IO;
+            uint16_t mode=ext2_read_u16(ibuf);
+            return ((mode&0xF000)==EXT2_S_IFDIR)?0:FS_ERROR_NOT_DIR;
+        }
+        return status;
     }
     return create_directory_checked(path);
 }
@@ -1862,8 +1922,7 @@ static int32_t payload_write_file(const char *path, const void *data, uint32_t s
 static int32_t payload_write_alias(const char *directory, const char *long_name,
                                    const char *alias_path, const char *alias_name,
                                    const void *data, uint32_t size){
-    if(install_target_is_ext2){
-        (void)alias_path;
+    if(install_target_is_ext2){        (void)alias_path;
         (void)alias_name;
         char full_path[256];
         uint32_t dlen = (uint32_t)strlen(directory);
@@ -1877,6 +1936,28 @@ static int32_t payload_write_alias(const char *directory, const char *long_name,
         memcpy(full_path + dlen, long_name, nlen);
         full_path[dlen + nlen] = '\0';
         return ext2_write_file(full_path, data, size);
+    }
+    // If the "long" name is already valid 8.3, resolve_entry() will look
+    // it up via the SHORT path (find_entry), so a LFN+alias pair would
+    // make it invisible (ucontext.h and stdalign.h hit exactly this:
+    // 8-letter base written as UCONTE~1.H-style alias, looked up as
+    // UCONTEXT.H -> NOT_FOUND). Write such names directly instead.
+    {
+        uint8_t probe[11];
+        if(make_short_name(long_name, probe)){
+            char full_path[256];
+            uint32_t dlen = (uint32_t)strlen(directory);
+            uint32_t nlen = (uint32_t)strlen(long_name);
+            if(dlen + 1 + nlen >= sizeof(full_path)) return FS_ERROR_INVALID;
+            memcpy(full_path, directory, dlen);
+            if(dlen == 0 || full_path[dlen-1] != '/') {
+                full_path[dlen] = '/';
+                dlen++;
+            }
+            memcpy(full_path + dlen, long_name, nlen);
+            full_path[dlen + nlen] = '\0';
+            return fat32_write_file_direct(full_path, data, size);
+        }
     }
     return write_lfn_file(directory, long_name, alias_path, alias_name, data, size);
 }
@@ -2126,12 +2207,124 @@ static int32_t install_firmware_payload(void){
     return 0;
 }
 
+struct header_module {
+    const char *module;    // boot module path; also the dest path
+    const char *directory; // FAT directory owning the LFN entry
+    const char *name;      // long file name
+    const char *alias_path; // full 8.3 alias path, or 0 for direct write
+    const char *alias_name;
+    bool required;         // missing/broken required file aborts install
+};
+
+static int32_t install_header_module(const struct header_module *entry){
+    const void *data;
+    uint64_t size;
+    if(!boot_get_module(entry->module,&data,&size) || !data || !size
+       || size>256*1024U){
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: header module %s missing (%s)",
+              entry->module, entry->required ? "aborting" : "non-fatal, skipped");
+        return entry->required ? FS_ERROR_NOT_FOUND : 0;
+    }
+    int32_t status;
+    if(entry->alias_path){
+        status=payload_write_alias(entry->directory,entry->name,
+                                   entry->alias_path,entry->alias_name,
+                                   data,(uint32_t)size);
+    } else {
+        status=payload_write_file(entry->module,data,(uint32_t)size);
+    }
+    if(status<0){
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: write %s failed %d (%s)",
+              entry->module,status,entry->required ? "aborting" : "non-fatal, skipped");
+        return entry->required ? status : 0;
+    }
+    // Verify by the long path: resolves via LFN on FAT32 and natively
+    // on ext2 (where the alias never exists).
+    status=payload_verify_file(entry->module,(uint32_t)size);
+    if(status<0){
+        // Diagnostic split (FAT32 only): verify the 8.3 alias too.
+        // LFN-fail + alias-ok means the entry landed but LFN lookup
+        // missed it; both failing means the write itself never landed.
+        int32_t alias_status = 0;
+        if(entry->alias_path && !install_target_is_ext2)
+            alias_status=payload_verify_file(entry->alias_path,(uint32_t)size);
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: verify %s failed %d (alias %s -> %d) (%s)",
+              entry->module,status,
+              entry->alias_path ? entry->alias_path : "-",
+              entry->alias_path ? alias_status : 0,
+              entry->required ? "aborting" : "non-fatal, skipped");
+        if(entry->required) return status;
+    }
+    return 0;
+}
+
+// Hosted libc headers (-> /include), crt0.o (-> /lib) and TCC bundled
+// headers (-> /lib/tcc/include) so `tcc -o test test.c` finds everything
+// on the installed system. Long (>8.3) names go through LFN aliases.
+static int32_t install_dev_headers(void){
+    static const char *header_dirs[]={"/include/sys","/lib/tcc","/lib/tcc/include"};
+    for(uint8_t i=0;i<sizeof(header_dirs)/sizeof(header_dirs[0]);i++){
+        int32_t st=payload_mkdir(header_dirs[i]);
+        if(st<0){
+            klogf(KLOG_ERROR,"install: mkdir %s failed %d",header_dirs[i],st);
+            return st;
+        }
+    }
+    static const struct header_module modules[]={
+        {"/include/assert.h","/include","assert.h",0,0,true},
+        {"/include/ctype.h","/include","ctype.h",0,0,true},
+        {"/include/dlfcn.h","/include","dlfcn.h",0,0,true},
+        {"/include/errno.h","/include","errno.h",0,0,true},
+        {"/include/fcntl.h","/include","fcntl.h",0,0,true},
+        {"/include/inttypes.h","/include","inttypes.h",0,0,true},
+        {"/include/math.h","/include","math.h",0,0,true},
+        {"/include/setjmp.h","/include","setjmp.h",0,0,true},
+        {"/include/signal.h","/include","signal.h",0,0,true},
+        {"/include/stdio.h","/include","stdio.h",0,0,true},
+        {"/include/stdlib.h","/include","stdlib.h",0,0,true},
+        {"/include/string.h","/include","string.h",0,0,true},
+        {"/include/time.h","/include","time.h",0,0,true},
+        {"/include/unistd.h","/include","unistd.h",0,0,true},
+        {"/include/sys/stat.h","/include/sys","stat.h",0,0,true},
+        {"/include/sys/time.h","/include/sys","time.h",0,0,true},
+        {"/include/sys/mman.h","/include/sys","mman.h",0,0,true},
+        {"/include/sys/ucontext.h","/include/sys","ucontext.h",0,0,true},
+        {"/lib/crt0.o","/lib","crt0.o",0,0,true},
+        {"/lib/tcc/include/float.h","/lib/tcc/include","float.h",0,0,false},
+        {"/lib/tcc/include/stdarg.h","/lib/tcc/include","stdarg.h",0,0,false},
+        {"/lib/tcc/include/stdbool.h","/lib/tcc/include","stdbool.h",0,0,false},
+        {"/lib/tcc/include/stddef.h","/lib/tcc/include","stddef.h",0,0,false},
+        {"/lib/tcc/include/tgmath.h","/lib/tcc/include","tgmath.h",0,0,false},
+        {"/lib/tcc/include/tccdefs.h","/lib/tcc/include","tccdefs.h",0,0,false},
+        {"/lib/tcc/include/varargs.h","/lib/tcc/include","varargs.h",0,0,false},
+        {"/lib/tcc/include/stdalign.h","/lib/tcc/include","stdalign.h",0,0,false},
+        {"/lib/tcc/include/stdatomic.h","/lib/tcc/include","stdatomic.h",
+         "/lib/tcc/include/STDATO~1.H","STDATO~1.H",false},
+        {"/lib/tcc/include/stdnoreturn.h","/lib/tcc/include","stdnoreturn.h",
+         "/lib/tcc/include/STDNOR~1.H","STDNOR~1.H",false},
+    };
+    for(uint32_t i=0;i<sizeof(modules)/sizeof(modules[0]);i++){
+        int32_t status=install_header_module(&modules[i]);
+        if(status<0) return status;
+    }
+    klog(KLOG_OK,"install: dev headers ready");
+    return 0;
+}
+
 static int32_t install_program_payload(void){
-    if(payload_mkdir("/bin")<0
-       || payload_mkdir("/bin/program")<0
-       || payload_mkdir("/game")<0
-       || payload_mkdir("/lib")<0
-       || payload_mkdir("/include")<0) return FS_ERROR_IO;
+    {
+        static const char *required_dirs[]={"/bin","/bin/program","/game","/lib","/include"};
+        for(uint8_t i=0;i<sizeof(required_dirs)/sizeof(required_dirs[0]);i++){
+            int32_t st=payload_mkdir(required_dirs[i]);
+            if(st<0){
+                klogf(KLOG_ERROR,"install: mkdir %s failed %d",required_dirs[i],st);
+                return st;
+            }
+        }
+    }
     (void)payload_mkdir("/src");
     (void)payload_mkdir("/src/demo");
     (void)payload_mkdir("/demo");
@@ -2139,6 +2332,8 @@ static int32_t install_program_payload(void){
     const void *gui_demo_image;
     const void *nano_image,*system_image,*files_image,*library_image;
     const void *settings_image,*monitor_image,*disks_image,*tetris_image,*logview_image,*hexedit_image,*imgview_image;
+    const void *hello_image;
+    uint64_t hello_size = 0;
     uint64_t init_size,installer_size,snake_size,terminal_size,nano_size;
     uint64_t system_size,files_size;
     uint64_t library_size,gui_demo_size;
@@ -2146,6 +2341,12 @@ static int32_t install_program_payload(void){
     if(!boot_get_module("/bin/program/imgview",&imgview_image,&imgview_size)){
         klog(KLOG_WARN,"install: missing /bin/program/imgview (non-fatal)");
         imgview_image=0; imgview_size=0;
+    }
+    // Hosted hello-world demo (standard main() + crt0 proving ground).
+    // Optional like imgview: older ISOs simply lack the module.
+    if(!boot_get_module("/bin/program/hello",&hello_image,&hello_size)){
+        klog(KLOG_WARN,"install: missing /bin/program/hello (non-fatal)");
+        hello_image=0; hello_size=0;
     }
     if(!boot_get_module("/bin/init",&init_image,&init_size)){
         klog(KLOG_ERROR,"install: missing /bin/init");
@@ -2364,13 +2565,68 @@ static int32_t install_program_payload(void){
         if(status<0) return status;
     }
     if(imgview_image && imgview_size){
-        status=payload_write_file("/bin/program/imgview",imgview_image,(uint32_t)imgview_size);
-        if(status>=0) (void)payload_verify_file("/bin/program/imgview",(uint32_t)imgview_size);
+        status=payload_write_file("/bin/program/imgview",imgview_image,(uint32_t)imgview_size);        if(status<0){
+            klogf(KLOG_ERROR,"install: write imgview failed %d, removing partial file",status);
+            (void)fat32_delete("/bin/program/imgview");
+            return status;
+        }
+        status=payload_verify_file("/bin/program/imgview",(uint32_t)imgview_size);
+        if(status<0){
+            klogf(KLOG_ERROR,"install: verify imgview failed %d, removing partial file",status);
+            (void)fat32_delete("/bin/program/imgview");
+            return status;
+        }
     }
-    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
+    if(hello_image && hello_size && hello_size<=UINT32_MAX){
+        status=payload_write_file("/bin/program/hello",hello_image,(uint32_t)hello_size);
+        if(status>=0) (void)payload_verify_file("/bin/program/hello",(uint32_t)hello_size);
+        else klogf(KLOG_WARN,"install: write hello failed %d (non-fatal)",status);
+    }
+    {
+        // FPU self-test (optional like hello).
+        const void *fpu_image = 0;
+        uint64_t fpu_size = 0;
+        if(boot_get_module("/bin/program/fputest",&fpu_image,&fpu_size)
+           && fpu_image && fpu_size && fpu_size<=UINT32_MAX){
+            status=payload_write_file("/bin/program/fputest",fpu_image,(uint32_t)fpu_size);
+            if(status>=0) (void)payload_verify_file("/bin/program/fputest",(uint32_t)fpu_size);
+            else klogf(KLOG_WARN,"install: write fputest failed %d (non-fatal)",status);
+        }
+    }
+    {
+        // TCC port: compiler binary (optional, needs the tcc/ tree at
+        // ISO build time). Missing module = skip; broken write = abort
+        // like imgview so no corrupt compiler lands on disk.
+        const void *tcc_image = 0;
+        uint64_t tcc_size = 0;
+        if(boot_get_module("/bin/program/tcc",&tcc_image,&tcc_size)
+           && tcc_image && tcc_size && tcc_size<=UINT32_MAX){
+            status=payload_write_file("/bin/program/tcc",tcc_image,(uint32_t)tcc_size);
+            if(status<0){
+                klogf(KLOG_ERROR,"install: write tcc failed %d, removing partial file",status);
+                (void)fat32_delete("/bin/program/tcc");
+                return status;
+            }
+            status=payload_verify_file("/bin/program/tcc",(uint32_t)tcc_size);
+            if(status<0){
+                klogf(KLOG_ERROR,"install: verify tcc failed %d, removing partial file",status);
+                (void)fat32_delete("/bin/program/tcc");
+                return status;
+            }
+        } else {
+            klog(KLOG_WARN,"install: missing /bin/program/tcc (non-fatal)");
+        }
+    }
+    status=install_dev_headers();
+    if(status<0) return status;    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
     if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){
-        (void)payload_write_file("/src/demo/screenshot.bmp",demo_bmp,(uint32_t)demo_bmp_sz);
-        (void)payload_write_file("/demo/screenshot.bmp",demo_bmp,(uint32_t)demo_bmp_sz);
+        // "screenshot.bmp" (14 chars) is not 8.3: write via LFN entry +
+        // 8.3 alias, otherwise fat32_create_file rejects it and the file
+        // silently never lands on disk (imgview default path then fails).
+        if(payload_write_alias("/src/demo","screenshot.bmp","/src/demo/SCREEN~1.BMP","SCREEN~1.BMP",demo_bmp,(uint32_t)demo_bmp_sz)<0)
+            klog(KLOG_WARN,"install: write /src/demo/screenshot.bmp failed (non-fatal)");
+        if(payload_write_alias("/demo","screenshot.bmp","/demo/SCREEN~1.BMP","SCREEN~1.BMP",demo_bmp,(uint32_t)demo_bmp_sz)<0)
+            klog(KLOG_WARN,"install: write /demo/screenshot.bmp failed (non-fatal)");
     }
     if(boot_get_module("/src/demo/image.png",&demo_png,&demo_png_sz) && demo_png && demo_png_sz<=UINT32_MAX){
         (void)payload_write_file("/src/demo/image.png",demo_png,(uint32_t)demo_png_sz);
@@ -2399,7 +2655,10 @@ static int32_t install_uefi_payload(void){
     };
     for(uint8_t index=0;index<sizeof(directories)/sizeof(directories[0]);index++){
         int32_t status=create_directory_checked(directories[index]);
-        if(status<0) return status;
+        if(status<0){
+            klogf(KLOG_ERROR,"install: mkdir %s failed %d",directories[index],status);
+            return status;
+        }
     }
 
     const void *kernel_image;
@@ -2583,6 +2842,10 @@ int32_t fat32_format_uefi_device_progress_ex(
         return FS_ERROR_TOO_SMALL;
     }
     if(!block_device_select((uint32_t)idx)) return FS_ERROR_INVALID;
+    // ESP всегда FAT32: сбрасываем флаг до копирования bootloader/kernel.
+    // Без сброса повторная установка FAT32 после EXT2 уходила в ext2_write_file
+    // на FAT-томе и падала с -7 (NOT_DIR) на 45% "Copying bootloader and kernel".
+    install_target_is_ext2=false;
     if(callback) callback(8,"Writing GPT partition table");
     klogf(KLOG_INFO,"fat32_uefi: %s total %u ESP %u sectors data %u sectors",
           device_name,total_sectors,FAT32_ESP_SECTORS,data_sectors);

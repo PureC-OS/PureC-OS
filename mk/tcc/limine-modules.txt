@@ -1,0 +1,11 @@
+    module_path: boot():/bin/program/tcc
+    module_path: boot():/lib/tcc/include/float.h
+    module_path: boot():/lib/tcc/include/stdalign.h
+    module_path: boot():/lib/tcc/include/stdarg.h
+    module_path: boot():/lib/tcc/include/stdatomic.h
+    module_path: boot():/lib/tcc/include/stdbool.h
+    module_path: boot():/lib/tcc/include/stddef.h
+    module_path: boot():/lib/tcc/include/stdnoreturn.h
+    module_path: boot():/lib/tcc/include/tccdefs.h
+    module_path: boot():/lib/tcc/include/tgmath.h
+    module_path: boot():/lib/tcc/include/varargs.h

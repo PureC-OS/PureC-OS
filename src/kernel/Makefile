@@ -19,6 +19,7 @@ C_SOURCES := \
 	mm/vmm.c \
 	arch/x86_64/gdt/c/gdt.c \
 	arch/x86_64/idt.c \
+	arch/x86_64/fpu.c \
 	arch/x86_64/mmio.c \
 	kernel/syscall/syscall.c \
 	drivers/serial/serial.c \

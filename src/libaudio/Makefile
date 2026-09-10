@@ -18,4 +18,4 @@ $(TARGET): $(OBJECTS)
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/libaudio/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -mgeneral-regs-only -c $< -o $@
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
