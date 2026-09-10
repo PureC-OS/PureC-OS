@@ -176,9 +176,17 @@ $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 ifneq ($(TCC_PRESENT),)
-$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h
+TCC_PATCH_MARK := TARGETOS_PureC
+$(OBJ_DIR)/tcc/.patched: $(ROOT_DIR)/mk/tcc/purec-target.patch
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -c $< -o $@
+	if ! grep -q "$(TCC_PATCH_MARK)" $(ROOT_DIR)/tcc/tccelf.c 2>/dev/null; then \
+		patch -p1 -d $(ROOT_DIR)/tcc < $(ROOT_DIR)/mk/tcc/purec-target.patch; \
+	fi
+	@touch $@
+
+$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DIR)/tcc/.patched
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -c $< -o $@
 
 $(PROGRAM_DIR)/tcc: $(OBJ_DIR)/tcc/tcc.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

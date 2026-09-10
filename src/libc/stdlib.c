@@ -420,5 +420,9 @@ char *getenv(const char *name) {
     return value;
 }
 
-void exit(int status) { pc_exit(status); }
+void exit(int status) {
+    extern int fflush(void *stream);
+    fflush(0);
+    pc_exit(status);
+}
 void abort(void) { pc_exit(134); }

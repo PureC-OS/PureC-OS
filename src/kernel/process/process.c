@@ -145,7 +145,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
         ? process_current_pid() : 0);
     process->state=PROCESS_READY;
     process->entry=loaded.entry;
-    process->user_stack_top=USER_STACK_TOP-16;
+    process->user_stack_top=USER_STACK_TOP-8;
     process->heap_base=heap_base;
     process->heap_break=heap_base;
     process->heap_mapped_end=heap_base;

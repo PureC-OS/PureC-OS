@@ -9,6 +9,7 @@
 // published via environ[] (static storage, well-known variables).
 
 #include "include/purec.h"
+#include "include/hosted/stdio.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -86,5 +87,8 @@ void _start(void) {
     }
     crt0_argv[argc] = 0;
     int status = main(argc, crt0_argv);
+    // Like hosted exit(): flush stdio buffers (stdout is line-buffered,
+    // so a printf without trailing '\n' would otherwise be lost).
+    fflush(0);
     pc_exit(status);
 }

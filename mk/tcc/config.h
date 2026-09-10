@@ -20,3 +20,6 @@
 
 // -l search path for libpurec.a etc.
 #define CONFIG_TCC_LIBPATHS "/lib"
+
+// crt0.o search path for the PureC stanza in tccelf_add_crtbegin.
+#define CONFIG_TCC_CRTPREFIX "/lib"
