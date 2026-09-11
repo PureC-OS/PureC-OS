@@ -94,6 +94,8 @@ void pc_audio_set_muted(bool muted);
 void pc_audio_adjust_volume(int32_t delta);
 bool pc_audio_select_output(uint32_t index);
 void pc_audio_play_test(void);
+int32_t pc_audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms);
+void pc_audio_stop_tone(void);
 int32_t pc_wifi_scan(void);
 int32_t pc_wifi_list(struct wifi_network_info *networks, uint32_t capacity);
 int32_t pc_wifi_connect(const char *ssid, const char *password);

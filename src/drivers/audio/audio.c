@@ -18,7 +18,13 @@ struct audio_master_bus {
     bool test_active;
     uint8_t test_step;
     uint64_t next_step_ms;
+    bool sfx_active;
+    uint64_t sfx_end_ms;
 };
+
+#define AUDIO_TONE_FREQ_MIN_HZ 30U
+#define AUDIO_TONE_FREQ_MAX_HZ 8000U
+#define AUDIO_TONE_MAX_DURATION_MS 5000U
 
 static struct audio_master_bus master_bus;
 
@@ -93,6 +99,48 @@ static void start_pc_speaker_test(void) {
     pc_speaker_tone(test_frequencies[0]);
 }
 
+void audio_stop_tone(void) {
+    if (master_bus.sfx_active) {
+        klog(KLOG_DEBUG, "audio: sfx tone stop");
+    }
+    master_bus.sfx_active = false;
+    master_bus.sfx_end_ms = 0;
+    hda_stop_tone();
+    pc_speaker_off();
+}
+
+void audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms) {
+    if (frequency_hz < AUDIO_TONE_FREQ_MIN_HZ
+        || frequency_hz > AUDIO_TONE_FREQ_MAX_HZ
+        || duration_ms == 0) {
+        klogf(KLOG_ERROR,
+              "audio: sfx tone rejected reason=BAD_ARGUMENT freq=%u dur=%u",
+              frequency_hz, duration_ms);
+        audio_stop_tone();
+        return;
+    }
+    if (duration_ms > AUDIO_TONE_MAX_DURATION_MS) {
+        duration_ms = AUDIO_TONE_MAX_DURATION_MS;
+    }
+    if (master_bus.muted || master_bus.volume == 0) {
+        klog(KLOG_WARN, "audio: sfx tone ignored while master bus is muted or zero");
+        audio_stop_tone();
+        return;
+    }
+    stop_test_sound();
+    if (master_bus.pcm_ready) {
+        if (!hda_play_tone((uint16_t)frequency_hz, master_bus.volume)) {
+            klog(KLOG_WARN, "audio: HDA sfx tone failed, legacy fallback");
+            pc_speaker_tone(frequency_hz);
+        }
+    } else {
+        pc_speaker_tone(frequency_hz);
+    }
+    master_bus.sfx_active = true;
+    master_bus.sfx_end_ms = system_info_uptime_ms() + duration_ms;
+    klogf(KLOG_DEBUG, "audio: sfx tone start freq=%u dur=%u", frequency_hz, duration_ms);
+}
+
 void audio_init(void) {
     klog(KLOG_INFO, "audio: init begin");
     master_bus.volume = AUDIO_DEFAULT_VOLUME;
@@ -103,6 +151,8 @@ void audio_init(void) {
     master_bus.test_active = false;
     master_bus.test_step = 0;
     master_bus.next_step_ms = 0;
+    master_bus.sfx_active = false;
+    master_bus.sfx_end_ms = 0;
     pc_speaker_off();
     klog(KLOG_INFO, "audio: probing HDA devices before backend selection");
     hda_init();
@@ -189,6 +239,7 @@ void audio_set_volume(uint8_t volume) {
     }
     if (master_bus.muted || master_bus.volume == 0) {
         stop_test_sound();
+        audio_stop_tone();
     }
     if(master_bus.pcm_ready)
         (void)hda_set_master_volume(master_bus.volume,master_bus.muted);
@@ -204,6 +255,7 @@ void audio_set_muted(bool muted) {
           master_bus.test_active ? 1 : 0);
     if (master_bus.muted) {
         stop_test_sound();
+        audio_stop_tone();
     }
     if(master_bus.pcm_ready)
         (void)hda_set_master_volume(master_bus.volume,master_bus.muted);
@@ -234,6 +286,7 @@ bool audio_select_output_device(uint32_t index) {
         return false;
     }
     stop_test_sound();
+    audio_stop_tone();
     if (index == 0) {
         master_bus.active_backend = AUDIO_BACKEND_PC_SPEAKER;
         master_bus.pcm_ready = false;
@@ -261,6 +314,7 @@ void audio_play_test_sound(void) {
     klogf(KLOG_INFO, "audio: test request mute=%u volume=%u backend=%u pcm=%u active=%u",
           master_bus.muted ? 1 : 0, master_bus.volume, master_bus.active_backend,
           master_bus.pcm_ready ? 1 : 0, master_bus.test_active ? 1 : 0);
+    audio_stop_tone();
     if (master_bus.muted || master_bus.volume == 0) {
         klog(KLOG_WARN, "audio: test sound ignored while master bus is muted or zero");
         return;
@@ -286,6 +340,13 @@ void audio_play_test_sound(void) {
 }
 
 void audio_update(void) {
+    if (master_bus.sfx_active) {
+        if (master_bus.muted || master_bus.volume == 0) {
+            audio_stop_tone();
+        } else if (system_info_uptime_ms() >= master_bus.sfx_end_ms) {
+            audio_stop_tone();
+        }
+    }
     if (!master_bus.test_active) {
         return;
     }

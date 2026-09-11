@@ -66,6 +66,8 @@ int32_t pa_next_output_device(void);
 
 // Воспроизведение
 int32_t pa_play_test_sound(void);
+int32_t pa_play_tone(uint16_t frequency_hz, uint32_t duration_ms);
+int32_t pa_stop_tone(void);
 int32_t pa_update(void);
 
 #ifdef __cplusplus

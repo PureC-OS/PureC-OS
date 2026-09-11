@@ -152,6 +152,22 @@ int32_t pa_play_test_sound(void) {
     return 0;
 }
 
+int32_t pa_play_tone(uint16_t frequency_hz, uint32_t duration_ms) {
+    if (frequency_hz < 30 || frequency_hz > 8000 || duration_ms == 0
+        || duration_ms > 5000) {
+        return PA_ERROR_INVALID;
+    }
+    if (pc_audio_play_tone(frequency_hz, duration_ms) != 0) {
+        return PA_ERROR_IO;
+    }
+    return 0;
+}
+
+int32_t pa_stop_tone(void) {
+    pc_audio_stop_tone();
+    return 0;
+}
+
 int32_t pa_update(void) {
     (void)pc_syscall(SYS_AUDIO_UPDATE, 0, 0, 0);
     return 0;

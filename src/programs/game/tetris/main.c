@@ -1,6 +1,7 @@
 #include "../../../libgui/include/puregui.h"
 #include "../../../libgui/include/pguiw.h"
 #include "../../../libc/include/purec.h"
+#include "../../../libaudio/include/pureaudio.h"
 #include "../../../drivers/input/keyboard.h"
 
 #define BOARD_W 10
@@ -20,6 +21,83 @@ static bool paused;
 static uint32_t random_state=0x1234ABCD;
 static uint32_t drop_interval_ms=600;
 static uint32_t drop_timer;
+
+#define SFX_LEN(a) (sizeof(a)/sizeof((a)[0]))
+
+struct sfx_note {
+    uint16_t freq_hz;
+    uint16_t tone_ms;
+    uint16_t gap_ms;
+};
+
+// Melodies measured from src/audio/tetris/*.mp3 via spectral analysis:
+// move ~= 1050 Hz / 40 ms blip; clear = rising arpeggio with gaps;
+// game over = low descending buzz.
+static const struct sfx_note SFX_MOVE[]={
+    {1050,40,0}
+};
+static const struct sfx_note SFX_CLEAR[]={
+    {1767,60,40},
+    {2188,80,40},
+    {2625,80,40},
+    {3538,80,40},
+    {1771,80,0}
+};
+static const struct sfx_note SFX_GAMEOVER[]={
+    {260,150,0},
+    {400,100,0},
+    {300,80,0},
+    {250,90,0},
+    {220,80,0}
+};
+
+static const struct sfx_note *sfx_seq=0;
+static uint32_t sfx_len=0;
+static uint32_t sfx_idx=0;
+static uint32_t sfx_timer=0;
+static bool sfx_playing=false;
+
+static void sfx_start(const struct sfx_note *seq,uint32_t len){
+    if(!seq || len==0) return;
+    sfx_seq=seq;
+    sfx_len=len;
+    sfx_idx=0;
+    sfx_timer=seq[0].tone_ms+seq[0].gap_ms;
+    sfx_playing=true;
+    pa_play_tone(seq[0].freq_hz,seq[0].tone_ms);
+}
+
+static void sfx_stop(void){
+    sfx_playing=false;
+    sfx_seq=0;
+    sfx_len=0;
+    sfx_idx=0;
+    sfx_timer=0;
+    pa_stop_tone();
+}
+
+static void sfx_tick(uint32_t elapsed_ms){
+    while(sfx_playing && elapsed_ms>0){
+        if(elapsed_ms<sfx_timer){
+            sfx_timer-=elapsed_ms;
+            break;
+        }
+        elapsed_ms-=sfx_timer;
+        sfx_idx++;
+        if(sfx_idx>=sfx_len){
+            sfx_playing=false;
+            sfx_seq=0;
+            break;
+        }
+        sfx_timer=sfx_seq[sfx_idx].tone_ms+sfx_seq[sfx_idx].gap_ms;
+        pa_play_tone(sfx_seq[sfx_idx].freq_hz,sfx_seq[sfx_idx].tone_ms);
+    }
+}
+
+static void sfx_move_blip(void){
+    if(sfx_playing) return;
+    pa_play_tone(SFX_MOVE[0].freq_hz,SFX_MOVE[0].tone_ms);
+}
 
 static uint32_t g_cell_w = 28;
 static uint32_t g_cell_h = 28;
@@ -238,6 +316,7 @@ static void spawn_piece(void){
 }
 
 static void reset_game(void){
+    sfx_stop();
     for(int32_t y=0;y<BOARD_H;y++) for(int32_t x=0;x<BOARD_W;x++) board[y][x]=-1;
     score=0;
     lines=0;
@@ -258,6 +337,19 @@ static void add_score(int32_t lines_cleared){
     score += table[lines_cleared]*level;
     lines += (uint32_t)lines_cleared;
     update_level_speed();
+}
+
+static void lock_current_piece(void){
+    lock_piece();
+    int32_t cleared=clear_lines();
+    add_score(cleared);
+    spawn_piece();
+    drop_timer=0;
+    if(game_over){
+        sfx_start(SFX_GAMEOVER,SFX_LEN(SFX_GAMEOVER));
+    } else if(cleared>0){
+        sfx_start(SFX_CLEAR,SFX_LEN(SFX_CLEAR));
+    }
 }
 
 static bool try_move(int32_t dx,int32_t dy){
@@ -303,6 +395,22 @@ static void hard_drop(void){
         drop++;
     }
     score += (uint32_t)(drop*2);
+}
+
+static bool user_move(int32_t dx,int32_t dy){
+    if(try_move(dx,dy)){
+        sfx_move_blip();
+        return true;
+    }
+    return false;
+}
+
+static bool user_rotate(void){
+    if(try_rotate()){
+        sfx_move_blip();
+        return true;
+    }
+    return false;
 }
 
 static char *append_text(char *dst,const char *src){
@@ -422,6 +530,12 @@ static void draw_hud(struct pg_window *window){
         p=append_text(p,"Level: "); p=append_u32(p,level);
         pg_window_text(window,stats_x,stats_y+36,line,window->theme.text);
     }
+    {
+        char line[32]; char *p=line;
+        p=append_text(p,"Sound: ");
+        p=append_text(p,pa_is_muted() ? "OFF (M)" : "ON (M)");
+        pg_window_text(window,stats_x,stats_y+54,line,window->theme.text);
+    }
 
 }
 
@@ -479,31 +593,29 @@ static void handle_input(struct pg_window *window, struct pg_event *event){
             return;
         }
         if(paused) return;
+        if(k=='m' || k=='M'){
+            pa_toggle_mute();
+            redraw(window);
+            return;
+        }
         if(k=='a' || k=='A'){
-            if(try_move(-1,0)) redraw(window);
+            if(user_move(-1,0)) redraw(window);
         } else if(k=='d' || k=='D'){
-            if(try_move(1,0)) redraw(window);
+            if(user_move(1,0)) redraw(window);
         } else if(k=='s' || k=='S'){
-            if(try_move(0,1)){
+            if(user_move(0,1)){
                 score+=1;
                 redraw(window);
             } else {
-                lock_piece();
-                int32_t cleared=clear_lines();
-                add_score(cleared);
-                spawn_piece();
-                drop_timer=0;
+                lock_current_piece();
                 redraw(window);
             }
         } else if(k=='w' || k=='W'){
-            if(try_rotate()) redraw(window);
+            if(user_rotate()) redraw(window);
         } else if(k==' '){
             hard_drop();
-            lock_piece();
-            int32_t cleared=clear_lines();
-            add_score(cleared);
-            spawn_piece();
-            drop_timer=0;
+            sfx_move_blip();
+            lock_current_piece();
             redraw(window);
         } else if(k=='r' || k=='R'){
             reset_game();
@@ -512,23 +624,19 @@ static void handle_input(struct pg_window *window, struct pg_event *event){
     } else if(event->type==PG_EVENT_SPECIAL_KEY){
         if(game_over || paused) return;
         if(event->key==KEYBOARD_SPECIAL_LEFT){
-            if(try_move(-1,0)) redraw(window);
+            if(user_move(-1,0)) redraw(window);
         } else if(event->key==KEYBOARD_SPECIAL_RIGHT){
-            if(try_move(1,0)) redraw(window);
+            if(user_move(1,0)) redraw(window);
         } else if(event->key==KEYBOARD_SPECIAL_DOWN){
-            if(try_move(0,1)){
+            if(user_move(0,1)){
                 score+=1;
                 redraw(window);
             } else {
-                lock_piece();
-                int32_t cleared=clear_lines();
-                add_score(cleared);
-                spawn_piece();
-                drop_timer=0;
+                lock_current_piece();
                 redraw(window);
             }
         } else if(event->key==KEYBOARD_SPECIAL_UP){
-            if(try_rotate()) redraw(window);
+            if(user_rotate()) redraw(window);
         }
     }
 }
@@ -562,16 +670,15 @@ static int tetris_main(void){
         } else {
             pc_sleep(16);
         }
+        pa_update();
+        sfx_tick(16);
         if(pg_window_is_minimized(&window)) continue;
         if(game_over || paused) continue;
         drop_timer+=16;
         if(drop_timer>=drop_interval_ms){
             drop_timer=0;
             if(!try_move(0,1)){
-                lock_piece();
-                int32_t cleared=clear_lines();
-                add_score(cleared);
-                spawn_piece();
+                lock_current_piece();
                 redraw(&window);
                 if(game_over) redraw(&window);
             } else {
@@ -579,6 +686,7 @@ static int tetris_main(void){
             }
         }
     }
+    sfx_stop();
     pg_window_close(&window);
     return 0;
 }

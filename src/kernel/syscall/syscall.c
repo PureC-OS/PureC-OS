@@ -617,6 +617,16 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_AUDIO_PLAY_TEST_SOUND:
             audio_play_test_sound();
             return 0;
+        case SYS_AUDIO_PLAY_TONE: {
+            uint32_t freq=(uint32_t)a1;
+            uint32_t dur=(uint32_t)a2;
+            if(freq<30 || freq>8000 || dur==0 || dur>5000) return -1;
+            audio_play_tone(freq,dur);
+            return 0;
+        }
+        case SYS_AUDIO_STOP_TONE:
+            audio_stop_tone();
+            return 0;
         case SYS_AUDIO_UPDATE:
             audio_update();
             return 0;

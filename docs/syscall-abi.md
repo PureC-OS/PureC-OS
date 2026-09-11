@@ -97,6 +97,8 @@ EOF and does not close the descriptor.
 - `SYS_AUDIO_SET_MUTED`: `a1 != 0` mutes audio.
 - `SYS_AUDIO_ADJUST_VOLUME`: `a1` is a signed step.
 - `SYS_AUDIO_PLAY_TEST_SOUND`: plays the current backend's test sound.
+- `SYS_AUDIO_PLAY_TONE` (229): `a1` is frequency in Hz (`30..8000`), `a2` is duration in ms (`1..5000`); non-blocking, preempts the test sound.
+- `SYS_AUDIO_STOP_TONE` (277): stops any active game tone.
 - `SYS_AUDIO_UPDATE`: advances non-blocking audio state from the scheduler loop.
 
 ## Network diagnostics
