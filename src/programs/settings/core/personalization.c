@@ -50,7 +50,7 @@ static char *append_u32(char *out, uint32_t value){
  * # comments and empty lines skipped. Index 0 is always "" (solid). */
 #define WP_LIST_USER "/config/wplist.ini"
 #define WP_LIST_SHIPPED "/demo/wplist.ini"
-#define WP_LIST_MAX 32
+#define WP_LIST_MAX 64
 #define WP_LIST_BUFFER 2048
 
 static char wp_list[WP_LIST_MAX][APPEAR_WALLPAPER_CAP];
