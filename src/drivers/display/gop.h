@@ -49,6 +49,10 @@ void gop_draw_text_sized_at(uint32_t x, uint32_t y, const char *text,
 uint32_t gop_get_pixel(uint32_t x, uint32_t y);
 void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color);
 void gop_draw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color);
+bool gop_blit_cover(const uint32_t *pixels, uint32_t width, uint32_t height);
+bool gop_draw_image_stretch(const uint32_t *pixels, uint32_t src_w,
+                            uint32_t src_h, uint32_t dx, uint32_t dy,
+                            uint32_t dw, uint32_t dh);
 void gop_scroll_rect_up(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                         uint32_t amount, uint32_t fill_color);
 void gop_draw_line(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t color);

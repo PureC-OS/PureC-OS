@@ -1,4 +1,6 @@
 #include "userspace.h"
+#include "personalization.h"
+#include "wallpaper.h"
 #include "apps/desktop_apps.h"
 #include "apps/audio_panel.h"
 #include "window_manager.h"
@@ -37,6 +39,20 @@
 #define PERSISTENT_LOG_CHUNK (64 * 1024)
 #define PERSISTENT_LOG_MAX_BYTES 0xFFFFFFFFULL
 #define PERSISTENT_LOG_PATH "/kernel.log"
+
+/* Personalization: theme colors come from /config/personalization.conf.
+ * Old DESKTOP_BG/TOPBAR_* defines stay as compile-time fallbacks. */
+static void desktop_theme(struct personalization_colors *out){
+    personalization_current_colors(out);
+}
+
+/* Icon labels must fit 58px tiles: honor the configured size up to 12px.
+ * Full 8..24 range applies to Ring3 text via pg_window_text_sized. */
+static uint32_t desktop_label_size(void){
+    const struct personalization *p=personalization_current();
+    uint32_t size=personalization_font_size_clamped(p ? p->font_size : 12);
+    return size>12 ? 12 : size;
+}
 
 static uint32_t desktop_width;
 static uint32_t desktop_height;
@@ -91,31 +107,40 @@ static bool point_inside(int32_t x, int32_t y, uint32_t left, uint32_t top,
 }
 
 static void draw_htop_icon(void){
+    struct personalization_colors th;
+    desktop_theme(&th);
     uint32_t y=htop_icon_y;
-    display_draw_rect(htop_icon_x,y,ICON_W,50,0x313244);
-    display_draw_rect(htop_icon_x+7,y+8,44,30,0x1E1E2E);
-    display_draw_line(htop_icon_x+11,y+31,htop_icon_x+19,y+21,0x89B4FA);
-    display_draw_line(htop_icon_x+19,y+21,htop_icon_x+28,y+27,0x89B4FA);
+    display_draw_rect(htop_icon_x,y,ICON_W,50,th.titlebar);
+    display_draw_rect(htop_icon_x+7,y+8,44,30,th.window);
+    display_draw_line(htop_icon_x+11,y+31,htop_icon_x+19,y+21,th.accent);
+    display_draw_line(htop_icon_x+19,y+21,htop_icon_x+28,y+27,th.accent);
     display_draw_line(htop_icon_x+28,y+27,htop_icon_x+39,y+14,0xA6E3A1);
     display_draw_line(htop_icon_x+39,y+14,htop_icon_x+47,y+19,0xA6E3A1);
-    display_draw_text_at(htop_icon_x+9,y+55,"HTOP",TOPBAR_FG,DESKTOP_BG);
+    display_draw_text_sized_at(htop_icon_x+9,y+55,"HTOP",th.text,th.desktop,
+                               desktop_label_size());
 }
 
 static void draw_explorer_icon(void){
+    struct personalization_colors th;
+    desktop_theme(&th);
     uint32_t y=explorer_icon_y;
-    display_draw_rect(explorer_icon_x,y,ICON_W,50,0x313244);
+    display_draw_rect(explorer_icon_x,y,ICON_W,50,th.titlebar);
     display_draw_rect(explorer_icon_x+7,y+13,44,27,0xF9E2AF);
     display_draw_rect(explorer_icon_x+10,y+9,20,8,0xF9E2AF);
     display_draw_rect(explorer_icon_x+10,y+18,38,4,0xFAB387);
-    display_draw_text_at(explorer_icon_x+7,y+55,"Files",TOPBAR_FG,DESKTOP_BG);
+    display_draw_text_sized_at(explorer_icon_x+7,y+55,"Files",th.text,
+                               th.desktop,desktop_label_size());
 }
 
 static void draw_terminal_icon(void){
+    struct personalization_colors th;
+    desktop_theme(&th);
     uint32_t y=terminal_icon_y;
-    display_draw_rect(terminal_icon_x,y,ICON_W,50,0x313244);
-    display_draw_rect(terminal_icon_x+7,y+8,44,30,0x1E1E2E);
-    display_draw_text_at(terminal_icon_x+13,y+18,">_",0xA6E3A1,0x1E1E2E);
-    display_draw_text_at(terminal_icon_x,y+55,"Terminal",TOPBAR_FG,DESKTOP_BG);
+    display_draw_rect(terminal_icon_x,y,ICON_W,50,th.titlebar);
+    display_draw_rect(terminal_icon_x+7,y+8,44,30,th.window);
+    display_draw_text_at(terminal_icon_x+13,y+18,">_",0xA6E3A1,th.window);
+    display_draw_text_sized_at(terminal_icon_x,y+55,"Terminal",th.text,
+                               th.desktop,desktop_label_size());
 }
 
 static void draw_app_icon(
@@ -125,10 +150,13 @@ static void draw_app_icon(
     const char *label,
     uint32_t color
 ){
-    display_draw_rect(ix,iy,ICON_W,50,0x313244);
+    struct personalization_colors th;
+    desktop_theme(&th);
+    display_draw_rect(ix,iy,ICON_W,50,th.titlebar);
     display_draw_rect(ix+8,iy+7,42,34,color);
     display_draw_text_sized_at(ix+17,iy+17,symbol,0x1E1E2E,color,12);
-    display_draw_text_at(ix+4,iy+55,label,TOPBAR_FG,DESKTOP_BG);
+    display_draw_text_sized_at(ix+4,iy+55,label,th.text,th.desktop,
+                               desktop_label_size());
 }
 
 static void draw_desktop_icons(void){
@@ -247,25 +275,28 @@ int32_t userspace_run_program(const char *path){
 }
 
 static void draw_power_button(void){
+    struct personalization_colors th;
+    desktop_theme(&th);
     uint32_t x=desktop_width-38;
-    display_draw_rect(x,3,30,22,0x45475A);
-    display_draw_text_at(x+7,9,"PWR",TOPBAR_FG,0x45475A);
+    display_draw_rect(x,3,30,22,th.border);
+    display_draw_text_at(x+7,9,"PWR",th.text,th.border);
 }
 
 static void draw_power_menu(void){
     if(!power_menu_visible) return;
+    struct personalization_colors th;
+    desktop_theme(&th);
     uint32_t x=desktop_width-158;
-    display_draw_rect(x,28,150,62,0x45475A);
-    display_draw_rect(x+2,30,146,28,0x1E1E2E);
-    display_draw_rect(x+2,60,146,28,0x1E1E2E);
-    display_draw_text_at(x+12,39,"Restart",TOPBAR_FG,0x1E1E2E);
-    display_draw_text_at(x+12,69,"Power off",0xF38BA8,0x1E1E2E);
+    display_draw_rect(x,28,150,62,th.border);
+    display_draw_rect(x+2,30,146,28,th.window);
+    display_draw_rect(x+2,60,146,28,th.window);
+    display_draw_text_at(x+12,39,"Restart",th.text,th.window);
+    display_draw_text_at(x+12,69,"Power off",th.danger,th.window);
 }
 
 static void draw_desktop(void){
     desktop_width=display_get_width();
-    desktop_height=display_get_height();
-    if(desktop_width==0) desktop_width=1280;
+    desktop_height=display_get_height();    if(desktop_width==0) desktop_width=1280;
     if(desktop_height==0) desktop_height=800;
     if(!icon_layout_ready){
         explorer_icon_x=desktop_width>700 ? 420 : desktop_width-212;
@@ -283,9 +314,12 @@ static void draw_desktop(void){
         icon_layout_ready=true;
     }
 
-    display_clear(DESKTOP_BG);
-    display_draw_rect(0,0,desktop_width,TOPBAR_HEIGHT,TOPBAR_BG);
-    display_draw_text_at(12,8,"PureC OS",TOPBAR_ACCENT,TOPBAR_BG);
+    struct personalization_colors dth;
+    desktop_theme(&dth);
+    if(!wallpaper_draw())
+        display_clear(dth.desktop);
+    display_draw_rect(0,0,desktop_width,TOPBAR_HEIGHT,dth.titlebar);
+    display_draw_text_at(12,8,"PureC OS",dth.accent,dth.titlebar);
     audio_panel_draw(desktop_width);
     draw_desktop_icons();
     draw_power_button();
@@ -507,7 +541,9 @@ uint32_t userspace_get_height(void){ return desktop_height; }
 void userspace_set_mouse_debug(bool enabled){
     mouse_set_debug_overlay(enabled);
     if(!enabled){
-        display_draw_rect(MOUSE_DEBUG_X,MOUSE_DEBUG_Y,MOUSE_DEBUG_W,MOUSE_DEBUG_H,DESKTOP_BG);
+        struct personalization_colors th;
+        desktop_theme(&th);
+        display_draw_rect(MOUSE_DEBUG_X,MOUSE_DEBUG_Y,MOUSE_DEBUG_W,MOUSE_DEBUG_H,th.desktop);
     }
     mouse_redraw();
 }
@@ -531,6 +567,7 @@ void userspace_init(void){
     audio_panel_init();
     desktop_apps_init();
     installer_icon_visible=!installation_present();
+    personalization_poll();
     klog_set_screen_enabled(false);
     (void)userspace_run_detached("/bin/program/login",0);
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT, "userspace: initialization complete");
@@ -546,6 +583,7 @@ void userspace_input_thread(void *arg){
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();
+        personalization_poll();
         (void)service_desktop_redraw();
         if(external_program_has_input_focus()){
             scheduler_sleep(10);
@@ -647,6 +685,7 @@ void userspace_run(void){
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();
+        personalization_poll();
         (void)service_desktop_redraw();
         if(external_program_has_input_focus()){
             scheduler_yield();

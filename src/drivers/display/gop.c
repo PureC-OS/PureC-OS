@@ -823,8 +823,7 @@ void gop_scroll_rect_up(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
     }
     gop_draw_rect(x, y+h-amount, w, amount, fill_color);
 }
-void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){
-    if(!gop.available || !gop.addr) return;
+void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){    if(!gop.available || !gop.addr) return;
     (void)ensure_backbuffer();
     uint32_t min_x=x0<x1?x0:x1, max_x=x0<x1?x1:x0;
     uint32_t min_y=y0<y1?y0:y1, max_y=y0<y1?y1:y0;
@@ -845,4 +844,43 @@ void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){
         dirty_expand(min_x, min_y, w, h);
         maybe_present();
     }
+}
+
+bool gop_blit_cover(const uint32_t *pixels, uint32_t width, uint32_t height){
+    if(!gop.available || !gop.addr || !pixels) return false;
+    if(!width || !height || width!=gop.width || height!=gop.height)
+        return false;
+    if(!ensure_backbuffer()) return false;
+    for(uint32_t y=0;y<gop.height;y++){
+        memcpy(&backbuffer[(uint64_t)y*backbuffer_width],
+               &pixels[(uint64_t)y*width],
+               (uint64_t)gop.width*sizeof(uint32_t));
+    }
+    dirty_expand(0,0,gop.width,gop.height);
+    maybe_present();
+    return true;
+}
+
+bool gop_draw_image_stretch(const uint32_t *pixels, uint32_t src_w,
+                            uint32_t src_h, uint32_t dx, uint32_t dy,
+                            uint32_t dw, uint32_t dh){
+    if(!gop.available || !gop.addr || !pixels) return false;
+    if(!src_w || !src_h || !dw || !dh) return false;
+    if(dx>=gop.width || dy>=gop.height) return false;
+    if(dx+dw>gop.width) dw=gop.width-dx;
+    if(dy+dh>gop.height) dh=gop.height-dy;
+    if(!dw || !dh) return false;
+    if(!ensure_backbuffer()) return false;
+    for(uint32_t y=0;y<dh;y++){
+        uint32_t src_y=(y*src_h)/dh;
+        uint32_t *dst=&backbuffer[(uint64_t)(dy+y)*backbuffer_width+dx];
+        const uint32_t *src_row=&pixels[(uint64_t)src_y*src_w];
+        for(uint32_t x=0;x<dw;x++){
+            uint32_t src_x=(x*src_w)/dw;
+            dst[x]=src_row[src_x];
+        }
+    }
+    dirty_expand(dx,dy,dw,dh);
+    maybe_present();
+    return true;
 }

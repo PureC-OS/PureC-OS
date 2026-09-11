@@ -81,6 +81,9 @@ void pc_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                   uint32_t color);
 void pc_draw_text(uint32_t x, uint32_t y, const char *text,
                   uint32_t foreground, uint32_t background);
+void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text,
+                        uint32_t foreground, uint32_t background,
+                        uint32_t size);
 bool pc_mouse_get(struct mouse_state *state);
 int32_t pc_list_disks(struct storage_device_info *devices, uint32_t capacity);
 int32_t pc_install_start(const char *device, const char *serial);

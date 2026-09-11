@@ -74,6 +74,8 @@ C_SOURCES := \
 	fs/vfs.c \
 	userspace/display.c \
 	userspace/fs.c \
+	userspace/personalization.c \
+	userspace/wallpaper.c \
 	userspace/audio.c \
 	userspace/audio_overlay.c \
 	userspace/userspace.c \

@@ -1,6 +1,7 @@
 #include "settings/app.h"
 #include "settings/audio_page.h"
 #include "settings/wifi_page.h"
+#include "settings/appearance_page.h"
 #include "../../../libgui/include/pguiw.h"
 #include "../../../libc/include/purec.h"
 
@@ -23,17 +24,19 @@ void settings_app_init(struct settings_app *app){
     settings_model_init(&app->model);
     (void)settings_model_load(&app->model);
     (void)settings_model_apply(&app->model);
+    appearance_defaults(&app->appearance);
+    (void)appearance_load(&app->appearance);
     app->tab=0;
 }
 
 static void draw_sidebar(struct settings_app *app,struct pg_window *window,
                          const struct pg_event *event){
-    const char *labels[3]={"Sound","Storage","Network"};
+    const char *labels[4]={"Sound","Storage","Network","Appearance"};
     uint32_t content_height=window->client.height-HEADER_HEIGHT-FOOTER_HEIGHT;
     pg_window_rect(window,(struct pg_rect){0,HEADER_HEIGHT,SIDEBAR_WIDTH,
                                           content_height},0x202131);
     pg_window_text(window,18,HEADER_HEIGHT+18,"SYSTEM",0x7F849C);
-    for(uint32_t index=0;index<3;index++){
+    for(uint32_t index=0;index<4;index++){
         struct pg_rect item={10,HEADER_HEIGHT+42+index*42,
                              SIDEBAR_WIDTH-20,36};
         pg_window_rect(window,item,app->tab==(int)index
@@ -67,6 +70,8 @@ static void draw_storage_page(struct pg_window *window,
 
 void settings_app_draw(struct settings_app *app,struct pg_window *window,
                        const struct pg_event *event){
+    /* Live theme preview: the Settings window itself follows the theme. */
+    window->theme=pg_theme_by_name(app->appearance.theme);
     pg_window_begin(window);
     if(pg_window_is_minimized(window)){ pg_window_end(window); return; }
     pg_window_clear(window,0x1E1E2E);
@@ -78,14 +83,16 @@ void settings_app_draw(struct settings_app *app,struct pg_window *window,
     draw_sidebar(app,window,event);
     if(app->tab==0) audio_page_draw(window,&app->model,event);
     else if(app->tab==1) draw_storage_page(window,event);
-    else wifi_page_draw(window,event);
+    else if(app->tab==2) wifi_page_draw(window,event);
+    else appearance_page_draw(window,&app->appearance,event);
     uint32_t footer_y=window->client.height-FOOTER_HEIGHT;
     pg_window_rect(window,(struct pg_rect){0,footer_y,window->client.width,
-                                          FOOTER_HEIGHT},0x292A3D);
+                                           FOOTER_HEIGHT},0x292A3D);
     const char *footer=app->tab==0
         ? "Sound changes are applied and saved immediately"
         : app->tab==1 ? "Destructive disk actions require confirmation"
-                      : "Network driver work is staged for the next iteration";
+        : app->tab==2 ? "Network driver work is staged for the next iteration"
+                      : "Appearance is saved to personalization.conf and applied live";
     pg_window_text(window,18,footer_y+13,footer,0xBAC2DE);
     pg_window_end(window);
 }

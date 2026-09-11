@@ -69,13 +69,14 @@ struct pg_window {
     bool focused;
     bool registered;
     bool repainting;
-    /* Gate windows (login screen): library must not auto-close on
-     * X/Esc nor auto-minimize; default true, change via setter. */
     bool closable;
 };
 
 const char *pg_version(void);
 struct pg_theme pg_theme_default(void);
+struct pg_theme pg_theme_by_name(const char *name);
+uint32_t pg_theme_count(void);
+const char *pg_theme_name_at(uint32_t index);
 bool pg_window_init(struct pg_window *window, const char *title,
                     uint32_t x, uint32_t y,
                     uint32_t width, uint32_t height);
@@ -96,4 +97,6 @@ void pg_window_rect(struct pg_window *window, struct pg_rect bounds,
                     uint32_t color);
 void pg_window_text(struct pg_window *window, uint32_t x, uint32_t y,
                     const char *text, uint32_t color);
+void pg_window_text_sized(struct pg_window *window, uint32_t x, uint32_t y,
+                          const char *text, uint32_t color, uint32_t size);
 bool pg_window_poll_event(struct pg_window *window, struct pg_event *event);

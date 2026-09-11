@@ -38,6 +38,29 @@ void pg_internal_draw_text_clipped(uint32_t x, uint32_t y,
     }
 }
 
+void pg_internal_draw_text_sized_clipped(uint32_t x, uint32_t y,
+                                           const char *text, uint32_t color,
+                                           uint32_t background, uint32_t size,
+                                           const struct pg_rect *clip){
+    if(!text || !clip || !size) return;
+    if(size<8) size=8;
+    if(size>48) size=48;
+    if(y<clip->y || y+size>clip->y+clip->height) return;
+    char chunk[65];
+    while(*text && x<clip->x+clip->width){
+        uint32_t count=0;
+        while(text[count] && count<sizeof(chunk)-1
+              && x+(count+1)*size<=clip->x+clip->width){
+            chunk[count]=text[count];
+            count++;
+        }
+        if(!count) return;
+        chunk[count]='\0';
+        pc_draw_text_sized(x,y,chunk,color,background,size);
+        x+=count*size;
+        text+=count;
+    }
+}
 void pg_window_rect(struct pg_window *window, struct pg_rect bounds,
                     uint32_t color){
     if(!window || !window->open || window->minimized
@@ -57,4 +80,12 @@ void pg_window_text(struct pg_window *window, uint32_t x, uint32_t y,
     pg_internal_draw_text_clipped(window->client.x+x,window->client.y+y,
                                   text,color,window->theme.window,
                                   &window->client);
+}
+
+void pg_window_text_sized(struct pg_window *window, uint32_t x, uint32_t y,
+                          const char *text, uint32_t color, uint32_t size){
+    if(!window || !window->open || window->minimized) return;
+    pg_internal_draw_text_sized_clipped(window->client.x+x,window->client.y+y,
+                                        text,color,window->theme.window,size,
+                                        &window->client);
 }
