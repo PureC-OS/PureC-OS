@@ -94,6 +94,12 @@
 /src/demo/image.png /src/demo/image.png - 0 src/demo/image.png
 /src/demo/image.png /demo/image.png - 0 src/demo/image.png
 
+# --- bundled wallpapers (24-bit BMP, 8.3 names, stretched by desktop) ---
+/demo/ducati1.bmp /demo/ducati1.bmp - 0 src/wallpapers/ducati1.bmp
+/demo/bmw2.bmp /demo/bmw2.bmp - 0 src/wallpapers/bmw2.bmp
+/demo/bmw3.bmp /demo/bmw3.bmp - 0 src/wallpapers/bmw3.bmp
+/demo/space1.bmp /demo/space1.bmp - 0 src/wallpapers/space1.bmp
+
 # --- game sound effects (22050 Hz mono WAV) ---
 /game/sound/turn.wav /game/sound/turn.wav - 0 src/audio/snake/turn.wav
 /game/sound/eat.wav /game/sound/eat.wav - 0 src/audio/snake/eat.wav

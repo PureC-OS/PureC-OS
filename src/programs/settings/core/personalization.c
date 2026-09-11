@@ -47,10 +47,15 @@ static char *append_u32(char *out, uint32_t value){
 
 static const char *wallpapers[]={
     "",
+    "/demo/ducati1.bmp",
+    "/demo/bmw2.bmp",
+    "/demo/bmw3.bmp",
+    "/demo/space1.bmp",
     "/demo/screenshot.bmp",
     "/src/demo/screenshot.bmp",
     "/demo/image.png",
     "/src/demo/image.png",
+    /* User files must be 8.3: generic FAT32 create supports short names. */
     "/config/wp.bmp",
     "/config/wp.png",
 };
