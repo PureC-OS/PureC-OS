@@ -8,8 +8,10 @@ ISO_IMAGE := $(BIN_DIR)/purec_limine.iso
 LIMINE_CONFIG := $(BIN_DIR)/staged/limine.conf
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 TCC_DIR := $(ROOT_DIR)/tcc
+USERSPACE_DIR := $(ROOT_DIR)/userspace
 CRYPT_REPO := https://github.com/PureC-OS/libxcrypt.git
 TCC_REPO := https://github.com/PureC-OS/PureC-TCC.git
+USERSPACE_REPO := https://github.com/PureC-OS/PureC-OS-Userspace.git
 
 
 export ROOT_DIR BIN_DIR
