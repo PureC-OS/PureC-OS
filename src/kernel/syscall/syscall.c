@@ -627,6 +627,22 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_AUDIO_STOP_TONE:
             audio_stop_tone();
             return 0;
+        case SYS_AUDIO_PCM_PUSH: {
+            uint32_t frames=(uint32_t)a2;
+            if(frames==0){
+                audio_pcm_eos();
+                return 0;
+            }
+            const int16_t *samples=(const int16_t*)(uintptr_t)a1;
+            if(frames>4096) return -1;
+            if(!readable(samples,(uint64_t)frames*2U)) return -1;
+            return audio_pcm_push(samples,frames);
+        }
+        case SYS_AUDIO_PCM_START:
+            return audio_pcm_start() ? 0 : -1;
+        case SYS_AUDIO_PCM_STOP:
+            audio_pcm_stop_stream();
+            return 0;
         case SYS_AUDIO_UPDATE:
             audio_update();
             return 0;

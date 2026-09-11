@@ -121,7 +121,7 @@ $(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progr
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/snake: $(OBJ_DIR)/game/snake/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/snake: $(OBJ_DIR)/game/snake/main.o $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

@@ -58,7 +58,8 @@ iso: kernel programs
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
 		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/bin/modules" "$(ISO_ROOT)/lib" "$(ISO_ROOT)/include" \
-		"$(ISO_ROOT)/src/demo" "$(ISO_ROOT)/demo"; \
+		"$(ISO_ROOT)/src/demo" "$(ISO_ROOT)/demo" \
+		"$(ISO_ROOT)/game/sound" "$(ISO_ROOT)/bin/sound"; \
 	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
 		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
 	fi; \
@@ -83,6 +84,15 @@ iso: kernel programs
 	if [ -f "$(PROGRAM_DIR)/imgview" ]; then cp "$(PROGRAM_DIR)/imgview" "$(ISO_ROOT)/bin/program/imgview"; fi; \
 	cp "$(PROGRAM_DIR)/hello" "$(ISO_ROOT)/bin/program/hello"; \
 	cp "$(PROGRAM_DIR)/fputest" "$(ISO_ROOT)/bin/program/fputest"; \
+	cp "$(ROOT_DIR)/src/audio/snake/turn.wav" "$(ISO_ROOT)/game/sound/turn.wav"; \
+	cp "$(ROOT_DIR)/src/audio/snake/eat.wav" "$(ISO_ROOT)/game/sound/eat.wav"; \
+	cp "$(ROOT_DIR)/src/audio/snake/die.wav" "$(ISO_ROOT)/game/sound/die.wav"; \
+	cp "$(ROOT_DIR)/src/audio/tetris/move.wav" "$(ISO_ROOT)/game/sound/move.wav"; \
+	cp "$(ROOT_DIR)/src/audio/tetris/clear.wav" "$(ISO_ROOT)/game/sound/clear.wav"; \
+	cp "$(ROOT_DIR)/src/audio/tetris/over.wav" "$(ISO_ROOT)/game/sound/over.wav"; \
+	cp "$(ROOT_DIR)/src/audio/snake/turn.wav" "$(ISO_ROOT)/bin/sound/turn.wav"; \
+	cp "$(ROOT_DIR)/src/audio/snake/eat.wav" "$(ISO_ROOT)/bin/sound/eat.wav"; \
+	cp "$(ROOT_DIR)/src/audio/snake/die.wav" "$(ISO_ROOT)/bin/sound/die.wav"; \
 	cp "$(LIB_DIR)/libpurec.a" "$(ISO_ROOT)/lib/libpurec.a"; \
 	cp "$(LIB_DIR)/libpuregui.a" "$(ISO_ROOT)/lib/libpuregui.a"; \
 	cp "$(LIB_DIR)/libpguiw.a" "$(ISO_ROOT)/lib/libpguiw.a"; \

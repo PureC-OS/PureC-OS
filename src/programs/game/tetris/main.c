@@ -57,6 +57,47 @@ static uint32_t sfx_idx=0;
 static uint32_t sfx_timer=0;
 static bool sfx_playing=false;
 
+// Sampled SFX preloaded from /game/sound (22050 Hz mono). When samples
+// or the PCM backend are unavailable the tone sequencer below is used.
+static int16_t sfx_move_buf[1000];
+static uint32_t sfx_move_n;
+static int16_t sfx_clear_buf[12200];
+static uint32_t sfx_clear_n;
+static int16_t sfx_over_buf[11600];
+static uint32_t sfx_over_n;
+static uint32_t sfx_cool;
+
+static uint32_t sfx_preload(const char *name,int16_t *buffer,uint32_t capacity){
+    static const char *dirs[]={"/game/sound/","/bin/sound/"};
+    for(uint32_t d=0;d<sizeof(dirs)/sizeof(dirs[0]);d++){
+        char path[64];
+        uint32_t pos=0;
+        const char *dir=dirs[d];
+        while(dir[pos] && pos+1<sizeof(path)){
+            path[pos]=dir[pos];
+            pos++;
+        }
+        for(uint32_t i=0;name[i] && pos+1<sizeof(path);i++){
+            path[pos++]=name[i];
+        }
+        path[pos]='\0';
+        uint32_t frames=0;
+        if(pa_wav_load(path,buffer,capacity,&frames)==0 && frames>0){
+            return frames;
+        }
+    }
+    return 0;
+}
+
+static void sfx_preload_all(void){
+    sfx_move_n=sfx_preload("move.wav",sfx_move_buf,
+                           sizeof(sfx_move_buf)/sizeof(sfx_move_buf[0]));
+    sfx_clear_n=sfx_preload("clear.wav",sfx_clear_buf,
+                            sizeof(sfx_clear_buf)/sizeof(sfx_clear_buf[0]));
+    sfx_over_n=sfx_preload("over.wav",sfx_over_buf,
+                           sizeof(sfx_over_buf)/sizeof(sfx_over_buf[0]));
+}
+
 static void sfx_start(const struct sfx_note *seq,uint32_t len){
     if(!seq || len==0) return;
     sfx_seq=seq;
@@ -73,10 +114,13 @@ static void sfx_stop(void){
     sfx_len=0;
     sfx_idx=0;
     sfx_timer=0;
+    sfx_cool=0;
     pa_stop_tone();
+    pa_sfx_stop();
 }
 
 static void sfx_tick(uint32_t elapsed_ms){
+    if(sfx_cool>0) sfx_cool--;
     while(sfx_playing && elapsed_ms>0){
         if(elapsed_ms<sfx_timer){
             sfx_timer-=elapsed_ms;
@@ -95,8 +139,19 @@ static void sfx_tick(uint32_t elapsed_ms){
 }
 
 static void sfx_move_blip(void){
-    if(sfx_playing) return;
+    if(sfx_playing || sfx_cool>0) return;
+    if(sfx_move_n>0 && pa_sfx_play(sfx_move_buf,sfx_move_n)==0) return;
     pa_play_tone(SFX_MOVE[0].freq_hz,SFX_MOVE[0].tone_ms);
+}
+
+static void sfx_jingle(const int16_t *buffer,uint32_t frames,uint32_t cool,
+                       const struct sfx_note *seq,uint32_t len){
+    sfx_stop();
+    if(frames>0 && pa_sfx_play(buffer,frames)==0){
+        sfx_cool=cool;
+        return;
+    }
+    sfx_start(seq,len);
 }
 
 static uint32_t g_cell_w = 28;
@@ -346,9 +401,11 @@ static void lock_current_piece(void){
     spawn_piece();
     drop_timer=0;
     if(game_over){
-        sfx_start(SFX_GAMEOVER,SFX_LEN(SFX_GAMEOVER));
+        sfx_jingle(sfx_over_buf,sfx_over_n,32,
+                   SFX_GAMEOVER,SFX_LEN(SFX_GAMEOVER));
     } else if(cleared>0){
-        sfx_start(SFX_CLEAR,SFX_LEN(SFX_CLEAR));
+        sfx_jingle(sfx_clear_buf,sfx_clear_n,34,
+                   SFX_CLEAR,SFX_LEN(SFX_CLEAR));
     }
 }
 
@@ -655,6 +712,7 @@ static int tetris_main(void){
         recompute_layout_for_current_window();
     }
     if(!opened) return 1;
+    sfx_preload_all();
     reset_game();
     redraw(&window);
     while(pg_window_is_open(&window)){

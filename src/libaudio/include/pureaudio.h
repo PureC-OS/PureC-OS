@@ -68,6 +68,17 @@ int32_t pa_next_output_device(void);
 int32_t pa_play_test_sound(void);
 int32_t pa_play_tone(uint16_t frequency_hz, uint32_t duration_ms);
 int32_t pa_stop_tone(void);
+// Sampled SFX: 22050 Hz mono 16-bit PCM.
+// pa_wav_load parses a RIFF/WAVE file into a caller-provided buffer
+// (no heap inside the library) and reports the frame count.
+// pa_sfx_play pushes buffered frames to the kernel stream and starts
+// playback; returns PA_ERROR_UNSUPPORTED when the active backend
+// cannot play samples (legacy PC speaker).
+#define PA_WAV_SRC_RATE 22050U
+int32_t pa_wav_load(const char *path, int16_t *out_frames,
+                    uint32_t capacity_frames, uint32_t *out_count);
+int32_t pa_sfx_play(const int16_t *frames, uint32_t frame_count);
+int32_t pa_sfx_stop(void);
 int32_t pa_update(void);
 
 #ifdef __cplusplus

@@ -2261,6 +2261,36 @@ static int32_t install_header_module(const struct header_module *entry){
     return 0;
 }
 
+// Game sound assets: 22050 Hz mono 16-bit WAV effects. All names are
+// 8.3-compliant, so no LFN alias is needed. Missing modules are
+// non-fatal (older ISOs simply install silent games).
+static int32_t install_sound_assets(void){
+    if(payload_mkdir("/game/sound")<0){
+        klog(KLOG_WARN,"install: mkdir /game/sound failed (sounds skipped)");
+        return 0;
+    }
+    if(payload_mkdir("/bin/sound")<0){
+        klog(KLOG_WARN,"install: mkdir /bin/sound failed (sounds skipped)");
+        return 0;
+    }
+    static const struct header_module modules[]={
+        {"/game/sound/turn.wav","/game/sound","turn.wav",0,0,false},
+        {"/game/sound/eat.wav","/game/sound","eat.wav",0,0,false},
+        {"/game/sound/die.wav","/game/sound","die.wav",0,0,false},
+        {"/game/sound/move.wav","/game/sound","move.wav",0,0,false},
+        {"/game/sound/clear.wav","/game/sound","clear.wav",0,0,false},
+        {"/game/sound/over.wav","/game/sound","over.wav",0,0,false},
+        {"/bin/sound/turn.wav","/bin/sound","turn.wav",0,0,false},
+        {"/bin/sound/eat.wav","/bin/sound","eat.wav",0,0,false},
+        {"/bin/sound/die.wav","/bin/sound","die.wav",0,0,false},
+    };
+    for(uint32_t i=0;i<sizeof(modules)/sizeof(modules[0]);i++){
+        if(install_header_module(&modules[i])<0) return -1;
+    }
+    klog(KLOG_OK,"install: sound assets ready");
+    return 0;
+}
+
 // Hosted libc headers (-> /include), crt0.o (-> /lib) and TCC bundled
 // headers (-> /lib/tcc/include) so `tcc -o test test.c` finds everything
 // on the installed system. Long (>8.3) names go through LFN aliases.
@@ -2530,6 +2560,7 @@ static int32_t install_program_payload(void){
             return status;
         }
     }
+    if(install_sound_assets()<0) return -1;
     status=payload_write_file("/bin/gui-demo",gui_demo_image,
                             (uint32_t)gui_demo_size);
     if(status<0){

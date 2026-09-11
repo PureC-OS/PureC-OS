@@ -99,6 +99,13 @@ EOF and does not close the descriptor.
 - `SYS_AUDIO_PLAY_TEST_SOUND`: plays the current backend's test sound.
 - `SYS_AUDIO_PLAY_TONE` (229): `a1` is frequency in Hz (`30..8000`), `a2` is duration in ms (`1..5000`); non-blocking, preempts the test sound.
 - `SYS_AUDIO_STOP_TONE` (277): stops any active game tone.
+- `SYS_AUDIO_PCM_PUSH` (278): `a1` points to readable S16 mono frames at
+  22050 Hz, `a2` is the frame count (`1..4096`); returns frames staged
+  or negative (`-1` invalid, `-2` staging full, `-3` PCM backend
+  unavailable). `a2 == 0` marks end-of-stream.
+- `SYS_AUDIO_PCM_START` (279): starts streaming staged samples through
+  HDA (44.1 kHz stereo, volume-scaled); preempts tone/test sounds.
+- `SYS_AUDIO_PCM_STOP` (280): stops sampled playback immediately.
 - `SYS_AUDIO_UPDATE`: advances non-blocking audio state from the scheduler loop.
 
 ## Network diagnostics

@@ -26,6 +26,7 @@
 #define HDA_STREAM_DESCRIPTOR_SIZE 0x20
 #define HDA_STREAM_CTL 0x00
 #define HDA_STREAM_STS 0x03
+#define HDA_STREAM_LPIB 0x04
 #define HDA_STREAM_CBL 0x08
 #define HDA_STREAM_LVI 0x0C
 #define HDA_STREAM_FMT 0x12
@@ -1325,6 +1326,64 @@ bool hda_play_tone(uint16_t frequency_hz, uint8_t volume) {
           *(volatile uint32_t *)(stream + 0x04));
     trace_stream_status("after-run", stream);
     return true;
+}
+
+static volatile uint8_t *pcm_stream(void) {
+    return regs + HDA_STREAM_BASE
+        + (uint32_t)controller.input_streams * HDA_STREAM_DESCRIPTOR_SIZE;
+}
+
+void hda_pcm_fill_half(uint32_t half, const int16_t *stereo_frames,
+                       uint32_t frame_count) {
+    if (!regs || half > 1U || !stereo_frames) {
+        return;
+    }
+    if (frame_count > HDA_PCM_SAMPLES) {
+        frame_count = HDA_PCM_SAMPLES;
+    }
+    uint8_t *dst = pcm_buffer + half * HDA_PCM_BYTES;
+    const uint8_t *src = (const uint8_t *)stereo_frames;
+    uint32_t bytes = frame_count * 4U;
+    for (uint32_t i = 0; i < bytes; i++) {
+        dst[i] = src[i];
+    }
+    for (uint32_t i = bytes; i < HDA_PCM_BYTES; i++) {
+        dst[i] = 0;
+    }
+}
+
+bool hda_pcm_start(void) {
+    if (!pcm_ready || !regs) {
+        klog(KLOG_WARN, "audio: HDA PCM start rejected reason=NOT_READY");
+        return false;
+    }
+    volatile uint8_t *stream = pcm_stream();
+    uint32_t control = read_stream_control(stream);
+    write_stream_control(stream, control | HDA_STREAM_RUN);
+    if (!wait_stream_control(stream, HDA_STREAM_RUN, true)) {
+        klog(KLOG_ERROR, "audio: HDA PCM RUN assertion timeout");
+        return false;
+    }
+    return true;
+}
+
+void hda_pcm_stop(void) {
+    if (!pcm_ready || !regs) {
+        return;
+    }
+    volatile uint8_t *stream = pcm_stream();
+    uint32_t control = read_stream_control(stream);
+    write_stream_control(stream, control & ~HDA_STREAM_RUN);
+    if (!wait_stream_control(stream, HDA_STREAM_RUN, false)) {
+        klog(KLOG_ERROR, "audio: HDA PCM RUN clear timeout during stop");
+    }
+}
+
+uint32_t hda_pcm_position(void) {
+    if (!pcm_ready || !regs) {
+        return 0;
+    }
+    return *(volatile uint32_t *)(pcm_stream() + HDA_STREAM_LPIB);
 }
 
 void hda_stop_tone(void) {

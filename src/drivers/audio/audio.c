@@ -26,6 +26,27 @@ struct audio_master_bus {
 #define AUDIO_TONE_FREQ_MAX_HZ 8000U
 #define AUDIO_TONE_MAX_DURATION_MS 5000U
 
+// Sampled SFX streaming: userspace pushes S16 mono frames at
+// PCM_SRC_RATE_HZ; the engine upsamples x2 to 44.1 kHz stereo into
+// the HDA DMA double buffer, refilling the played-out half from
+// audio_update() (LPIB-polled, no audio IRQ wired up yet).
+#define PCM_SRC_RATE_HZ 22050U
+#define PCM_HALF_STEREO_FRAMES 4096U
+#define PCM_HALF_MONO_FRAMES 2048U
+#define PCM_STAGE_FRAMES 24576U
+#define PCM_PUSH_MAX_FRAMES 4096U
+#define PCM_DRAIN_TAIL_MS 200U
+#define PCM_DMA_HALF_BYTES 16384U
+
+static int16_t pcm_stage[PCM_STAGE_FRAMES];
+static int16_t pcm_scratch[PCM_HALF_STEREO_FRAMES * 2];
+static uint32_t pcm_read_idx;
+static uint32_t pcm_count;
+static bool pcm_eos;
+static bool pcm_playing;
+static uint8_t pcm_last_half;
+static uint64_t pcm_stop_at;
+
 static struct audio_master_bus master_bus;
 
 static const uint16_t test_frequencies[] = {
@@ -128,6 +149,7 @@ void audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms) {
         return;
     }
     stop_test_sound();
+    audio_pcm_stop_stream();
     if (master_bus.pcm_ready) {
         if (!hda_play_tone((uint16_t)frequency_hz, master_bus.volume)) {
             klog(KLOG_WARN, "audio: HDA sfx tone failed, legacy fallback");
@@ -139,6 +161,126 @@ void audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms) {
     master_bus.sfx_active = true;
     master_bus.sfx_end_ms = system_info_uptime_ms() + duration_ms;
     klogf(KLOG_DEBUG, "audio: sfx tone start freq=%u dur=%u", frequency_hz, duration_ms);
+}
+
+static void pcm_reset_locked(void) {
+    pcm_read_idx = 0;
+    pcm_count = 0;
+    pcm_eos = false;
+    pcm_playing = false;
+    pcm_last_half = 0;
+    pcm_stop_at = 0;
+}
+
+static void pcm_fill_half(uint32_t half) {
+    uint32_t take = pcm_count >= PCM_HALF_MONO_FRAMES
+        ? PCM_HALF_MONO_FRAMES : pcm_count;
+    bool audible = !master_bus.muted && master_bus.volume != 0;
+    int32_t gain = (int32_t)master_bus.volume;
+    for (uint32_t i = 0; i < PCM_HALF_MONO_FRAMES; i++) {
+        int16_t sample = 0;
+        if (i < take) {
+            sample = pcm_stage[(pcm_read_idx + i) % PCM_STAGE_FRAMES];
+        }
+        int32_t scaled = audible ? ((int32_t)sample * gain) / 100 : 0;
+        if (scaled > 32767) scaled = 32767;
+        if (scaled < -32768) scaled = -32768;
+        pcm_scratch[i * 2] = (int16_t)scaled;
+        pcm_scratch[i * 2 + 1] = (int16_t)scaled;
+    }
+    pcm_read_idx = (pcm_read_idx + take) % PCM_STAGE_FRAMES;
+    pcm_count -= take;
+    hda_pcm_fill_half(half, pcm_scratch, PCM_HALF_STEREO_FRAMES);
+}
+
+// Returns frames accepted, or negative: -1 invalid, -2 staging full,
+// -3 PCM backend not available (PC speaker cannot play samples).
+int32_t audio_pcm_push(const int16_t *samples, uint32_t frames) {
+    if (!samples || frames == 0 || frames > PCM_PUSH_MAX_FRAMES) {
+        return -1;
+    }
+    if (!master_bus.pcm_ready) {
+        return -3;
+    }
+    uint32_t free = PCM_STAGE_FRAMES - pcm_count;
+    if (frames > free) {
+        klogf(KLOG_WARN, "audio: PCM push rejected reason=STAGING_FULL frames=%u free=%u",
+              frames, free);
+        return -2;
+    }
+    uint32_t write_idx = (pcm_read_idx + pcm_count) % PCM_STAGE_FRAMES;
+    for (uint32_t i = 0; i < frames; i++) {
+        pcm_stage[write_idx] = samples[i];
+        write_idx++;
+        if (write_idx >= PCM_STAGE_FRAMES) write_idx = 0;
+    }
+    pcm_count += frames;
+    return (int32_t)frames;
+}
+
+void audio_pcm_eos(void) {
+    pcm_eos = true;
+}
+
+bool audio_pcm_start(void) {
+    bool eos = pcm_eos;
+    stop_test_sound();
+    audio_stop_tone();
+    audio_pcm_stop_stream();
+    pcm_eos = eos;
+    if (!master_bus.pcm_ready) {
+        klog(KLOG_WARN, "audio: PCM start rejected reason=PCM_NOT_READY");
+        return false;
+    }
+    if (pcm_count == 0) {
+        klog(KLOG_WARN, "audio: PCM start rejected reason=EMPTY_STAGE");
+        return false;
+    }
+    pcm_fill_half(0);
+    pcm_fill_half(1);
+    pcm_last_half = 0;
+    pcm_stop_at = 0;
+    if (!hda_pcm_start()) {
+        pcm_reset_locked();
+        return false;
+    }
+    pcm_playing = true;
+    klogf(KLOG_DEBUG, "audio: PCM stream start staged=%u eos=%u",
+          pcm_count, pcm_eos ? 1 : 0);
+    return true;
+}
+
+void audio_pcm_stop_stream(void) {
+    if (pcm_playing) {
+        klog(KLOG_DEBUG, "audio: PCM stream stop");
+    }
+    hda_pcm_stop();
+    pcm_reset_locked();
+}
+
+static void audio_pcm_update(void) {
+    if (!pcm_playing) {
+        return;
+    }
+    if (master_bus.muted || master_bus.volume == 0) {
+        // Keep timing: refill path already outputs silence.
+    }
+    uint32_t lpib = hda_pcm_position();
+    uint8_t current_half = (lpib < PCM_DMA_HALF_BYTES) ? 0 : 1;
+    if (current_half != pcm_last_half) {
+        pcm_fill_half(pcm_last_half);
+        pcm_last_half = current_half;
+    }
+    if (pcm_eos && pcm_count == 0) {
+        uint64_t now = system_info_uptime_ms();
+        if (pcm_stop_at == 0) {
+            pcm_stop_at = now + PCM_DRAIN_TAIL_MS;
+        } else if (now >= pcm_stop_at) {
+            klog(KLOG_DEBUG, "audio: PCM stream drained");
+            hda_pcm_stop();
+            pcm_reset_locked();
+        }
+    }
 }
 
 void audio_init(void) {
@@ -153,6 +295,7 @@ void audio_init(void) {
     master_bus.next_step_ms = 0;
     master_bus.sfx_active = false;
     master_bus.sfx_end_ms = 0;
+    pcm_reset_locked();
     pc_speaker_off();
     klog(KLOG_INFO, "audio: probing HDA devices before backend selection");
     hda_init();
@@ -287,6 +430,7 @@ bool audio_select_output_device(uint32_t index) {
     }
     stop_test_sound();
     audio_stop_tone();
+    audio_pcm_stop_stream();
     if (index == 0) {
         master_bus.active_backend = AUDIO_BACKEND_PC_SPEAKER;
         master_bus.pcm_ready = false;
@@ -315,6 +459,7 @@ void audio_play_test_sound(void) {
           master_bus.muted ? 1 : 0, master_bus.volume, master_bus.active_backend,
           master_bus.pcm_ready ? 1 : 0, master_bus.test_active ? 1 : 0);
     audio_stop_tone();
+    audio_pcm_stop_stream();
     if (master_bus.muted || master_bus.volume == 0) {
         klog(KLOG_WARN, "audio: test sound ignored while master bus is muted or zero");
         return;
@@ -340,6 +485,7 @@ void audio_play_test_sound(void) {
 }
 
 void audio_update(void) {
+    audio_pcm_update();
     if (master_bus.sfx_active) {
         if (master_bus.muted || master_bus.volume == 0) {
             audio_stop_tone();

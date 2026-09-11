@@ -376,6 +376,10 @@ bool pc_audio_select_output(uint32_t i){ return pc_syscall(SYS_AUDIO_SELECT_OUTP
 void pc_audio_play_test(void){ (void)pc_syscall(SYS_AUDIO_PLAY_TEST_SOUND,0,0,0); }
 int32_t pc_audio_play_tone(uint32_t f,uint32_t d){ return (int32_t)pc_syscall(SYS_AUDIO_PLAY_TONE,f,d,0); }
 void pc_audio_stop_tone(void){ (void)pc_syscall(SYS_AUDIO_STOP_TONE,0,0,0); }
+int32_t pc_audio_pcm_push(const int16_t *s,uint32_t f){ return (int32_t)pc_syscall(SYS_AUDIO_PCM_PUSH,(uint64_t)(uintptr_t)s,f,0); }
+void pc_audio_pcm_eos(void){ (void)pc_syscall(SYS_AUDIO_PCM_PUSH,0,0,0); }
+int32_t pc_audio_pcm_start(void){ return (int32_t)pc_syscall(SYS_AUDIO_PCM_START,0,0,0); }
+void pc_audio_pcm_stop(void){ (void)pc_syscall(SYS_AUDIO_PCM_STOP,0,0,0); }
 int32_t pc_wifi_scan(void){ return (int32_t)pc_syscall(SYS_WIFI_SCAN,0,0,0); }
 int32_t pc_wifi_list(struct wifi_network_info *networks, uint32_t capacity){
     return (int32_t)pc_syscall(SYS_WIFI_LIST,(uint64_t)(uintptr_t)networks,capacity,0);

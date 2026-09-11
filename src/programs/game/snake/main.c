@@ -1,4 +1,5 @@
 #include "../../../libc/include/purec.h"
+#include "../../../libaudio/include/pureaudio.h"
 
 #define BOARD_WIDTH 30
 #define BOARD_HEIGHT 18
@@ -20,6 +21,73 @@ static int16_t direction_x;
 static int16_t direction_y;
 static uint32_t random_state=0x51A7E123;
 static uint32_t score;
+
+// Sampled SFX preloaded from /game/sound or /bin/sound (22050 Hz mono).
+// Falls back to tone blips when files or the PCM backend are missing.
+static int16_t sfx_turn[1100];
+static uint32_t sfx_turn_frames;
+static int16_t sfx_eat[2700];
+static uint32_t sfx_eat_frames;
+static int16_t sfx_die[11100];
+static uint32_t sfx_die_frames;
+static uint32_t sfx_cooldown_ticks;
+
+static uint32_t sfx_preload(const char *name,int16_t *buffer,uint32_t capacity){
+    static const char *dirs[]={"/game/sound/","/bin/sound/"};
+    for(uint32_t d=0;d<sizeof(dirs)/sizeof(dirs[0]);d++){
+        char path[64];
+        uint32_t pos=0;
+        const char *dir=dirs[d];
+        while(dir[pos] && pos+1<sizeof(path)){
+            path[pos]=dir[pos];
+            pos++;
+        }
+        for(uint32_t i=0;name[i] && pos+1<sizeof(path);i++){
+            path[pos++]=name[i];
+        }
+        path[pos]='\0';
+        uint32_t frames=0;
+        if(pa_wav_load(path,buffer,capacity,&frames)==0 && frames>0){
+            return frames;
+        }
+    }
+    return 0;
+}
+
+static void sfx_play_buffer(const int16_t *buffer,uint32_t frames,
+                            uint16_t fallback_hz,uint32_t fallback_ms){
+    if(frames>0 && pa_sfx_play(buffer,frames)==0) return;
+    pa_play_tone(fallback_hz,fallback_ms);
+}
+
+static void sfx_turn_blip(void){
+    if(sfx_cooldown_ticks>0) return;
+    sfx_play_buffer(sfx_turn,sfx_turn_frames,1200,45);
+}
+
+static void sfx_eat_chime(void){
+    sfx_cooldown_ticks=1;
+    sfx_play_buffer(sfx_eat,sfx_eat_frames,900,80);
+}
+
+static void sfx_die_jingle(void){
+    sfx_cooldown_ticks=4;
+    sfx_play_buffer(sfx_die,sfx_die_frames,300,300);
+}
+
+static void sfx_init(void){
+    sfx_turn_frames=sfx_preload("turn.wav",sfx_turn,
+                                sizeof(sfx_turn)/sizeof(sfx_turn[0]));
+    sfx_eat_frames=sfx_preload("eat.wav",sfx_eat,
+                               sizeof(sfx_eat)/sizeof(sfx_eat[0]));
+    sfx_die_frames=sfx_preload("die.wav",sfx_die,
+                               sizeof(sfx_die)/sizeof(sfx_die[0]));
+}
+
+static void sfx_shutdown(void){
+    pa_sfx_stop();
+    pa_stop_tone();
+}
 
 static uint32_t random_value(void){
     random_state^=random_state<<13;
@@ -99,12 +167,16 @@ static void handle_key(int32_t key, bool *running){
     if(key=='q' || key=='Q' || key==27){ *running=false; return; }
     if((key=='w' || key=='W') && direction_y!=1){
         direction_x=0; direction_y=-1;
+        sfx_turn_blip();
     } else if((key=='s' || key=='S') && direction_y!=-1){
         direction_x=0; direction_y=1;
+        sfx_turn_blip();
     } else if((key=='a' || key=='A') && direction_x!=1){
         direction_x=-1; direction_y=0;
+        sfx_turn_blip();
     } else if((key=='d' || key=='D') && direction_x!=-1){
         direction_x=1; direction_y=0;
+        sfx_turn_blip();
     }
 }
 
@@ -120,6 +192,7 @@ static int snake_main(void){
         body[index].y=BOARD_HEIGHT/2;
     }
     place_food();
+    sfx_init();
     uint32_t board_width=BOARD_WIDTH*CELL_SIZE;
     uint32_t board_height=BOARD_HEIGHT*CELL_SIZE;
     uint32_t origin_x=display.width>board_width
@@ -129,18 +202,34 @@ static int snake_main(void){
     draw_header(origin_x,origin_y);
     draw_board(origin_x,origin_y);
     bool running=true;
+    bool died=false;
     while(running){
-        int32_t key;
         bool ate_food=false;
         struct point old_tail;
-        while((key=pc_try_getchar())>=0) handle_key(key,&running);
-        if(!running || !advance(&ate_food,&old_tail)) break;
+        for(uint32_t sub=0;sub<4 && running;sub++){
+            int32_t key;
+            while((key=pc_try_getchar())>=0) handle_key(key,&running);
+            pa_update();
+            if(!running) break;
+            pc_sleep(35);
+        }
+        if(sfx_cooldown_ticks>0) sfx_cooldown_ticks--;
+        if(!running) break;
+        if(!advance(&ate_food,&old_tail)){
+            died=true;
+            break;
+        }
+        if(ate_food) sfx_eat_chime();
         draw_advance(origin_x,origin_y,ate_food,old_tail);
-        pc_sleep(140);
     }
+    if(died) sfx_die_jingle();
     pc_display_clear(COLOR_BACKGROUND);
     pc_draw_text(40,60,"Snake finished",COLOR_TEXT,COLOR_BACKGROUND);
-    pc_sleep(900);
+    for(uint32_t i=0;i<30;i++){
+        pa_update();
+        pc_sleep(30);
+    }
+    sfx_shutdown();
     return 0;
 }
 
