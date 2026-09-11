@@ -9,6 +9,5 @@
 *.elf
 *repair-backups/
 *old-core/
-*tcc/
 test.txt
 *212/
