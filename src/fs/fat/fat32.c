@@ -2044,86 +2044,6 @@ static int32_t verify_installed_file(const char *path, uint32_t expected_size){
     return entry.size==expected_size?0:FS_ERROR_IO;
 }
 
-static int32_t install_gui_development_payload(void){
-    const void *core_library,*widget_library,*fs_library,*core_header,*widget_header,*fs_header;
-    uint64_t core_library_size,widget_library_size,fs_library_size;
-    uint64_t core_header_size,widget_header_size,fs_header_size;
-    if(!boot_get_module("/lib/libpuregui.a",&core_library,
-                        &core_library_size)
-       || !boot_get_module("/lib/libpguiw.a",&widget_library,
-                           &widget_library_size)
-       || !boot_get_module("/lib/libpurefs.a",&fs_library,
-                           &fs_library_size)
-       || !boot_get_module("/include/puregui.h",&core_header,
-                           &core_header_size)
-       || !boot_get_module("/include/pguiw.h",&widget_header,
-                           &widget_header_size)
-       || !boot_get_module("/include/purefs.h",&fs_header,
-                           &fs_header_size)){
-        klog(KLOG_ERROR,"install: missing PureGUI/PureFS development module");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(core_library_size>UINT32_MAX || widget_library_size>UINT32_MAX || fs_library_size>UINT32_MAX
-       || core_header_size>UINT32_MAX || widget_header_size>UINT32_MAX || fs_header_size>UINT32_MAX)
-        return FS_ERROR_UNSUPPORTED;
-    int32_t status=payload_write_alias(
-        "/lib","libpuregui.a","/lib/libpur~1.a","libpur~1.a",
-        core_library,(uint32_t)core_library_size
-    );
-    if(status<0) return status;
-    status=payload_write_file("/lib/libpguiw.a",widget_library,
-                            (uint32_t)widget_library_size);
-    if(status<0) return status;
-    status=payload_write_alias("/lib","libpurefs.a","/lib/libpur~2.a","libpur~2.a",fs_library,(uint32_t)fs_library_size);
-    if(status<0) return status;
-    status=payload_write_file("/include/puregui.h",core_header,
-                            (uint32_t)core_header_size);
-    if(status<0) return status;
-    status=payload_write_file("/include/pguiw.h",widget_header,
-                            (uint32_t)widget_header_size);
-    if(status<0) return status;
-    status=payload_write_file("/include/purefs.h",fs_header,
-                            (uint32_t)fs_header_size);
-    if(status<0) return status;
-    status=payload_verify_file("/lib/libpuregui.a",
-                                (uint32_t)core_library_size);
-    if(status<0) return status;
-    status=payload_verify_file("/lib/libpguiw.a",
-                                (uint32_t)widget_library_size);
-    if(status<0) return status;
-    status=payload_verify_file("/lib/libpurefs.a",
-                                (uint32_t)fs_library_size);
-    if(status<0) return status;
-    status=payload_verify_file("/include/puregui.h",
-                                (uint32_t)core_header_size);
-    if(status<0) return status;
-    status=payload_verify_file("/include/pguiw.h",
-                                (uint32_t)widget_header_size);
-    if(status<0) return status;
-    status=payload_verify_file("/include/purefs.h",
-                                (uint32_t)fs_header_size);
-    if(status<0) return status;
-
-    const void *audio_library, *audio_header;
-    uint64_t audio_library_size, audio_header_size;
-    if(boot_get_module("/lib/libpureaudio.a", &audio_library, &audio_library_size)
-       && boot_get_module("/include/pureaudio.h", &audio_header, &audio_header_size)){
-        if(audio_library_size<=UINT32_MAX && audio_header_size<=UINT32_MAX){
-            int32_t st=payload_write_alias(
-                "/lib","libpureaudio.a","/lib/libpur~3.a","libpur~3.a",
-                audio_library,(uint32_t)audio_library_size
-            );
-            if(st>=0){
-                st=payload_write_file("/include/pureaudio.h",audio_header,(uint32_t)audio_header_size);
-            }
-            if(st>=0){
-                (void)payload_verify_file("/lib/libpureaudio.a",(uint32_t)audio_library_size);
-                (void)payload_verify_file("/include/pureaudio.h",(uint32_t)audio_header_size);
-            }
-        }
-    }
-    return 0;
-}
 
 static int32_t install_firmware_payload(void){
     // создаём /bin/firmware/Intel/wifi с учётом FAT32 8.3, прошивки храним с LFN
@@ -2207,10 +2127,13 @@ static int32_t install_firmware_payload(void){
     return 0;
 }
 
+#define MANIFEST_LINE_MAX 256
+#define MANIFEST_FIELD_MAX 128
+
 struct header_module {
-    const char *module;    // boot module path; also the dest path
-    const char *directory; // FAT directory owning the LFN entry
-    const char *name;      // long file name
+    const char *module;    // source boot module path
+    const char *directory; // dest FAT directory owning the LFN entry
+    const char *name;      // dest long file name
     const char *alias_path; // full 8.3 alias path, or 0 for direct write
     const char *alias_name;
     bool required;         // missing/broken required file aborts install
@@ -2220,7 +2143,7 @@ static int32_t install_header_module(const struct header_module *entry){
     const void *data;
     uint64_t size;
     if(!boot_get_module(entry->module,&data,&size) || !data || !size
-       || size>256*1024U){
+       || size>UINT32_MAX){
         klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
               "install: header module %s missing (%s)",
               entry->module, entry->required ? "aborting" : "non-fatal, skipped");
@@ -2240,9 +2163,18 @@ static int32_t install_header_module(const struct header_module *entry){
               entry->module,status,entry->required ? "aborting" : "non-fatal, skipped");
         return entry->required ? status : 0;
     }
-    // Verify by the long path: resolves via LFN on FAT32 and natively
-    // on ext2 (where the alias never exists).
-    status=payload_verify_file(entry->module,(uint32_t)size);
+    // Verify by the destination path: resolves via LFN on FAT32 and
+    // natively on ext2 (where the alias never exists). The source
+    // module may differ from the destination (one module, many dests).
+    char dest_path[MANIFEST_FIELD_MAX];
+    uint32_t dp=0;
+    const char *dp_part=entry->directory;
+    while(*dp_part && dp+1<sizeof(dest_path)) dest_path[dp++]=*dp_part++;
+    if(dp+1<sizeof(dest_path)) dest_path[dp++]='/';
+    dp_part=entry->name;
+    while(*dp_part && dp+1<sizeof(dest_path)) dest_path[dp++]=*dp_part++;
+    dest_path[dp]='\0';
+    status=payload_verify_file(dest_path,(uint32_t)size);
     if(status<0){
         // Diagnostic split (FAT32 only): verify the 8.3 alias too.
         // LFN-fail + alias-ok means the entry landed but LFN lookup
@@ -2261,434 +2193,158 @@ static int32_t install_header_module(const struct header_module *entry){
     return 0;
 }
 
-// Game sound assets: 22050 Hz mono 16-bit WAV effects. All names are
-// 8.3-compliant, so no LFN alias is needed. Missing modules are
-// non-fatal (older ISOs simply install silent games).
-static int32_t install_sound_assets(void){
-    if(payload_mkdir("/game/sound")<0){
-        klog(KLOG_WARN,"install: mkdir /game/sound failed (sounds skipped)");
-        return 0;
+static void manifest_mkdir_parents(const char *dest){
+    // create_directory_checked maps EXISTS to success (and the ext2 path
+    // tolerates repeat mkdirs the same way), so create every prefix
+    // blindly; a genuinely broken tree fails later at write+verify time.
+    char prefix[MANIFEST_FIELD_MAX];
+    uint32_t out=0;
+    for(uint32_t i=0;dest[i]!='\0' && out+1<sizeof(prefix);i++){
+        if(dest[i]=='/' && i>0){
+            prefix[out]='\0';
+            (void)payload_mkdir(prefix);
+        }
+        prefix[out++]=dest[i];
     }
-    if(payload_mkdir("/bin/sound")<0){
-        klog(KLOG_WARN,"install: mkdir /bin/sound failed (sounds skipped)");
-        return 0;
-    }
-    static const struct header_module modules[]={
-        {"/game/sound/turn.wav","/game/sound","turn.wav",0,0,false},
-        {"/game/sound/eat.wav","/game/sound","eat.wav",0,0,false},
-        {"/game/sound/die.wav","/game/sound","die.wav",0,0,false},
-        {"/game/sound/move.wav","/game/sound","move.wav",0,0,false},
-        {"/game/sound/clear.wav","/game/sound","clear.wav",0,0,false},
-        {"/game/sound/over.wav","/game/sound","over.wav",0,0,false},
-        {"/bin/sound/turn.wav","/bin/sound","turn.wav",0,0,false},
-        {"/bin/sound/eat.wav","/bin/sound","eat.wav",0,0,false},
-        {"/bin/sound/die.wav","/bin/sound","die.wav",0,0,false},
-    };
-    for(uint32_t i=0;i<sizeof(modules)/sizeof(modules[0]);i++){
-        if(install_header_module(&modules[i])<0) return -1;
-    }
-    klog(KLOG_OK,"install: sound assets ready");
-    return 0;
 }
 
-// Hosted libc headers (-> /include), crt0.o (-> /lib) and TCC bundled
-// headers (-> /lib/tcc/include) so `tcc -o test test.c` finds everything
-// on the installed system. Long (>8.3) names go through LFN aliases.
-static int32_t install_dev_headers(void){
-    static const char *header_dirs[]={"/include/sys","/lib/tcc","/lib/tcc/include"};
-    for(uint8_t i=0;i<sizeof(header_dirs)/sizeof(header_dirs[0]);i++){
-        int32_t st=payload_mkdir(header_dirs[i]);
-        if(st<0){
-            klogf(KLOG_ERROR,"install: mkdir %s failed %d",header_dirs[i],st);
-            return st;
+static int32_t install_manifest_payload(void){
+    const void *blob;
+    uint64_t blob_size;
+    if(!boot_get_module("/manifest.txt",&blob,&blob_size) || !blob
+       || !blob_size || blob_size>65536U){
+        klog(KLOG_ERROR,"install: missing /manifest.txt module");
+        return FS_ERROR_NOT_FOUND;
+    }
+    const char *text=(const char*)blob;
+    uint64_t pos=0;
+    uint32_t installed=0;
+    char line[MANIFEST_LINE_MAX];
+    while(pos<blob_size){
+        uint32_t len=0;
+        while(pos<blob_size && text[pos]!='\n' && len+1<sizeof(line)){
+            line[len++]=text[pos++];
         }
-    }
-    static const struct header_module modules[]={
-        {"/include/assert.h","/include","assert.h",0,0,true},
-        {"/include/ctype.h","/include","ctype.h",0,0,true},
-        {"/include/dlfcn.h","/include","dlfcn.h",0,0,true},
-        {"/include/errno.h","/include","errno.h",0,0,true},
-        {"/include/fcntl.h","/include","fcntl.h",0,0,true},
-        {"/include/inttypes.h","/include","inttypes.h",0,0,true},
-        {"/include/math.h","/include","math.h",0,0,true},
-        {"/include/setjmp.h","/include","setjmp.h",0,0,true},
-        {"/include/signal.h","/include","signal.h",0,0,true},
-        {"/include/stdio.h","/include","stdio.h",0,0,true},
-        {"/include/stdlib.h","/include","stdlib.h",0,0,true},
-        {"/include/string.h","/include","string.h",0,0,true},
-        {"/include/time.h","/include","time.h",0,0,true},
-        {"/include/unistd.h","/include","unistd.h",0,0,true},
-        {"/include/sys/stat.h","/include/sys","stat.h",0,0,true},
-        {"/include/sys/time.h","/include/sys","time.h",0,0,true},
-        {"/include/sys/mman.h","/include/sys","mman.h",0,0,true},
-        {"/include/sys/ucontext.h","/include/sys","ucontext.h",0,0,true},
-        {"/lib/crt0.o","/lib","crt0.o",0,0,true},
-        {"/lib/tcc/include/float.h","/lib/tcc/include","float.h",0,0,false},
-        {"/lib/tcc/include/stdarg.h","/lib/tcc/include","stdarg.h",0,0,false},
-        {"/lib/tcc/include/stdbool.h","/lib/tcc/include","stdbool.h",0,0,false},
-        {"/lib/tcc/include/stddef.h","/lib/tcc/include","stddef.h",0,0,false},
-        {"/lib/tcc/include/tgmath.h","/lib/tcc/include","tgmath.h",0,0,false},
-        {"/lib/tcc/include/tccdefs.h","/lib/tcc/include","tccdefs.h",0,0,false},
-        {"/lib/tcc/include/varargs.h","/lib/tcc/include","varargs.h",0,0,false},
-        {"/lib/tcc/include/stdalign.h","/lib/tcc/include","stdalign.h",0,0,false},
-        {"/lib/tcc/include/stdatomic.h","/lib/tcc/include","stdatomic.h",
-         "/lib/tcc/include/STDATO~1.H","STDATO~1.H",false},
-        {"/lib/tcc/include/stdnoreturn.h","/lib/tcc/include","stdnoreturn.h",
-         "/lib/tcc/include/STDNOR~1.H","STDNOR~1.H",false},
-    };
-    for(uint32_t i=0;i<sizeof(modules)/sizeof(modules[0]);i++){
-        int32_t status=install_header_module(&modules[i]);
+        if(pos<blob_size && text[pos]=='\n'){
+            pos++;
+        } else if(pos<blob_size){
+            klog(KLOG_ERROR,"install: manifest line too long");
+            return FS_ERROR_INVALID;
+        }
+        line[len]='\0';
+        uint32_t cursor=0;
+        while(line[cursor]==' '||line[cursor]=='\t') cursor++;
+        if(line[cursor]=='\0'||line[cursor]=='#') continue;
+        char *cols[5];
+        uint32_t ncols=0;
+        while(line[cursor]!='\0' && ncols<5){
+            while(line[cursor]==' '||line[cursor]=='\t') cursor++;
+            if(line[cursor]=='\0') break;
+            cols[ncols++]=&line[cursor];
+            while(line[cursor]!='\0' && line[cursor]!=' '
+               && line[cursor]!='\t') cursor++;
+            if(line[cursor]!='\0') line[cursor++]='\0';
+        }
+        if(ncols!=5){
+            klog(KLOG_ERROR,"install: malformed manifest line");
+            return FS_ERROR_INVALID;
+        }
+        const char *module=cols[0];
+        const char *dest=cols[1];
+        const char *alias=cols[2];
+        bool required;
+        if(cols[3][0]=='1' && cols[3][1]=='\0') required=true;
+        else if(cols[3][0]=='0' && cols[3][1]=='\0') required=false;
+        else{
+            klog(KLOG_ERROR,"install: bad required flag in manifest");
+            return FS_ERROR_INVALID;
+        }
+        if(module[0]!='/'){
+            klog(KLOG_ERROR,"install: bad module path in manifest");
+            return FS_ERROR_INVALID;
+        }
+        bool use_alias=true;
+        if(alias[0]=='-' && alias[1]=='\0') use_alias=false;
+        else if(alias[0]!='/'){
+            klog(KLOG_ERROR,"install: bad alias path in manifest");
+            return FS_ERROR_INVALID;
+        }
+        const char *slash=0;
+        for(uint32_t i=0;dest[i]!='\0';i++){
+            if(dest[i]=='/') slash=&dest[i];
+        }
+        if(!slash || slash==dest){
+            klog(KLOG_ERROR,"install: bad dest path in manifest");
+            return FS_ERROR_INVALID;
+        }
+        char directory[MANIFEST_FIELD_MAX];
+        char name[64];
+        uint32_t dir_len=(uint32_t)(slash-dest);
+        if(dir_len==0 || dir_len>=sizeof(directory)){
+            klog(KLOG_ERROR,"install: dest directory too long");
+            return FS_ERROR_INVALID;
+        }
+        for(uint32_t i=0;i<dir_len;i++) directory[i]=dest[i];
+        directory[dir_len]='\0';
+        uint32_t name_len=0;
+        const char *np=slash+1;
+        while(np[name_len]!='\0' && name_len+1<sizeof(name)){
+            name[name_len]=np[name_len];
+            name_len++;
+        }
+        name[name_len]='\0';
+        if(np[name_len]!='\0' || name_len==0){
+            klog(KLOG_ERROR,"install: bad file name in manifest");
+            return FS_ERROR_INVALID;
+        }
+        char alias_name[32];
+        const char *alias_name_ptr=0;
+        if(use_alias){
+            const char *aslash=0;
+            for(uint32_t i=0;alias[i]!='\0';i++){
+                if(alias[i]=='/') aslash=&alias[i];
+            }
+            if(!aslash || aslash[1]=='\0'){
+                klog(KLOG_ERROR,"install: bad alias path in manifest");
+                return FS_ERROR_INVALID;
+            }
+            uint32_t an=0;
+            const char *ap=aslash+1;
+            while(ap[an]!='\0' && an+1<sizeof(alias_name)){
+                alias_name[an]=ap[an];
+                an++;
+            }
+            alias_name[an]='\0';
+            if(ap[an]!='\0'){
+                klog(KLOG_ERROR,"install: alias name too long");
+                return FS_ERROR_INVALID;
+            }
+            alias_name_ptr=alias_name;
+        }
+        manifest_mkdir_parents(dest);
+        struct header_module entry;
+        entry.module=module;
+        entry.directory=directory;
+        entry.name=name;
+        entry.alias_path=use_alias?alias:0;
+        entry.alias_name=alias_name_ptr;
+        entry.required=required;
+        int32_t status=install_header_module(&entry);
         if(status<0) return status;
+        installed++;
     }
-    klog(KLOG_OK,"install: dev headers ready");
+    klogf(KLOG_OK,"install: manifest payload done entries=%u",installed);
     return 0;
 }
 
 static int32_t install_program_payload(void){
-    {
-        static const char *required_dirs[]={"/bin","/bin/program","/game","/lib","/include"};
-        for(uint8_t i=0;i<sizeof(required_dirs)/sizeof(required_dirs[0]);i++){
-            int32_t st=payload_mkdir(required_dirs[i]);
-            if(st<0){
-                klogf(KLOG_ERROR,"install: mkdir %s failed %d",required_dirs[i],st);
-                return st;
-            }
-        }
-    }
-    (void)payload_mkdir("/src");
-    (void)payload_mkdir("/src/demo");
-    (void)payload_mkdir("/demo");
-    const void *init_image,*installer_image,*snake_image,*terminal_image;
-    const void *gui_demo_image;
-    const void *nano_image,*system_image,*files_image,*library_image;
-    const void *settings_image,*monitor_image,*disks_image,*tetris_image,*logview_image,*hexedit_image,*imgview_image;
-    const void *hello_image;
-    const void *login_image;
-    uint64_t hello_size = 0;
-    uint64_t login_size = 0;
-    uint64_t init_size,installer_size,snake_size,terminal_size,nano_size;
-    uint64_t system_size,files_size;
-    uint64_t library_size,gui_demo_size;
-    uint64_t settings_size,monitor_size,disks_size,tetris_size,logview_size,hexedit_size,imgview_size;
-    if(!boot_get_module("/bin/program/imgview",&imgview_image,&imgview_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/imgview (non-fatal)");
-        imgview_image=0; imgview_size=0;
-    }
-    // Hosted hello-world demo (standard main() + crt0 proving ground).
-    // Optional like imgview: older ISOs simply lack the module.
-    if(!boot_get_module("/bin/program/hello",&hello_image,&hello_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/hello (non-fatal)");
-        hello_image=0; hello_size=0;
-    }
-    // Login gate (optional like hello: older ISOs simply lack the module).
-    if(!boot_get_module("/bin/program/login",&login_image,&login_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/login (non-fatal)");
-        login_image=0; login_size=0;
-    }
-    if(!boot_get_module("/bin/init",&init_image,&init_size)){
-        klog(KLOG_ERROR,"install: missing /bin/init");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/installer",&installer_image,&installer_size)){
-        klog(KLOG_ERROR,"install: missing /bin/installer");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/snake",&snake_image,&snake_size)){
-        klog(KLOG_ERROR,"install: missing /bin/snake");
-        return FS_ERROR_NOT_FOUND;
-    }
-    // tetris is optional for backward ISO compatibility but preferred
-    bool has_tetris=boot_get_module("/bin/tetris",&tetris_image,&tetris_size);
-    if(!has_tetris) has_tetris=boot_get_module("/bin/program/tetris",&tetris_image,&tetris_size);
-    if(!has_tetris){
-        klog(KLOG_WARN,"install: missing /bin/tetris (will skip tetris payload)");
-        tetris_image=0;
-        tetris_size=0;
-    }
-    if(!boot_get_module("/bin/program/terminal",&terminal_image,&terminal_size)){
-        klog(KLOG_ERROR,"install: missing /bin/program/terminal");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/nano",&nano_image,&nano_size)){
-        klog(KLOG_ERROR,"install: missing /bin/program/nano");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/system",&system_image,&system_size)){
-        klog(KLOG_ERROR,"install: missing /bin/program/system");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/files",&files_image,&files_size)){
-        klog(KLOG_ERROR,"install: missing /bin/program/files");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/settings",&settings_image,&settings_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/settings (non-fatal)");
-        settings_image=0;
-        settings_size=0;
-    }
-    if(!boot_get_module("/bin/program/monitor",&monitor_image,&monitor_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/monitor (non-fatal)");
-        monitor_image=0;
-        monitor_size=0;
-    }
-    if(!boot_get_module("/bin/program/disks",&disks_image,&disks_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/disks (non-fatal)");
-        disks_image=0;
-        disks_size=0;
-    }
-    if(!boot_get_module("/bin/program/logview",&logview_image,&logview_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/logview (non-fatal)");
-        logview_image=0;
-        logview_size=0;
-    }
-    if(!boot_get_module("/bin/program/hexedit",&hexedit_image,&hexedit_size)){
-        klog(KLOG_WARN,"install: missing /bin/program/hexedit (non-fatal)");
-        hexedit_image=0;
-        hexedit_size=0;
-    }
-    if(!boot_get_module("/bin/gui-demo",&gui_demo_image,&gui_demo_size)){
-        klog(KLOG_ERROR,"install: missing /bin/gui-demo");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/lib/libpurec.a",&library_image,&library_size)){
-        klog(KLOG_ERROR,"install: missing /lib/libpurec.a");
-        return FS_ERROR_NOT_FOUND;
-    }
-    const void *fs_library_image; uint64_t fs_library_size;
-    bool has_fs_lib = boot_get_module("/lib/libpurefs.a",&fs_library_image,&fs_library_size);
-    if(!has_fs_lib){
-        klog(KLOG_ERROR,"install: missing /lib/libpurefs.a");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(init_size>UINT32_MAX || installer_size>UINT32_MAX || snake_size>UINT32_MAX || terminal_size>UINT32_MAX || nano_size>UINT32_MAX || system_size>UINT32_MAX || files_size>UINT32_MAX || gui_demo_size>UINT32_MAX || library_size>UINT32_MAX || fs_library_size>UINT32_MAX || settings_size>UINT32_MAX || monitor_size>UINT32_MAX || disks_size>UINT32_MAX || tetris_size>UINT32_MAX || logview_size>UINT32_MAX || hexedit_size>UINT32_MAX){
-        klog(KLOG_ERROR,"install: module too large");
-        return FS_ERROR_NOT_FOUND;
-    }
-    int32_t status=payload_write_file("/bin/init",init_image,(uint32_t)init_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write /bin/init %d",status);
-        return status;
-    }
-    status=payload_write_alias("/bin","installer","/bin/instal~1","instal~1",
-                          installer_image,(uint32_t)installer_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write installer %d",status);
-        return status;
-    }
-    status=payload_write_file("/bin/snake",snake_image,(uint32_t)snake_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write snake %d",status);
-        return status;
-    }
-    status=payload_write_file("/game/snake",snake_image,(uint32_t)snake_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write game/snake %d",status);
-        return status;
-    }
-    status=payload_write_file("/bin/program/terminal",terminal_image,
-                            (uint32_t)terminal_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write terminal %d",status);
-        return status;
-    }
-    status=payload_write_file("/bin/program/nano",nano_image,(uint32_t)nano_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write nano %d",status);
-        return status;
-    }
-    status=payload_write_file("/bin/program/system",system_image,
-                            (uint32_t)system_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write system %d",status);
-        return status;
-    }
-    status=payload_write_file("/bin/program/files",files_image,
-                            (uint32_t)files_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write files %d",status);
-        return status;
-    }
-    if(settings_image && settings_size){
-        status=payload_write_file("/bin/program/settings",settings_image,(uint32_t)settings_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write settings %d",status);
-            return status;
-        }
-    }
-    if(monitor_image && monitor_size){
-        status=payload_write_file("/bin/program/monitor",monitor_image,(uint32_t)monitor_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write monitor %d",status);
-            return status;
-        }
-    }
-    if(disks_image && disks_size){
-        status=payload_write_file("/bin/program/disks",disks_image,(uint32_t)disks_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write disks %d",status);
-            return status;
-        }
-    }
-    if(logview_image && logview_size){
-        status=payload_write_file("/bin/program/logview",logview_image,(uint32_t)logview_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write logview %d",status);
-            return status;
-        }
-    }
-    if(hexedit_image && hexedit_size){
-        status=payload_write_file("/bin/program/hexedit",hexedit_image,(uint32_t)hexedit_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write hexedit %d",status);
-            return status;
-        }
-    }
-    if(tetris_image && tetris_size){
-        status=payload_write_file("/bin/tetris",tetris_image,(uint32_t)tetris_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write tetris %d",status);
-            return status;
-        }
-        status=payload_write_file("/bin/program/tetris",tetris_image,(uint32_t)tetris_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write program/tetris %d",status);
-            return status;
-        }
-        status=payload_write_file("/game/tetris",tetris_image,(uint32_t)tetris_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: write game/tetris %d",status);
-            return status;
-        }
-    }
-    if(install_sound_assets()<0) return -1;
-    status=payload_write_file("/bin/gui-demo",gui_demo_image,
-                            (uint32_t)gui_demo_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write gui-demo %d",status);
-        return status;
-    }
-    status=payload_write_file("/lib/libpurec.a",library_image,
-                            (uint32_t)library_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write libpurec %d",status);
-    }
+    int32_t status=install_manifest_payload();
     if(status<0) return status;
-    status=payload_write_alias("/lib","libpurefs.a","/lib/libpur~2.a","libpur~2.a",fs_library_image,(uint32_t)fs_library_size);
-    if(status<0){
-        klogf(KLOG_ERROR,"install: write libpurefs %d",status);
-    }
-    if(status<0) return status;
-    status=payload_verify_file("/bin/gui-demo",(uint32_t)gui_demo_size);
-    if(status<0) return status;
-    status=payload_verify_file("/bin/program/files",(uint32_t)files_size);
-    if(status<0) return status;
-    if(settings_image && settings_size){
-        status=payload_verify_file("/bin/program/settings",(uint32_t)settings_size);
-        if(status<0) return status;
-    }
-    if(monitor_image && monitor_size){
-        status=payload_verify_file("/bin/program/monitor",(uint32_t)monitor_size);
-        if(status<0) return status;
-    }
-    if(disks_image && disks_size){
-        status=payload_verify_file("/bin/program/disks",(uint32_t)disks_size);
-        if(status<0) return status;
-    }
-    if(logview_image && logview_size){
-        status=payload_verify_file("/bin/program/logview",(uint32_t)logview_size);
-        if(status<0) return status;
-    }
-    if(hexedit_image && hexedit_size){
-        status=payload_verify_file("/bin/program/hexedit",(uint32_t)hexedit_size);
-        if(status<0) return status;
-    }
-    if(imgview_image && imgview_size){
-        status=payload_write_file("/bin/program/imgview",imgview_image,(uint32_t)imgview_size);        if(status<0){
-            klogf(KLOG_ERROR,"install: write imgview failed %d, removing partial file",status);
-            (void)fat32_delete("/bin/program/imgview");
-            return status;
-        }
-        status=payload_verify_file("/bin/program/imgview",(uint32_t)imgview_size);
-        if(status<0){
-            klogf(KLOG_ERROR,"install: verify imgview failed %d, removing partial file",status);
-            (void)fat32_delete("/bin/program/imgview");
-            return status;
-        }
-    }
-    if(hello_image && hello_size && hello_size<=UINT32_MAX){
-        status=payload_write_file("/bin/program/hello",hello_image,(uint32_t)hello_size);
-        if(status>=0) (void)payload_verify_file("/bin/program/hello",(uint32_t)hello_size);
-        else klogf(KLOG_WARN,"install: write hello failed %d (non-fatal)",status);
-    }
-    if(login_image && login_size && login_size<=UINT32_MAX){
-        status=payload_write_file("/bin/program/login",login_image,(uint32_t)login_size);
-        if(status>=0) (void)payload_verify_file("/bin/program/login",(uint32_t)login_size);
-        else klogf(KLOG_WARN,"install: write login failed %d (non-fatal)",status);
-    }
-    {
-        // FPU self-test (optional like hello).
-        const void *fpu_image = 0;
-        uint64_t fpu_size = 0;
-        if(boot_get_module("/bin/program/fputest",&fpu_image,&fpu_size)
-           && fpu_image && fpu_size && fpu_size<=UINT32_MAX){
-            status=payload_write_file("/bin/program/fputest",fpu_image,(uint32_t)fpu_size);
-            if(status>=0) (void)payload_verify_file("/bin/program/fputest",(uint32_t)fpu_size);
-            else klogf(KLOG_WARN,"install: write fputest failed %d (non-fatal)",status);
-        }
-    }
-    {
-        // TCC port: compiler binary (optional, needs the tcc/ tree at
-        // ISO build time). Missing module = skip; broken write = abort
-        // like imgview so no corrupt compiler lands on disk.
-        const void *tcc_image = 0;
-        uint64_t tcc_size = 0;
-        if(boot_get_module("/bin/program/tcc",&tcc_image,&tcc_size)
-           && tcc_image && tcc_size && tcc_size<=UINT32_MAX){
-            status=payload_write_file("/bin/program/tcc",tcc_image,(uint32_t)tcc_size);
-            if(status<0){
-                klogf(KLOG_ERROR,"install: write tcc failed %d, removing partial file",status);
-                (void)fat32_delete("/bin/program/tcc");
-                return status;
-            }
-            status=payload_verify_file("/bin/program/tcc",(uint32_t)tcc_size);
-            if(status<0){
-                klogf(KLOG_ERROR,"install: verify tcc failed %d, removing partial file",status);
-                (void)fat32_delete("/bin/program/tcc");
-                return status;
-            }
-        } else {
-            klog(KLOG_WARN,"install: missing /bin/program/tcc (non-fatal)");
-        }
-    }
-    status=install_dev_headers();
-    if(status<0) return status;    const void *demo_bmp=NULL, *demo_png=NULL; uint64_t demo_bmp_sz=0, demo_png_sz=0;
-    if(boot_get_module("/src/demo/screenshot.bmp",&demo_bmp,&demo_bmp_sz) && demo_bmp && demo_bmp_sz<=UINT32_MAX){
-        // "screenshot.bmp" (14 chars) is not 8.3: write via LFN entry +
-        // 8.3 alias, otherwise fat32_create_file rejects it and the file
-        // silently never lands on disk (imgview default path then fails).
-        if(payload_write_alias("/src/demo","screenshot.bmp","/src/demo/SCREEN~1.BMP","SCREEN~1.BMP",demo_bmp,(uint32_t)demo_bmp_sz)<0)
-            klog(KLOG_WARN,"install: write /src/demo/screenshot.bmp failed (non-fatal)");
-        if(payload_write_alias("/demo","screenshot.bmp","/demo/SCREEN~1.BMP","SCREEN~1.BMP",demo_bmp,(uint32_t)demo_bmp_sz)<0)
-            klog(KLOG_WARN,"install: write /demo/screenshot.bmp failed (non-fatal)");
-    }
-    if(boot_get_module("/src/demo/image.png",&demo_png,&demo_png_sz) && demo_png && demo_png_sz<=UINT32_MAX){
-        (void)payload_write_file("/src/demo/image.png",demo_png,(uint32_t)demo_png_sz);
-        (void)payload_write_file("/demo/image.png",demo_png,(uint32_t)demo_png_sz);
-    }
-    if(tetris_image && tetris_size){
-        status=payload_verify_file("/bin/tetris",(uint32_t)tetris_size);
-        if(status<0) return status;
-        status=payload_verify_file("/bin/program/tetris",(uint32_t)tetris_size);
-        if(status<0) return status;
-        status=payload_verify_file("/game/tetris",(uint32_t)tetris_size);
-        if(status<0) return status;
-    }
-    // firmware в /bin/firmware/Intel/wifi (LFN, 8.3 алиасы FW0000XX.UCO)
     int32_t fw_st=install_firmware_payload();
     if(fw_st<0){
-        klogf(KLOG_WARN, "install: firmware payload failed %d (non-fatal, will continue)", fw_st);
+        klogf(KLOG_WARN,"install: firmware payload failed %d (non-fatal, will continue)",fw_st);
     }
-    return install_gui_development_payload();
+    return 0;
 }
 
 static int32_t install_uefi_payload(void){
@@ -2735,49 +2391,8 @@ static int32_t install_uefi_payload(void){
         klog(KLOG_ERROR,"install: BOOTX64.EFI bad MZ");
         return FS_ERROR_NOT_FOUND;
     }
-    const void *init_image;
-    const void *installer_image;
-    const void *snake_image;
-    const void *terminal_image;
-    const void *nano_image;
-    const void *system_image;
-    const void *library_image;
-    uint64_t init_size,installer_size,snake_size,terminal_size,nano_size;
-    uint64_t system_size;
-    uint64_t library_size;
-    if(!boot_get_module("/bin/init",&init_image,&init_size)){
-        klog(KLOG_ERROR,"install: missing /bin/init uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/installer",&installer_image,&installer_size)){
-        klog(KLOG_ERROR,"install: missing /bin/installer uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/snake",&snake_image,&snake_size)){
-        klog(KLOG_ERROR,"install: missing /bin/snake uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/terminal",&terminal_image,&terminal_size)){
-        klog(KLOG_ERROR,"install: missing terminal uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/nano",&nano_image,&nano_size)){
-        klog(KLOG_ERROR,"install: missing nano uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/bin/program/system",&system_image,&system_size)){
-        klog(KLOG_ERROR,"install: missing system uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(!boot_get_module("/lib/libpurec.a",&library_image,&library_size)){
-        klog(KLOG_ERROR,"install: missing libpurec uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-    if(init_size>UINT32_MAX || installer_size>UINT32_MAX || snake_size>UINT32_MAX || terminal_size>UINT32_MAX || nano_size>UINT32_MAX || system_size>UINT32_MAX || library_size>UINT32_MAX){
-        klog(KLOG_ERROR,"install: module too large uefi");
-        return FS_ERROR_NOT_FOUND;
-    }
-
+    // Programs and libraries are installed by the manifest-driven
+    // install_program_payload() below; no per-file fetch here.
     int32_t status=payload_write_file("/EFI/BOOT/BOOTX64.EFI",
                                     efi_loader,efi_loader_size);
     if(status<0){
@@ -2827,23 +2442,8 @@ static int32_t install_uefi_payload(void){
     status=verify_installed_file("/boot/kernel2.elf",
                                  (uint32_t)fallback_kernel_image_size);
     if(status<0) return status;
-    status=verify_installed_file("/bin/init",(uint32_t)init_size);
-    if(status<0) return status;
-    status=verify_installed_file("/bin/installer",(uint32_t)installer_size);
-    if(status<0) return status;
-    status=verify_installed_file("/bin/snake",(uint32_t)snake_size);
-    if(status<0) return status;
-    status=verify_installed_file("/game/snake",(uint32_t)snake_size);
-    if(status<0) return status;
-    status=verify_installed_file("/bin/program/terminal",
-                                 (uint32_t)terminal_size);
-    if(status<0) return status;
-    status=verify_installed_file("/bin/program/nano",(uint32_t)nano_size);
-    if(status<0) return status;
-    status=verify_installed_file("/bin/program/system",(uint32_t)system_size);
-    if(status<0) return status;
-    status=verify_installed_file("/lib/libpurec.a",(uint32_t)library_size);
-    if(status<0) return status;
+    // Programs and libraries were verified entry-by-entry by the
+    // manifest loop inside install_program_payload().
     for(uint8_t index=0;index<sizeof(config_locations)/sizeof(config_locations[0]);index++){
         status=verify_installed_file(config_locations[index].alias_path,
                                      sizeof(uefi_limine_config)-1);

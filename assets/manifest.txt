@@ -1,0 +1,106 @@
+# PureC OS install asset manifest — single source of truth for every file
+# the installer seeds into the target filesystem.
+#
+# Columns (whitespace separated, exactly 5):
+#   module    Limine boot module path (also the ISO path). Must start with /.
+#   dest      Target filesystem path. Parent directories are auto-created.
+#   alias     8.3 alias path for non-8.3 names, or - for a direct write.
+#   required  1 = missing/broken module aborts install, 0 = warn and skip.
+#   stage     Host path (relative to repo ROOT) used to stage the ISO module.
+#
+# Consumers (all generated/validated by mk/gen_assets.py, installed by the
+# generic manifest loop in src/fs/fat/fat32.c):
+#   - ISO staging: ROOT/<stage> -> <ISO_ROOT><module>
+#   - limine.conf: one "module_path: boot():<module>" per unique module
+#     (+ /manifest.txt itself), optional modules only if the stage exists.
+#   - installer: for each line, boot_get_module(<module>) -> write <dest>
+#     (via alias when set) -> verify. No per-file C code needed.
+#
+# Rules: no spaces inside fields; lines starting with # are comments;
+# (module,dest) pairs must be unique; a module may feed several dests.
+# The installer fetches /manifest.txt directly, so it needs no entry here.
+
+# --- core programs (required) ---
+/bin/init /bin/init - 1 bin/programs/init
+/bin/installer /bin/installer /bin/instal~1 1 bin/programs/installer
+/bin/snake /bin/snake - 1 bin/programs/snake
+/bin/snake /game/snake - 1 bin/programs/snake
+/bin/program/terminal /bin/program/terminal - 1 bin/programs/terminal
+/bin/program/nano /bin/program/nano - 1 bin/programs/nano
+/bin/program/system /bin/program/system - 1 bin/programs/system
+/bin/program/files /bin/program/files - 1 bin/programs/files
+/bin/gui-demo /bin/gui-demo - 1 bin/programs/gui-demo
+
+# --- optional programs ---
+/bin/tetris /bin/tetris - 0 bin/programs/tetris
+/bin/program/tetris /bin/program/tetris - 0 bin/programs/tetris
+/bin/tetris /game/tetris - 0 bin/programs/tetris
+/bin/program/settings /bin/program/settings - 0 bin/programs/settings
+/bin/program/monitor /bin/program/monitor - 0 bin/programs/monitor
+/bin/program/disks /bin/program/disks - 0 bin/programs/disks
+/bin/program/logview /bin/program/logview - 0 bin/programs/logview
+/bin/program/hexedit /bin/program/hexedit - 0 bin/programs/hexedit
+/bin/program/imgview /bin/program/imgview - 0 bin/programs/imgview
+/bin/program/hello /bin/program/hello - 0 bin/programs/hello
+/bin/program/login /bin/program/login - 0 bin/programs/login
+/bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
+/bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
+
+# --- system libraries ---
+/lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
+/lib/libpurefs.a /lib/libpurefs.a /lib/libpur~2.a 1 bin/lib/libpurefs.a
+/lib/libpuregui.a /lib/libpuregui.a /lib/libpur~1.a 1 bin/lib/libpuregui.a
+/lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
+/lib/libpureaudio.a /lib/libpureaudio.a /lib/libpur~3.a 0 bin/lib/libpureaudio.a
+
+# --- development headers (required, except audio/tcc extras) ---
+/include/puregui.h /include/puregui.h - 1 src/libgui/include/puregui.h
+/include/pguiw.h /include/pguiw.h - 1 src/libgui/include/pguiw.h
+/include/purefs.h /include/purefs.h - 1 src/libfs/include/purefs.h
+/include/pureaudio.h /include/pureaudio.h - 0 src/libaudio/include/pureaudio.h
+/include/assert.h /include/assert.h - 1 src/libc/include/hosted/assert.h
+/include/ctype.h /include/ctype.h - 1 src/libc/include/hosted/ctype.h
+/include/dlfcn.h /include/dlfcn.h - 1 src/libc/include/hosted/dlfcn.h
+/include/errno.h /include/errno.h - 1 src/libc/include/hosted/errno.h
+/include/fcntl.h /include/fcntl.h - 1 src/libc/include/hosted/fcntl.h
+/include/inttypes.h /include/inttypes.h - 1 src/libc/include/hosted/inttypes.h
+/include/math.h /include/math.h - 1 src/libc/include/hosted/math.h
+/include/setjmp.h /include/setjmp.h - 1 src/libc/include/hosted/setjmp.h
+/include/signal.h /include/signal.h - 1 src/libc/include/hosted/signal.h
+/include/stdio.h /include/stdio.h - 1 src/libc/include/hosted/stdio.h
+/include/stdlib.h /include/stdlib.h - 1 src/libc/include/hosted/stdlib.h
+/include/string.h /include/string.h - 1 src/libc/include/hosted/string.h
+/include/time.h /include/time.h - 1 src/libc/include/hosted/time.h
+/include/unistd.h /include/unistd.h - 1 src/libc/include/hosted/unistd.h
+/include/sys/stat.h /include/sys/stat.h - 1 src/libc/include/hosted/sys/stat.h
+/include/sys/time.h /include/sys/time.h - 1 src/libc/include/hosted/sys/time.h
+/include/sys/mman.h /include/sys/mman.h - 1 src/libc/include/hosted/sys/mman.h
+/include/sys/ucontext.h /include/sys/ucontext.h - 1 src/libc/include/hosted/sys/ucontext.h
+/lib/crt0.o /lib/crt0.o - 1 bin/lib/crt0.o
+/lib/tcc/include/float.h /lib/tcc/include/float.h - 0 tcc/include/float.h
+/lib/tcc/include/stdarg.h /lib/tcc/include/stdarg.h - 0 tcc/include/stdarg.h
+/lib/tcc/include/stdbool.h /lib/tcc/include/stdbool.h - 0 tcc/include/stdbool.h
+/lib/tcc/include/stddef.h /lib/tcc/include/stddef.h - 0 tcc/include/stddef.h
+/lib/tcc/include/tgmath.h /lib/tcc/include/tgmath.h - 0 tcc/include/tgmath.h
+/lib/tcc/include/tccdefs.h /lib/tcc/include/tccdefs.h - 0 tcc/include/tccdefs.h
+/lib/tcc/include/varargs.h /lib/tcc/include/varargs.h - 0 tcc/include/varargs.h
+/lib/tcc/include/stdalign.h /lib/tcc/include/stdalign.h - 0 tcc/include/stdalign.h
+/lib/tcc/include/stdatomic.h /lib/tcc/include/stdatomic.h /lib/tcc/include/STDATO~1.H 0 tcc/include/stdatomic.h
+/lib/tcc/include/stdnoreturn.h /lib/tcc/include/stdnoreturn.h /lib/tcc/include/STDNOR~1.H 0 tcc/include/stdnoreturn.h
+
+# --- demo assets ---
+/src/demo/screenshot.bmp /src/demo/screenshot.bmp /src/demo/SCREEN~1.BMP 0 src/demo/screenshot.bmp
+/src/demo/screenshot.bmp /demo/screenshot.bmp /demo/SCREEN~1.BMP 0 src/demo/screenshot.bmp
+/src/demo/image.png /src/demo/image.png - 0 src/demo/image.png
+/src/demo/image.png /demo/image.png - 0 src/demo/image.png
+
+# --- game sound effects (22050 Hz mono WAV) ---
+/game/sound/turn.wav /game/sound/turn.wav - 0 src/audio/snake/turn.wav
+/game/sound/eat.wav /game/sound/eat.wav - 0 src/audio/snake/eat.wav
+/game/sound/die.wav /game/sound/die.wav - 0 src/audio/snake/die.wav
+/game/sound/move.wav /game/sound/move.wav - 0 src/audio/tetris/move.wav
+/game/sound/clear.wav /game/sound/clear.wav - 0 src/audio/tetris/clear.wav
+/game/sound/over.wav /game/sound/over.wav - 0 src/audio/tetris/over.wav
+/bin/sound/turn.wav /bin/sound/turn.wav - 0 src/audio/snake/turn.wav
+/bin/sound/eat.wav /bin/sound/eat.wav - 0 src/audio/snake/eat.wav
+/bin/sound/die.wav /bin/sound/die.wav - 0 src/audio/snake/die.wav
