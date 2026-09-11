@@ -40,14 +40,10 @@
 #define PERSISTENT_LOG_MAX_BYTES 0xFFFFFFFFULL
 #define PERSISTENT_LOG_PATH "/kernel.log"
 
-/* Personalization: theme colors come from /config/appear.ini.
- * Old DESKTOP_BG/TOPBAR_* defines stay as compile-time fallbacks. */
 static void desktop_theme(struct personalization_colors *out){
     personalization_current_colors(out);
 }
 
-/* Icon labels must fit 58px tiles: honor the configured size up to 12px.
- * Full 8..24 range applies to Ring3 text via pg_window_text_sized. */
 static uint32_t desktop_label_size(void){
     const struct personalization *p=personalization_current();
     uint32_t size=personalization_font_size_clamped(p ? p->font_size : 12);
