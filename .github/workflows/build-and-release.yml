@@ -14,7 +14,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: true
 
       - name: Install dependencies
         run: |
@@ -47,6 +46,7 @@ jobs:
 
       - name: Build PureC OS
         run: |
+          chmod +x ./build-limine.sh
           ./build-limine.sh
 
       - name: Upload build artifacts
