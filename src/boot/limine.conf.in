@@ -3,7 +3,7 @@ verbose: yes
 serial: yes
 /PureC OS 64-bit Limine+GOP (primary)
     protocol: limine
-    resolution: 1280x800x32
+    resolution: 1920x1080x32
     kernel_path: boot():/boot/kernel.elf
     module_path: boot():/boot/kernel-fallback.elf
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
@@ -14,7 +14,7 @@ serial: yes
     module_path: boot():/bin/modules/crypt.ko
 /PureC OS 64-bit (fallback previous image)
     protocol: limine
-    resolution: 1280x800x32
+    resolution: 1920x1080x32
     kernel_path: boot():/boot/kernel-fallback.elf
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
 @MODULES@

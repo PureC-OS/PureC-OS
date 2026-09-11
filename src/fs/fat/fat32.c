@@ -1979,7 +1979,7 @@ static const char uefi_limine_config[]=
     "verbose: yes\n"
     "/PureC OS (UEFI primary)\n"
     "    protocol: limine\n"
-    "    resolution: 1280x800x32\n"
+    "    resolution: 1920x1080x32\n"
     "    kernel_path: boot():/boot/kernel.elf\n"
     "    module_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
