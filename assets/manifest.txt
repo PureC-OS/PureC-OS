@@ -95,28 +95,28 @@
 /src/demo/image.png /demo/image.png - 0 src/demo/image.png
 
 # --- bundled wallpapers (24-bit BMP, 8.3 names, stretched by desktop) ---
-/walpaper/ducati1.bmp /walpaper/ducati1.bmp - 0 src/wallpapers/ducati1.bmp
-/walpaper/bmw2.bmp /walpaper/bmw2.bmp - 0 src/wallpapers/bmw2.bmp
-/walpaper/bmw3.bmp /walpaper/bmw3.bmp - 0 src/wallpapers/bmw3.bmp
-/walpaper/space1.bmp /walpaper/space1.bmp - 0 src/wallpapers/space1.bmp
+/walpaper/ducati1.png /walpaper/ducati1.png - 0 src/wallpapers/ducati1.png
+/walpaper/bmw2.png /walpaper/bmw2.png - 0 src/wallpapers/bmw2.png
+/walpaper/bmw3.png /walpaper/bmw3.png - 0 src/wallpapers/bmw3.png
+/walpaper/space1.png /walpaper/space1.png - 0 src/wallpapers/space1.png
 /demo/wplist.ini /demo/wplist.ini - 0 src/wallpapers/wplist.ini
-/walpaper/wp01.bmp /walpaper/wp01.bmp - 0 src/wallpapers/wp01.bmp
-/walpaper/wp02.bmp /walpaper/wp02.bmp - 0 src/wallpapers/wp02.bmp
-/walpaper/wp03.bmp /walpaper/wp03.bmp - 0 src/wallpapers/wp03.bmp
-/walpaper/wp04.bmp /walpaper/wp04.bmp - 0 src/wallpapers/wp04.bmp
-/walpaper/wp05.bmp /walpaper/wp05.bmp - 0 src/wallpapers/wp05.bmp
-/walpaper/wp06.bmp /walpaper/wp06.bmp - 0 src/wallpapers/wp06.bmp
-/walpaper/wp07.bmp /walpaper/wp07.bmp - 0 src/wallpapers/wp07.bmp
-/walpaper/wp08.bmp /walpaper/wp08.bmp - 0 src/wallpapers/wp08.bmp
-/walpaper/wp09.bmp /walpaper/wp09.bmp - 0 src/wallpapers/wp09.bmp
-/walpaper/wp10.bmp /walpaper/wp10.bmp - 0 src/wallpapers/wp10.bmp
-/walpaper/wp11.bmp /walpaper/wp11.bmp - 0 src/wallpapers/wp11.bmp
-/walpaper/wp12.bmp /walpaper/wp12.bmp - 0 src/wallpapers/wp12.bmp
-/walpaper/wp13.bmp /walpaper/wp13.bmp - 0 src/wallpapers/wp13.bmp
-/walpaper/wp14.bmp /walpaper/wp14.bmp - 0 src/wallpapers/wp14.bmp
-/walpaper/wp15.bmp /walpaper/wp15.bmp - 0 src/wallpapers/wp15.bmp
-/walpaper/wp16.bmp /walpaper/wp16.bmp - 0 src/wallpapers/wp16.bmp
-/walpaper/wp17.bmp /walpaper/wp17.bmp - 0 src/wallpapers/wp17.bmp
+/walpaper/wp01.png /walpaper/wp01.png - 0 src/wallpapers/wp01.png
+/walpaper/wp02.png /walpaper/wp02.png - 0 src/wallpapers/wp02.png
+/walpaper/wp03.png /walpaper/wp03.png - 0 src/wallpapers/wp03.png
+/walpaper/wp04.png /walpaper/wp04.png - 0 src/wallpapers/wp04.png
+/walpaper/wp05.png /walpaper/wp05.png - 0 src/wallpapers/wp05.png
+/walpaper/wp06.png /walpaper/wp06.png - 0 src/wallpapers/wp06.png
+/walpaper/wp07.png /walpaper/wp07.png - 0 src/wallpapers/wp07.png
+/walpaper/wp08.png /walpaper/wp08.png - 0 src/wallpapers/wp08.png
+/walpaper/wp09.png /walpaper/wp09.png - 0 src/wallpapers/wp09.png
+/walpaper/wp10.png /walpaper/wp10.png - 0 src/wallpapers/wp10.png
+/walpaper/wp11.png /walpaper/wp11.png - 0 src/wallpapers/wp11.png
+/walpaper/wp12.png /walpaper/wp12.png - 0 src/wallpapers/wp12.png
+/walpaper/wp13.png /walpaper/wp13.png - 0 src/wallpapers/wp13.png
+/walpaper/wp14.png /walpaper/wp14.png - 0 src/wallpapers/wp14.png
+/walpaper/wp15.png /walpaper/wp15.png - 0 src/wallpapers/wp15.png
+/walpaper/wp16.png /walpaper/wp16.png - 0 src/wallpapers/wp16.png
+/walpaper/wp17.png /walpaper/wp17.png - 0 src/wallpapers/wp17.png
 
 # --- game sound effects (22050 Hz mono WAV) ---
 /game/sound/turn.wav /game/sound/turn.wav - 0 src/audio/snake/turn.wav
