@@ -11,6 +11,10 @@ static inline void outl(uint16_t port, uint32_t value){
     __asm__ volatile("outl %0,%1"::"a"(value),"Nd"(port));
 }
 
+static inline void outw(uint16_t port, uint16_t value){
+    __asm__ volatile("outw %0,%1"::"a"(value),"Nd"(port));
+}
+
 static inline uint32_t inl(uint16_t port){
     uint32_t value;
     __asm__ volatile("inl %1,%0":"=a"(value):"Nd"(port));
@@ -31,6 +35,22 @@ void pci_write_config32(uint8_t bus, uint8_t slot, uint8_t function,
         |((uint32_t)function<<8)|(offset&0xFC);
     outl(PCI_CONFIG_ADDRESS,address);
     outl(PCI_CONFIG_DATA,value);
+}
+
+bool pci_update_command(const struct pci_device_info *device,
+                        uint16_t set_bits, uint16_t clear_bits){
+    if(!device) return false;
+    uint32_t command_status=pci_read_config32(
+        device->bus,device->slot,device->function,0x04);
+    uint16_t command=(uint16_t)command_status;
+    command=(uint16_t)((command|set_bits)&(uint16_t)~clear_bits);
+    uint32_t address=0x80000000U|((uint32_t)device->bus<<16)
+        |((uint32_t)device->slot<<11)|((uint32_t)device->function<<8)|0x04;
+    outl(PCI_CONFIG_ADDRESS,address);
+    outw(PCI_CONFIG_DATA,command);
+    uint16_t verified=(uint16_t)pci_read_config32(
+        device->bus,device->slot,device->function,0x04);
+    return (verified&set_bits)==set_bits && (verified&clear_bits)==0;
 }
 
 uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t function,

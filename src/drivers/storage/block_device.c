@@ -4,7 +4,9 @@
 #include "../usb/xhci.h"
 #include "../usb/ehci.h"
 #include "../../lib/string.h"
-#include "../../kernel/klog.h"
+#include "../../kernel/diagnostics/klog.h"
+#include "../../kernel/process/scheduler.h"
+#include "../interrupts/timer.h"
 
 #define BLOCK_TRANSPORT_NONE 0
 
@@ -12,6 +14,36 @@ static uint8_t active_transport;
 static uint32_t active_index;
 static bool initialization_complete;
 static bool initialization_result;
+static volatile bool usb_rescan_busy;
+static volatile uint32_t exclusive_io_count;
+static uint64_t next_hotplug_scan;
+static bool preferred_usb_valid;
+static char preferred_usb_serial[STORAGE_SERIAL_CAPACITY];
+
+static void usb_rescan_lock(void){
+    while(__atomic_test_and_set(&usb_rescan_busy,__ATOMIC_ACQUIRE))
+        scheduler_sleep(1);
+}
+
+static void usb_rescan_unlock(void){
+    __atomic_clear(&usb_rescan_busy,__ATOMIC_RELEASE);
+}
+
+void block_device_begin_exclusive_io(void){
+    usb_rescan_lock();
+    (void)__atomic_add_fetch(&exclusive_io_count,1,__ATOMIC_ACQ_REL);
+    usb_rescan_unlock();
+}
+
+void block_device_end_exclusive_io(void){
+    uint32_t count=__atomic_load_n(&exclusive_io_count,__ATOMIC_ACQUIRE);
+    if(count) (void)__atomic_sub_fetch(&exclusive_io_count,1,
+                                      __ATOMIC_ACQ_REL);
+}
+
+static bool block_device_exclusive_io_active(void){
+    return __atomic_load_n(&exclusive_io_count,__ATOMIC_ACQUIRE)!=0;
+}
 
 bool block_device_init(void){
     if(initialization_complete) return initialization_result;
@@ -53,10 +85,53 @@ bool block_device_init(void){
 }
 
 uint32_t block_device_rescan_usb(void){
+    if(block_device_exclusive_io_active()){
+        klog(KLOG_INFO,"usb: rescan deferred during exclusive disk I/O");
+        return xhci_device_count()+ehci_device_count();
+    }
+    bool restore_usb=active_transport==STORAGE_TRANSPORT_USB_MSC
+        || active_transport==STORAGE_TRANSPORT_USB_EHCI
+        || preferred_usb_valid;
+    if(active_transport==STORAGE_TRANSPORT_USB_MSC
+       || active_transport==STORAGE_TRANSPORT_USB_EHCI){
+        uint32_t count=block_device_count();
+        for(uint32_t index=0;index<count;index++){
+            struct storage_device_info info;
+            if(block_device_get_info(index,&info) && info.selected){
+                memset(preferred_usb_serial,0,sizeof(preferred_usb_serial));
+                strncpy(preferred_usb_serial,info.serial,
+                        sizeof(preferred_usb_serial)-1);
+                preferred_usb_valid=true;
+                break;
+            }
+        }
+    }
+    usb_rescan_lock();
+    if(block_device_exclusive_io_active()){
+        uint32_t count=xhci_device_count()+ehci_device_count();
+        usb_rescan_unlock();
+        return count;
+    }
     uint32_t fixed_count=ata_pio_device_count()+ahci_device_count();
     (void)xhci_rescan(fixed_count);
     (void)ehci_rescan(fixed_count+xhci_device_count());
-    if(active_transport==BLOCK_TRANSPORT_NONE){
+    bool restored_usb=false;
+    if(restore_usb){
+        active_transport=BLOCK_TRANSPORT_NONE;
+        uint32_t count=block_device_count();
+        for(uint32_t index=0;index<count;index++){
+            struct storage_device_info info;
+            if(block_device_get_info(index,&info)
+               && (info.transport==STORAGE_TRANSPORT_USB_MSC
+                   || info.transport==STORAGE_TRANSPORT_USB_EHCI)
+               && strcmp(info.serial,preferred_usb_serial)==0){
+                (void)block_device_select(index);
+                restored_usb=true;
+                break;
+            }
+        }
+    }
+    if(active_transport==BLOCK_TRANSPORT_NONE && (!restore_usb || restored_usb)){
         if(xhci_device_count()){
             active_transport=STORAGE_TRANSPORT_USB_MSC;
             active_index=0;
@@ -67,7 +142,20 @@ uint32_t block_device_rescan_usb(void){
             (void)ehci_select_device(0);
         }
     }
-    return xhci_device_count()+ehci_device_count();
+    uint32_t result=xhci_device_count()+ehci_device_count();
+    usb_rescan_unlock();
+    return result;
+}
+
+void block_device_poll_usb_hotplug(void){
+    if(block_device_exclusive_io_active()) return;
+    uint64_t now=timer_ticks();
+    if(now<next_hotplug_scan) return;
+    next_hotplug_scan=now+1000;
+    if(!xhci_topology_changed() && !ehci_topology_changed()) return;
+    klog(KLOG_INFO,"usb: port topology changed, rescanning controllers");
+    uint32_t count=block_device_rescan_usb();
+    klogf(KLOG_INFO,"usb: hotplug rescan complete, storage devices=%u",count);
 }
 
 uint32_t block_device_count(void){
@@ -144,6 +232,7 @@ bool block_device_select(uint32_t index){
         if(!ata_pio_select_device(index)) return false;
         active_transport=STORAGE_TRANSPORT_ATA_PIO;
         active_index=index;
+        preferred_usb_valid=false;
         return true;
     }
     uint32_t ahci_count=ahci_device_count();
@@ -153,6 +242,7 @@ bool block_device_select(uint32_t index){
         if(!ahci_select_device(relative)) return false;
         active_transport=STORAGE_TRANSPORT_AHCI;
         active_index=relative;
+        preferred_usb_valid=false;
         return true;
     }
     uint32_t usb_index=relative-ahci_count;
@@ -160,29 +250,69 @@ bool block_device_select(uint32_t index){
         if(!xhci_select_device(usb_index)) return false;
         active_transport=STORAGE_TRANSPORT_USB_MSC;
         active_index=usb_index;
+        struct storage_device_info info;
+        if(xhci_get_device_info(usb_index,&info)){
+            memset(preferred_usb_serial,0,sizeof(preferred_usb_serial));
+            strncpy(preferred_usb_serial,info.serial,
+                    sizeof(preferred_usb_serial)-1);
+            preferred_usb_valid=true;
+        }
         return true;
     }
     uint32_t ehci_index=usb_index-xhci_count;
     if(!ehci_select_device(ehci_index)) return false;
     active_transport=STORAGE_TRANSPORT_USB_EHCI;
     active_index=ehci_index;
+    struct storage_device_info info;
+    if(ehci_get_device_info(ehci_index,&info)){
+        memset(preferred_usb_serial,0,sizeof(preferred_usb_serial));
+        strncpy(preferred_usb_serial,info.serial,
+                sizeof(preferred_usb_serial)-1);
+        preferred_usb_valid=true;
+    }
     return true;
 }
 
 bool block_device_read(uint32_t lba, void *buffer){
-    if(active_transport==STORAGE_TRANSPORT_USB_EHCI) return ehci_read_sector(lba,buffer);
-    if(active_transport==STORAGE_TRANSPORT_USB_MSC) return xhci_read_sector(lba,buffer);
+    if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
+        usb_rescan_lock();
+        bool result=ehci_read_sector(lba,buffer);
+        usb_rescan_unlock();
+        return result;
+    }
+    if(active_transport==STORAGE_TRANSPORT_USB_MSC){
+        usb_rescan_lock();
+        bool result=xhci_read_sector(lba,buffer);
+        usb_rescan_unlock();
+        return result;
+    }
     if(active_transport==STORAGE_TRANSPORT_AHCI) return ahci_read_sector(lba,buffer);
     if(active_transport==STORAGE_TRANSPORT_ATA_PIO) return ata_pio_read_sector(lba,buffer);
     return false;
 }
 
 bool block_device_write(uint32_t lba, const void *buffer){
-    if(active_transport==STORAGE_TRANSPORT_USB_EHCI) return ehci_write_sector(lba,buffer);
-    if(active_transport==STORAGE_TRANSPORT_USB_MSC) return xhci_write_sector(lba,buffer);
+    if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
+        usb_rescan_lock();
+        bool result=ehci_write_sector(lba,buffer);
+        usb_rescan_unlock();
+        return result;
+    }
+    if(active_transport==STORAGE_TRANSPORT_USB_MSC){
+        usb_rescan_lock();
+        bool result=xhci_write_sector(lba,buffer);
+        usb_rescan_unlock();
+        return result;
+    }
     if(active_transport==STORAGE_TRANSPORT_AHCI) return ahci_write_sector(lba,buffer);
     if(active_transport==STORAGE_TRANSPORT_ATA_PIO) return ata_pio_write_sector(lba,buffer);
     return false;
+}
+
+bool block_device_flush(void){
+    if(active_transport==STORAGE_TRANSPORT_AHCI) return ahci_flush();
+    if(active_transport==STORAGE_TRANSPORT_ATA_PIO) return ata_pio_flush();
+    return true;
 }
 
 const char *block_device_name(void){

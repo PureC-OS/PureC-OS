@@ -250,8 +250,13 @@ bool ata_pio_write_sector(uint32_t lba, const void *buffer){
     if(!wait_for_data(device)) return false;
     const uint16_t *words=(const uint16_t*)buffer;
     for(uint16_t index=0;index<256;index++) outw(device->io_base+ATA_REG_DATA,words[index]);
-    if(!wait_for_completion(device)) return false;
+    return wait_for_completion(device);
+}
 
+bool ata_pio_flush(void){
+    if(selected_device>=device_count) return false;
+    struct ata_device *device=&devices[selected_device];
+    if(!wait_not_busy(device)) return false;
     outb(device->io_base+ATA_REG_COMMAND,ATA_CMD_FLUSH);
     return wait_for_completion(device);
 }

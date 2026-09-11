@@ -2,7 +2,7 @@
 
 #include "ps2_mouse.h"
 #include "../usb/xhci.h"
-#include "../../kernel/klog.h"
+#include "../../kernel/diagnostics/klog.h"
 
 static struct usb_mouse_info info;
 

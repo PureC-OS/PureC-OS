@@ -3,7 +3,7 @@
 #include "../pci/pci.h"
 #include "../storage/storage_probe.h"
 #include "../../arch/x86_64/mmio.h"
-#include "../../kernel/klog.h"
+#include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
 
 #define EHCI_DEVICE_LIMIT 4
@@ -116,9 +116,25 @@ static uint32_t bot_tag=1;
 static uint8_t controller_number;
 static uint8_t device_count;
 static uint8_t selected_device=EHCI_NO_DEVICE;
+static uint8_t root_port_count;
 static bool mapping_ready;
 static bool probe_complete;
+static uint16_t known_port_bitmap;
 static struct ehci_probe_stats probe_stats;
+
+static uint16_t connected_port_bitmap(void){
+    if(!operational) return 0;
+    uint16_t bitmap=0;
+    for(uint8_t port=1;port<=root_port_count;port++){
+        if(operational[17+port-1]&EHCI_PORT_CONNECT)
+            bitmap|=(uint16_t)(1U<<(port-1));
+    }
+    return bitmap;
+}
+
+bool ehci_topology_changed(void){
+    return operational && connected_port_bitmap()!=known_port_bitmap;
+}
 
 void ehci_set_address_mapping(uint64_t direct_map_offset, uint64_t physical_base,
                               uint64_t virtual_base){
@@ -575,6 +591,7 @@ static bool initialize_controller(const struct storage_controller_info *controll
         klogf(KLOG_ERROR,"ehci%u: zero ports structural=0x%08x",controller_number,structural);
         return false;
     }
+    root_port_count=ports;
     operational=(volatile uint32_t*)(void*)(capability_base+capability_length);
     klogf(KLOG_INFO,"ehci%u: operational=%p USBCMD=0x%08x USBSTS=0x%08x",controller_number,(void*)operational,operational[0],operational[1]);
     operational[0]&=~EHCI_CMD_RUN;
@@ -677,18 +694,18 @@ bool ehci_init(uint32_t linux_name_base){
     } else {
         klogf(KLOG_INFO,"ehci: controllers=%u disks=%u",probe_stats.controllers,device_count);
     }
+    known_port_bitmap=connected_port_bitmap();
     return device_count>0;
 }
 
 bool ehci_rescan(uint32_t linux_name_base){
-    if(device_count){
-        return true;
-    }
     if(!mapping_ready){
         klog(KLOG_ERROR,"ehci: rescan mapping not ready");
         return false;
     }
     selected_device=EHCI_NO_DEVICE;
+    device_count=0;
+    memset(devices,0,sizeof(devices));
     probe_stats.connected_ports=0;
     probe_stats.high_speed_ports=0;
     probe_stats.mass_storage_devices=0;
@@ -715,6 +732,7 @@ bool ehci_rescan(uint32_t linux_name_base){
         if(device_count) break;
     }
     klog_set_screen_enabled(was_screen);
+    known_port_bitmap=connected_port_bitmap();
     klogf(KLOG_INFO,"ehci: rescan done disks=%u connected=%u",device_count,probe_stats.connected_ports);
     return device_count>0;
 }

@@ -1,0 +1,20 @@
+timeout: 10
+verbose: yes
+serial: yes
+/PureC OS 64-bit Limine+GOP (primary)
+    protocol: limine
+    resolution: 1920x1080x32
+    kernel_path: boot():/boot/kernel.elf
+    module_path: boot():/boot/kernel-fallback.elf
+    module_path: boot():/EFI/BOOT/BOOTX64.EFI
+@MODULES@
+    module_path: boot():/bin/modules/ext2.elf
+    module_path: boot():/bin/modules/ext2.ko
+    module_path: boot():/bin/modules/crypt.elf
+    module_path: boot():/bin/modules/crypt.ko
+/PureC OS 64-bit (fallback previous image)
+    protocol: limine
+    resolution: 1920x1080x32
+    kernel_path: boot():/boot/kernel-fallback.elf
+    module_path: boot():/EFI/BOOT/BOOTX64.EFI
+@MODULES@

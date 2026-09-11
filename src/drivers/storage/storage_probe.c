@@ -1,7 +1,7 @@
 #include "storage_probe.h"
 
 #include "../pci/pci.h"
-#include "../../kernel/klog.h"
+#include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
 
 #define STORAGE_CONTROLLER_LIMIT 8

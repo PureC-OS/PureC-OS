@@ -19,5 +19,6 @@ bool ahci_get_device_info(uint32_t index, struct storage_device_info *info);
 bool ahci_select_device(uint32_t index);
 bool ahci_read_sector(uint32_t lba, void *buffer);
 bool ahci_write_sector(uint32_t lba, const void *buffer);
+bool ahci_flush(void);
 const char *ahci_device_name(void);
 void ahci_get_probe_stats(struct ahci_probe_stats *stats);

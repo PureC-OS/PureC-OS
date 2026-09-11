@@ -3,14 +3,14 @@
 #include "../pci/pci.h"
 #include "../storage/storage_probe.h"
 #include "../../arch/x86_64/mmio.h"
-#include "../../kernel/klog.h"
+#include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
 #include "../mouse/usb_mouse.h"
 
 #define XHCI_DEVICE_LIMIT       4
 #define XHCI_RING_ENTRIES       64
 #define XHCI_EVENT_ENTRIES      128
-#define XHCI_TIMEOUT            50000000U
+#define XHCI_TIMEOUT            200000000U
 #define XHCI_MMIO_MAP_SIZE      0x100000U
 #define XHCI_SCRATCHPAD_LIMIT   1023
 #define XHCI_NO_DEVICE          0xFF
@@ -162,7 +162,26 @@ static uint8_t selected_device=XHCI_NO_DEVICE;
 static uint32_t bot_tag=1;
 static bool mapping_ready;
 static bool probe_complete;
+static uint64_t known_port_bitmap;
 static struct xhci_probe_stats probe_stats;
+
+static uint64_t connected_port_bitmap(void){
+    if(!operational) return 0;
+    uint8_t ports=probe_stats.max_ports>64 ? 64
+        : (uint8_t)probe_stats.max_ports;
+    uint64_t bitmap=0;
+    volatile uint8_t *port_base=(volatile uint8_t*)(void*)operational+0x400;
+    for(uint8_t port=1;port<=ports;port++){
+        volatile uint32_t *status=(volatile uint32_t*)(void*)
+            (port_base+(port-1)*0x10);
+        if(status[0]&XHCI_PORT_CONNECTED) bitmap|=1ULL<<(port-1);
+    }
+    return bitmap;
+}
+
+bool xhci_topology_changed(void){
+    return operational && connected_port_bitmap()!=known_port_bitmap;
+}
 
 static inline uint64_t rdtsc(void){
     uint32_t low,high;
@@ -267,11 +286,10 @@ static bool dispatch_mouse_event(const struct xhci_trb *event){
         } else {
             probe_stats.mouse_transfer_errors++;
             probe_stats.last_completion_code=code;
-            device->interrupt_errors++;
-            if(device->interrupt_errors>=3){
-                device->kind=XHCI_DEVICE_DISABLED;
-                usb_mouse_detach();
-            }
+            if(device->interrupt_errors<UINT8_MAX) device->interrupt_errors++;
+            if(device->interrupt_errors==1 || device->interrupt_errors==3)
+                klogf(KLOG_WARN,"xhci%u: HID mouse transfer error slot=%u ep=%u code=%u; retrying",
+                      controller_number,slot,endpoint,code);
         }
         return true;
     }
@@ -400,6 +418,18 @@ static uint16_t initial_packet_size(uint8_t speed){
     if(speed>=4) return 512;
     if(speed==3) return 64;
     return 8;
+}
+
+static uint8_t fs_ls_interrupt_interval(uint8_t b_interval){
+    uint32_t microframes=(uint32_t)(b_interval ? b_interval : 1U)*8U;
+    uint32_t period=1;
+    uint8_t exponent=0;
+    while(exponent<10 && period<=microframes/2U){
+        period<<=1;
+        exponent++;
+    }
+    if(exponent<3) exponent=3;
+    return exponent;
 }
 
 static void xhci_log_port(uint8_t port_number, uint32_t portsc, const char *when){
@@ -594,12 +624,17 @@ static bool find_boot_mouse_interface(uint16_t total_length,
         } else if(type==USB_DESCRIPTOR_INTERFACE && length>=9){
             if(descriptor_buffer[offset+5]==USB_CLASS_HID){
                 probe_stats.hid_interfaces++;
+                klogf(KLOG_DEBUG,"xhci%u: HID interface=%u subclass=%u protocol=%u",
+                      controller_number,descriptor_buffer[offset+2],
+                      descriptor_buffer[offset+6],descriptor_buffer[offset+7]);
             }
             if(descriptor_buffer[offset+5]==USB_CLASS_HUB){
                 probe_stats.hubs++;
             }
             mouse_interface=descriptor_buffer[offset+5]==USB_CLASS_HID
-                && descriptor_buffer[offset+7]==USB_HID_PROTOCOL_MOUSE;
+                && descriptor_buffer[offset+6]==USB_HID_SUBCLASS_BOOT
+                && (descriptor_buffer[offset+7]==USB_HID_PROTOCOL_MOUSE
+                    || descriptor_buffer[offset+7]==0);
             if(mouse_interface) *interface_number=descriptor_buffer[offset+2];
         } else if(type==USB_DESCRIPTOR_ENDPOINT && length>=7
                   && mouse_interface && (descriptor_buffer[offset+3]&3)==3
@@ -677,8 +712,7 @@ static bool configure_boot_mouse(uint8_t index, uint8_t configuration,
     configure_endpoint_context(endpoint,7,packet_size,&bulk_in_rings[index]);
     uint8_t xhci_interval;
     if(speed<=2){
-        xhci_interval = interval ? interval : 1;
-        if(xhci_interval==0) xhci_interval=10;
+        xhci_interval=fs_ls_interrupt_interval(interval);
         klogf(KLOG_DEBUG,"xhci%u: FS/LS mouse interval bInterval=%u -> xHCI interval=%u",controller_number,interval,xhci_interval);
     } else {
         if(interval<1) interval=1;
@@ -688,8 +722,7 @@ static bool configure_boot_mouse(uint8_t index, uint8_t configuration,
     }
     endpoint[0]=(uint32_t)xhci_interval<<16;
     uint16_t report_length=packet_size<8 ? packet_size : 8;
-    // Average TRB Length (low 16) = 8, Max ESIT Payload (high 16) = wMaxPacket
-    endpoint[4]=(uint32_t)report_length|((uint32_t)packet_size<<16);
+    endpoint[4]=(uint32_t)packet_size|((uint32_t)report_length<<16);
     if(!submit_command(physical_address(input),XHCI_TRB_CONFIGURE_EP,
                        devices[index].slot_id,0)) return false;
     if(!control_transfer(index,0,9,configuration,0,0,0,false)) return false;
@@ -1270,20 +1303,21 @@ bool xhci_init(uint32_t linux_name_base){
     } else {
         klogf(KLOG_INFO,"xhci: controllers=%u connected=%u disks=%u mice=%u",probe_stats.controllers,probe_stats.connected_ports,device_count,probe_stats.hid_mice);
     }
+    known_port_bitmap=connected_port_bitmap();
     return device_count>0;
 }
 
 bool xhci_rescan(uint32_t linux_name_base){
-    if(device_count){
-        return true;
-    }
     if(!mapping_ready){
         klog(KLOG_ERROR,"xhci: rescan mapping not ready");
         return false;
     }
     selected_device=XHCI_NO_DEVICE;
+    usb_mouse_detach();
     slot_count=0;
     device_count=0;
+    memset(devices,0,sizeof(devices));
+    memset(device_context_base,0,sizeof(device_context_base));
     probe_stats.connected_ports=0;
     probe_stats.addressed_devices=0;
     probe_stats.mass_storage_devices=0;
@@ -1323,6 +1357,7 @@ bool xhci_rescan(uint32_t linux_name_base){
         break;
     }
     klog_set_screen_enabled(was_screen);
+    known_port_bitmap=connected_port_bitmap();
     // краткий итог остаётся на экране userspace через syscall klog, но usbscan сам выводит детали
     klogf(KLOG_INFO,"xhci: rescan done disks=%u connected=%u addressed=%u error=%u stage=%u",device_count,probe_stats.connected_ports,probe_stats.addressed_devices,probe_stats.last_error,probe_stats.last_stage);
     return device_count>0;

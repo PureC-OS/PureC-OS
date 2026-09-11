@@ -1,0 +1,59 @@
+--- tcc/tcc.h
++++ tcc/tcc.h
+@@ -211,6 +211,8 @@
+     || defined TARGETOS_NetBSD \
+     || defined TARGETOS_FreeBSD_kernel
+ # define TARGETOS_BSD 1
++#elif defined TCC_TARGET_PUREC
++# define TARGETOS_PureC 1
+ #elif !(defined TCC_TARGET_PE || defined TCC_TARGET_MACHO)
+ # define TARGETOS_Linux 1
+ #endif
+--- tcc/tccelf.c
++++ tcc/tccelf.c
+@@ -1706,6 +1706,9 @@
+         tcc_add_crt(s1, "crtbegin_so.o");
+     else
+         tcc_add_crt(s1, "crtbegin_dynamic.o");
++#elif defined TCC_TARGET_PUREC
++    if (s1->output_type != TCC_OUTPUT_DLL)
++        tcc_add_crt(s1, "crt0.o");
+ #else
+     if (s1->output_type != TCC_OUTPUT_DLL)
+         tcc_add_crt(s1, "crt1.o");
+@@ -1715,6 +1718,9 @@
+ 
+ ST_FUNC void tccelf_add_crtend(TCCState *s1)
+ {
++#if defined TCC_TARGET_PUREC
++    (void)s1; /* no crtn.o on PureC OS */
++#else
+ #if TARGETOS_OpenBSD
+     if (s1->output_type == TCC_OUTPUT_DLL)
+         tcc_add_crt(s1, "crtendS.o");
+@@ -1734,6 +1740,7 @@
+ #else
+     tcc_add_crt(s1, "crtn.o");
+ #endif
++#endif /* TCC_TARGET_PUREC */
+ }
+ #endif /* !defined TCC_TARGET_PE && !defined TCC_TARGET_MACHO */
+ 
+@@ -1751,6 +1758,9 @@
+     /* add libc */
+     if (!s1->nostdlib) {
+         int lpthread = s1->option_pthread;
++#ifdef TCC_TARGET_PUREC
++        tcc_add_library_err(s1, "purec");
++#else
+ 
+ #ifdef CONFIG_TCC_BCHECK
+         if (s1->do_bounds_check && s1->output_type != TCC_OUTPUT_DLL) {
+@@ -1785,6 +1795,7 @@
+ #if defined TCC_TARGET_ARM && TARGETOS_FreeBSD
+         tcc_add_library_err(s1, "gcc_s"); // unwind code
+ #endif
++#endif /* TCC_TARGET_PUREC */
+         if (TCC_LIBTCC1[0])
+             tcc_add_support(s1, TCC_LIBTCC1);
+ #ifndef TCC_TARGET_MACHO

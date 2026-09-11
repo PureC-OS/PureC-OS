@@ -1,9 +1,12 @@
 #include "idt.h"
-#include "../../drivers/serial.h"
-#include "../../drivers/fb.h"
-#include "../../kernel/syscall.h"
-#include "../../kernel/panic.h"
-#include "../../drivers/timer.h"
+#include "../../drivers/serial/serial.h"
+#include "../../drivers/display/fb.h"
+#include "../../kernel/syscall/syscall.h"
+#include "../../kernel/diagnostics/panic.h"
+#include "../../drivers/interrupts/timer.h"
+#include "../../kernel/process/scheduler.h"
+#include "../../kernel/process/process.h"
+#include "../../kernel/diagnostics/klog.h"
 #include <stdint.h>
 
 struct idt_entry {
@@ -66,7 +69,9 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     }
     if (vector == 32) { // IRQ0 timer
         timer_tick();
+        // Acknowledge the PIC before a context switch can suspend this frame.
         pic_eoi(0);
+        scheduler_on_timer_interrupt();
         return;
     }
     if (vector >= 32 && vector < 48) { // другие IRQ
@@ -79,6 +84,12 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     }
     uint64_t cr2 = 0;
     if(vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+    if((cs&3)==3 && process_current_is_user()){
+        klogf(KLOG_ERROR,
+              "process: pid=%d exception=%u rip=0x%llx cr2=0x%llx",
+              process_current_pid(),(uint32_t)vector,rip,cr2);
+        process_exit_current(128+(int32_t)vector);
+    }
     kernel_panic_exception(vector, err, rip, cs, rflags, cr2,
                            (const struct panic_registers*)regs);
 }

@@ -53,6 +53,7 @@ void xhci_set_address_mapping(uint64_t hhdm_offset, uint64_t kernel_physical_bas
                               uint64_t kernel_virtual_base);
 bool xhci_init(uint32_t linux_name_base);
 bool xhci_rescan(uint32_t linux_name_base);
+bool xhci_topology_changed(void);
 uint32_t xhci_device_count(void);
 bool xhci_get_device_info(uint32_t index, struct storage_device_info *info);
 bool xhci_select_device(uint32_t index);
