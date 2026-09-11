@@ -46,6 +46,7 @@ jobs:
 
       - name: Build PureC OS
         run: |
+          chmod +x ./build-limine.sh
           ./build-limine.sh
 
       - name: Upload build artifacts
