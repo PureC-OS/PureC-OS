@@ -95,10 +95,11 @@
 /src/demo/image.png /demo/image.png - 0 src/demo/image.png
 
 # --- bundled wallpapers (24-bit BMP, 8.3 names, stretched by desktop) ---
-/demo/ducati1.bmp /demo/ducati1.bmp - 0 src/wallpapers/ducati1.bmp
-/demo/bmw2.bmp /demo/bmw2.bmp - 0 src/wallpapers/bmw2.bmp
-/demo/bmw3.bmp /demo/bmw3.bmp - 0 src/wallpapers/bmw3.bmp
-/demo/space1.bmp /demo/space1.bmp - 0 src/wallpapers/space1.bmp
+/walpaper/ducati1.bmp /walpaper/ducati1.bmp - 0 src/wallpapers/ducati1.bmp
+/walpaper/bmw2.bmp /walpaper/bmw2.bmp - 0 src/wallpapers/bmw2.bmp
+/walpaper/bmw3.bmp /walpaper/bmw3.bmp - 0 src/wallpapers/bmw3.bmp
+/walpaper/space1.bmp /walpaper/space1.bmp - 0 src/wallpapers/space1.bmp
+/demo/wplist.ini /demo/wplist.ini - 0 src/wallpapers/wplist.ini
 
 # --- game sound effects (22050 Hz mono WAV) ---
 /game/sound/turn.wav /game/sound/turn.wav - 0 src/audio/snake/turn.wav

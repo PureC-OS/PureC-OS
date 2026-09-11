@@ -45,20 +45,78 @@ static char *append_u32(char *out, uint32_t value){
     return out;
 }
 
-static const char *wallpapers[]={
-    "",
-    "/demo/ducati1.bmp",
-    "/demo/bmw2.bmp",
-    "/demo/bmw3.bmp",
-    "/demo/space1.bmp",
+/* Wallpaper catalogue: /config/wplist.ini (user) wins, then the shipped
+ * /demo/wplist.ini, then a compiled fallback. One 8.3 path per line,
+ * # comments and empty lines skipped. Index 0 is always "" (solid). */
+#define WP_LIST_USER "/config/wplist.ini"
+#define WP_LIST_SHIPPED "/demo/wplist.ini"
+#define WP_LIST_MAX 32
+#define WP_LIST_BUFFER 2048
+
+static char wp_list[WP_LIST_MAX][APPEAR_WALLPAPER_CAP];
+static uint32_t wp_list_count;
+static bool wp_list_loaded;
+
+static const char *wp_fallback[]={
+    "/walpaper/ducati1.bmp",
+    "/walpaper/bmw2.bmp",
+    "/walpaper/bmw3.bmp",
+    "/walpaper/space1.bmp",
     "/demo/screenshot.bmp",
     "/src/demo/screenshot.bmp",
     "/demo/image.png",
     "/src/demo/image.png",
-    /* User files must be 8.3: generic FAT32 create supports short names. */
     "/config/wp.bmp",
     "/config/wp.png",
 };
+
+static void wp_list_push(const char *line){
+    if(wp_list_count>=WP_LIST_MAX) return;
+    uint32_t length=0;
+    while(line[length] && length+1<sizeof(wp_list[0])){
+        wp_list[wp_list_count][length]=line[length];
+        length++;
+    }
+    if(line[length]) return; /* overlong path: skip, never truncate */
+    wp_list[wp_list_count][length]='\0';
+    if(!length) return;
+    wp_list_count++;
+}
+
+static void wp_list_ensure(void){
+    if(wp_list_loaded) return;
+    wp_list_loaded=true;
+    wp_list_count=0;
+    char buffer[WP_LIST_BUFFER];
+    int32_t fd=pf_open(WP_LIST_USER);
+    if(fd<0) fd=pf_open(WP_LIST_SHIPPED);
+    int32_t amount=-1;
+    if(fd>=0){
+        amount=pf_read(fd,buffer,sizeof(buffer)-1);
+        (void)pf_close(fd);
+    }
+    if(amount>0){
+        buffer[amount]='\0';
+        for(char *line=buffer;*line;){
+            char *end=line;
+            while(*end && *end!='\n' && *end!='\r') end++;
+            char saved=*end;
+            *end='\0';
+            while(*line==' ' || *line=='\t') line++;
+            char *tail=line;
+            while(*tail) tail++;
+            while(tail>line && (tail[-1]==' ' || tail[-1]=='\t')) *--tail='\0';
+            if(*line && *line!='#') wp_list_push(line);
+            if(!saved) break;
+            line=end+1;
+        }
+    }
+    if(!wp_list_count){
+        for(uint32_t i=0;
+            i<sizeof(wp_fallback)/sizeof(wp_fallback[0]);i++)
+            wp_list_push(wp_fallback[i]);
+    }
+}
 
 static const char *fonts[]={
     "clean",
@@ -75,12 +133,15 @@ void appearance_defaults(struct personalization_settings *s){
 }
 
 uint32_t appearance_wallpaper_count(void){
-    return sizeof(wallpapers)/sizeof(wallpapers[0]);
+    wp_list_ensure();
+    return 1+wp_list_count; /* index 0 = solid color */
 }
 
 const char *appearance_wallpaper_at(uint32_t index){
-    if(index>=appearance_wallpaper_count()) return wallpapers[0];
-    return wallpapers[index];
+    wp_list_ensure();
+    if(index==0) return "";
+    if(index-1<wp_list_count) return wp_list[index-1];
+    return "";
 }
 
 uint32_t appearance_font_count(void){
