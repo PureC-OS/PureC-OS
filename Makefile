@@ -7,7 +7,10 @@ ISO_ROOT := $(BIN_DIR)/iso_root
 ISO_IMAGE := $(BIN_DIR)/purec_limine.iso
 LIMINE_CONFIG := $(BIN_DIR)/staged/limine.conf
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
+TCC_DIR := $(ROOT_DIR)/tcc
 CRYPT_REPO := https://github.com/PureC-OS/libxcrypt.git
+TCC_REPO := https://github.com/PureC-OS/PureC-TCC.git
+
 
 export ROOT_DIR BIN_DIR
 
@@ -40,6 +43,14 @@ crypt-fetch:
 		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
 		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
 	fi
+
+tcc-fetch:
+	@if [ ! -f "$(TCC_DIR)/*" ]; then \
+		echo "PureC-TCC not found, cloning $(TCC_REPO)..."; \
+		git clone $(TCC_REPO) $(TCC_DIR); \
+	fi
+
+
 
 iso: kernel programs
 	@set -eu; \
@@ -86,10 +97,6 @@ iso: kernel programs
 		--protective-msdos-label "$(ISO_ROOT)" -o "$(ISO_IMAGE)"; \
 	"$$limine_bin" bios-install "$(ISO_IMAGE)"; \
 	echo "Готово: $(ISO_IMAGE)"
-
-clean:
-	@printf '%s\n' 'Ты чё, долбоёб ёбаный? Нахуй ты это делаешь, блять?' > /dev/null
-	@echo "make clean заблокирован, иди нахуй."
 
 help:
 	@echo "make              собрать ядро, программы, библиотеки и ISO"
