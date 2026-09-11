@@ -51,7 +51,7 @@ void personalization_defaults(struct personalization *p){
     copy_str(p->theme,sizeof(p->theme),"catppuccin-dark");
     p->wallpaper[0]='\0';
     copy_str(p->font,sizeof(p->font),"clean");
-    p->font_size=12;
+    p->font_size=8;
 }
 
 uint32_t personalization_theme_count(void){
@@ -125,7 +125,7 @@ bool personalization_load(struct personalization *p){
         line=end+1;
         while(*line=='\n' || *line=='\r') line++;
     }
-    if(!p->font_size) p->font_size=12;
+    if(!p->font_size) p->font_size=8;
     return true;
 }
 
@@ -145,23 +145,23 @@ void personalization_apply(const struct personalization *p){
     wallpaper_set_path(p->wallpaper);
 }
 
-void personalization_poll(void){
+bool personalization_poll(void){
     uint64_t now=timer_ticks();
-    if(g_has_current && now-g_last_poll_tick<500) return;
+    if(g_has_current && now-g_last_poll_tick<500) return false; /* ~2Hz, ms */
     g_last_poll_tick=now;
     struct personalization next;
     personalization_load(&next);
-    if(g_has_current && same_personalization(&next,&g_current)) return;
+    if(g_has_current && same_personalization(&next,&g_current)) return false;
     bool first=!g_has_current;
     g_current=next;
     g_has_current=true;
     personalization_apply(&g_current);
-    if(!first){
-        klogf(KLOG_INFO,
-            "personalization: theme='%s' wallpaper='%s' font='%s' size=%u",
-            g_current.theme,g_current.wallpaper[0] ? g_current.wallpaper : "(solid)",
-            g_current.font,g_current.font_size);
-    }
+    if(first) return false;
+    klogf(KLOG_INFO,
+        "personalization: theme='%s' wallpaper='%s' font='%s' size=%u",
+        g_current.theme,g_current.wallpaper[0] ? g_current.wallpaper : "(solid)",
+        g_current.font,g_current.font_size);
+    return true;
 }
 
 const struct personalization *personalization_current(void){

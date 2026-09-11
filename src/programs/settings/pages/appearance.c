@@ -17,7 +17,6 @@ static char *append_u32(char *out, uint32_t value){
 
 static void commit(struct personalization_settings *appearance){
     (void)appearance_save(appearance);
-    pc_desktop_redraw();
 }
 
 static uint32_t theme_index_of(const char *name){

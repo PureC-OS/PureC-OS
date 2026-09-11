@@ -40,7 +40,7 @@ const char *personalization_theme_name_at(uint32_t index);
 uint32_t personalization_font_face(const char *font);
 uint32_t personalization_font_size_clamped(uint32_t size);
 void personalization_apply(const struct personalization *p);
-void personalization_poll(void);
+bool personalization_poll(void);
 const struct personalization *personalization_current(void);
 void personalization_current_colors(struct personalization_colors *out);
 

@@ -66,7 +66,7 @@ void appearance_defaults(struct personalization_settings *s){
     copy_str(s->theme,sizeof(s->theme),"catppuccin-dark");
     s->wallpaper[0]='\0';
     copy_str(s->font,sizeof(s->font),"clean");
-    s->font_size=12;
+    s->font_size=8;
 }
 
 uint32_t appearance_wallpaper_count(void){
@@ -118,7 +118,7 @@ bool appearance_load(struct personalization_settings *s){
         line=end+1;
         while(*line=='\n' || *line=='\r') line++;
     }
-    if(!s->font_size) s->font_size=12;
+    if(!s->font_size) s->font_size=8;
     return true;
 }
 

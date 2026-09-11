@@ -583,7 +583,7 @@ void userspace_input_thread(void *arg){
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();
-        personalization_poll();
+        if(personalization_poll()) redraw_managed_scene(0);
         (void)service_desktop_redraw();
         if(external_program_has_input_focus()){
             scheduler_sleep(10);
@@ -685,7 +685,9 @@ void userspace_run(void){
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();
-        personalization_poll();
+        /* Change-driven repaint: includes ALL windows (excluded=0), unlike
+         * a redraw requested by a Ring3 process which would bury itself. */
+        if(personalization_poll()) redraw_managed_scene(0);
         (void)service_desktop_redraw();
         if(external_program_has_input_focus()){
             scheduler_yield();
