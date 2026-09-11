@@ -2149,23 +2149,9 @@ static int32_t install_header_module(const struct header_module *entry){
               entry->module, entry->required ? "aborting" : "non-fatal, skipped");
         return entry->required ? FS_ERROR_NOT_FOUND : 0;
     }
-    int32_t status;
-    if(entry->alias_path){
-        status=payload_write_alias(entry->directory,entry->name,
-                                   entry->alias_path,entry->alias_name,
-                                   data,(uint32_t)size);
-    } else {
-        status=payload_write_file(entry->module,data,(uint32_t)size);
-    }
-    if(status<0){
-        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
-              "install: write %s failed %d (%s)",
-              entry->module,status,entry->required ? "aborting" : "non-fatal, skipped");
-        return entry->required ? status : 0;
-    }
-    // Verify by the destination path: resolves via LFN on FAT32 and
-    // natively on ext2 (where the alias never exists). The source
-    // module may differ from the destination (one module, many dests).
+    // Destination path: the source module may differ from it
+    // (one module seeds many dests), so compose it once and use it
+    // for the direct write, the verify and all log lines.
     char dest_path[MANIFEST_FIELD_MAX];
     uint32_t dp=0;
     const char *dp_part=entry->directory;
@@ -2174,6 +2160,22 @@ static int32_t install_header_module(const struct header_module *entry){
     dp_part=entry->name;
     while(*dp_part && dp+1<sizeof(dest_path)) dest_path[dp++]=*dp_part++;
     dest_path[dp]='\0';
+    int32_t status;
+    if(entry->alias_path){
+        status=payload_write_alias(entry->directory,entry->name,
+                                   entry->alias_path,entry->alias_name,
+                                   data,(uint32_t)size);
+    } else {
+        status=payload_write_file(dest_path,data,(uint32_t)size);
+    }
+    if(status<0){
+        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+              "install: write %s failed %d (%s)",
+              dest_path,status,entry->required ? "aborting" : "non-fatal, skipped");
+        return entry->required ? status : 0;
+    }
+    // Verify by the destination path: resolves via LFN on FAT32 and
+    // natively on ext2 (where the alias never exists).
     status=payload_verify_file(dest_path,(uint32_t)size);
     if(status<0){
         // Diagnostic split (FAT32 only): verify the 8.3 alias too.
@@ -2184,7 +2186,7 @@ static int32_t install_header_module(const struct header_module *entry){
             alias_status=payload_verify_file(entry->alias_path,(uint32_t)size);
         klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
               "install: verify %s failed %d (alias %s -> %d) (%s)",
-              entry->module,status,
+              dest_path,status,
               entry->alias_path ? entry->alias_path : "-",
               entry->alias_path ? alias_status : 0,
               entry->required ? "aborting" : "non-fatal, skipped");
