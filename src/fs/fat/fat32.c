@@ -2208,7 +2208,7 @@ static void manifest_mkdir_parents(const char *dest){
     }
 }
 
-static int32_t install_manifest_payload(void){
+static int32_t install_manifest_pass(bool dry_run){
     const void *blob;
     uint64_t blob_size;
     if(!boot_get_module("/manifest.txt",&blob,&blob_size) || !blob
@@ -2321,6 +2321,20 @@ static int32_t install_manifest_payload(void){
             }
             alias_name_ptr=alias_name;
         }
+        if(dry_run){
+            if(required){
+                const void *probe;
+                uint64_t probe_size;
+                if(!boot_get_module(module,&probe,&probe_size) || !probe
+                   || !probe_size || probe_size>UINT32_MAX){
+                    klogf(KLOG_ERROR,"install: manifest preflight missing %s",
+                          module);
+                    return FS_ERROR_NOT_FOUND;
+                }
+            }
+            installed++;
+            continue;
+        }
         manifest_mkdir_parents(dest);
         struct header_module entry;
         entry.module=module;
@@ -2333,8 +2347,18 @@ static int32_t install_manifest_payload(void){
         if(status<0) return status;
         installed++;
     }
+    if(dry_run){
+        klogf(KLOG_OK,"install: manifest preflight ok entries=%u",installed);
+        return 0;
+    }
     klogf(KLOG_OK,"install: manifest payload done entries=%u",installed);
     return 0;
+}
+
+static int32_t install_manifest_payload(void){
+    int32_t status=install_manifest_pass(true);
+    if(status<0) return status;
+    return install_manifest_pass(false);
 }
 
 static int32_t install_program_payload(void){
@@ -2391,8 +2415,6 @@ static int32_t install_uefi_payload(void){
         klog(KLOG_ERROR,"install: BOOTX64.EFI bad MZ");
         return FS_ERROR_NOT_FOUND;
     }
-    // Programs and libraries are installed by the manifest-driven
-    // install_program_payload() below; no per-file fetch here.
     int32_t status=payload_write_file("/EFI/BOOT/BOOTX64.EFI",
                                     efi_loader,efi_loader_size);
     if(status<0){
@@ -2442,8 +2464,6 @@ static int32_t install_uefi_payload(void){
     status=verify_installed_file("/boot/kernel2.elf",
                                  (uint32_t)fallback_kernel_image_size);
     if(status<0) return status;
-    // Programs and libraries were verified entry-by-entry by the
-    // manifest loop inside install_program_payload().
     for(uint8_t index=0;index<sizeof(config_locations)/sizeof(config_locations[0]);index++){
         status=verify_installed_file(config_locations[index].alias_path,
                                      sizeof(uefi_limine_config)-1);
@@ -2452,7 +2472,6 @@ static int32_t install_uefi_payload(void){
     return 0;
 }
 
-// UEFI install: GPT, a 512 MiB ESP, and a separate system partition.
 int32_t fat32_format_uefi_device_progress_ex(
     const char *device_name, const char *serial_confirmation,
     fat32_progress_callback callback, uint8_t fs_type){
@@ -2485,9 +2504,6 @@ int32_t fat32_format_uefi_device_progress_ex(
         return FS_ERROR_TOO_SMALL;
     }
     if(!block_device_select((uint32_t)idx)) return FS_ERROR_INVALID;
-    // ESP всегда FAT32: сбрасываем флаг до копирования bootloader/kernel.
-    // Без сброса повторная установка FAT32 после EXT2 уходила в ext2_write_file
-    // на FAT-томе и падала с -7 (NOT_DIR) на 45% "Copying bootloader and kernel".
     install_target_is_ext2=false;
     if(callback) callback(8,"Writing GPT partition table");
     klogf(KLOG_INFO,"fat32_uefi: %s total %u ESP %u sectors data %u sectors",

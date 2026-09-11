@@ -61,7 +61,7 @@ void installer_progress_update(struct installer_progress_view *view,
 const char *installer_progress_error_text(int32_t status){
     switch(status){
         case PF_ERROR_IO: return "disk read/write failed";
-        case PF_ERROR_NOT_FOUND: return "target disk disappeared";
+        case PF_ERROR_NOT_FOUND: return "required file or target not found (see kernel log)";
         case PF_ERROR_INVALID: return "invalid disk state";
         case PF_ERROR_NO_SPACE: return "not enough space";
         case PF_ERROR_EXISTS: return "file already exists (retry install)";
