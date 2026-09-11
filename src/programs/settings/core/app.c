@@ -92,7 +92,7 @@ void settings_app_draw(struct settings_app *app,struct pg_window *window,
         ? "Sound changes are applied and saved immediately"
         : app->tab==1 ? "Destructive disk actions require confirmation"
         : app->tab==2 ? "Network driver work is staged for the next iteration"
-                      : "Appearance is saved to personalization.conf and applied live";
+                      : "Appearance saves to /config/appear.ini, desktop picks it up";
     pg_window_text(window,18,footer_y+13,footer,0xBAC2DE);
     pg_window_end(window);
 }

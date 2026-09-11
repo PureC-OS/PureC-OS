@@ -40,7 +40,7 @@
 #define PERSISTENT_LOG_MAX_BYTES 0xFFFFFFFFULL
 #define PERSISTENT_LOG_PATH "/kernel.log"
 
-/* Personalization: theme colors come from /config/personalization.conf.
+/* Personalization: theme colors come from /config/appear.ini.
  * Old DESKTOP_BG/TOPBAR_* defines stay as compile-time fallbacks. */
 static void desktop_theme(struct personalization_colors *out){
     personalization_current_colors(out);

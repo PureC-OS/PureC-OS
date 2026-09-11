@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-#define PERSONALIZATION_PATH "/config/personalization.conf"
+#define PERSONALIZATION_PATH "/config/appear.ini"
 #define PERSONALIZATION_THEME_CAP 32
 #define PERSONALIZATION_WALLPAPER_CAP 128
 #define PERSONALIZATION_FONT_CAP 48

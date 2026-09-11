@@ -3,7 +3,7 @@
 #include "../../../libc/include/purec.h"
 
 #define APPEAR_DIRECTORY "/config"
-#define APPEAR_PATH "/config/personalization.conf"
+#define APPEAR_PATH "/config/appear.ini"
 
 static void copy_str(char *dst, uint32_t cap, const char *src){
     if(!dst || !cap) return;
@@ -51,8 +51,8 @@ static const char *wallpapers[]={
     "/src/demo/screenshot.bmp",
     "/demo/image.png",
     "/src/demo/image.png",
-    "/config/wallpapers/bg.bmp",
-    "/config/wallpapers/wallpaper.png",
+    "/config/wp.bmp",
+    "/config/wp.png",
 };
 
 static const char *fonts[]={
@@ -122,8 +122,8 @@ bool appearance_load(struct personalization_settings *s){
     return true;
 }
 
-bool appearance_save(const struct personalization_settings *s){
-    if(!s) return false;
+int32_t appearance_save(const struct personalization_settings *s){
+    if(!s) return -3;
     char buffer[512];
     char *out=buffer;
     out=append_text(out,"theme=");
@@ -139,5 +139,5 @@ bool appearance_save(const struct personalization_settings *s){
     out=append_u32(out,size);
     out=append_text(out,"\n");
     (void)pf_create_dir(APPEAR_DIRECTORY);
-    return pf_write_file(APPEAR_PATH,buffer,(uint32_t)(out-buffer))>=0;
+    return pf_write_file(APPEAR_PATH,buffer,(uint32_t)(out-buffer));
 }
