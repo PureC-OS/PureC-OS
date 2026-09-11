@@ -1,7 +1,7 @@
 #include "wallpaper.h"
-#include "syscall.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/interrupts/timer.h"
+#include "../fs/vfs.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
@@ -66,26 +66,29 @@ bool wallpaper_active(void){ return g_path[0]!='\0'; }
 
 /* ---------- file loading ---------- */
 
+/* Direct VFS read under the shared fs lock (see personalization.c). */
 static bool wp_load_file(const char *path, struct wp_buf *out,
                          uint32_t *out_size){
     if(out){ out->ptr=0; out->phys=0; out->pages=0; }
     if(out_size) *out_size=0;
     if(!path || !path[0] || !out || !out_size) return false;
+    if(!vfs_is_root_mounted()) return false;
     if(!wp_alloc(out,WP_MAX_FILE_BYTES)) return false;
-    int64_t fd=userspace_syscall(SYS_OPEN,(uint64_t)path,0,0);
-    if(fd<0){ wp_free(out); return false; }
-    uint8_t *dst=(uint8_t*)out->ptr;
+    filesystem_syscall_lock();
+    int32_t fd=vfs_open(path);
     uint32_t total=0;
-    for(;;){
-        if(total>=WP_MAX_FILE_BYTES) break;
-        int64_t n=userspace_syscall(SYS_READ,(uint64_t)fd,
-            (uint64_t)(dst+total),
-            (uint64_t)(WP_MAX_FILE_BYTES-total));
-        if(n<=0) break;
-        total+=(uint32_t)n;
+    if(fd>=0){
+        uint8_t *dst=(uint8_t*)out->ptr;
+        for(;;){
+            if(total>=WP_MAX_FILE_BYTES) break;
+            int32_t n=vfs_read(fd,dst+total,WP_MAX_FILE_BYTES-total);
+            if(n<=0) break;
+            total+=(uint32_t)n;
+        }
+        (void)vfs_close(fd);
     }
-    (void)userspace_syscall(SYS_CLOSE,(uint64_t)fd,0,0);
-    if(!total){ wp_free(out); return false; }
+    filesystem_syscall_unlock();
+    if(fd<0 || !total){ wp_free(out); return false; }
     *out_size=total;
     return true;
 }

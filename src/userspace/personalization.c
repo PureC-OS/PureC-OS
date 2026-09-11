@@ -1,14 +1,15 @@
 #include "personalization.h"
-#include "syscall.h"
 #include "wallpaper.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/interrupts/timer.h"
+#include "../fs/vfs.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
 
 static struct personalization g_current;
 static bool g_has_current;
+static bool g_had_config;
 static uint64_t g_last_poll_tick;
 
 static const struct {
@@ -92,20 +93,34 @@ uint32_t personalization_font_size_clamped(uint32_t size){
 bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
-    int64_t fd=userspace_syscall(SYS_OPEN,
-        (uint64_t)PERSONALIZATION_PATH,0,0);
-    if(fd<0) return true; /* no config yet: defaults */
+    if(!vfs_is_root_mounted()) return true; /* early boot: defaults */
+    filesystem_syscall_lock();
+    int32_t fd=vfs_open(PERSONALIZATION_PATH);
     char buffer[512];
-    uint32_t total=0;
-    for(;;){
-        if(total>=sizeof(buffer)-1) break;
-        int64_t n=userspace_syscall(SYS_READ,(uint64_t)fd,
-            (uint64_t)(buffer+total),
-            (uint64_t)(sizeof(buffer)-1-total));
-        if(n<=0) break;
-        total+=(uint32_t)n;
+    int32_t total=0;
+    if(fd>=0){
+        for(;;){
+            if(total>=(int32_t)sizeof(buffer)-1) break;
+            int32_t n=vfs_read(fd,buffer+total,
+                (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
+            if(n<=0) break;
+            total+=n;
+        }
+        (void)vfs_close(fd);
     }
-    (void)userspace_syscall(SYS_CLOSE,(uint64_t)fd,0,0);
+    filesystem_syscall_unlock();
+    if(fd<0){
+        if(g_had_config)
+            klogf(KLOG_WARN,"personalization: lost '%s' rc=%d",
+                PERSONALIZATION_PATH,fd);
+        g_had_config=false;
+        return true;
+    }
+    if(!g_had_config)
+        klogf(KLOG_OK,"personalization: found '%s' bytes=%d",
+            PERSONALIZATION_PATH,total);
+    g_had_config=true;
+    if(total<=0) return true;
     buffer[total]='\0';
     for(char *line=buffer;*line;){
         char *end=line;

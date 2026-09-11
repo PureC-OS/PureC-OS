@@ -49,12 +49,12 @@ static bool readable_string(const char *text){
     return process_user_string(text,4096);
 }
 
-static void filesystem_syscall_lock(void){
+void filesystem_syscall_lock(void){
     while(__atomic_test_and_set(&filesystem_syscall_busy,__ATOMIC_ACQUIRE))
         scheduler_yield();
 }
 
-static void filesystem_syscall_unlock(void){
+void filesystem_syscall_unlock(void){
     __atomic_clear(&filesystem_syscall_busy,__ATOMIC_RELEASE);
 }
 
