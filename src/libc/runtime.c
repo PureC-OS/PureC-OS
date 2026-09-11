@@ -360,6 +360,14 @@ int32_t pc_list_disks(struct storage_device_info *devices, uint32_t capacity){
         (uint64_t)(uintptr_t)devices,capacity,0);
 }
 
+void pc_reboot(void){
+    (void)pc_syscall(SYS_REBOOT,0,0,0);
+}
+
+void pc_shutdown(void){
+    (void)pc_syscall(SYS_SHUTDOWN,0,0,0);
+}
+
 int32_t pc_install_start(const char *device, const char *serial){
     return (int32_t)pc_syscall(SYS_INSTALL_START,
         (uint64_t)(uintptr_t)device,(uint64_t)(uintptr_t)serial,0);

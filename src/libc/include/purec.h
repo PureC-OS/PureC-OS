@@ -86,7 +86,8 @@ void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text,
                         uint32_t size);
 bool pc_mouse_get(struct mouse_state *state);
 int32_t pc_list_disks(struct storage_device_info *devices, uint32_t capacity);
-int32_t pc_install_start(const char *device, const char *serial);
+void pc_reboot(void);
+void pc_shutdown(void);int32_t pc_install_start(const char *device, const char *serial);
 bool pc_install_status(struct install_status *status);
 bool pc_install_log(struct install_log *log);
 bool pc_audio_get_status(struct audio_status *status);
