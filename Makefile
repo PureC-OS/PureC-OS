@@ -27,7 +27,7 @@ libraries:
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
-programs: libraries
+programs: libraries userspace-fetch tcc-fetch
 	$(MAKE) -C src/programs
 	$(MAKE) -C $(USERSPACE_DIR)
 
@@ -49,9 +49,15 @@ crypt-fetch:
 	fi
 
 tcc-fetch:
-	@if [ ! -f "$(TCC_DIR)/*" ]; then \
+	@if [ ! -d "$(TCC_DIR)" ]; then \
 		echo "PureC-TCC not found, cloning $(TCC_REPO)..."; \
 		git clone $(TCC_REPO) $(TCC_DIR); \
+	fi
+
+userspace-fetch:
+	@if [ ! -d "$(USERSPACE_DIR)" ]; then \
+		echo "userspace not found, cloning $(USERSPACE_REPO)..."; \
+		git clone $(USERSPACE_REPO) $(USERSPACE_DIR); \
 	fi
 
 
