@@ -8,8 +8,6 @@
 
 static volatile bool panic_active = false;
 
-/* ──────────────────────────── helpers ──────────────────────────── */
-
 static const char *exception_name(uint64_t vec) {
     static const char *const names[32] = {
         "Divide Error",             "Debug",
@@ -34,8 +32,6 @@ static __attribute__((noreturn)) void panic_halt(void) {
     for (;;) __asm__ volatile("cli; hlt");
 }
 
-/* ──────────────────────────── banner ──────────────────────────── */
-
 static void panic_header(const char *title) {
     __asm__ volatile("cli");
     if (panic_active) panic_halt();
@@ -45,16 +41,14 @@ static void panic_header(const char *title) {
     klog_clear();
 
     klog(KLOG_ERROR, "");
-    klog(KLOG_ERROR, "---------- Kernel Panic ----------");
+    klog(KLOG_ERROR, "========================Kernel Panic=======================");
     klog(KLOG_ERROR, "PureC OS   kernel BUG at          ");
     klogf(KLOG_ERROR, "  %s", title ? title : "unknown fatal error");
-    klog(KLOG_ERROR, "----------------------------------");
+    klog(KLOG_ERROR, "===========================================================");
     klogf(KLOG_ERROR, "Boot stage: %02u  %s",
           (unsigned int)boot_diag_current_stage(),
           boot_diag_current_detail());
 }
-
-/* ──────────────────────────── current thread ──────────────────── */
 
 static void panic_thread_info(void) {
     struct thread *t = scheduler_current_thread();
@@ -68,8 +62,6 @@ static void panic_thread_info(void) {
           (unsigned long long)t->rsp, t->entry);
 }
 
-/* ──────────────────────────── control registers ───────────────── */
-
 static void panic_ctrl_regs(void) {
     uint64_t cr0, cr2, cr3, cr4;
     __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
@@ -81,8 +73,6 @@ static void panic_ctrl_regs(void) {
     klogf(KLOG_ERROR, "CR3: %016llx  CR4: %016llx",
           (unsigned long long)cr3, (unsigned long long)cr4);
 }
-
-/* ──────────────────────────── GP registers (2-column) ─────────── */
 
 static void panic_gp_regs(const struct panic_registers *r,
                            uint64_t rip, uint64_t rsp, uint64_t rflags) {
@@ -110,12 +100,6 @@ static void panic_gp_regs(const struct panic_registers *r,
           (unsigned long long)r->r14, (unsigned long long)r->r15);
 }
 
-/* ──────────────────────────── call trace (RBP chain) ──────────── */
-
-/*
- * Идём по цепочке фреймов: [rbp+0] = saved rbp, [rbp+8] = return address.
- * Точно как Linux: печатаем только адреса в kernel-space (>= 0xffffffff80000000).
- */
 static void panic_call_trace(uint64_t rbp) {
     klog(KLOG_ERROR, "");
     klog(KLOG_ERROR, "Call Trace:");
@@ -124,12 +108,10 @@ static void panic_call_trace(uint64_t rbp) {
     const int MAX_DEPTH = 20;
 
     while (depth < MAX_DEPTH && rbp >= 0xffff800000000000ULL) {
-        /* безопасное чтение — если rbp кривой, дальше не ходим */
-        volatile uint64_t *frame = (volatile uint64_t *)(uintptr_t)rbp;
-        uint64_t ret_addr = frame[1];   /* [rbp+8]  = return address */
-        uint64_t next_rbp = frame[0];   /* [rbp+0]  = caller's rbp   */
+       volatile uint64_t *frame = (volatile uint64_t *)(uintptr_t)rbp;
+        uint64_t ret_addr = frame[1];
+        uint64_t next_rbp = frame[0];
 
-        /* печатаем только адреса в kernel text */
         if (ret_addr >= 0xffffffff80000000ULL)
             klogf(KLOG_ERROR, "  [<%016llx>]", (unsigned long long)ret_addr);
 
@@ -142,26 +124,17 @@ static void panic_call_trace(uint64_t rbp) {
         klog(KLOG_ERROR, "  (no frame pointers — compiled without -fno-omit-frame-pointer?)");
 }
 
-/* ──────────────────────────── footer ──────────────────────────── */
 
 static void panic_footer(void) {
     klog(KLOG_ERROR, "");
-    klog(KLOG_ERROR, "---  CPU halted  ---");
-    klog(KLOG_ERROR, "Photograph this screen or save serial log for debugging.");
+    klog(KLOG_ERROR, "========================CPU HALTED=======================");
+    klog(KLOG_ERROR, "Please photograph this screen or open Issues on GitHub.");
+    klog(KLOG_ERROR, "https://github.com/PureC-OS/PureC-OS/issues/new");
 }
-
-/* ════════════════════════════ PUBLIC API ═══════════════════════════ */
-
-/*
- * kernel_panic — вызывается когда регистры CPU недоступны
- * (например, из обычного кода ядра, не из обработчика прерывания).
- */
 void kernel_panic(const char *reason) {
     panic_header(reason);
     panic_ctrl_regs();
     panic_thread_info();
-
-    /* захватываем текущее состояние прямо здесь */
     uint64_t rbp;
     __asm__ volatile("mov %%rbp, %0" : "=r"(rbp));
     panic_call_trace(rbp);
@@ -170,10 +143,6 @@ void kernel_panic(const char *reason) {
     panic_halt();
 }
 
-/*
- * kernel_panic_exception — вызывается из обработчика IDT (isr_handler).
- * Получает полный снимок CPU из фрейма прерывания.
- */
 void kernel_panic_exception(uint64_t vector,
                             uint64_t error_code,
                             uint64_t rip,
@@ -181,15 +150,12 @@ void kernel_panic_exception(uint64_t vector,
                             uint64_t rflags,
                             uint64_t cr2,
                             const struct panic_registers *regs) {
-    /* Строим заголовок */
     char title[64];
     const char *name = exception_name(vector);
-    /* простой sprintf вручную */
     {
         char *p = title;
         const char *prefix = "exception: #";
         while (*prefix) *p++ = *prefix++;
-        /* vector as decimal */
         if (vector >= 10) { *p++ = (char)('0' + vector / 10); }
         *p++ = (char)('0' + vector % 10);
         *p++ = ' ';
@@ -202,7 +168,7 @@ void kernel_panic_exception(uint64_t vector,
     klogf(KLOG_ERROR, "error_code: 0x%016llx  CS: 0x%04llx",
           (unsigned long long)error_code, (unsigned long long)cs);
 
-    if (vector == 14) {  /* Page Fault */
+    if (vector == 14) {
         klogf(KLOG_ERROR,
               "PF addr: 0x%016llx  [%s|%s|%s%s%s]",
               (unsigned long long)cr2,
@@ -225,10 +191,6 @@ void kernel_panic_exception(uint64_t vector,
     panic_halt();
 }
 
-/*
- * kernel_panic_manual — используется через макрос KERNEL_PANIC_HERE().
- * Все регистры уже захвачены в точке вызова.
- */
 void kernel_panic_manual(const char *reason,
                           uint64_t rip, uint64_t rsp, uint64_t rbp,
                           const struct panic_registers *regs) {

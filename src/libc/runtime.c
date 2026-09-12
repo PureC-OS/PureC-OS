@@ -480,6 +480,9 @@ int32_t pc_ext2_blocks(const char *path, struct ext2_blocks_info *out){
     if(!path || !out) return -1;
     return (int32_t)pc_syscall(SYS_EXT2_BLOCKS,(uint64_t)(uintptr_t)path,(uint64_t)(uintptr_t)out,0);
 }
+void pc_panic_test(const char *message){
+    (void)pc_syscall(SYS_PANIC_TEST,(uint64_t)(uintptr_t)message,0,0);
+}
 void pc_exit(int32_t status){
     (void)pc_syscall(SYS_EXIT,(uint64_t)(int64_t)status,0,0);
     for(;;) __asm__ volatile("pause");

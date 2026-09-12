@@ -122,4 +122,5 @@ int32_t pc_ext2_stat(const char *path, struct ext2_stat_info *out);
 int32_t pc_ext2_inode(uint32_t ino, struct ext2_stat_info *out);
 int32_t pc_ext2_super(struct ext2_super_info *out);
 int32_t pc_ext2_blocks(const char *path, struct ext2_blocks_info *out);
+void pc_panic_test(const char *message);  /* ручной тест экрана паники */
 void pc_exit(int32_t status) __attribute__((noreturn));
