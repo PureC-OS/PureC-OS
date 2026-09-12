@@ -56,27 +56,20 @@ static uint32_t desktop_redraw_requested;
 static uint32_t desktop_redraw_completed;
 static uint32_t desktop_redraw_requester;
 static bool     desktop_redraw_busy;
-
 static int32_t  detached_programs[WINDOW_MANAGER_CAPACITY];
 static uint8_t  previous_mouse_buttons;
 static bool     power_menu_visible;
 static bool     external_program_active;
-
-/* Icon drag state — index into desktop_entries, -1 = none */
 static int32_t  dragged_icon = -1;
 static int32_t  icon_drag_offset_x;
 static int32_t  icon_drag_offset_y;
 static bool     icon_drag_moved;
-
 static char     persistent_log_buffer[PERSISTENT_LOG_CHUNK];
-
 static void redraw_scene(void);
 static void redraw_managed_scene(uint32_t excluded_pid);
 static int32_t userspace_run_detached(const char *path, const char *arguments);
-static int32_t userspace_run_program_with_args(const char *path,
-                                               const char *arguments);
+static int32_t userspace_run_program_with_args(const char *path,const char *arguments);
 
-/* ── helpers ─────────────────────────────────────────────────────────────── */
 
 static bool external_program_has_input_focus(void){
     return __atomic_load_n(&external_program_active, __ATOMIC_ACQUIRE);
@@ -93,7 +86,6 @@ static bool point_inside(int32_t x, int32_t y, uint32_t left, uint32_t top,
         && y <  (int32_t)(top   + height);
 }
 
-/* ── icon drawing ────────────────────────────────────────────────────────── */
 
 static void draw_app_icon(uint32_t ix, uint32_t iy,
                           const char *symbol, const char *label,
@@ -116,7 +108,6 @@ static void draw_desktop_icons(void){
     }
 }
 
-/* ── installer helpers ───────────────────────────────────────────────────── */
 
 static bool installation_present(void){
     int64_t descriptor = userspace_syscall(
@@ -138,7 +129,6 @@ static bool installer_requires_restart(int32_t status){
         && install.state != 0;
 }
 
-/* ── detached process management ─────────────────────────────────────────── */
 
 static int32_t detached_program_slot(void){
     for(uint32_t i = 0; i < WINDOW_MANAGER_CAPACITY; i++){
@@ -218,7 +208,6 @@ int32_t userspace_run_program(const char *path){
     return userspace_run_program_with_args(path, 0);
 }
 
-/* ── power button / menu ─────────────────────────────────────────────────── */
 
 static void draw_power_button(void){
     struct personalization_colors th;
@@ -240,7 +229,6 @@ static void draw_power_menu(void){
     display_draw_text_at(x + 12, 69, "Power off", th.danger, th.window);
 }
 
-/* ── desktop draw ────────────────────────────────────────────────────────── */
 
 static void draw_desktop(void){
     desktop_width  = display_get_width();
@@ -259,7 +247,6 @@ static void draw_desktop(void){
     draw_power_button();
 }
 
-/* ── scene repaint ───────────────────────────────────────────────────────── */
 
 static void redraw_scene(void){
     mouse_begin_framebuffer_update();
@@ -313,8 +300,6 @@ void userspace_redraw_desktop(void){
     __atomic_clear(&desktop_redraw_busy, __ATOMIC_RELEASE);
 }
 
-/* ── launch helper for a desktop entry ──────────────────────────────────── */
-
 static void launch_entry(const struct desktop_entry *e){
     if(!e) return;
     if(e->exec[0]){
@@ -334,24 +319,18 @@ static void launch_entry(const struct desktop_entry *e){
     }
 }
 
-/* ── mouse handling ──────────────────────────────────────────────────────── */
-
 static void handle_desktop_mouse(void){
     struct mouse_state mouse = mouse_get_state();
     bool pressed  = (mouse.buttons & 1) && !(previous_mouse_buttons & 1);
     bool released = !(mouse.buttons & 1) && (previous_mouse_buttons & 1);
     bool redraw   = false;
     bool consumed = false;
-
-    /* Power button */
     if(pressed && point_inside(mouse.x, mouse.y,
                                desktop_width - 38, 3, 30, 22)){
         power_menu_visible = !power_menu_visible;
         consumed = true;
         redraw   = true;
     }
-
-    /* Audio panel */
     if(!consumed){
         bool audio_redraw = false;
         consumed = audio_panel_handle_mouse(
@@ -359,8 +338,6 @@ static void handle_desktop_mouse(void){
             desktop_width, &audio_redraw);
         redraw = redraw || audio_redraw;
     }
-
-    /* Power menu items */
     if(!consumed && pressed && power_menu_visible){
         uint32_t menu_x = desktop_width - 158;
         if(point_inside(mouse.x, mouse.y, menu_x, 28, 150, 30)){
@@ -376,16 +353,12 @@ static void handle_desktop_mouse(void){
             redraw = true;
         }
     }
-
-    /* Window manager pointer */
     if(!consumed){
         bool focus_changed = false;
         consumed = window_manager_handle_pointer(mouse.x, mouse.y, pressed,
                                                  &focus_changed);
         if(focus_changed) redraw_managed_scene(0);
     }
-
-    /* Desktop app overlays (clock, calc, calendar) */
     if(!consumed && desktop_apps_is_visible()){
         bool app_redraw = false;
         consumed = desktop_apps_handle_mouse(
@@ -393,8 +366,6 @@ static void handle_desktop_mouse(void){
             desktop_width, desktop_height, &app_redraw);
         redraw = redraw || app_redraw;
     }
-
-    /* ── Icon press: begin drag ── */
     if(pressed && !consumed){
         uint32_t count = desktop_entries_count();
         for(uint32_t i = 0; i < count; i++){
@@ -410,8 +381,6 @@ static void handle_desktop_mouse(void){
             }
         }
     }
-
-    /* ── Drag move ── */
     if(dragged_icon >= 0 && (mouse.buttons & 1)){
         const struct desktop_entry *e = desktop_entries_get((uint32_t)dragged_icon);
         if(e){
@@ -429,8 +398,6 @@ static void handle_desktop_mouse(void){
             }
         }
     }
-
-    /* ── Release: launch or finish drag ── */
     if(released && dragged_icon >= 0){
         int32_t icon  = dragged_icon;
         dragged_icon  = -1;
@@ -443,8 +410,6 @@ static void handle_desktop_mouse(void){
     if(redraw) redraw_managed_scene(0);
 }
 
-/* ── keyboard ────────────────────────────────────────────────────────────── */
-
 static bool handle_special_keyboard(void){
     uint8_t key;
     bool handled = false;
@@ -454,10 +419,12 @@ static bool handle_special_keyboard(void){
     return handled;
 }
 
-/* ── public API ──────────────────────────────────────────────────────────── */
-
-uint32_t userspace_get_width(void)  { return desktop_width;  }
-uint32_t userspace_get_height(void) { return desktop_height; }
+uint32_t userspace_get_width(void) { 
+    return desktop_width;  
+}
+uint32_t userspace_get_height(void) { 
+    return desktop_height;  
+}
 
 void userspace_set_mouse_debug(bool enabled){
     mouse_set_debug_overlay(enabled);
@@ -505,7 +472,6 @@ void userspace_init(void){
                          "userspace: initialization complete");
 }
 
-/* ── threads ─────────────────────────────────────────────────────────────── */
 
 void userspace_input_thread(void *arg){
     (void)arg;
