@@ -550,13 +550,13 @@ void userspace_init(void){
     // draw_desktop clears the boot log; subsequent diagnostics remain in the
     // ring and serial, while panic forcibly restores a visible panic screen.
     klog_set_screen_enabled(false);
+    desktop_entries_init();
     draw_desktop();
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT, "userspace: configuring mouse bounds");
     mouse_set_bounds((int32_t)desktop_width,(int32_t)desktop_height);
     userspace_set_mouse_debug(false);
     audio_panel_init();
     desktop_apps_init();
-    desktop_entries_init();
     installer_icon_visible=!installation_present();
     personalization_poll();
     klog_set_screen_enabled(false);
