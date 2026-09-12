@@ -36,12 +36,14 @@ impl Value {
     }
 }
 
+#[derive(Clone, Copy)]
 struct VarSlot {
     name: u16,
     value: Value,
     used: bool,
 }
 
+#[derive(Clone, Copy)]
 struct FuncSlot {
     name: u16,
     params: NodeId,
@@ -49,6 +51,7 @@ struct FuncSlot {
     used: bool,
 }
 
+#[derive(Clone, Copy)]
 struct Frame {
     /// base index in vars for this frame's locals — we use a simple flat env with shadowing
     /// by searching from the end. On call we push a marker.
@@ -310,7 +313,8 @@ impl<'a> Vm<'a> {
                 purec::write(" ");
             }
             first = false;
-            self.print_value(self.eval(head));
+            let v = self.eval(head);
+            self.print_value(v);
             cell = next;
         }
     }

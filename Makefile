@@ -30,6 +30,7 @@ libraries:
 programs: libraries userspace-fetch tcc-fetch
 	$(MAKE) -C src/programs
 	$(MAKE) -C $(USERSPACE_DIR)
+	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
