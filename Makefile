@@ -42,8 +42,6 @@ kernel: crypt-fetch
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C $(CRYPT_DIR) module
 
-# Fetch the password-hashing sources if they are missing (fresh clone of
-# the OS repo does not include the nested libxcrypt checkout).
 crypt-fetch:
 	@if [ ! -f "$(CRYPT_DIR)/src/sha512.c" ]; then \
 		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
