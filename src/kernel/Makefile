@@ -81,6 +81,7 @@ C_SOURCES := \
 	userspace/userspace.c \
 	userspace/window_manager.c \
 	userspace/apps/datetime_service.c \
+	userspace/apps/desktop_entries.c \
 	userspace/apps/clock_app.c \
 	userspace/apps/calendar_app.c \
 	userspace/apps/calculator_app.c \

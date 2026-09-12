@@ -2,6 +2,7 @@
 #include "personalization.h"
 #include "wallpaper.h"
 #include "apps/desktop_apps.h"
+#include "apps/desktop_entries.h"
 #include "apps/audio_panel.h"
 #include "window_manager.h"
 #include "syscall.h"
@@ -52,21 +53,8 @@ static uint32_t desktop_label_size(void){
 
 static uint32_t desktop_width;
 static uint32_t desktop_height;
-static uint32_t explorer_icon_x=348;
-static uint32_t htop_icon_x=420;
-static uint32_t terminal_icon_x=500;
-static uint32_t explorer_icon_y=ICON_Y;
-static uint32_t htop_icon_y=ICON_Y;
-static uint32_t terminal_icon_y=ICON_Y;
-static uint32_t clock_icon_x=40,calculator_icon_x=112,calendar_icon_x=184;
-static uint32_t clock_icon_y=ICON_Y,calculator_icon_y=ICON_Y,calendar_icon_y=ICON_Y;
-static uint32_t settings_icon_x=256,settings_icon_y=ICON_Y;
-static uint32_t installer_icon_x=328,installer_icon_y=ICON_Y;
-static uint32_t disks_icon_x=400,disks_icon_y=130;
-static uint32_t tetris_icon_x=472,tetris_icon_y=130;
-static uint32_t logview_icon_x=544,logview_icon_y=130;
-static uint32_t hexedit_icon_x=40,hexedit_icon_y=210;
-static bool installer_icon_visible=true;
+// Icon geometry/positions now live in desktop_entries (data-driven).
+// See src/userspace/apps/desktop_entries.c + /bin/program/*.desktop.
 static bool external_program_active;
 static uint32_t desktop_redraw_requested;
 static uint32_t desktop_redraw_completed;

@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=HexEdit
+Exec=/bin/program/hexedit
+IconColor=0xF5C2E7
+IconText=HX
+Type=Application
