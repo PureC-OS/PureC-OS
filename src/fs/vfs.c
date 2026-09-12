@@ -40,7 +40,8 @@ struct vfs_handle {
 };
 
 static const struct kernel_file kernel_files[] = {
-    {"/kernel/version", "version", "PureC OS kernel 0.1.0\n"},
+    {"/kernel/version", "version", "PureC OS kernel 1.1.0\n"},
+    {"/kernel/panic", "panic.cfg", "panic-screan=classic\n #panic-screan=qr\n"},
     {"/kernel/init", "init", "pid1=/bin/init shell=/bin/program/terminal editor=/bin/program/nano\n"},
     {"/kernel/abi", "abi", "syscall=int80 process=exec,args,env,wait,exit fd=per-process vfs=fat32,ext2\n"}
 };
