@@ -96,6 +96,7 @@
 #define SYS_AUDIO_PCM_START 279
 #define SYS_AUDIO_PCM_STOP 280
 #define SYS_DIR_LIST_LONG 288
+#define SYS_PANIC_TEST    299   /* ручной тест экрана паники */
 
 #define FS_TYPE_FAT32 0
 #define FS_TYPE_EXT2 1

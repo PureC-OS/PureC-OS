@@ -1,6 +1,7 @@
 #include "syscall.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/boot_diag.h"
+#include "../diagnostics/panic.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/vga.h"
@@ -892,6 +893,14 @@ int64_t syscall_handler(struct syscall_regs *r){
             int32_t r=vfs_ext2_blocks(path,out);
             filesystem_syscall_unlock();
             return r;
+        }
+        case SYS_PANIC_TEST: {
+            /* ручной вызов паники для тестирования экрана.
+             * a1 — необязательное userspace-сообщение (строка), иначе дефолт. */
+            const char *msg = "SYS_PANIC_TEST called by userspace";
+            if (a1 && readable_string((const char *)(uintptr_t)a1))
+                msg = (const char *)(uintptr_t)a1;
+            KERNEL_PANIC_HERE(msg);
         }
         default:
             serial_write_string("[SYSCALL] unknown n="); print_hex(n); serial_write_string("\n");
