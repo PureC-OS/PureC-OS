@@ -157,19 +157,12 @@ static void draw_app_icon(
 }
 
 static void draw_desktop_icons(void){
-    draw_explorer_icon();
-    draw_htop_icon();
-    draw_terminal_icon();
-    draw_app_icon(clock_icon_x,clock_icon_y,"12","Clock",0x89DCEB);
-    draw_app_icon(calculator_icon_x,calculator_icon_y,"+", "Calc",0xA6E3A1);
-    draw_app_icon(calendar_icon_x,calendar_icon_y,"28","Calendar",0xF9E2AF);
-    draw_app_icon(settings_icon_x,settings_icon_y,"{}", "Settings",0x94E2D5);
-    if(installer_icon_visible)
-        draw_app_icon(installer_icon_x,installer_icon_y,"OS","Install",0xCBA6F7);
-    draw_app_icon(disks_icon_x,disks_icon_y,"HD","Disks",0xF9E2AF);
-    draw_app_icon(tetris_icon_x,tetris_icon_y,"[]","Tetris",0xF38BA8);
-    draw_app_icon(logview_icon_x,logview_icon_y,"LOG","Logs",0x89B4FA);
-    draw_app_icon(hexedit_icon_x,hexedit_icon_y,"HX","HexEdit",0xF5C2E7);
+    uint32_t count = desktop_entries_count();
+    for(uint32_t i=0; i<count; i++){
+        const struct desktop_entry *e = desktop_entries_get(i);
+        if(e->hidden) continue;
+        draw_app_icon(e->x, e->y, e->icon_text, e->name, e->icon_color);
+    }
 }
 
 static bool installation_present(void){
