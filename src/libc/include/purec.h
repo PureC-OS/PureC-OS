@@ -57,6 +57,9 @@ int32_t pc_file_write(const char *path, const void *buffer, uint32_t size);
 int32_t pc_directory_list(const char *path,
                           struct fs_directory_entry *entries,
                           uint32_t capacity);
+int32_t pc_directory_list_long(const char *path,
+                               struct fs_directory_entry_long *entries,
+                               uint32_t capacity);
 int32_t pc_file_create(const char *path);
 int32_t pc_directory_create(const char *path);
 int32_t pc_file_delete(const char *path);

@@ -402,6 +402,18 @@ int64_t syscall_handler(struct syscall_regs *r){
             filesystem_syscall_unlock();
             return result;
         }
+        case SYS_DIR_LIST_LONG: {
+            if(!readable_string((const char*)(uintptr_t)a1)
+               || !writable((void*)(uintptr_t)a2,
+                            (uint64_t)(uint32_t)a3
+                                *sizeof(struct fs_directory_entry_long))) return -1;
+            filesystem_syscall_lock();
+            int32_t result=vfs_list_long((const char*)(uintptr_t)a1,
+                                    (struct fs_directory_entry_long*)(uintptr_t)a2,
+                                    (uint32_t)a3);
+            filesystem_syscall_unlock();
+            return result;
+        }
         case SYS_FILE_CREATE: {
             if(!readable_string((const char*)(uintptr_t)a1)) return -1;
             filesystem_syscall_lock();

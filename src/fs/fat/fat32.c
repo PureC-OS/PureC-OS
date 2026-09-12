@@ -1202,6 +1202,133 @@ int32_t fat32_list(const char *path, struct fs_directory_entry *entries,
     return FS_ERROR_INVALID;
 }
 
+int32_t fat32_list_long(const char *path, struct fs_directory_entry_long *entries,
+                        uint32_t capacity){
+    if(!entries || capacity==0 || capacity>0x7FFFFFFF) return FS_ERROR_INVALID;
+
+    uint32_t cluster;
+    int32_t status=resolve_directory(path,&cluster);
+    if(status<0) return status;
+
+    static const uint8_t lfn_offsets[13]={1,3,5,7,9,14,16,18,20,22,24,28,30};
+    char pending_long[256];
+    uint32_t pending_len=0;
+    uint8_t pending_checksum=0;
+    uint8_t pending_expected=0;
+    uint32_t pending_count=0;
+    uint8_t pending_first_seq=0;
+    bool pending_valid=false;
+    pending_long[0]='\0';
+
+    uint32_t count=0;
+    for(uint32_t visited=0;visited<volume.cluster_count;visited++){
+        uint32_t first_lba=cluster_lba(cluster);
+        for(uint8_t sector=0;sector<volume.sectors_per_cluster;sector++){
+            if(!block_device_read(first_lba+sector,sector_buffer)) return FS_ERROR_IO;
+            for(uint16_t offset=0;offset<BLOCK_SECTOR_SIZE;offset+=32){
+                uint8_t first=sector_buffer[offset];
+                if(first==0) return (int32_t)count;
+                if(first==FAT32_DELETED_ENTRY){
+                    pending_valid=false;
+                    pending_len=0;
+                    pending_count=0;
+                    continue;
+                }
+
+                uint8_t attributes=sector_buffer[offset+11];
+                if(attributes==FAT32_ATTRIBUTE_LFN){
+                    uint8_t seq_raw=sector_buffer[offset];
+                    bool is_last=(seq_raw & 0x40)!=0;
+                    uint8_t seq=seq_raw & 0x1F;
+                    uint8_t cs=sector_buffer[offset+13];
+                    if(is_last){
+                        if(seq==0 || seq>20){ pending_valid=false; continue; }
+                        pending_valid=true;
+                        pending_first_seq=seq;
+                        pending_expected=seq;
+                        pending_checksum=cs;
+                        pending_len=0;
+                        pending_count=0;
+                        pending_long[0]='\0';
+                    } else {
+                        if(!pending_valid) continue;
+                        if(seq != (uint8_t)(pending_expected - 1) || cs != pending_checksum){
+                            pending_valid=false;
+                            pending_len=0;
+                            pending_count=0;
+                            continue;
+                        }
+                        pending_expected=seq;
+                    }
+                    for(uint8_t j=0;j<13;j++){
+                        uint16_t c=read_u16(&sector_buffer[offset + lfn_offsets[j]]);
+                        if(c==0x0000) break;
+                        if(c==0xFFFF) continue;
+                        if(pending_len < sizeof(pending_long)-1){
+                            pending_long[pending_len++]=(char)(c & 0xFF);
+                            pending_long[pending_len]='\0';
+                        }
+                    }
+                    pending_count++;
+                    continue;
+                }
+                if((attributes&FAT32_ATTRIBUTE_VOLUME_ID) || first=='.'){
+                    pending_valid=false;
+                    pending_len=0;
+                    pending_count=0;
+                    continue;
+                }
+
+                // Regular SFN entry: prefer validated LFN.
+                const char *long_name=0;
+                if(pending_valid){
+                    uint8_t sfn_cs=lfn_checksum(&sector_buffer[offset]);
+                    bool chain_ok = (pending_count == pending_first_seq)
+                                 && (pending_expected==1)
+                                 && (sfn_cs==pending_checksum)
+                                 && (pending_len>0);
+                    if(chain_ok) long_name=pending_long;
+                }
+                if(long_name){
+                    uint32_t i=0;
+                    while(long_name[i] && i+1 < FS_LONG_NAME_CAPACITY){
+                        entries[count].name[i]=long_name[i];
+                        i++;
+                    }
+                    entries[count].name[i]='\0';
+                } else {
+                    char short_text[13];
+                    short_name_to_text(&sector_buffer[offset],short_text);
+                    uint32_t i=0;
+                    while(short_text[i] && i+1 < FS_LONG_NAME_CAPACITY){
+                        entries[count].name[i]=short_text[i];
+                        i++;
+                    }
+                    entries[count].name[i]='\0';
+                }
+                entries[count].size=read_u32(&sector_buffer[offset+28]);
+                entries[count].attributes=attributes;
+                entries[count].reserved[0]=0;
+                entries[count].reserved[1]=0;
+                entries[count].reserved[2]=0;
+                count++;
+                pending_valid=false;
+                pending_len=0;
+                pending_count=0;
+                if(count==capacity) return (int32_t)count;
+            }
+        }
+
+        uint32_t next;
+        status=fat_next_cluster(cluster,&next);
+        if(status<0) return status;
+        if(next>=FAT32_END_OF_CHAIN) return (int32_t)count;
+        if(!valid_cluster(next)) return FS_ERROR_INVALID;
+        cluster=next;
+    }
+    return FS_ERROR_INVALID;
+}
+
 int32_t fat32_create_file(const char *path){
     uint32_t parent;
     uint8_t short_name[11];

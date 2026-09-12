@@ -139,6 +139,18 @@ int32_t ext2_list(const char *path, struct fs_directory_entry *entries, uint32_t
     return ext2_dir_list(ino, entries, capacity);
 }
 
+int32_t ext2_list_long(const char *path, struct fs_directory_entry_long *entries, uint32_t capacity) {
+    if (!entries || capacity == 0) {
+        return -3;
+    }
+    uint32_t ino;
+    int32_t st = ext2_dir_resolve(path, &ino);
+    if (st < 0) {
+        return st;
+    }
+    return ext2_dir_list_long(ino, entries, capacity);
+}
+
 int32_t ext2_create_file(const char *path) {
     return ext2_file_create(path);
 }

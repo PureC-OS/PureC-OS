@@ -46,6 +46,20 @@
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
 
+# --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
+/bin/program/files.desktop /bin/program/files.desktop /bin/program/FILES.DES 0 src/userspace/desktop_entries/files.desktop
+/bin/program/monitor.desktop /bin/program/monitor.desktop /bin/program/MONITOR.DES 0 src/userspace/desktop_entries/monitor.desktop
+/bin/program/terminal.desktop /bin/program/terminal.desktop /bin/program/TERMINAL.DES 0 src/userspace/desktop_entries/terminal.desktop
+/bin/program/clock.desktop /bin/program/clock.desktop /bin/program/CLOCK.DES 0 src/userspace/desktop_entries/clock.desktop
+/bin/program/calc.desktop /bin/program/calc.desktop /bin/program/CALC.DES 0 src/userspace/desktop_entries/calc.desktop
+/bin/program/calendar.desktop /bin/program/calendar.desktop /bin/program/CALENDAR.DES 0 src/userspace/desktop_entries/calendar.desktop
+/bin/program/settings.desktop /bin/program/settings.desktop /bin/program/SETTINGS.DES 0 src/userspace/desktop_entries/settings.desktop
+/bin/program/install.desktop /bin/program/install.desktop /bin/program/INSTALL.DES 0 src/userspace/desktop_entries/install.desktop
+/bin/program/disks.desktop /bin/program/disks.desktop /bin/program/DISKS.DES 0 src/userspace/desktop_entries/disks.desktop
+/bin/program/tetris.desktop /bin/program/tetris.desktop /bin/program/TETRIS.DES 0 src/userspace/desktop_entries/tetris.desktop
+/bin/program/logview.desktop /bin/program/logview.desktop /bin/program/LOGVIEW.DES 0 src/userspace/desktop_entries/logview.desktop
+/bin/program/hexedit.desktop /bin/program/hexedit.desktop /bin/program/HEXEDIT.DES 0 src/userspace/desktop_entries/hexedit.desktop
+
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
 /lib/libpurefs.a /lib/libpurefs.a /lib/libpur~2.a 1 bin/lib/libpurefs.a

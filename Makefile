@@ -8,8 +8,10 @@ ISO_IMAGE := $(BIN_DIR)/purec_limine.iso
 LIMINE_CONFIG := $(BIN_DIR)/staged/limine.conf
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 TCC_DIR := $(ROOT_DIR)/tcc
+USERSPACE_DIR := $(ROOT_DIR)/userspace
 CRYPT_REPO := https://github.com/PureC-OS/libxcrypt.git
 TCC_REPO := https://github.com/PureC-OS/PureC-TCC.git
+USERSPACE_REPO := https://github.com/PureC-OS/PureC-OS-Userspace.git
 
 
 export ROOT_DIR BIN_DIR
@@ -27,17 +29,19 @@ libraries:
 
 programs: libraries
 	$(MAKE) -C src/programs
+	$(MAKE) -C $(USERSPACE_DIR)
 
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
+
+userspace:
+	$(MAKE) -C $(USERSPACE_DIR)
 
 kernel: crypt-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C $(CRYPT_DIR) module
 
-# Fetch the password-hashing sources if they are missing (fresh clone of
-# the OS repo does not include the nested libxcrypt checkout).
 crypt-fetch:
 	@if [ ! -f "$(CRYPT_DIR)/src/sha512.c" ]; then \
 		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \

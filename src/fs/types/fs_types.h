@@ -18,10 +18,8 @@
 
 #define FS_DIRECTORY_NAME_CAPACITY 13
 #define FS_ATTRIBUTE_DIRECTORY     0x10
+#define FS_LONG_NAME_CAPACITY 256
 
-// Seek origins, POSIX values. Used by fat32_seek/ext2_file_seek/vfs_seek
-// and exposed to userspace via purec.h for the TCC port (ar archives,
-// object files and headers all need random access).
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
@@ -30,4 +28,11 @@ struct fs_directory_entry {
     char name[FS_DIRECTORY_NAME_CAPACITY];
     uint32_t size;
     uint8_t attributes;
+};
+
+struct fs_directory_entry_long {
+    char name[FS_LONG_NAME_CAPACITY];
+    uint32_t size;
+    uint8_t attributes;
+    uint8_t reserved[3];
 };

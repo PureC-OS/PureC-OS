@@ -21,6 +21,12 @@ int32_t fs_list(const char *path, struct fs_directory_entry *entries,
                                       (uint64_t)entries,capacity);
 }
 
+int32_t fs_list_long(const char *path, struct fs_directory_entry_long *entries,
+                     uint32_t capacity){
+    return (int32_t)userspace_syscall(SYS_DIR_LIST_LONG,(uint64_t)path,
+                                      (uint64_t)entries,capacity);
+}
+
 int32_t fs_create_file(const char *path){
     return (int32_t)userspace_syscall(SYS_FILE_CREATE,(uint64_t)path,0,0);
 }

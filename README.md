@@ -25,6 +25,12 @@ PureC OS - это простая 64-битная операционная сис
 - Cross-Compiler x86_64-elf-gcc (GCC) 15.2.0
 - GNU Make 4.4.1
 
+---
+
+## Подробности про Syscall PureC OS
+[Link на Syscall Reference](docs/syscalls-reference.md)
+
+
 
 ## Сборка и запуск
 <details>
