@@ -1,5 +1,7 @@
 # PureC Syscall ABI
 
+> Подробный справочник по всем 77 системным вызовам с примерами кода и описанием функций PureC stdlib доступен в файле [syscalls-reference.md](syscalls-reference.md).
+
 ## Calling Convention
 System calls use `int 0x80`.
 
