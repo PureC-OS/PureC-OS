@@ -21,7 +21,8 @@
 #include "../process/scheduler.h"
 #include "../process/process.h"
 #include "../../mm/pmm.h"
-#include "../gui/window_manager.h"
+#include "../../userspace/userspace.h"
+#include "../../userspace/window_manager.h"
 #include "../../net/api/ping.h"
 #include "../../net/wifi/wifi.h"
 #include <stdint.h>
@@ -35,7 +36,6 @@ static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
 static uint8_t install_fs_type;
-static uint32_t desktop_redraw_pending;
 
 static bool readable(const void *buffer, uint64_t size){
     return process_user_buffer(buffer,size,false);
@@ -227,12 +227,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             gop_console_disable();
             return 0;
         case SYS_DESKTOP_REDRAW:
-            __atomic_store_n(&desktop_redraw_pending,1,__ATOMIC_RELEASE);
-            return 0;
-        case SYS_DESKTOP_REDRAW_TAKE:
-            if(__atomic_exchange_n(&desktop_redraw_pending,0,
-                                   __ATOMIC_ACQ_REL)!=0)
-                return 1;
+            userspace_redraw_desktop();
             return 0;
         case SYS_GUI_WINDOW_REGISTER: {
             const struct gui_window_request *request=
@@ -255,30 +250,6 @@ int64_t syscall_handler(struct syscall_regs *r){
             return window_manager_state((uint32_t)process_current_pid());
         case SYS_GUI_WINDOW_REPAINT_DONE:
             window_manager_finish_repaint((uint32_t)process_current_pid());
-            return 0;
-        case SYS_WM_HANDLE_POINTER: {
-            const struct wm_pointer_request *request=
-                (const struct wm_pointer_request*)(uintptr_t)a1;
-            bool focus_changed=false;
-            bool consumed;
-            if(!readable(request,sizeof(*request))) return -1;
-            consumed=window_manager_handle_pointer(
-                request->x,request->y,request->pressed!=0,&focus_changed);
-            return (consumed ? 1 : 0) | (focus_changed ? 2 : 0);
-        }
-        case SYS_WM_HAS_FOCUS:
-            return window_manager_has_focus() ? 1 : 0;
-        case SYS_KLOG_SET_SCREEN:
-            klog_set_screen_enabled(a1!=0);
-            return 0;
-        case SYS_GOP_BEGIN_COMPOSE:
-            gop_begin_compose();
-            return 0;
-        case SYS_GOP_END_COMPOSE:
-            gop_end_compose();
-            return 0;
-        case SYS_WM_REQUEST_REPAINT:
-            window_manager_request_repaint((uint32_t)a1);
             return 0;
         case SYS_GETPID:
             return process_current_pid();

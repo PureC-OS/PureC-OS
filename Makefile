@@ -17,7 +17,7 @@ USERSPACE_REPO := https://github.com/PureC-OS/PureC-OS-Userspace.git
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel crypt-fetch iso hexedit clean help userspace
+.PHONY: all libraries programs kernel crypt-fetch iso hexedit clean help
 
 all: iso
 
@@ -110,5 +110,4 @@ help:
 	@echo "make libraries    собрать только библиотеки"
 	@echo "make programs     собрать библиотеки и ring-3 программы"
 	@echo "make hexedit      собрать только HexEdit (C++)"
-	@echo "make userspace    собрать Rust userspace (desktop-rs, apps-demo-rs)"
 	@echo "make iso          собрать итоговый ISO"

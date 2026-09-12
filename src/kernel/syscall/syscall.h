@@ -140,24 +140,6 @@ struct gui_window_request {
     uint32_t height;
 };
 
-// Ring-3 desktop -> in-kernel window manager routing (the desktop shell
-// itself runs in Ring 3 now; the WM backend stays in the kernel so that
-// GUI programs keep working). Bit 0 of the result = consumed,
-// bit 1 = focus_changed.
-struct wm_pointer_request {
-    int32_t x;
-    int32_t y;
-    uint32_t pressed;
-};
-
-#define SYS_WM_HANDLE_POINTER 281
-#define SYS_WM_HAS_FOCUS 282
-#define SYS_KLOG_SET_SCREEN 283
-#define SYS_GOP_BEGIN_COMPOSE 284
-#define SYS_GOP_END_COMPOSE 285
-#define SYS_WM_REQUEST_REPAINT 286
-#define SYS_DESKTOP_REDRAW_TAKE 287
-
 #define PROCESS_ENVIRONMENT_LIMIT 16
 #define PROCESS_ENVIRONMENT_NAME_LIMIT 32
 #define PROCESS_ENVIRONMENT_VALUE_LIMIT 128
@@ -299,13 +281,13 @@ struct usb_scan_status {
 
 struct battery_info {
     uint32_t present;
-    uint32_t percent; // 0-100
-    uint32_t charging; // 0 discharging, 1 charging, 2 charged
+    uint32_t percent;
+    uint32_t charging;
     uint32_t remaining_minutes;
     uint32_t voltage_mv;
     uint32_t current_ma;
     char name[32];
-    char status_text[32]; // "Charging", "Discharging", "AC"
+    char status_text[32];
 };
 
 #define AUDIO_BACKEND_NONE 0
@@ -393,7 +375,6 @@ struct fat32_custom_format_request {
 #define SYS_FILE_SEEK 275
 #define SYS_FILE_STAT 276
 
-// File status for SYS_FILE_STAT (also used by the TCC port's stat()).
 struct file_stat_info {
     uint64_t size;
     uint32_t is_directory;
@@ -405,7 +386,7 @@ struct ext2_stat_info {
     uint16_t mode;
     uint16_t links;
     uint32_t size;
-    uint32_t blocks; // in 512-byte sectors
+    uint32_t blocks;
     uint32_t uid;
     uint32_t gid;
     uint32_t atime;
@@ -447,7 +428,6 @@ struct syscall_regs {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rbp, rdi, rsi, rdx, rcx, rbx, rax;
     uint64_t vector, err;
     uint64_t rip, cs, rflags;
-    // rsp, ss only for ring3, не используются в ring0
 };
 
 void syscall_init(void);

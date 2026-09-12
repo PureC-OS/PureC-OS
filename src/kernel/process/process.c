@@ -10,7 +10,7 @@
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
 #include "../../lib/string.h"
-#include "../gui/window_manager.h"
+#include "../../userspace/window_manager.h"
 
 #define USER_STACK_TOP 0x00007FFFFFF00000ULL
 #define USER_STACK_PAGES 16

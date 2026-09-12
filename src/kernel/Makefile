@@ -72,12 +72,24 @@ C_SOURCES := \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
-	kernel/gui/window_manager.c \
+	userspace/display.c \
+	userspace/fs.c \
+	userspace/personalization.c \
+	userspace/wallpaper.c \
+	userspace/audio.c \
+	userspace/audio_overlay.c \
+	userspace/userspace.c \
+	userspace/window_manager.c \
+	userspace/apps/datetime_service.c \
+	userspace/apps/clock_app.c \
+	userspace/apps/calendar_app.c \
+	userspace/apps/calculator_app.c \
+	userspace/apps/desktop_apps.c \
 	kernel/process/scheduler.c \
 	drivers/power/power.c \
 	drivers/audio/audio_hda.c \
 	drivers/audio/audio.c
-CPP_SOURCES :=
+CPP_SOURCES := userspace/apps/audio_panel.cpp
 ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
 	arch/x86_64/idt.asm \

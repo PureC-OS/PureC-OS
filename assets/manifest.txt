@@ -128,9 +128,3 @@
 /bin/sound/turn.wav /bin/sound/turn.wav - 0 src/audio/snake/turn.wav
 /bin/sound/eat.wav /bin/sound/eat.wav - 0 src/audio/snake/eat.wav
 /bin/sound/die.wav /bin/sound/die.wav - 0 src/audio/snake/die.wav
-
-# --- Rust userspace (Ring-3, собирается через `make userspace`) ---
-/bin/program/desktop-rs /bin/program/desktop-rs - 0 bin/programs/desktop-rs
-/bin/program/apps-demo-rs /bin/program/apps-demo-rs - 0 bin/programs/apps-demo-rs
-/bin/program/hello-rs /bin/program/hello-rs - 0 bin/programs/hello-rs
-/bin/program/init-rs /bin/program/init-rs - 0 bin/programs/init-rs
