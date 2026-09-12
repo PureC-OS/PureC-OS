@@ -4,10 +4,12 @@
 #include "../diagnostics/panic.h"
 #include "../process/scheduler.h"
 #include "../process/process.h"
+#include "../../drivers/audio/audio.h"
+#include "../../drivers/input/keyboard.h"
 #include "../../drivers/serial/serial.h"
+#include "../../drivers/storage/block_device.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
-#include "../../userspace/userspace.h"
 #include "../../net/core/net_service.h"
 
 static void boot_log_pause(void){
@@ -38,14 +40,17 @@ void init_process_start(uint32_t detected_cpu_count){
     if(init_pid!=1) kernel_panic("cannot start /bin/init as PID 1");
     klog(KLOG_OK,"process: /bin/init started as PID 1");
 
-    serial_write_string("[INIT] PID 1 registered, initializing desktop\n");
-    userspace_init();
+    serial_write_string("[INIT] PID 1 registered, starting desktop\n");
+    keyboard_init();
+    int32_t desktop_pid=process_spawn_module("/bin/program/desktop-rs","");
+    if(desktop_pid<0)
+        klog(KLOG_WARN,"desktop: cannot start /bin/program/desktop-rs");
+    else
+        klogf(KLOG_OK,"desktop: /bin/program/desktop-rs started pid=%d",
+              desktop_pid);
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
                          "init and desktop ready, starting scheduler");
 
-    scheduler_create_thread(userspace_input_thread, 0, "init-input", 1, 0);
-    scheduler_create_thread(userspace_keyboard_thread, 0, "desktop-keyboard", 1, 0);
-    scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, 0);
     if(scheduler_create_thread(net_service_thread,0,"net-rx",2,0)<0)
         klog(KLOG_WARN,"net: failed to create polling thread");
     klog(KLOG_OK, "sched: init threads created, starting scheduler");
@@ -55,6 +60,9 @@ void init_process_start(uint32_t detected_cpu_count){
     for(;;){
         ps2_mouse_poll();
         usb_mouse_poll();
+        keyboard_poll();
+        block_device_poll_usb_hotplug();
+        audio_update();
         scheduler_yield();
     }
 }

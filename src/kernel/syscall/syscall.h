@@ -140,6 +140,24 @@ struct gui_window_request {
     uint32_t height;
 };
 
+// Ring-3 desktop -> in-kernel window manager routing (the desktop shell
+// itself runs in Ring 3 now; the WM backend stays in the kernel so that
+// GUI programs keep working). Bit 0 of the result = consumed,
+// bit 1 = focus_changed.
+struct wm_pointer_request {
+    int32_t x;
+    int32_t y;
+    uint32_t pressed;
+};
+
+#define SYS_WM_HANDLE_POINTER 281
+#define SYS_WM_HAS_FOCUS 282
+#define SYS_KLOG_SET_SCREEN 283
+#define SYS_GOP_BEGIN_COMPOSE 284
+#define SYS_GOP_END_COMPOSE 285
+#define SYS_WM_REQUEST_REPAINT 286
+#define SYS_DESKTOP_REDRAW_TAKE 287
+
 #define PROCESS_ENVIRONMENT_LIMIT 16
 #define PROCESS_ENVIRONMENT_NAME_LIMIT 32
 #define PROCESS_ENVIRONMENT_VALUE_LIMIT 128
