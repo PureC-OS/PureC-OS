@@ -222,6 +222,13 @@ int32_t pc_directory_list(const char *path,
         (uint64_t)(uintptr_t)entries,capacity);
 }
 
+int32_t pc_directory_list_long(const char *path,
+                          struct fs_directory_entry_long *entries,
+                          uint32_t capacity){
+    return (int32_t)pc_syscall(SYS_DIR_LIST_LONG,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)entries,capacity);
+}
+
 int32_t pc_file_create(const char *path){
     return (int32_t)pc_syscall(SYS_FILE_CREATE,
         (uint64_t)(uintptr_t)path,0,0);

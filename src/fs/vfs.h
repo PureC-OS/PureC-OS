@@ -32,6 +32,7 @@ int32_t vfs_delete(const char *path);
 int32_t vfs_rename(const char *path, const char *new_name);
 int32_t vfs_move(const char *path, const char *destination_directory);
 int32_t vfs_list(const char *path, struct fs_directory_entry *entries, uint32_t capacity);
+int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries, uint32_t capacity);
 int32_t vfs_create_file(const char *path);
 int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count);
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count);

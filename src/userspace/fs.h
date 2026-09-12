@@ -13,6 +13,8 @@ int32_t fs_read(int32_t descriptor, void *buffer, uint32_t count);
 int32_t fs_close(int32_t descriptor);
 int32_t fs_list(const char *path, struct fs_directory_entry *entries,
                 uint32_t capacity);
+int32_t fs_list_long(const char *path, struct fs_directory_entry_long *entries,
+                     uint32_t capacity);
 int32_t fs_create_file(const char *path);
 int32_t fs_write_file(const char *path, const void *buffer, uint32_t count);
 int32_t fs_create_directory(const char *path);

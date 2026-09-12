@@ -89,10 +89,13 @@
 #define SYS_FAT32_FORMAT_CUSTOM 267
 #define SYS_FORMAT_DEVICE_EX 268
 #define SYS_INSTALL_START_EX 269
+#define SYS_FILE_SEEK 275
+#define SYS_FILE_STAT 276
 #define SYS_AUDIO_STOP_TONE 277
 #define SYS_AUDIO_PCM_PUSH 278
 #define SYS_AUDIO_PCM_START 279
 #define SYS_AUDIO_PCM_STOP 280
+#define SYS_DIR_LIST_LONG 288
 
 #define FS_TYPE_FAT32 0
 #define FS_TYPE_EXT2 1
@@ -374,7 +377,6 @@ struct fat32_custom_format_request {
 #define SYS_EXT2_BLOCKS 274
 #define SYS_FILE_SEEK 275
 #define SYS_FILE_STAT 276
-
 struct file_stat_info {
     uint64_t size;
     uint32_t is_directory;

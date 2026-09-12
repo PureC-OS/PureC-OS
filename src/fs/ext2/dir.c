@@ -164,6 +164,71 @@ int32_t ext2_dir_list(uint32_t dir_ino, struct fs_directory_entry *entries, uint
     return (int32_t)count;
 }
 
+int32_t ext2_dir_list_long(uint32_t dir_ino, struct fs_directory_entry_long *entries, uint32_t capacity) {
+    uint8_t ibuf[256];
+    if (!ext2_inode_read(dir_ino, ibuf)) {
+        return -1;
+    }
+    uint16_t mode = ext2_read_u16(ibuf);
+    if ((mode & 0xF000) != EXT2_S_IFDIR) {
+        return -7;
+    }
+    uint32_t size = ext2_read_u32(ibuf + 4);
+    uint32_t offset = 0;
+    uint32_t count = 0;
+    struct ext2_volume *vol = ext2_volume();
+    while (offset < size && count < capacity) {
+        uint32_t logical = offset / vol->block_size;
+        uint32_t off = offset % vol->block_size;
+        uint32_t block = ext2_inode_block_ptr(ibuf, logical);
+        if (block == 0) {
+            break;
+        }
+        uint8_t *blk = ext2_scratch_block();
+        if (!ext2_read_block(block, blk)) {
+            return -1;
+        }
+        if (off + 8 > vol->block_size) {
+            offset = (logical + 1) * vol->block_size;
+            continue;
+        }
+        uint8_t *e = blk + off;
+        uint32_t ino = ext2_read_u32(e);
+        uint16_t rec = ext2_read_u16(e + 4);
+        uint8_t nl = e[6];
+        if (rec == 0) {
+            break;
+        }
+        if (ino != 0) {
+            if (nl > 0 && nl < FS_LONG_NAME_CAPACITY) {
+                bool dot = (nl == 1 && e[8] == '.') || (nl == 2 && e[8] == '.' && e[9] == '.');
+                if (!dot) {
+                    memcpy(entries[count].name, e + 8, nl);
+                    entries[count].name[nl] = '\0';
+                    entries[count].reserved[0] = 0;
+                    entries[count].reserved[1] = 0;
+                    entries[count].reserved[2] = 0;
+                    uint8_t eib[256];
+                    if (ext2_inode_read(ino, eib)) {
+                        entries[count].size = ext2_read_u32(eib + 4);
+                        uint16_t em = ext2_read_u16(eib);
+                        entries[count].attributes = ((em & 0xF000) == EXT2_S_IFDIR) ? FS_ATTRIBUTE_DIRECTORY : 0;
+                    } else {
+                        entries[count].size = 0;
+                        entries[count].attributes = 0;
+                    }
+                    count++;
+                    if (count == capacity) {
+                        return (int32_t)count;
+                    }
+                }
+            }
+        }
+        offset += rec;
+    }
+    return (int32_t)count;
+}
+
 int32_t ext2_dir_add_entry(uint32_t dir_ino, const char *name, uint32_t ino, uint8_t file_type) {
     uint8_t dib[256];
     if (!ext2_inode_read(dir_ino, dib)) return -1;

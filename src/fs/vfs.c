@@ -304,6 +304,43 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries, uint32_t 
     return fat32_list(path, entries, capacity);
 }
 
+static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY], const char *source) {
+    uint32_t i = 0;
+    while (source[i] && i + 1 < FS_LONG_NAME_CAPACITY) {
+        destination[i] = source[i];
+        i++;
+    }
+    destination[i] = '\0';
+}
+
+int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries, uint32_t capacity) {
+    if (!path || !entries || capacity == 0) return FS_ERROR_INVALID;
+    if (path_equals(path, "/")) {
+        int32_t be = 0;
+        if (vfs_active_fs == VFS_FS_EXT2) be = ext2_list_long(path, entries, capacity);
+        else be = fat32_list_long(path, entries, capacity);
+        uint32_t count = be > 0 ? (uint32_t)be : 0;
+        if (count < capacity) { copy_name_long(entries[count].name, "kernel"); entries[count].size = 0; entries[count].attributes = FS_ATTRIBUTE_DIRECTORY; count++; }
+        if (count < capacity) {
+            bool has = false; for (uint32_t i = 0; i < count; i++) if (strcmp(entries[i].name, "dmesg.txt") == 0) has = true;
+            if (!has) { copy_name_long(entries[count].name, "dmesg.txt"); entries[count].size = (uint32_t)klog_total_bytes(); if (entries[count].size > 8 * 1024 * 1024) entries[count].size = 8 * 1024 * 1024; entries[count].attributes = 0; count++; }
+        }
+        if (count < capacity) {
+            bool has = false; for (uint32_t i = 0; i < count; i++) if (strcmp(entries[i].name, "kernel.log") == 0) has = true;
+            if (!has) { copy_name_long(entries[count].name, "kernel.log"); entries[count].size = (uint32_t)klog_total_bytes(); if (entries[count].size > 8 * 1024 * 1024) entries[count].size = 8 * 1024 * 1024; entries[count].attributes = 0; count++; }
+        }
+        return (int32_t)count;
+    }
+    if (path_equals(path, "/kernel")) {
+        uint32_t count = sizeof(kernel_files) / sizeof(kernel_files[0]);
+        if (count > capacity) count = capacity;
+        for (uint32_t i = 0; i < count; i++) { copy_name_long(entries[i].name, kernel_files[i].name); entries[i].size = (uint32_t)strlen(kernel_files[i].content); entries[i].attributes = 0; }
+        return (int32_t)count;
+    }
+    if (vfs_active_fs == VFS_FS_EXT2) return ext2_list_long(path, entries, capacity);
+    return fat32_list_long(path, entries, capacity);
+}
+
 int32_t vfs_create_file(const char *path) {
     if (!path || path_equals(path, "/kernel")) return FS_ERROR_INVALID;
     if (find_kernel_file(path)) return FS_ERROR_READ_ONLY;

@@ -34,6 +34,15 @@ struct pf_entry {
     uint8_t attributes;
 };
 
+#define PF_LONG_NAME_CAPACITY 256
+
+struct pf_entry_long {
+    char name[PF_LONG_NAME_CAPACITY];
+    uint32_t size;
+    uint8_t attributes;
+    uint8_t reserved[3];
+};
+
 const char *pf_version(void);
 const char *pf_strerror(int32_t error);
 bool pf_is_dir(const struct pf_entry *entry);
@@ -52,6 +61,7 @@ int32_t pf_append_file(const char *path, const void *buffer, uint32_t size);
 
 // directory ops
 int32_t pf_list(const char *path, struct pf_entry *entries, uint32_t capacity);
+int32_t pf_list_long(const char *path, struct pf_entry_long *entries, uint32_t capacity);
 int32_t pf_create_dir(const char *path);
 
 #define PF_FS_FAT32 0
