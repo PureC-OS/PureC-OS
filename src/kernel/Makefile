@@ -121,7 +121,14 @@ crypt-fetch:
 		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
 	fi
 
--include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d)
+# Fetch ACPI module on demand (same pattern as crypt-fetch).
+acpi-fetch:
+	@if [ ! -f $(ACPI_DIR)/src/acpi.c ]; then \
+		echo "acpi module not found, cloning $(ACPI_REPO)..."; \
+		git clone $(ACPI_REPO) $(ACPI_DIR); \
+	fi
+
+-include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d)
 
 $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
