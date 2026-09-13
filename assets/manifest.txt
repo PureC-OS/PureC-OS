@@ -40,6 +40,7 @@
 /bin/program/disks /bin/program/disks - 0 bin/programs/disks
 /bin/program/logview /bin/program/logview - 0 bin/programs/logview
 /bin/program/hexedit /bin/program/hexedit - 0 bin/programs/hexedit
+/bin/program/notepad /bin/program/notepad - 0 bin/programs/notepad
 /bin/program/imgview /bin/program/imgview - 0 bin/programs/imgview
 /bin/program/hello /bin/program/hello - 0 bin/programs/hello
 /bin/program/login /bin/program/login - 0 bin/programs/login
@@ -60,6 +61,7 @@
 /bin/program/tetris.desktop /bin/program/tetris.desktop /bin/program/TETRIS.DES 0 src/userspace/desktop_entries/tetris.desktop
 /bin/program/logview.desktop /bin/program/logview.desktop /bin/program/LOGVIEW.DES 0 src/userspace/desktop_entries/logview.desktop
 /bin/program/hexedit.desktop /bin/program/hexedit.desktop /bin/program/HEXEDIT.DES 0 src/userspace/desktop_entries/hexedit.desktop
+/bin/program/notepad.desktop /bin/program/notepad.desktop /bin/program/NOTEPAD.DES 0 src/userspace/desktop_entries/notepad.desktop
 /bin/program/pl.desktop /bin/program/pl.desktop /bin/program/PL.DES 0 userspace/desktop_entries/pl.desktop
 
 # --- system libraries ---
