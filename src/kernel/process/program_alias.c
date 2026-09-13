@@ -26,8 +26,6 @@ static const char *system_program_names[]={
     "poweroff",
     "shutdown",
     "battery",
-    "ac",
-    "power",
     "halt"
 };
 

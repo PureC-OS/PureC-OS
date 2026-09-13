@@ -141,63 +141,16 @@ static int command_debug(const char *arguments){
 
 static int command_battery(void){
     struct battery_info info={0};
-    struct power_source_info src={0};
-    if(!pc_battery_info(&info)) return 1;
-    (void)pc_power_source(&src);
+    if(pc_syscall(SYS_BATTERY_INFO,(uint64_t)(uintptr_t)&info,0,0)<0) return 1;
     if(!info.present){
         pc_write("battery: not present\n");
         return 0;
     }
-    pc_write(info.name[0] ? info.name : "BAT0");
+    pc_write(info.name);
     pc_write(": ");
-    if(info.percent==BATTERY_PERCENT_UNKNOWN)
-        pc_write("level unknown");
-    else {
-        pc_write_u64(info.percent);
-        pc_write("%");
-    }
-    pc_write(" ");
-    pc_write(info.status_text[0] ? info.status_text : "Unknown");
-    // Источник: от сети или от батареи (когда известно).
-    if(src.source==POWER_SOURCE_AC)
-        pc_write(" [on AC power]");
-    else if(src.source==POWER_SOURCE_BATTERY)
-        pc_write(" [on battery]");
-    pc_write("\n");
-    return 0;
-}
-
-static int command_ac(void){
-    struct ac_adapter_info ac={0};
-    if(!pc_ac_info(&ac)) return 1;
-    if(!ac.present){
-        pc_write("AC adapter: not found\n");
-        return 0;
-    }
-    pc_write(ac.name[0] ? ac.name : "AC");
-    pc_write(": ");
-    if(!ac.online_valid)
-        pc_write("state unknown (needs AML)");
-    else
-        pc_write(ac.online ? "online (on mains power)" : "offline (on battery)");
-    pc_write("\n");
-    return 0;
-}
-
-static int command_power(void){
-    struct power_source_info src={0};
-    if(!pc_power_source(&src)) return 1;
-    pc_write("source: ");
-    pc_write(src.status_text[0] ? src.status_text : "Unknown");
-    pc_write("  battery: ");
-    pc_write(src.battery_present ? "present" : "absent");
-    if(src.battery_present && src.battery_percent!=BATTERY_PERCENT_UNKNOWN){
-        pc_write(" ");
-        pc_write_u64(src.battery_percent);
-        pc_write("%");
-    }
-    pc_write("  AC: ");
-    pc_write(src.ac_present ? "present" : "absent");
+    pc_write_u64(info.percent);
+    pc_write("% ");
+    pc_write(info.status_text);
     pc_write("\n");
     return 0;
 }
@@ -229,7 +182,5 @@ int system_platform_command(const char *name, const char *arguments){
        || pc_strcmp(name,"halt")==0)
         return pc_syscall(SYS_SHUTDOWN,0,0,0)<0;
     if(pc_strcmp(name,"battery")==0) return command_battery();
-    if(pc_strcmp(name,"ac")==0) return command_ac();
-    if(pc_strcmp(name,"power")==0) return command_power();
     return -1;
 }

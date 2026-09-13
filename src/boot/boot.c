@@ -16,7 +16,6 @@
 #include "../arch/x86_64/idt.h"
 #include "../arch/x86_64/mmio.h"
 #include "../kernel/core/kernel.h"
-#include "../kernel/process/scheduler.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/diagnostics/boot_diag.h"
 #include "../kernel/diagnostics/panic.h"
@@ -283,7 +282,7 @@ void _start(void) {
     ps2_mouse_init();
     klog(KLOG_OK, "PS/2 mouse ready (IRQ12)");
 
-    timer_init(SCHEDULER_TICK_HZ);
+    timer_init(1000);
 
     klog(KLOG_INFO, "Enabling interrupts...");
     __asm__ volatile("cli");
