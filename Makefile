@@ -44,6 +44,7 @@ kernel: crypt-fetch acpi-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C $(CRYPT_DIR) module
+	$(MAKE) -C $(ACPI_DIR) module
 
 crypt-fetch:
 	@if [ ! -f "$(CRYPT_DIR)/src/sha512.c" ]; then \
@@ -101,6 +102,8 @@ iso: kernel programs
 	if [ -f "$(BIN_DIR)/modules/ext2.ko" ]; then cp "$(BIN_DIR)/modules/ext2.ko" "$(ISO_ROOT)/bin/modules/ext2.ko"; fi; \
 	if [ -f "$(BIN_DIR)/modules/crypt.elf" ]; then cp "$(BIN_DIR)/modules/crypt.elf" "$(ISO_ROOT)/bin/modules/crypt.elf"; fi; \
 	if [ -f "$(BIN_DIR)/modules/crypt.ko" ]; then cp "$(BIN_DIR)/modules/crypt.ko" "$(ISO_ROOT)/bin/modules/crypt.ko"; fi; \
+	if [ -f "$(BIN_DIR)/modules/acpi.elf" ]; then cp "$(BIN_DIR)/modules/acpi.elf" "$(ISO_ROOT)/bin/modules/acpi.elf"; fi; \
+	if [ -f "$(BIN_DIR)/modules/acpi.ko" ]; then cp "$(BIN_DIR)/modules/acpi.ko" "$(ISO_ROOT)/bin/modules/acpi.ko"; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys" "$(ISO_ROOT)/boot/limine/limine-bios.sys"; \

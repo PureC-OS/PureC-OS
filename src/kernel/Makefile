@@ -18,7 +18,7 @@ CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512
 # ACPI subsystem (separate repo). Its freestanding sources are compiled
 # straight into the kernel image, same pattern as libxcrypt.
 ACPI_DIR := $(ROOT_DIR)/acpi
-ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ASPI.git
+ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
 ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c
 ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include
