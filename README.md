@@ -205,7 +205,6 @@ sudo modprobe vboxdrv
 
 # Fix 
 
-В скором времени будет сделан fix Framebuffer и Gop Это будет сделано что бы экран не мирцал при перемещении окон в UserSpace.
 А так же будет сделана миграция UserSpace в Ring 3.
 И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3.
 
@@ -214,6 +213,8 @@ sudo modprobe vboxdrv
 # Demo Foto
 ## Boot Screen
 ![Perc OC Boot](demo/Boot.png)
+## UserSpace on the bare metal
+![Perc OC UserSpace on the metal](demo/bare-metal-userspace.png)
 ## UserSpace
 ![Perc OC UserSpace](demo/userspace.png)
 ## Systemsetings
