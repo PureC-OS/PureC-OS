@@ -626,8 +626,8 @@ static bool fill_lfn_entry(uint8_t *entry, const char *long_name,
                            const uint8_t short_name[11]){
     uint8_t length=0;
     while(long_name[length]){
-        if(length>=FAT32_LFN_CHARACTER_CAPACITY) return false;
         length++;
+        if(length>FAT32_LFN_CHARACTER_CAPACITY) return false;
     }
     if(length==0) return false;
 
