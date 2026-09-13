@@ -41,7 +41,6 @@ struct gop_console {
 
 static struct gop_console user_console;
 
-// тот же 8x8 font что в fb.c
 static const uint8_t font[128][8] = {
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
@@ -51,7 +50,7 @@ static const uint8_t font[128][8] = {
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
-  {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 32 space
+  {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
   {0x18,0x3C,0x3C,0x18,0x18,0x00,0x18,0x00},{0x6C,0x6C,0x24,0x00,0x00,0x00,0x00,0x00},{0x6C,0x6C,0xFE,0x6C,0xFE,0x6C,0x6C,0x00},{0x18,0x7E,0xC0,0x7C,0x06,0xFC,0x18,0x00},
   {0x00,0xC6,0xCC,0x18,0x30,0x66,0xC6,0x00},{0x38,0x6C,0x38,0x76,0xDC,0xCC,0x76,0x00},{0x30,0x30,0x60,0x00,0x00,0x00,0x00,0x00},{0x0C,0x18,0x30,0x30,0x30,0x18,0x0C,0x00},
   {0x30,0x18,0x0C,0x0C,0x0C,0x18,0x30,0x00},{0x00,0x66,0x3C,0xFF,0x3C,0x66,0x00,0x00},{0x00,0x18,0x18,0x7E,0x18,0x18,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x18,0x18,0x30},
@@ -78,7 +77,6 @@ static const uint8_t font[128][8] = {
   {0x0E,0x18,0x18,0x70,0x18,0x18,0x0E,0x00},{0x76,0xDC,0x00,0x00,0x00,0x00,0x00,0x00},{0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
 };
 
-// Compact 5x7 face. Rows use the low five bits and are centered by the renderer.
 static const uint8_t clean_font[128][7] = {
     [' ']={0,0,0,0,0,0,0}, ['!']={4,4,4,4,4,0,4}, ['"']={10,10,0,0,0,0,0},
     ['#']={10,31,10,10,31,10,0}, ['$']={4,15,20,14,5,30,4},
@@ -165,8 +163,6 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
 
 void gop_init_from_multiboot(void *mbi){
     if(!mbi){ gop.available=false; return; }
-    // Защита от битых mbi (как в QEMU с GRUB без framebuffer)
-    // total_size должен быть разумным < 64K
     uint32_t total = *(uint32_t*)mbi;
     if(total < 8 || total > 32768){ gop.available=false; return; }
     uint32_t reserved = *((uint32_t*)mbi + 1);
@@ -202,17 +198,33 @@ void gop_init_from_multiboot(void *mbi){
     gop.available=false;
 }
 
-bool gop_is_available(void){ return gop.available; }
-uint32_t gop_get_width(void){ return gop.width; }
-uint32_t gop_get_height(void){ return gop.height; }
-uint32_t gop_get_pitch(void){ return gop.pitch; }
-uint8_t gop_get_bpp(void){ return gop.bpp; }
-uint64_t gop_get_framebuffer_size_bytes(void){ return gop.framebuffer_bytes; }
+bool gop_is_available(void){ 
+    return gop.available; 
+}
+uint32_t gop_get_width(void){ 
+    return gop.width; 
+}
+uint32_t gop_get_height(void){ 
+    return gop.height; 
+}
+uint32_t gop_get_pitch(void){ 
+    return gop.pitch; 
+}
+uint8_t gop_get_bpp(void){ 
+    return gop.bpp; 
+}
+uint64_t gop_get_framebuffer_size_bytes(void){ 
+    return gop.framebuffer_bytes; 
+}
 const char *gop_get_protocol_name(void){
     return gop.protocol_name ? gop.protocol_name : "Unavailable";
 }
-void gop_set_font_face(enum gop_font_face face){ font_face=face; }
-enum gop_font_face gop_get_font_face(void){ return font_face; }
+void gop_set_font_face(enum gop_font_face face){ 
+    font_face=face; 
+}
+enum gop_font_face gop_get_font_face(void){ 
+    return font_face; 
+}
 
 static uint32_t front_read_32(uint32_t x, uint32_t y){
     if(!gop.available || !gop.addr || x>=gop.width || y>=gop.height) return 0;
@@ -331,9 +343,6 @@ void gop_end_compose(void){
     }
 }
 
-// Аварийный сброс для panic: иначе экран паники не пробьется через
-// подавление present'ов. Сбрасываем и batch - пара outer end после
-// этого безвредна (gop_end_batch терпит ноль).
 void gop_cancel_compose(void){
     compose_depth=0;
     batch_depth=0;
@@ -431,7 +440,6 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
     }
 }
 
-// Курсор всегда поверх сцены: пишет строго во front, backbuffer не пачкает.
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
     front_write_32(x, y, color);
 }
@@ -439,7 +447,10 @@ void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
 static void gop_scroll(void){
     if(!gop.available || !gop.addr) return;
     const uint32_t line_h = 10;
-    if(gop.height <= line_h) { gop_clear(bg); return; }
+    if(gop.height <= line_h) { 
+        gop_clear(bg); 
+        return; 
+    }
     if(ensure_backbuffer()){
         for(uint32_t y=0; y + line_h < gop.height; y++){
             memmove(&backbuffer[(uint64_t)y * backbuffer_width],
@@ -460,7 +471,11 @@ static void gop_scroll(void){
         }
         for(uint32_t y=gop.height-line_h; y<gop.height; y++){
             uint8_t *line=base + y*pitch_bytes;
-            for(uint32_t x=0;x<gop.width;x++){ line[x*3+0]=(uint8_t)(bg&0xFF); line[x*3+1]=(uint8_t)((bg>>8)&0xFF); line[x*3+2]=(uint8_t)((bg>>16)&0xFF); }
+            for(uint32_t x=0;x<gop.width;x++){
+                line[x*3+0]=(uint8_t)(bg&0xFF); 
+                line[x*3+1]=(uint8_t)((bg>>8)&0xFF); 
+                line[x*3+2]=(uint8_t)((bg>>16)&0xFF); 
+            }
         }
     } else if(gop.bpp==16){
         uint16_t *base16=(uint16_t*)gop.addr;
@@ -479,8 +494,6 @@ static void gop_scroll(void){
     else cur_y = 12;
 }
 
-// Сценовый пиксель: в backbuffer если активен, иначе напрямую во front.
-// Dirty-отметку делает вызывающий высокоуровневый примитив.
 static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c){
     if(!gop.available || !gop.addr) return;
     if(x>=gop.width || y>=gop.height) return;
@@ -511,7 +524,9 @@ void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color){
 }
 
 void gop_clear(uint32_t color){
-    if(!gop.available){ vga_clear(); return; }
+    if(!gop.available){ 
+        vga_clear(); return; 
+    }
     if(ensure_backbuffer()){
         for(uint32_t y=0;y<gop.height;y++){
             uint32_t *line=&backbuffer[(uint64_t)y*backbuffer_width];
@@ -546,7 +561,10 @@ void gop_clear(uint32_t color){
     cur_x=12; cur_y=12; bg=color;
 }
 
-void gop_set_color(uint32_t f, uint32_t b){ fg=f; bg=b; }
+void gop_set_color(uint32_t f, uint32_t b){ 
+    fg=f; 
+    bg=b; 
+}
 
 static uint8_t get_font_row(uint8_t character, uint32_t row){
     uint8_t bits=font[character][row];
@@ -580,24 +598,51 @@ static void draw_char_sized(char c, uint32_t x, uint32_t y, uint32_t size,
 }
 
 void gop_putc(char c){
-    if(!gop.available){ vga_putc(c); return; }
+    if(!gop.available){ 
+        vga_putc(c); 
+        return; 
+    }
     (void)ensure_backbuffer();
     if(c=='\b'){
         if(cur_x>12) cur_x-=8;
         draw_char(' ',cur_x,cur_y);
-        if(backbuffer){ dirty_expand(cur_x, cur_y, 8, 8); maybe_present(); }
+        if(backbuffer){ 
+            dirty_expand(cur_x, cur_y, 8, 8); 
+            maybe_present(); 
+        }
         return;
     }
-    if(c=='\n'){ cur_x=12; cur_y+=10; if(cur_y+8 >= gop.height) gop_scroll(); return; }
-    if(c=='\r'){ cur_x=12; return; }
-    if(cur_x+8 >= gop.width){ cur_x=12; cur_y+=10; if(cur_y+8 >= gop.height) gop_scroll(); }
+    if(c=='\n'){ 
+        cur_x=12; 
+        cur_y+=10; 
+        if(cur_y+8 >= gop.height) gop_scroll(); 
+        return; 
+    }
+    if(c=='\r'){ 
+        cur_x=12; 
+        return; 
+    }
+    if(cur_x+8 >= gop.width){ 
+        cur_x=12; 
+        cur_y+=10; 
+        if(cur_y+8 >= gop.height) gop_scroll(); 
+    }
     if(cur_y+8 >= gop.height) gop_scroll();
     draw_char(c,cur_x,cur_y);
-    if(backbuffer){ dirty_expand(cur_x, cur_y, 8, 8); maybe_present(); }
+    if(backbuffer){ 
+        dirty_expand(cur_x, cur_y, 8, 8); 
+        maybe_present(); 
+    }
     cur_x+=8;
 }
-void gop_write(const char *s){ while(*s) gop_putc(*s++); }
-void gop_write_hex(uint64_t v){ const char*h="0123456789ABCDEF"; gop_write("0x"); for(int i=60;i>=0;i-=4) gop_putc(h[(v>>i)&0xF]); }
+void gop_write(const char *s){ 
+    while(*s) gop_putc(*s++); 
+}
+void gop_write_hex(uint64_t v){ 
+    const char*h="0123456789ABCDEF"; 
+    gop_write("0x"); 
+    for(int i=60;i>=0;i-=4) gop_putc(h[(v>>i)&0xF]); 
+    }
 
 bool gop_console_configure(uint32_t x, uint32_t y,
                            uint32_t width, uint32_t height,
@@ -838,7 +883,6 @@ void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){ 
         if(++guard>(gop.width+gop.height+16)) break;
     }
     if(backbuffer){
-        // +1 чтобы покрыть конечные пиксели.
         uint32_t w=(max_x>=min_x)?(max_x-min_x+1):1;
         uint32_t h=(max_y>=min_y)?(max_y-min_y+1):1;
         dirty_expand(min_x, min_y, w, h);

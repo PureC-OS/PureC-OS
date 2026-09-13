@@ -5,7 +5,7 @@
 struct mouse_state {
     int32_t x, y;
     int32_t dx, dy;
-    uint8_t buttons; // bit0 left, bit1 right, bit2 middle
+    uint8_t buttons;
     bool has_data;
 };
 
@@ -23,7 +23,7 @@ struct mouse_debug_state {
 };
 
 void ps2_mouse_init(void);
-void ps2_mouse_handler(void); // вызывается из IRQ12
+void ps2_mouse_handler(void);
 void ps2_mouse_poll(void);
 void mouse_redraw(void);
 void mouse_begin_framebuffer_update(void);
