@@ -96,6 +96,8 @@
 #define SYS_AUDIO_PCM_START 279
 #define SYS_AUDIO_PCM_STOP 280
 #define SYS_DIR_LIST_LONG 288
+#define SYS_AC_INFO 281
+#define SYS_POWER_SOURCE 282
 #define SYS_PANIC_TEST    299   /* ручной тест экрана паники */
 
 #define FS_TYPE_FAT32 0
@@ -285,13 +287,34 @@ struct usb_scan_status {
 
 struct battery_info {
     uint32_t present;
-    uint32_t percent;
-    uint32_t charging;
-    uint32_t remaining_minutes;
-    uint32_t voltage_mv;
-    uint32_t current_ma;
+    uint32_t percent; // BATTERY_PERCENT_UNKNOWN, пока нет AML executor (_BST)
+    uint32_t charging; // 1 = на сети, 0 = от батареи/неизвестно (см. status_text)
+    uint32_t remaining_minutes; // 0 = неизвестно
+    uint32_t voltage_mv; // 0 = неизвестно
+    uint32_t current_ma; // 0 = неизвестно
     char name[32];
-    char status_text[32];
+    char status_text[32]; // "Charging"/"Discharging"/"Charged"/"Unknown"/"No battery"
+};
+
+// Источник питания: от сети (AC) или от батареи.
+#define POWER_SOURCE_UNKNOWN 0u
+#define POWER_SOURCE_AC 1u
+#define POWER_SOURCE_BATTERY 2u
+#define BATTERY_PERCENT_UNKNOWN 0xFFFFFFFFu
+
+struct ac_adapter_info {
+    uint32_t present; // AC-адаптер найден в ACPI
+    uint32_t online; // 1 = питание от сети, 0 = от батареи
+    uint32_t online_valid; // 0 = неизвестно (динамический _PSR без AML)
+    char name[16]; // "ACAD"/"ADP1"/...
+};
+
+struct power_source_info {
+    uint32_t source; // POWER_SOURCE_*: AC / BATTERY / UNKNOWN
+    uint32_t battery_present;
+    uint32_t ac_present;
+    uint32_t battery_percent; // BATTERY_PERCENT_UNKNOWN, пока нет _BST
+    char status_text[32]; // "On AC power"/"On battery"/"Unknown"/"No battery"
 };
 
 #define AUDIO_BACKEND_NONE 0

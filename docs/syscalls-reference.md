@@ -110,7 +110,9 @@
 | **217** | `SYS_DISK_STATS` | `pc_syscall(SYS_DISK_STATS, ...)` | Суммарная статистика подключенных дисков |
 | **218** | `SYS_REBOOT` | `pc_reboot()` | Перезагрузка компьютера |
 | **219** | `SYS_SHUTDOWN` | `pc_shutdown()` | Выключение питания (ACPI / QEMU) |
-| **220** | `SYS_BATTERY_INFO` | `pc_syscall(SYS_BATTERY_INFO, ...)` | Статус батареи ноутбука (ACPI) |
+| **220** | `SYS_BATTERY_INFO` | `pc_battery_info()` | Статус батареи ноутбука (ACPI, presence реален, % unknown до AML) |
+| **281** | `SYS_AC_INFO` | `pc_ac_info()` | AC-адаптер: найден ли, от сети или от батареи |
+| **282** | `SYS_POWER_SOURCE` | `pc_power_source()` | Источник питания: AC / battery / unknown |
 | **221** | `SYS_SCHED_YIELD` | `pc_syscall(SYS_SCHED_YIELD, ...)` | Передача управления следующему процессу |
 | **222** | `SYS_FILE_CLOSE` (`SYS_CLOSE`) | `pc_file_close()`, `close()`, `fclose()` | Закрытие дескриптора файла |
 | **223** | `SYS_FILE_APPEND` | `pc_syscall(SYS_FILE_APPEND, ...)` | Дописывание данных в конец файла |
@@ -2023,27 +2025,71 @@ void show_ram_stats(void) {
 ```c
 struct battery_info {
     uint32_t present;
-    uint32_t percent;
-    uint32_t charging;
-    uint32_t remaining_minutes;
-    uint32_t voltage_mv;
-    uint32_t current_ma;
+    uint32_t percent; // BATTERY_PERCENT_UNKNOWN (0xFFFFFFFF), пока нет AML executor (_BST)
+    uint32_t charging; // 1 = на сети, 0 = от батареи/неизвестно (см. status_text)
+    uint32_t remaining_minutes; // 0 = неизвестно
+    uint32_t voltage_mv; // 0 = неизвестно
+    uint32_t current_ma; // 0 = неизвестно
     char name[32];
-    char status_text[32];
+    char status_text[32]; // "Charging"/"Discharging"/"Charged"/"Unknown"/"No battery"
 };
 ```
+- **Обёртка**: `bool pc_battery_info(struct battery_info *info)`
 - **Пример**:
 ```c
 #include <purec.h>
 
 void show_battery(void) {
     struct battery_info bat;
-    if (pc_syscall(SYS_BATTERY_INFO, (uint64_t)&bat, 0, 0) == 0 && bat.present) {
+    if (pc_battery_info(&bat) && bat.present) {
         pc_write("Заряд батареи: ");
-        pc_write_u64(bat.percent);
-        pc_write("% (");
-        pc_write(bat.charging ? "Заряжается" : "От батареи");
+        if (bat.percent == BATTERY_PERCENT_UNKNOWN)
+            pc_write("unknown");
+        else
+            pc_write_u64(bat.percent);
+        pc_write(" (");
+        pc_write(bat.status_text);
         pc_write(")\n");
+    }
+}
+```
+
+---
+
+#### `SYS_AC_INFO` (281) и `SYS_POWER_SOURCE` (282)
+- **Регистры**:
+  - `SYS_AC_INFO`: `rax = 281`, `rbx = (uintptr_t)out`
+  - `SYS_POWER_SOURCE`: `rax = 282`, `rbx = (uintptr_t)out`
+- **Структуры**:
+```c
+struct ac_adapter_info {
+    uint32_t present; // AC-адаптер найден в ACPI
+    uint32_t online; // 1 = питание от сети, 0 = от батареи
+    uint32_t online_valid; // 0 = неизвестно (динамический _PSR без AML)
+    char name[16];
+};
+
+struct power_source_info {
+    uint32_t source; // POWER_SOURCE_UNKNOWN/AC/BATTERY (0/1/2)
+    uint32_t battery_present;
+    uint32_t ac_present;
+    uint32_t battery_percent; // BATTERY_PERCENT_UNKNOWN, пока нет _BST
+    char status_text[32]; // "On AC power"/"On battery"/"Unknown"/"No battery"
+};
+```
+- **Обёртки**:
+  - `bool pc_ac_info(struct ac_adapter_info *info)`
+  - `bool pc_power_source(struct power_source_info *info)`
+- **Пример**:
+```c
+#include <purec.h>
+
+void show_power(void) {
+    struct power_source_info src;
+    if (pc_power_source(&src)) {
+        pc_write("Источник: ");
+        pc_write(src.status_text);
+        pc_write("\n");
     }
 }
 ```
