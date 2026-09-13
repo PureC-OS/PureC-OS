@@ -72,6 +72,7 @@ C_SOURCES := \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
+	fs/ramdisk.c \
 	userspace/display.c \
 	userspace/fs.c \
 	userspace/personalization.c \
