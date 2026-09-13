@@ -10,6 +10,8 @@ CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 TCC_DIR := $(ROOT_DIR)/tcc
 USERSPACE_DIR := $(ROOT_DIR)/userspace
 CRYPT_REPO := https://github.com/PureC-OS/libxcrypt.git
+ACPI_DIR := $(ROOT_DIR)/acpi
+ACPI_REPO := https://github.com/PureC-OS/PureC-OS-ACPI.git
 TCC_REPO := https://github.com/PureC-OS/PureC-TCC.git
 USERSPACE_REPO := https://github.com/PureC-OS/PureC-OS-Userspace.git
 
@@ -38,7 +40,7 @@ hexedit: libraries
 userspace:
 	$(MAKE) -C $(USERSPACE_DIR)
 
-kernel: crypt-fetch
+kernel: crypt-fetch acpi-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C $(CRYPT_DIR) module
@@ -47,6 +49,12 @@ crypt-fetch:
 	@if [ ! -f "$(CRYPT_DIR)/src/sha512.c" ]; then \
 		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
 		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
+	fi
+
+acpi-fetch:
+	@if [ ! -f "$(ACPI_DIR)/src/acpi.c" ]; then \
+		echo "acpi module not found, cloning $(ACPI_REPO)..."; \
+		git clone $(ACPI_REPO) $(ACPI_DIR); \
 	fi
 
 tcc-fetch:
