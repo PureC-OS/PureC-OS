@@ -8,6 +8,9 @@
 #include "../diagnostics/panic.h"
 #include "../../arch/x86_64/mmio.h"
 #include "../../arch/x86_64/fpu.h"
+#include "../../drivers/power/power.h"
+#include "../../fs/ramdisk.h"
+#include "../module/kmod.h"
 #include "../../lib/string.h"
 #include "init.h"
 #include "../process/process.h"
@@ -43,6 +46,9 @@ void kernel_main(struct limine_framebuffer *fb) {
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
     vmm_init();
     fpu_init();
+    kmod_init();  // runtime loader for relocatable kernel modules
+    power_init(); // loads acpi.elf via kmod, falls back to legacy
+    ramdisk_init(); // factory files from /boot/initramfs.tar (VFS fallback)
     process_init();
 
     // GDT/IDT уже настроены в boot.c, но проверяем инт3 как linux-like selftest

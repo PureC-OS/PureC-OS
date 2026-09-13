@@ -12,3 +12,5 @@
 test.txt
 *tcc/
 *212/
+lang/Cargo.lock
+*target/

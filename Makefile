@@ -10,6 +10,8 @@ CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 TCC_DIR := $(ROOT_DIR)/tcc
 USERSPACE_DIR := $(ROOT_DIR)/userspace
 CRYPT_REPO := https://github.com/PureC-OS/libxcrypt.git
+ACPI_DIR := $(ROOT_DIR)/acpi
+ACPI_REPO := https://github.com/PureC-OS/PureC-OS-ACPI.git
 TCC_REPO := https://github.com/PureC-OS/PureC-TCC.git
 USERSPACE_REPO := https://github.com/PureC-OS/PureC-OS-Userspace.git
 
@@ -27,9 +29,10 @@ libraries:
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
-programs: libraries
+programs: libraries userspace-fetch tcc-fetch
 	$(MAKE) -C src/programs
 	$(MAKE) -C $(USERSPACE_DIR)
+	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
@@ -37,10 +40,11 @@ hexedit: libraries
 userspace:
 	$(MAKE) -C $(USERSPACE_DIR)
 
-kernel: crypt-fetch
+kernel: crypt-fetch acpi-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C $(CRYPT_DIR) module
+	$(MAKE) -C $(ACPI_DIR) module
 
 crypt-fetch:
 	@if [ ! -f "$(CRYPT_DIR)/src/sha512.c" ]; then \
@@ -48,10 +52,22 @@ crypt-fetch:
 		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
 	fi
 
+acpi-fetch:
+	@if [ ! -f "$(ACPI_DIR)/src/acpi.c" ]; then \
+		echo "acpi module not found, cloning $(ACPI_REPO)..."; \
+		git clone $(ACPI_REPO) $(ACPI_DIR); \
+	fi
+
 tcc-fetch:
-	@if [ ! -f "$(TCC_DIR)/*" ]; then \
+	@if [ ! -d "$(TCC_DIR)" ]; then \
 		echo "PureC-TCC not found, cloning $(TCC_REPO)..."; \
 		git clone $(TCC_REPO) $(TCC_DIR); \
+	fi
+
+userspace-fetch:
+	@if [ ! -d "$(USERSPACE_DIR)" ]; then \
+		echo "userspace not found, cloning $(USERSPACE_REPO)..."; \
+		git clone $(USERSPACE_REPO) $(USERSPACE_DIR); \
 	fi
 
 
@@ -82,10 +98,7 @@ iso: kernel programs
 	cp "$(KERNEL_DIR)/kernel-limine.elf" "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf" "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	if [ -d "$(ROOT_DIR)/src/demo" ]; then cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; fi; \
-	if [ -f "$(BIN_DIR)/modules/ext2.elf" ]; then cp "$(BIN_DIR)/modules/ext2.elf" "$(ISO_ROOT)/bin/modules/ext2.elf"; fi; \
-	if [ -f "$(BIN_DIR)/modules/ext2.ko" ]; then cp "$(BIN_DIR)/modules/ext2.ko" "$(ISO_ROOT)/bin/modules/ext2.ko"; fi; \
-	if [ -f "$(BIN_DIR)/modules/crypt.elf" ]; then cp "$(BIN_DIR)/modules/crypt.elf" "$(ISO_ROOT)/bin/modules/crypt.elf"; fi; \
-	if [ -f "$(BIN_DIR)/modules/crypt.ko" ]; then cp "$(BIN_DIR)/modules/crypt.ko" "$(ISO_ROOT)/bin/modules/crypt.ko"; fi; \
+	if [ -f "$(BIN_DIR)/modules/acpi.elf" ]; then cp "$(BIN_DIR)/modules/acpi.elf" "$(ISO_ROOT)/bin/modules/acpi.elf"; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys" "$(ISO_ROOT)/boot/limine/limine-bios.sys"; \

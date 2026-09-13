@@ -7,6 +7,7 @@
 #include "../ext2/include/ext2_dir.h"
 #include "../ext2/include/ext2_inode.h"
 #include "../vfs.h"
+#include "../ramdisk.h"
 
 #include "../../drivers/storage/block_device.h"
 #include "../../kernel/diagnostics/klog.h"
@@ -2110,55 +2111,15 @@ static const char uefi_limine_config[]=
     "    kernel_path: boot():/boot/kernel.elf\n"
     "    module_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/bin/init\n"
-    "    module_path: boot():/bin/installer\n"
-    "    module_path: boot():/bin/snake\n"
-    "    module_path: boot():/bin/tetris\n"
-    "    module_path: boot():/bin/program/terminal\n"
-    "    module_path: boot():/bin/program/nano\n"
-    "    module_path: boot():/bin/program/system\n"
-    "    module_path: boot():/bin/program/files\n"
-    "    module_path: boot():/bin/program/settings\n"
-    "    module_path: boot():/bin/program/monitor\n"
-    "    module_path: boot():/bin/program/disks\n"
-    "    module_path: boot():/bin/program/logview\n"
-    "    module_path: boot():/bin/program/hexedit\n"
-    "    module_path: boot():/bin/program/tetris\n"
-    "    module_path: boot():/bin/gui-demo\n"
-    "    module_path: boot():/lib/libpurec.a\n"
-    "    module_path: boot():/lib/libpuregui.a\n"
-    "    module_path: boot():/lib/libpguiw.a\n"
-    "    module_path: boot():/lib/libpurefs.a\n"
-    "    module_path: boot():/include/puregui.h\n"
-    "    module_path: boot():/include/pguiw.h\n"
-    "    module_path: boot():/include/purefs.h\n"
+    "    module_path: boot():/bin/modules/acpi.elf\n"
+    "    module_path: boot():/boot/initramfs.tar\n"
     "/PureC OS (UEFI fallback previous image)\n"
     "    protocol: limine\n"
     "    resolution: 1280x800x32\n"
     "    kernel_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/bin/init\n"
-    "    module_path: boot():/bin/installer\n"
-    "    module_path: boot():/bin/snake\n"
-    "    module_path: boot():/bin/tetris\n"
-    "    module_path: boot():/bin/program/terminal\n"
-    "    module_path: boot():/bin/program/nano\n"
-    "    module_path: boot():/bin/program/system\n"
-    "    module_path: boot():/bin/program/files\n"
-    "    module_path: boot():/bin/program/settings\n"
-    "    module_path: boot():/bin/program/monitor\n"
-    "    module_path: boot():/bin/program/disks\n"
-    "    module_path: boot():/bin/program/logview\n"
-    "    module_path: boot():/bin/program/hexedit\n"
-    "    module_path: boot():/bin/program/tetris\n"
-    "    module_path: boot():/bin/gui-demo\n"
-    "    module_path: boot():/lib/libpurec.a\n"
-    "    module_path: boot():/lib/libpuregui.a\n"
-    "    module_path: boot():/lib/libpguiw.a\n"
-    "    module_path: boot():/lib/libpurefs.a\n"
-    "    module_path: boot():/include/puregui.h\n"
-    "    module_path: boot():/include/pguiw.h\n"
-    "    module_path: boot():/include/purefs.h\n";
+    "    module_path: boot():/bin/modules/acpi.elf\n"
+    "    module_path: boot():/boot/initramfs.tar\n";
 
 static int32_t write_uefi_config(const char *directory,
                                  const char *alias_path){
@@ -2173,6 +2134,21 @@ static int32_t verify_installed_file(const char *path, uint32_t expected_size){
     return entry.size==expected_size?0:FS_ERROR_IO;
 }
 
+
+// Install source for manifest files: the ramdisk (initramfs), not
+// per-file Limine modules (those are gone; only real boot modules
+// like kernel images and the EFI loader stay on boot_get_module).
+static bool install_source_data(const char *path, const void **data, uint64_t *size) {
+    const void *p = NULL;
+    uint64_t sz = 0;
+    if (!ramdisk_file(path, &p, &sz) || !p || !sz || sz > UINT32_MAX)
+        return false;
+    if (data)
+        *data = p;
+    if (size)
+        *size = sz;
+    return true;
+}
 
 static int32_t install_firmware_payload(void){
     // создаём /bin/firmware/Intel/wifi с учётом FAT32 8.3, прошивки храним с LFN
@@ -2208,7 +2184,7 @@ static int32_t install_firmware_payload(void){
     };
     for(uint32_t i=0;i<sizeof(fw_table)/sizeof(fw_table[0]);i++){
         const void *data=NULL; uint64_t size=0;
-        if(!boot_get_module(fw_table[i].module_path, &data, &size) || !data || size>UINT32_MAX || size<8){
+        if(!install_source_data(fw_table[i].module_path, &data, &size) || !data || size>UINT32_MAX || size<8){
             klogf(KLOG_INFO, "install: firmware %s not present as Limine module, skip", fw_table[i].long_name);
             continue;
         }
@@ -2271,7 +2247,7 @@ struct header_module {
 static int32_t install_header_module(const struct header_module *entry){
     const void *data;
     uint64_t size;
-    if(!boot_get_module(entry->module,&data,&size) || !data || !size
+    if(!install_source_data(entry->module,&data,&size) || !data || !size
        || size>UINT32_MAX){
         klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
               "install: header module %s missing (%s)",
@@ -2342,9 +2318,9 @@ static void manifest_mkdir_parents(const char *dest){
 static int32_t install_manifest_pass(bool dry_run){
     const void *blob;
     uint64_t blob_size;
-    if(!boot_get_module("/manifest.txt",&blob,&blob_size) || !blob
+    if(!install_source_data("/manifest.txt",&blob,&blob_size) || !blob
        || !blob_size || blob_size>65536U){
-        klog(KLOG_ERROR,"install: missing /manifest.txt module");
+        klog(KLOG_ERROR,"install: missing /manifest.txt in ramdisk");
         return FS_ERROR_NOT_FOUND;
     }
     const char *text=(const char*)blob;
@@ -2456,7 +2432,7 @@ static int32_t install_manifest_pass(bool dry_run){
             if(required){
                 const void *probe;
                 uint64_t probe_size;
-                if(!boot_get_module(module,&probe,&probe_size) || !probe
+                if(!install_source_data(module,&probe,&probe_size) || !probe
                    || !probe_size || probe_size>UINT32_MAX){
                     klogf(KLOG_ERROR,"install: manifest preflight missing %s",
                           module);
@@ -2505,7 +2481,7 @@ static int32_t install_program_payload(void){
 static int32_t install_uefi_payload(void){
     static const char *directories[]={
         "/EFI","/EFI/BOOT","/EFI/limine","/boot","/boot/limine","/limine",
-        "/bin","/bin/program","/game","/lib","/include"
+        "/bin","/bin/program","/bin/modules","/game","/lib","/include"
     };
     for(uint8_t index=0;index<sizeof(directories)/sizeof(directories[0]);index++){
         int32_t status=create_directory_checked(directories[index]);
@@ -2562,6 +2538,39 @@ static int32_t install_uefi_payload(void){
     if(status<0){
         klogf(KLOG_ERROR,"install: write fallback %d",status);
         return status;
+    }
+    // Boot support files the installed system needs before VFS is up:
+    // the ramdisk (programs/libs/assets) and the ACPI kernel module.
+    // Both are real Limine boot modules, like the kernel images above.
+    {
+        const void *rd_data = NULL;
+        uint64_t rd_size = 0;
+        if(!boot_get_module("/boot/initramfs.tar",&rd_data,&rd_size) || !rd_data ||
+           !rd_size || rd_size>UINT32_MAX){
+            klog(KLOG_ERROR,"install: missing /boot/initramfs.tar module");
+            return FS_ERROR_NOT_FOUND;
+        }
+        status=payload_write_file("/boot/initramfs.tar",rd_data,(uint32_t)rd_size);
+        if(status<0){
+            klogf(KLOG_ERROR,"install: write initramfs %d",status);
+            return status;
+        }
+        const void *acpi_data = NULL;
+        uint64_t acpi_size = 0;
+        if(!boot_get_module("/bin/modules/acpi.elf",&acpi_data,&acpi_size) || !acpi_data ||
+           !acpi_size || acpi_size>UINT32_MAX){
+            klog(KLOG_ERROR,"install: missing /bin/modules/acpi.elf module");
+            return FS_ERROR_NOT_FOUND;
+        }
+        status=payload_write_file("/bin/modules/acpi.elf",acpi_data,(uint32_t)acpi_size);
+        if(status<0){
+            klogf(KLOG_ERROR,"install: write acpi module %d",status);
+            return status;
+        }
+        status=verify_installed_file("/boot/initramfs.tar",(uint32_t)rd_size);
+        if(status<0) return status;
+        status=verify_installed_file("/bin/modules/acpi.elf",(uint32_t)acpi_size);
+        if(status<0) return status;
     }
     status=install_program_payload();
     if(status<0){

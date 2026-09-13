@@ -30,6 +30,23 @@ PureC OS - это простая 64-битная операционная сис
 ## Подробности про Syscall PureC OS
 [Link на Syscall Reference](docs/syscalls-reference.md)
 
+---
+
+## Исходники и связанные репозитории
+
+Ядро: [pablaofficeal/My-OS-Kernel-C](https://github.com/pablaofficeal/My-OS-Kernel-C) (этот репозиторий).
+
+Всё, что не живёт в ядре, подключается отдельными репозиториями через fetch-цели главного `Makefile` (`crypt-fetch`, `acpi-fetch`, `tcc-fetch`, `userspace-fetch`) — при сборке они автоматически клонируются, если папки нет:
+
+| Репозиторий | Папка | Назначение |
+|---|---|---|
+| [PureC-OS/PureC-OS-ACPI](https://github.com/PureC-OS/PureC-OS-ACPI) | `acpi/` | ACPI подсистема: таблицы RSDP/XSDT/FADT/DSDT, `_S5`, shutdown/reboot. Исходники компилируются прямо в образ ядра, плюс собирается релокабельный `bin/modules/acpi.elf` |
+| [PureC-OS/libxcrypt](https://github.com/PureC-OS/libxcrypt) | `libxcrypt/` | SHA-512 / `$6$` хеширование паролей. Исходники компилируются в ядро, плюс модуль `bin/modules/crypt.elf` |
+| [PureC-OS/PureC-TCC](https://github.com/PureC-OS/PureC-TCC) | `tcc/` | Компилятор C (порт TCC) для сборки Ring-3 программ внутри ОС |
+| [PureC-OS/PureC-OS-Userspace](https://github.com/PureC-OS/PureC-OS-Userspace) | `userspace/` | Userspace: рабочий стол, приложения и библиотеки Ring-3 (Rust/C) |
+
+---
+
 
 
 ## Сборка и запуск
@@ -188,7 +205,6 @@ sudo modprobe vboxdrv
 
 # Fix 
 
-В скором времени будет сделан fix Framebuffer и Gop Это будет сделано что бы экран не мирцал при перемещении окон в UserSpace.
 А так же будет сделана миграция UserSpace в Ring 3.
 И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3.
 
@@ -197,6 +213,8 @@ sudo modprobe vboxdrv
 # Demo Foto
 ## Boot Screen
 ![Perc OC Boot](demo/Boot.png)
+## UserSpace on the bare metal
+![Perc OC UserSpace on the metal](demo/bare-metal-userspace.png)
 ## UserSpace
 ![Perc OC UserSpace](demo/userspace.png)
 ## Systemsetings

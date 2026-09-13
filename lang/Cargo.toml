@@ -1,0 +1,19 @@
+[package]
+name = "lang"
+version = "0.1.0"
+edition = "2021"
+description = "PureL — простой скриптовый язык для PureC OS (no_std)"
+
+[[bin]]
+name = "pl"
+path = "src/main.rs"
+
+[dependencies]
+purec = { path = "../userspace/crates/purec" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"

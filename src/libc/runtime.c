@@ -170,6 +170,21 @@ bool pc_memory_info(struct memory_monitor_info *info){
         && pc_syscall(SYS_MEMORY_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
 }
 
+bool pc_battery_info(struct battery_info *info){
+    return info
+        && pc_syscall(SYS_BATTERY_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
+}
+
+bool pc_ac_info(struct ac_adapter_info *info){
+    return info
+        && pc_syscall(SYS_AC_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
+}
+
+bool pc_power_source(struct power_source_info *info){
+    return info
+        && pc_syscall(SYS_POWER_SOURCE,(uint64_t)(uintptr_t)info,0,0)>=0;
+}
+
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result){
     if(!target || !result) return -1;
@@ -479,6 +494,9 @@ int32_t pc_ext2_super(struct ext2_super_info *out){
 int32_t pc_ext2_blocks(const char *path, struct ext2_blocks_info *out){
     if(!path || !out) return -1;
     return (int32_t)pc_syscall(SYS_EXT2_BLOCKS,(uint64_t)(uintptr_t)path,(uint64_t)(uintptr_t)out,0);
+}
+void pc_panic_test(const char *message){
+    (void)pc_syscall(SYS_PANIC_TEST,(uint64_t)(uintptr_t)message,0,0);
 }
 void pc_exit(int32_t status){
     (void)pc_syscall(SYS_EXIT,(uint64_t)(int64_t)status,0,0);

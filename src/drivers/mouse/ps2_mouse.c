@@ -71,12 +71,12 @@ static bool packet_seen=false;
 static volatile uint32_t framebuffer_update_depth;
 static volatile struct mouse_debug_state debug_state;
 
-#define CURS_W 12
-#define CURS_H 12
+#define CURS_W 16
+#define CURS_H 16
 static uint32_t bg_buf[CURS_W*CURS_H];
 static uint32_t cursor_color = 0xFFFFFF;
 static uint32_t cursor_border = 0x000000;
-static bool debug_overlay_enabled = false; // выключено чтобы не перекрывать boot log, как в linux - boot screen чистый
+static bool debug_overlay_enabled = false;
 
 static void draw_cursor(int32_t x,int32_t y);
 static void refresh_mouse_ui(void);
@@ -123,10 +123,19 @@ static void restore_bg(int32_t x,int32_t y){
         gop_put_pixel((uint32_t)(x+dx), (uint32_t)(y+dy), bg_buf[dy*CURS_W+dx]);
 }
 
-void mouse_set_bounds(int32_t w,int32_t h){ bound_w=w; bound_h=h; if(state.x>=w) state.x=w-1; if(state.y>=h) state.y=h-1; }
+void mouse_set_bounds(int32_t w,int32_t h){ 
+    bound_w=w; 
+    bound_h=h; 
+    if(state.x>=w) state.x=w-1; 
+    if(state.y>=h) state.y=h-1; 
+}
 
-struct mouse_state mouse_get_state(void){ return state; }
-struct mouse_debug_state mouse_get_debug_state(void){ return *(const struct mouse_debug_state *)&debug_state; }
+struct mouse_state mouse_get_state(void){ 
+    return state; 
+}
+struct mouse_debug_state mouse_get_debug_state(void){ 
+    return *(const struct mouse_debug_state *)&debug_state; 
+}
 
 void mouse_set_debug_overlay(bool enabled){
     if(enabled==debug_overlay_enabled) return;
@@ -148,16 +157,11 @@ void mouse_redraw(void){
 }
 
 void mouse_begin_framebuffer_update(void){
-    // Сначала открываем GOP-batch без cli чтобы ленивая аллокация
-    // backbuffer не держала прерывания выключенными на миллисекунды.
     gop_begin_batch();
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
     debug_state.interrupts_enabled=(flags&(1ULL<<9))!=0;
     if(framebuffer_update_depth==0){
-        // С backbuffer курсор не прячем здесь: present в end сам
-        // перезапишет сцену без курсора. Без backbuffer прячем сразу,
-        // иначе сцена будет рисоваться поверх курсора и оставит мусор.
         if(!gop_has_backbuffer()){
             if(gop_is_available() && !first_draw) restore_bg(old_x,old_y);
             first_draw=true;
@@ -183,21 +187,26 @@ void mouse_end_framebuffer_update(void){
 }
 
 static inline bool cursor_inside(int dx, int dy){
-    if(dy==0 && dx<8) return true;
-    if(dy<8 && dx<=dy) return true;
-    if(dy>=8 && dy<10 && dx<3) return true;
+    if(dy < 12 && dx <= (11 - dy)) return true;
+    if(dy >= 9 && dy < 16 && dx >= 2 && dx <= 4) return true;
     return false;
+
 }
 
 static inline uint32_t cursor_pixel(int dx, int dy){
-    bool border = (dx==0 || dy==0 || dx==dy || (dy>=8 && (dx==0||dx==2)));
+    bool on_left   = (dx == 0);
+    bool on_top    = (dy == 0);
+    bool on_diag   = (dy < 12 && dx == (11 - dy));
+    bool on_tail_l = (dy >= 9 && dy < 16 && dx == 2);
+    bool on_tail_r = (dy >= 9 && dy < 16 && dx == 4);
+    bool on_tail_b = (dy == 15 && dx >= 2 && dx <= 4);
+    bool border = on_left || on_top || on_diag || on_tail_l || on_tail_r || on_tail_b;
     return border ? cursor_border : cursor_color;
 }
 
-// Рисует курсор как в Linux: стрелка 12x12
+// Рисует курсор: стрелка 12x12
 static void draw_cursor(int32_t x,int32_t y){
     if(!gop_is_available()){
-        // VGA text 80x25, пиксели -> символы
         int tx = x / 8;
         int ty = y / 16;
         int otx = old_x / 8;
@@ -214,14 +223,10 @@ static void draw_cursor(int32_t x,int32_t y){
         return;
     }
     if(gop_has_backbuffer()){
-        // Сцена без курсора лежит в backbuffer: стирание = blit сцены.
-        // bg_buf не используем - он протухает при перерисовке сцены.
         if(!first_draw
            && (x!=old_x || y!=old_y)){
             gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
         } else if(!first_draw){
-            // Позиция та же (например present после redraw уже стер),
-            // все равно восстанавливаем фон чтобы убрать старый курсор.
             gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
         }
         first_draw=false;
@@ -294,18 +299,12 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy){
 }
 
 static void refresh_mouse_ui(void){
-    // Вызывается под cli из mouse_handle_relative (IRQ/poll).
-    // Во время пакетного рисования сцены курсор не трогаем:
-    // mouse_end дорисует его в новой позиции одним махом.
     if(framebuffer_update_depth) return;
     if(!gop_is_available()){
         draw_cursor(state.x, state.y);
         return;
     }
     if(gop_has_backbuffer()){
-        // Стираем старый курсор блитом сцены, затем оверлей (в backbuffer
-        // + present) и новый курсор поверх. Без промежуточных clear'ов -
-        // поэтому движения мыши больше не мигают.
         if(!first_draw)
             gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
         first_draw=true;
@@ -327,8 +326,6 @@ void ps2_mouse_handler(void){
     uint8_t status = inb(PS2_STATUS);
     debug_state.controller_status=status;
     debug_state.irq_count++;
-    // IRQ12 should carry AUX data, but verify it before touching shared 0x60.
-    // A keyboard byte must remain available for keyboard_poll().
     if((status & (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA))
         == (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA)){
         (void)process_mouse_byte(inb(PS2_DATA));
@@ -341,7 +338,6 @@ void ps2_mouse_poll(void){
     debug_state.interrupts_enabled=(flags & (1ULL<<9)) != 0;
     uint8_t status=inb(PS2_STATUS);
     debug_state.controller_status=status;
-    // Port 0x60 is shared with the keyboard. Consume AUX bytes only.
     if((status & (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA))
         == (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA)){
         debug_state.poll_count++;
@@ -376,8 +372,8 @@ void ps2_mouse_init(void){
         goto ps2_init_no_mouse;
     }
     klogf(KLOG_DEBUG, "psmouse: command byte=0x%x", status);
-    status |= 0x02; // enable IRQ12
-    status &= ~0x20; // enable mouse
+    status |= 0x02;
+    status &= ~0x20;
     if(!ps2_write_cmd(0x60) || !ps2_write_data(status)){
         klog(KLOG_WARN, "psmouse: 8042 failed to write command byte");
         goto ps2_init_no_mouse;
@@ -398,11 +394,8 @@ void ps2_mouse_init(void){
         klog(KLOG_OK, "psmouse: reset OK (BAT 0xAA)");
     } else {
         klogf(KLOG_WARN, "psmouse: reset ack=0x%x (no mouse or not PS/2)", ack);
-        // не считаем фатальным – пробуем дальше, может мышь всё равно ответит на enable
     }
-    // 4. Set defaults
     if(mouse_write(0xF6)) (void)mouse_read_ack();
-    // 5. Включить поток данных
     bool en_ok = false;
     if(mouse_write(0xF4)){
         uint8_t ack2 = mouse_read_ack();
@@ -419,24 +412,21 @@ void ps2_mouse_init(void){
         klog(KLOG_WARN, "psmouse: mouse_write 0xF4 failed");
     }
     if(!en_ok){
-        // PS/2 мыши нет – это нормально на ноутбуках без PS/2, продолжим с USB
     ps2_init_no_mouse:
         debug_state.enabled=false;
         has_mouse=false;
         klog(KLOG_INFO, "psmouse: PS/2 mouse not detected – USB mouse will be used if present");
     }
-    // Размаскировать IRQ12 только если есть шанс что мышь есть
     if(has_mouse || debug_state.enabled){
         uint8_t m1 = inb(0x21);
         uint8_t m2 = inb(0xA1);
-        m1 &= ~(1<<2); // cascade
-        m2 &= ~(1<<4); // IRQ12 -> slave bit4
+        m1 &= ~(1<<2); 
+        m2 &= ~(1<<4);
         outb(0x21, m1);
         outb(0xA1, m2);
         klog(KLOG_DEBUG, "psmouse: PIC unmasked IRQ2+IRQ12");
     } else {
         klog(KLOG_DEBUG, "psmouse: PIC IRQ12 left masked (no PS/2 mouse)");
-        // оставляем замаскированным чтобы не получать spurious IRQ12
     }
 
 ps2_init_done:
@@ -447,7 +437,7 @@ ps2_init_done:
         if(bound_w==0) bound_w=1280;
         if(bound_h==0) bound_h=800;
     } else {
-        bound_w = 80*8; bound_h = 25*16; // VGA text в пикселях
+        bound_w = 80*8; bound_h = 25*16;
     }
     state.x = bound_w/2;
     state.y = bound_h/2;

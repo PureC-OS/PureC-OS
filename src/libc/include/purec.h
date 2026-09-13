@@ -44,6 +44,9 @@ int32_t pc_process_list(struct process_monitor_info *processes,
                         uint32_t capacity);
 bool pc_cpu_info(struct cpu_monitor_info *info);
 bool pc_memory_info(struct memory_monitor_info *info);
+bool pc_battery_info(struct battery_info *info);
+bool pc_ac_info(struct ac_adapter_info *info);
+bool pc_power_source(struct power_source_info *info);
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result);
 void *pc_heap_grow(uint64_t size);
@@ -122,4 +125,5 @@ int32_t pc_ext2_stat(const char *path, struct ext2_stat_info *out);
 int32_t pc_ext2_inode(uint32_t ino, struct ext2_stat_info *out);
 int32_t pc_ext2_super(struct ext2_super_info *out);
 int32_t pc_ext2_blocks(const char *path, struct ext2_blocks_info *out);
+void pc_panic_test(const char *message);  /* ручной тест экрана паники */
 void pc_exit(int32_t status) __attribute__((noreturn));

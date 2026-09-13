@@ -72,6 +72,7 @@ C_SOURCES := \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
+	fs/ramdisk.c \
 	userspace/display.c \
 	userspace/fs.c \
 	userspace/personalization.c \
@@ -88,6 +89,8 @@ C_SOURCES := \
 	userspace/apps/desktop_apps.c \
 	kernel/process/scheduler.c \
 	drivers/power/power.c \
+	kernel/module/kmod.c \
+	kernel/module/ksym.c \
 	drivers/audio/audio_hda.c \
 	drivers/audio/audio.c
 CPP_SOURCES := userspace/apps/audio_panel.cpp
@@ -129,6 +132,8 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
 $(OBJ_DIR)/libxcrypt/%.o: $(CRYPT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
+
+# Kernel modules live under src/kernel/module/ and use the generic rule.
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.cpp
 	@mkdir -p $(@D)

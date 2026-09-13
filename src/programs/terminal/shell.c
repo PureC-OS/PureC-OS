@@ -50,7 +50,7 @@ static void build_prompt(char *prompt, uint32_t capacity){
 }
 
 static void show_help(void){
-    pc_write("Builtins: help clear cd pwd echo env set unset ping exit\n");
+    pc_write("Builtins: help clear cd pwd echo env set unset ping panic exit\n");
     pc_write("  ping [-c count] <ip|host|url>\n");
     pc_write("EXT2 debug: stat <path> | inode <num> | super | blocks <path> | fsinfo | dumpi <num>\n");
     pc_write("System programs resolve through PATH=/bin/program:/bin:\n");
@@ -58,7 +58,7 @@ static void show_help(void){
     pc_write("  nano <file> | hexedit <file> | disks | usbscan | dmesg | savelog\n");
     pc_write("  install | setup | update | mkfs.fat32\n");
     pc_write("  uname | about | systeminfo | htop | font | snake | tetris | files | gui-demo\n");
-    pc_write("  mouse | debug | battery | reboot | poweroff | shutdown | halt\n");
+    pc_write("  mouse | debug | battery | ac | power | reboot | poweroff | shutdown | halt\n");
 }
 
 static void write_ipv4(uint32_t address){
@@ -480,6 +480,11 @@ static bool execute_line(struct terminal_window *terminal, char *line){
     else if(pc_strcmp(command,"blocks")==0) command_blocks(arguments);
     else if(pc_strcmp(command,"fsinfo")==0) command_fsinfo();
     else if(pc_strcmp(command,"dumpi")==0) command_dumpi(arguments);
+    else if(pc_strcmp(command,"panic")==0){
+        const char *msg = arguments[0] ? arguments : "kernel panic test from shell";
+        pc_write("Triggering kernel panic...\n");
+        pc_panic_test(msg);
+    }
     else execute_program(terminal,command,arguments);
     return true;
 }

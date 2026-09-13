@@ -45,6 +45,7 @@
 /bin/program/login /bin/program/login - 0 bin/programs/login
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
+/bin/program/pl /bin/program/pl - 0 bin/programs/pl
 
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
 /bin/program/files.desktop /bin/program/files.desktop /bin/program/FILES.DES 0 src/userspace/desktop_entries/files.desktop
@@ -59,6 +60,7 @@
 /bin/program/tetris.desktop /bin/program/tetris.desktop /bin/program/TETRIS.DES 0 src/userspace/desktop_entries/tetris.desktop
 /bin/program/logview.desktop /bin/program/logview.desktop /bin/program/LOGVIEW.DES 0 src/userspace/desktop_entries/logview.desktop
 /bin/program/hexedit.desktop /bin/program/hexedit.desktop /bin/program/HEXEDIT.DES 0 src/userspace/desktop_entries/hexedit.desktop
+/bin/program/pl.desktop /bin/program/pl.desktop /bin/program/PL.DES 0 userspace/desktop_entries/pl.desktop
 
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
