@@ -1,6 +1,7 @@
 #include "timer.h"
 
 #include "../../kernel/diagnostics/klog.h"
+#include "../../kernel/process/scheduler.h"
 
 #define PIT_INPUT_HZ 1193182U
 #define PIT_COMMAND  0x43
@@ -80,6 +81,10 @@ void timer_tick(void){ tick_count++; }
 
 void timer_sleep(uint32_t milliseconds){
     if(!milliseconds) return;
+    if(scheduler_is_started()){
+        scheduler_sleep(milliseconds);
+        return;
+    }
     uint64_t start=tsc_milliseconds();
     uint64_t deadline=start+milliseconds;
     if(deadline<start) deadline=UINT64_MAX;
