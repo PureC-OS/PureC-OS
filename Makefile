@@ -14,12 +14,14 @@ ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO := https://github.com/PureC-OS/PureC-OS-ACPI.git
 TCC_REPO := https://github.com/PureC-OS/PureC-TCC.git
 USERSPACE_REPO := https://github.com/PureC-OS/PureC-OS-Userspace.git
+NOTEPAD_DIR := $(ROOT_DIR)/purec-notepad-os
+NOTEPAD_REPO := https://github.com/PureC-OS/PureC-notepad-OS.git
 
 
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel crypt-fetch iso hexedit clean help
+.PHONY: all libraries programs kernel crypt-fetch iso hexedit notepad notepad-fetch clean help
 
 all: iso
 
@@ -29,10 +31,21 @@ libraries:
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
-programs: libraries userspace-fetch tcc-fetch
+programs: libraries userspace-fetch tcc-fetch notepad
 	$(MAKE) -C src/programs
 	$(MAKE) -C $(USERSPACE_DIR)
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
+
+notepad: notepad-fetch
+	$(MAKE) -C $(NOTEPAD_DIR)
+	@mkdir -p $(PROGRAM_DIR)
+	cp $(NOTEPAD_DIR)/bin/notepad $(PROGRAM_DIR)/notepad
+
+notepad-fetch:
+	@if [ ! -f "$(NOTEPAD_DIR)/Makefile" ]; then \
+		echo "PureC-notepad-OS not found, cloning $(NOTEPAD_REPO)..."; \
+		git clone $(NOTEPAD_REPO) $(NOTEPAD_DIR); \
+	fi
 
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
@@ -98,12 +111,7 @@ iso: kernel programs
 	cp "$(KERNEL_DIR)/kernel-limine.elf" "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf" "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	if [ -d "$(ROOT_DIR)/src/demo" ]; then cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; fi; \
-	if [ -f "$(BIN_DIR)/modules/ext2.elf" ]; then cp "$(BIN_DIR)/modules/ext2.elf" "$(ISO_ROOT)/bin/modules/ext2.elf"; fi; \
-	if [ -f "$(BIN_DIR)/modules/ext2.ko" ]; then cp "$(BIN_DIR)/modules/ext2.ko" "$(ISO_ROOT)/bin/modules/ext2.ko"; fi; \
-	if [ -f "$(BIN_DIR)/modules/crypt.elf" ]; then cp "$(BIN_DIR)/modules/crypt.elf" "$(ISO_ROOT)/bin/modules/crypt.elf"; fi; \
-	if [ -f "$(BIN_DIR)/modules/crypt.ko" ]; then cp "$(BIN_DIR)/modules/crypt.ko" "$(ISO_ROOT)/bin/modules/crypt.ko"; fi; \
 	if [ -f "$(BIN_DIR)/modules/acpi.elf" ]; then cp "$(BIN_DIR)/modules/acpi.elf" "$(ISO_ROOT)/bin/modules/acpi.elf"; fi; \
-	if [ -f "$(BIN_DIR)/modules/acpi.ko" ]; then cp "$(BIN_DIR)/modules/acpi.ko" "$(ISO_ROOT)/bin/modules/acpi.ko"; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys" "$(ISO_ROOT)/boot/limine/limine-bios.sys"; \
@@ -126,4 +134,5 @@ help:
 	@echo "make libraries    собрать только библиотеки"
 	@echo "make programs     собрать библиотеки и ring-3 программы"
 	@echo "make hexedit      собрать только HexEdit (C++)"
+	@echo "make notepad      собрать только PureC Notepad и скопировать в bin/programs"
 	@echo "make iso          собрать итоговый ISO"
