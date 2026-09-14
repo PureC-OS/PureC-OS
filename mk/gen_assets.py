@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Generate install assets from assets/manifest.txt (single source of truth).
-
-Reads the 5-column manifest (module dest alias required stage) and produces:
-  <staged>/manifest.txt   installer-view manifest, shipped as /manifest.txt
-  <staged>/limine.modules "module_path: boot():<module>" lines for limine.conf
-  <staged>/limine.conf    final bootloader config from limine.conf.in
-and stages every module file into <iso_root><module>.
-
-Optional entries whose stage file is missing are skipped everywhere
-(no ISO file, no limine line); missing REQUIRED stages are fatal.
-"""
 import argparse
 import os
 import shutil
@@ -67,8 +56,6 @@ def main():
     entries = parse_manifest(manifest_path)
 
     os.makedirs(args.staged, exist_ok=True)
-
-    # Stage module files, deduped by module path.
     staged_modules = {}
     for entry in entries:
         module = entry["module"]
@@ -84,21 +71,17 @@ def main():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
         staged_modules[module] = True
-
-    # Installer-view manifest module (/manifest.txt serves itself).
     staged_manifest = os.path.join(args.staged, MANIFEST_NAME)
     shutil.copyfile(manifest_path, staged_manifest)
     iso_manifest = os.path.join(args.iso, MANIFEST_NAME)
     shutil.copyfile(manifest_path, iso_manifest)
     staged_modules["/" + MANIFEST_NAME] = True
 
-    # Limine module lines (manifest order, deduped).
     modules_path = os.path.join(args.staged, "limine.modules")
     with open(modules_path, "w", encoding="utf-8") as handle:
         for module in staged_modules:
             handle.write("    module_path: boot():%s\n" % module)
 
-    # Final limine.conf from template.
     template_path = os.path.join(args.root, "src", "boot", "limine.conf.in")
     with open(template_path, "r", encoding="utf-8") as handle:
         template = handle.read()

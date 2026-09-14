@@ -44,6 +44,7 @@ PureC OS - это простая 64-битная операционная сис
 | [PureC-OS/libxcrypt](https://github.com/PureC-OS/libxcrypt) | `libxcrypt/` | SHA-512 / `$6$` хеширование паролей. Исходники компилируются в ядро, плюс модуль `bin/modules/crypt.elf` |
 | [PureC-OS/PureC-TCC](https://github.com/PureC-OS/PureC-TCC) | `tcc/` | Компилятор C (порт TCC) для сборки Ring-3 программ внутри ОС |
 | [PureC-OS/PureC-OS-Userspace](https://github.com/PureC-OS/PureC-OS-Userspace) | `userspace/` | Userspace: рабочий стол, приложения и библиотеки Ring-3 (Rust/C) |
+| [PureC-OS/PureC-notepad-OS](https://github.com/PureC-OS/PureC-notepad-OS) | `notepad/` | Notepad для PureC OS это отдельный проект, который содержит исходники Notepad для PureC OS. у него свои Syscall Lib Gui Lib и linker script. |
 
 ---
 

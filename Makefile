@@ -132,13 +132,13 @@ iso: kernel programs
 		--efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image \
 		--protective-msdos-label "$(ISO_ROOT)" -o "$(ISO_IMAGE)"; \
 	"$$limine_bin" bios-install "$(ISO_IMAGE)"; \
-	echo "Готово: $(ISO_IMAGE)"
+	echo "ISO created: $(ISO_IMAGE)"
 
 help:
-	@echo "make              собрать ядро, программы, библиотеки и ISO"
-	@echo "make kernel       собрать только ядро"
-	@echo "make libraries    собрать только библиотеки"
-	@echo "make programs     собрать библиотеки и ring-3 программы"
-	@echo "make hexedit      собрать только HexEdit (C++)"
-	@echo "make notepad      собрать только PureC Notepad и скопировать в bin/programs"
-	@echo "make iso          собрать итоговый ISO"
+	@echo "make              build kernel, libraries, programs, ISO and install"
+	@echo "make kernel       build kernel only"
+	@echo "make libraries    build libraries only"
+	@echo "make programs     build ring-3 programs"
+	@echo "make hexedit      build HexEdit"
+	@echo "make notepad      build PureC Notepad and copy to bin/programs"
+	@echo "make iso          build ISO"
