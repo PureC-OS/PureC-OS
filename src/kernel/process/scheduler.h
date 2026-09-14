@@ -6,9 +6,6 @@
 #define SCHEDULER_MAX_THREADS 16
 #define SCHEDULER_STACK_SIZE 16384
 #define SCHEDULER_TIME_SLICE_MS 5
-#define SCHEDULER_TICK_HZ 250
-#define SCHEDULER_QUANTUM_TICKS_HIGH 3
-#define SCHEDULER_QUANTUM_TICKS_NORMAL 2
 
 struct process;
 
@@ -32,7 +29,6 @@ struct thread {
     uint32_t ticks_remaining;
     uint64_t runtime_ticks;
     uint64_t wake_tick;
-    uint64_t wait_ticks;
     uint64_t address_space;
     struct process *process;
     bool user_mode;
@@ -61,7 +57,6 @@ uint64_t scheduler_total_ticks(void);
 uint64_t scheduler_idle_ticks(void);
 void scheduler_set_affinity(int tid, int16_t core);
 int scheduler_get_core_count(void);
-bool scheduler_is_started(void);
 
 void scheduler_on_timer_interrupt(void);
 void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp);

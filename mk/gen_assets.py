@@ -1,26 +1,8 @@
 #!/usr/bin/env python3
-"""Generate install assets from assets/manifest.txt (single source of truth).
-
-Reads the 5-column manifest (module dest alias required stage) and produces:
-  <staged>/manifest.txt   installer-view manifest, shipped as /manifest.txt
-  <staged>/initramfs.tar  ustar archive of every staged module + manifest,
-                          shipped as /boot/initramfs.tar (single Limine
-                          module; the kernel ramdisk serves files from it)
-  <staged>/limine.conf    final bootloader config, copied from limine.conf.in
-and stages every module file into <iso_root><module>.
-
-Bootloader config stays minimal on purpose: the kernel resolves programs,
-libraries and assets from disk (VFS) with ramdisk fallback, like Linux
-with initramfs. Per-file Limine modules are gone.
-
-Optional entries whose stage file is missing are skipped everywhere
-(no ISO file, no tar entry); missing REQUIRED stages are fatal.
-"""
 import argparse
 import os
 import shutil
 import sys
-import tarfile
 
 MANIFEST_NAME = "manifest.txt"
 
@@ -74,8 +56,6 @@ def main():
     entries = parse_manifest(manifest_path)
 
     os.makedirs(args.staged, exist_ok=True)
-
-    # Stage module files, deduped by module path.
     staged_modules = {}
     for entry in entries:
         module = entry["module"]
@@ -91,41 +71,30 @@ def main():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
         staged_modules[module] = True
-
-    # Installer-view manifest module (/manifest.txt serves itself).
     staged_manifest = os.path.join(args.staged, MANIFEST_NAME)
     shutil.copyfile(manifest_path, staged_manifest)
     iso_manifest = os.path.join(args.iso, MANIFEST_NAME)
     shutil.copyfile(manifest_path, iso_manifest)
     staged_modules["/" + MANIFEST_NAME] = True
 
-    # initramfs.tar: every staged module (keyed by boot path without
-    # the leading slash) plus the manifest itself. USTAR on purpose:
-    # the kernel parser implements plain ustar only.
-    tar_path = os.path.join(args.staged, "initramfs.tar")
-    iso_tar = os.path.join(args.iso, "boot", "initramfs.tar")
-    os.makedirs(os.path.dirname(iso_tar), exist_ok=True)
-    with tarfile.open(tar_path, "w", format=tarfile.USTAR_FORMAT) as tar:
-        for module in sorted(staged_modules):
-            if module == "/" + MANIFEST_NAME:
-                continue
-            src = os.path.join(args.iso, module.lstrip("/"))
-            tar.add(src, arcname=module.lstrip("/"), recursive=False)
-        tar.add(staged_manifest, arcname=MANIFEST_NAME)
-    shutil.copyfile(tar_path, iso_tar)
+    modules_path = os.path.join(args.staged, "limine.modules")
+    with open(modules_path, "w", encoding="utf-8") as handle:
+        for module in staged_modules:
+            handle.write("    module_path: boot():%s\n" % module)
 
-    # Final limine.conf is a static minimal template (no per-file modules).
     template_path = os.path.join(args.root, "src", "boot", "limine.conf.in")
     with open(template_path, "r", encoding="utf-8") as handle:
         template = handle.read()
-    if "@MODULES@" in template:
-        raise SystemExit("limine.conf.in must not contain @MODULES@ anymore")
+    with open(modules_path, "r", encoding="utf-8") as handle:
+        block = handle.read().rstrip("\n")
+    if "@MODULES@" not in template:
+        raise SystemExit("limine.conf.in has no @MODULES@ placeholder")
     final_conf = os.path.join(args.staged, "limine.conf")
     with open(final_conf, "w", encoding="utf-8") as handle:
-        handle.write(template)
+        handle.write(template.replace("@MODULES@", block))
 
-    print("gen_assets: %d entries, %d modules staged, initramfs %d bytes"
-          % (len(entries), len(staged_modules), os.path.getsize(tar_path)))
+    print("gen_assets: %d entries, %d modules staged"
+          % (len(entries), len(staged_modules)))
 
 
 if __name__ == "__main__":

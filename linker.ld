@@ -1,4 +1,3 @@
-/* linker.ld - Unified 64-bit Hybrid (Limine UEFI + GRUB BIOS) */
 ENTRY(_start)
 SECTIONS
 {

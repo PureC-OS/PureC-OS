@@ -1,6 +1,5 @@
 #include "vfs.h"
 #include "./fat/include/fat32.h"
-#include "./ramdisk.h"
 #include "./ext2/include/ext2.h"
 #include "./ext2/include/ext2_debug.h"
 #include "./ext2/include/ext2_dir.h"
@@ -152,29 +151,11 @@ int32_t vfs_open(const char *path) {
     }
     int32_t be = -1;
     if (vfs_active_fs == VFS_FS_EXT2) be = ext2_open(path); else be = fat32_open(path);
-    if (be >= 0) {
-        h->type = (vfs_active_fs == VFS_FS_EXT2) ? VFS_HANDLE_EXT2 : VFS_HANDLE_FAT32;
-        h->backend_descriptor = be;
-        h->data = 0; h->size = 0; h->position = 0;
-        return VFS_FD_BASE + idx;
-    }
-    // Disk missed: factory fallback into the ramdisk (initramfs).
-    // Same in-memory semantics as kernel files, so read/seek/close
-    // need no extra branches.
-    {
-        const void *rdata = 0;
-        uint64_t rsize = 0;
-        if (ramdisk_file(path, &rdata, &rsize) && rsize <= UINT32_MAX) {
-            h->type = VFS_HANDLE_KERNEL_FILE;
-            h->backend_descriptor = -1;
-            h->data = (const char *)rdata;
-            h->size = (uint32_t)rsize;
-            h->position = 0;
-            return VFS_FD_BASE + idx;
-        }
-    }
-    memset(h, 0, sizeof(*h));
-    return be;
+    if (be < 0) { memset(h, 0, sizeof(*h)); return be; }
+    h->type = (vfs_active_fs == VFS_FS_EXT2) ? VFS_HANDLE_EXT2 : VFS_HANDLE_FAT32;
+    h->backend_descriptor = be;
+    h->data = 0; h->size = 0; h->position = 0;
+    return VFS_FD_BASE + idx;
 }
 
 int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
@@ -260,37 +241,22 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
     if (vfs_active_fs == VFS_FS_EXT2) {
         uint32_t ino;
         int32_t st = ext2_dir_resolve(path, &ino);
-        if (st >= 0) {
-            uint8_t ib[256];
-            if (ext2_inode_read(ino, ib)) {
-                out->size = ext2_read_u32(ib + 4);
-                out->is_directory = ((ext2_read_u16(ib) & 0xF000) == EXT2_S_IFDIR) ? 1 : 0;
-                out->reserved = 0;
-                return 0;
-            }
-        }
-        // Missed on ext2: fall through to fat32, then ramdisk.
+        if (st < 0) return st;
+        uint8_t ib[256];
+        if (!ext2_inode_read(ino, ib)) return FS_ERROR_IO;
+        out->size = ext2_read_u32(ib + 4);
+        out->is_directory = ((ext2_read_u16(ib) & 0xF000) == EXT2_S_IFDIR) ? 1 : 0;
+        out->reserved = 0;
+        return 0;
     }
     uint64_t size = 0;
     bool is_dir = false;
     int32_t st = fat32_stat(path, &size, &is_dir);
-    if (st >= 0) {
-        out->size = size;
-        out->is_directory = is_dir ? 1 : 0;
-        out->reserved = 0;
-        return 0;
-    }
-    {
-        const void *rdata = 0;
-        uint64_t rsize = 0;
-        if (ramdisk_file(path, &rdata, &rsize)) {
-            out->size = rsize;
-            out->is_directory = 0;
-            out->reserved = 0;
-            return 0;
-        }
-    }
-    return st;
+    if (st < 0) return st;
+    out->size = size;
+    out->is_directory = is_dir ? 1 : 0;
+    out->reserved = 0;
+    return 0;
 }
 
 int32_t vfs_delete(const char *path) {

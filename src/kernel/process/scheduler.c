@@ -26,15 +26,6 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
 
 extern void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp);
 
-static uint64_t active_address_space = 0;
-
-static uint32_t quantum_for_priority(uint8_t priority){
-    return priority <= 1 ? SCHEDULER_QUANTUM_TICKS_HIGH
-                         : SCHEDULER_QUANTUM_TICKS_NORMAL;
-}
-
-bool scheduler_is_started(void){ return started; }
-
 static bool kernel_text_address_valid(uint64_t address){
     // Kernel linked at 0xffffffff80000000 (higher half).
     // Trampoline / thread entry must live there; 0x8000 etc. = corruption.
@@ -125,9 +116,13 @@ static void idle_thread_func(void *arg){
 }
 
 static void thread_trampoline(void){
+    // This runs as new thread's first execution after ret.
     struct thread *self = current;
     if(self && self->entry){
         klogf(KLOG_DEBUG, "sched: thread %u (%s) started on core %u", self->id, self->name, 0);
+        /* User threads enter ring 3 via arch_enter_user(), which starts with
+           cli and does not return. Enabling interrupts here races the timer
+           against the first context switch and can corrupt saved RSP values. */
         if(!self->user_mode) __asm__ volatile("sti":::"memory");
         self->entry(self->arg);
     }
@@ -141,17 +136,20 @@ static void thread_trampoline(void){
 void scheduler_init(void){
     if(initialized) return;
     memset(threads, 0, sizeof(threads));
+    /* The Limine response describes detected CPUs, not CPUs currently running
+       this scheduler. AP startup and per-CPU scheduler state are not installed
+       yet, so advertising those CPUs makes affinity silently target cores that
+       never execute kernel threads. */
     core_count = 1;
     struct thread *idle = &threads[0];
     idle->id = 0;
     idle->state = THREAD_RUNNING;
     idle->priority = 7;
     idle->affinity = -1;
-    idle->ticks_remaining = SCHEDULER_QUANTUM_TICKS_NORMAL;
+    idle->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     strncpy(idle->name, "idle", sizeof(idle->name)-1);
     idle->entry = idle_thread_func;
     idle->address_space=vmm_kernel_address_space();
-    active_address_space = idle->address_space;
     idle->rsp=create_initial_stack(idle);
     fpu_thread_init(idle->fpu_state);
     current = idle;
@@ -174,6 +172,9 @@ static uint64_t create_initial_stack(struct thread *thread){
     stack_top&=~0xFULL;
     uint64_t *stack_ptr=(uint64_t*)stack_top;
 
+    /* scheduler_asm_switch restores six callee-saved registers and returns.
+       Keep a dummy return slot above the trampoline so its entry RSP is 8
+       modulo 16, exactly as required by the x86_64 System V ABI. */
     *--stack_ptr=0;
     *--stack_ptr=(uint64_t)thread_trampoline;
     for(int register_index=0;register_index<6;register_index++) *--stack_ptr=0;
@@ -196,7 +197,7 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
     t->state = THREAD_READY;
     t->priority = priority;
     t->affinity = affinity;
-    t->ticks_remaining = quantum_for_priority(priority);
+    t->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     t->address_space=address_space ? address_space : vmm_kernel_address_space();
     t->process=process;
     t->user_mode=user_mode;
@@ -277,24 +278,11 @@ static struct thread *pick_next(void){
     int start = -1;
     for(int i=0;i<SCHEDULER_MAX_THREADS;i++) if(&threads[i]==current) { start=i; break; }
     if(start<0) start=0;
-    uint8_t best = 255;
-    for(int i=1;i<SCHEDULER_MAX_THREADS;i++){
-        if(threads[i].state!=THREAD_READY) continue;
-        uint8_t eff = threads[i].priority;
-        if(threads[i].wait_ticks > 100) eff = 0;
-        if(eff < best) best = eff;
-    }
-    if(best==255){
-        if(current && current->id != 0 && current->state==THREAD_RUNNING) return current;
-        threads[0].state = THREAD_RUNNING;
-        return &threads[0];
-    }
+    /* Strict priority selection starved lower-priority work whenever a
+       CPU-bound higher-priority task stayed runnable. */
     for(int iter=1; iter<SCHEDULER_MAX_THREADS; iter++){
         int idx = (start+iter)%SCHEDULER_MAX_THREADS;
-        if(idx==0 || threads[idx].state!=THREAD_READY) continue;
-        uint8_t eff = threads[idx].priority;
-        if(threads[idx].wait_ticks > 100) eff = 0;
-        if(eff==best) return &threads[idx];
+        if(idx != 0 && threads[idx].state==THREAD_READY) return &threads[idx];
     }
     if(current && current->id != 0 && current->state==THREAD_RUNNING) return current;
     threads[0].state = THREAD_RUNNING;
@@ -305,15 +293,7 @@ static struct thread *pick_next(void){
 static void activate_thread(struct thread *thread){
     gdt_set_kernel_stack((uint64_t)(uintptr_t)
                          (thread->stack+SCHEDULER_STACK_SIZE));
-    if(thread->address_space != active_address_space){
-        vmm_switch_address_space(thread->address_space);
-        active_address_space = thread->address_space;
-    }
-}
-
-static void refill_quantum_if_empty(struct thread *t){
-    if(t->ticks_remaining==0)
-        t->ticks_remaining = quantum_for_priority(t->priority);
+    vmm_switch_address_space(thread->address_space);
 }
 
 void scheduler_yield(void){
@@ -328,9 +308,9 @@ void scheduler_yield(void){
     }
     if(prev->state==THREAD_RUNNING) prev->state=THREAD_READY;
     next->state=THREAD_RUNNING;
-    next->wait_ticks = 0;
     current=next;
-    refill_quantum_if_empty(next);
+    prev->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
+    next->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     activate_thread(next);
     validate_switch_target(prev, next);
     // Eager FPU switch while preemption is off (see block/exit below).
@@ -373,9 +353,7 @@ void scheduler_block(void){
         return;
     }
     next->state = THREAD_RUNNING;
-    next->wait_ticks = 0;
     current = next;
-    refill_quantum_if_empty(next);
     activate_thread(next);
     validate_switch_target(prev, next);
     // Eager FPU switch while preemption is off; the kernel itself never
@@ -413,9 +391,7 @@ void scheduler_exit(void){
         for(;;) __asm__ volatile("cli; hlt");
     }
     next->state = THREAD_RUNNING;
-    next->wait_ticks = 0;
     current = next;
-    refill_quantum_if_empty(next);
     activate_thread(next);
     validate_switch_target(prev, next);
     // Eager FPU switch while preemption is off; the kernel itself never
@@ -433,12 +409,6 @@ static void scheduler_tick(void){
     total_ticks++;
     current->runtime_ticks++;
     if(current->id==0) idle_ticks++;
-    // Aging: READY-треки стареют каждый тик — долго ждавший получит
-    // временный буст в pick_next и не будет голодать.
-    for(int i=0;i<SCHEDULER_MAX_THREADS;i++){
-        if(threads[i].state==THREAD_READY && threads[i].wait_ticks < UINT64_MAX)
-            threads[i].wait_ticks++;
-    }
     if(current->ticks_remaining>0) current->ticks_remaining--;
     if(current->ticks_remaining==0){
         need_resched = true;

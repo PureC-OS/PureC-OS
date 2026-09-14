@@ -170,21 +170,6 @@ bool pc_memory_info(struct memory_monitor_info *info){
         && pc_syscall(SYS_MEMORY_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
 }
 
-bool pc_battery_info(struct battery_info *info){
-    return info
-        && pc_syscall(SYS_BATTERY_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
-}
-
-bool pc_ac_info(struct ac_adapter_info *info){
-    return info
-        && pc_syscall(SYS_AC_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
-}
-
-bool pc_power_source(struct power_source_info *info){
-    return info
-        && pc_syscall(SYS_POWER_SOURCE,(uint64_t)(uintptr_t)info,0,0)>=0;
-}
-
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result){
     if(!target || !result) return -1;

@@ -55,7 +55,6 @@ void init_process_start(uint32_t detected_cpu_count){
     for(;;){
         ps2_mouse_poll();
         usb_mouse_poll();
-        scheduler_sleep(5);
-        __asm__ volatile("hlt");
+        scheduler_yield();
     }
 }

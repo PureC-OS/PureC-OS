@@ -1,4 +1,3 @@
-/* linker-limine.ld - Higher half for Limine (GOP) */
 ENTRY(_start)
 SECTIONS
 {
