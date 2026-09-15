@@ -71,8 +71,8 @@ static bool packet_seen=false;
 static volatile uint32_t framebuffer_update_depth;
 static volatile struct mouse_debug_state debug_state;
 
-#define CURS_W 16
-#define CURS_H 16
+#define CURS_W 32
+#define CURS_H 32
 static uint32_t bg_buf[CURS_W*CURS_H];
 static uint32_t cursor_color = 0xFFFFFF;
 static uint32_t cursor_border = 0x000000;
@@ -197,10 +197,11 @@ static inline uint32_t cursor_pixel(int dx, int dy){
     bool on_left   = (dx == 0);
     bool on_top    = (dy == 0);
     bool on_diag   = (dy < 12 && dx == (11 - dy));
-    bool on_tail_l = (dy >= 9 && dy < 16 && dx == 2);
-    bool on_tail_r = (dy >= 9 && dy < 16 && dx == 4);
+    bool on_tail_l = (dy >= 9 && dy < 32 && dx == 2);
+    bool on_tail_r = (dy >= 9 && dy < 32 && dx == 4);
+    bool on_tail_t = (dy == 15 && dx >= 2 && dx <= 4);
     bool on_tail_b = (dy == 15 && dx >= 2 && dx <= 4);
-    bool border = on_left || on_top || on_diag || on_tail_l || on_tail_r || on_tail_b;
+    bool border = on_left || on_top || on_diag || on_tail_l || on_tail_r || on_tail_t || on_tail_b;
     return border ? cursor_border : cursor_color;
 }
 

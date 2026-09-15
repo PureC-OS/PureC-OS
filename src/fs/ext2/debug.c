@@ -62,7 +62,6 @@ int32_t ext2_super_info(struct ext2_super_info *out) {
     out->inode_size = vol->inode_size;
     out->magic = EXT2_MAGIC;
     out->partition_lba = vol->partition_lba;
-    // compute free counts by summing group descriptors for accuracy
     uint32_t free_blocks = 0, free_inodes = 0;
     for (uint32_t g = 0; g < vol->groups_count && g < 32; g++) {
         uint8_t gd[32];
@@ -72,13 +71,11 @@ int32_t ext2_super_info(struct ext2_super_info *out) {
     }
     out->free_blocks = free_blocks;
     out->free_inodes = free_inodes;
-    // read superblock for state/errors
     uint8_t *sec = ext2_scratch_sector();
     uint32_t sb_lba = vol->partition_lba + 1024 / BLOCK_SECTOR_SIZE;
     if (block_device_read(sb_lba, sec)) {
         uint32_t off = 1024 % BLOCK_SECTOR_SIZE;
         uint8_t *sb = sec + off;
-        // sb may cross sector boundary - handle like super.c but simplified: assume fits
         out->state = ext2_read_u16(sb + 58);
         out->errors = ext2_read_u16(sb + 60);
     }

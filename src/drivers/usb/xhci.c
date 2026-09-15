@@ -324,7 +324,6 @@ static bool next_event(uint8_t wanted_type, uint8_t slot, uint8_t endpoint,
                    || (endpoint && event_endpoint!=endpoint))){
                 continue;
             }
-            // raw event скрыт от экрана загрузки, виден в dmesg, но не флудит на GOP
             if(type==wanted_type && (!slot || event_slot==slot)
                && (!endpoint || event_endpoint==endpoint)){
                 if(result) *result=copy;
@@ -334,12 +333,10 @@ static bool next_event(uint8_t wanted_type, uint8_t slot, uint8_t endpoint,
                         && code==XHCI_COMPLETION_SHORT);
                 if(!success){
                     probe_stats.last_error=XHCI_PROBE_COMPLETION;
-                    // error всегда виден и в dmesg и на экране (кратко)
                     klogf(KLOG_ERROR,"xhci%u: event error type=%u slot=%u ep=%u code=%u",controller_number,type,event_slot,event_endpoint,code);
                 }
                 return success;
             }
-            // несовпадающие события просто пропускаем без лога (экономим ring 32K и GOP перерисовку)
         } else {
             __asm__ volatile("pause");
         }
@@ -897,7 +894,6 @@ static bool enumerate_port(uint8_t port, uint8_t speed, uint32_t name_index){
         klogf(KLOG_ERROR,"xhci%u: CONFIG full %u bytes failed (limit %u)",controller_number,total,(unsigned)sizeof(descriptor_buffer));
         return false;
     }
-    // dump first 64 bytes of config descriptor for diagnosis
     klogf(KLOG_DEBUG,"xhci%u: CONFIG dump port%u total=%u",controller_number,port,total);
     for(uint16_t off=0; off<total && off<64; off+=16){
         klogf(KLOG_DEBUG,"xhci%u: cfg+%02x: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x",
@@ -993,8 +989,6 @@ static bool take_ownership(volatile uint32_t *capability, uint32_t hccparams1){
             } else {
                 klogf(KLOG_OK,"xhci%u: BIOS handoff OK LEGSUP=0x%08x after",controller_number,after);
             }
-            // Disable legacy SMI sources even when broken firmware keeps the
-            // BIOS-owned semaphore asserted, matching the non-fatal Linux path.
             extended[1]=0;
             uint32_t after1=extended[1];
             klogf(KLOG_INFO,"xhci%u: LEGCTLSTS cleared 0x%08x -> 0x%08x",controller_number,before1,after1);
@@ -1134,7 +1128,6 @@ static bool initialize_controller(const struct storage_controller_info *controll
         |(uint16_t)((hcsparams2>>16)&0x3E0);
     probe_stats.scratchpad_count=scratchpads;
     klogf(KLOG_INFO,"xhci%u: scratchpads raw HCS2=0x%08x count=%u limit=%u",controller_number,hcsparams2,scratchpads,XHCI_SCRATCHPAD_LIMIT);
-    // Also show alternate decoding for sanity: Linux uses ((HCS2>>27)&0x1F) | ((HCS2>>21)&0x3E0?) but we keep current formula and warn if suspicious
     uint16_t alt_scratch=(uint16_t)((hcsparams2>>27)&0x1F)|((uint16_t)((hcsparams2>>21)&0x1F)<<5);
     if(scratchpads!=alt_scratch) klogf(KLOG_WARN,"xhci%u: scratch decode alt=%u (HCS2>>21) differs, using %u",controller_number,alt_scratch,scratchpads);
     if(scratchpads>XHCI_SCRATCHPAD_LIMIT){
@@ -1173,7 +1166,7 @@ static bool initialize_controller(const struct storage_controller_info *controll
     volatile uint32_t *interrupter=runtime+0x20/4;
     klogf(KLOG_INFO,"xhci%u: ERST phys=0x%llx ERSTBA=0x%llx ERDP=0x%llx IMAN before=0x%08x IMOD=0x%08x ERSTSZ before=0x%08x",
           controller_number,event_address,physical_address(&event_segment),event_address,interrupter[0],interrupter[1],interrupter[2]);
-    interrupter[2]=1; // ERSTSZ = one segment (original correct)
+    interrupter[2]=1;
     uint64_t erst_address=physical_address(&event_segment);
     interrupter[4]=(uint32_t)erst_address;
     interrupter[5]=(uint32_t)(erst_address>>32);
@@ -1194,15 +1187,12 @@ static bool initialize_controller(const struct storage_controller_info *controll
     klogf(KLOG_OK,"xhci%u: RUN OK USBSTS=0x%08x USBCMD=0x%08x",controller_number,operational[1],operational[0]);
     probe_stats.last_stage=2;
     klogf(KLOG_INFO,"xhci%u: controller RUN set, USBSTS=0x%08x, scanning %u ports",controller_number,probe_stats.usb_status,max_ports);
-    // Dump raw PORTSC for all ports BEFORE reset attempts – самый полезный диагностический блок
     for(uint8_t p=1;p<=max_ports;p++){
         volatile uint8_t *port_base=(volatile uint8_t*)(void*)operational+0x400;
         volatile uint32_t *preg=(volatile uint32_t*)(void*)(port_base+(p-1)*0x10);
         uint32_t raw=preg[0];
-        // extended xECP Protocol caps: we also decode speed id mapping later
         xhci_log_port(p,raw,"scan-pre");
     }
-    // Also dump extended capability for protocol ports if present – помогает понять почему root port пустой
     {
         uint32_t hcc=hccparams1;
         uint16_t xecp=(uint16_t)(hcc>>16)*4;
@@ -1213,10 +1203,10 @@ static bool initialize_controller(const struct storage_controller_info *controll
                 uint8_t id=hdr&0xFF;
                 uint8_t nxt=(hdr>>8)&0xFF;
                 klogf(KLOG_INFO,"xhci%u: xECP@0x%x id=%u hdr=0x%08x val1=0x%08x val2=0x%08x",controller_number,xecp,id,hdr,ext[1],ext[2]);
-                if(id==2){ // Supported Protocol Capability
+                if(id==2){
                     uint8_t rev_min=ext[1]&0xFF;
                     uint8_t rev_maj=(ext[1]>>8)&0xFF;
-                    uint8_t proto=ext[1]>>16; // simplified
+                    uint8_t proto=ext[1]>>16;
                     uint8_t port_off=ext[2]&0xFF;
                     uint8_t port_cnt=(ext[2]>>8)&0xFF;
                     klogf(KLOG_INFO,"xhci%u: Supported Protocol proto=%u rev %u.%u ports off=%u cnt=%u",controller_number,proto,rev_maj,rev_min,port_off,port_cnt);
@@ -1249,7 +1239,6 @@ static bool initialize_controller(const struct storage_controller_info *controll
         klogf(KLOG_WARN,"xhci%u:  1) QEMU: устройства должны быть на xhci bus: -device qemu-xhci -device usb-storage,bus=xhci.0,drive=... иначе они попадут на UHCI/EHCI и будут невидимы здесь",controller_number);
         klogf(KLOG_WARN,"xhci%u:  2) BIOS handoff: проверь xECP логи выше (LEGSUP). QEMU должен отдать владельство OS.",controller_number);
         klogf(KLOG_WARN,"xhci%u:  3) MMIO BAR: raw BAR=0x%llx mapped=%p CAPLENGTH=%u HCSPARAMS1=0x%08x",controller_number,controller->register_base,(void*)mmio_base,capability[0]&0xFF,capability[1]);
-        // Final dump of PORTSC after scan for пост-мортем
         for(uint8_t p=1;p<=max_ports;p++){
             volatile uint8_t *port_base=(volatile uint8_t*)(void*)operational+0x400;
             volatile uint32_t *preg=(volatile uint32_t*)(void*)(port_base+(p-1)*0x10);
@@ -1271,12 +1260,10 @@ bool xhci_init(uint32_t linux_name_base){
         klog(KLOG_ERROR,"xhci: init mapping not ready");
         return false;
     }
-    // Тяжёлую диагностику xhci пишем только в ring/dmesg, без мерцания GOP на реальном железе
     bool was_screen=klog_is_screen_enabled();
     klog_set_screen_enabled(false);
     struct storage_controller_info controllers[8];
     int32_t count=storage_controller_list(controllers,8);
-    // подробный список PCI - только в dmesg
     for(int32_t i=0;i<count;i++){
         klogf(KLOG_INFO,"xhci: PCI controller[%d] type=%u name=%s bus %u:%u.%u BAR=0x%llx vend=%04x dev=%04x",
               i,controllers[i].type,controllers[i].name,controllers[i].bus,controllers[i].slot,controllers[i].function,
@@ -1295,7 +1282,6 @@ bool xhci_init(uint32_t linux_name_base){
         break;
     }
     klog_set_screen_enabled(was_screen);
-    // Краткий итог - одна строка на экране загрузки, детали - в dmesg/usbscan
     if(probe_stats.controllers==0){
         klog(KLOG_INFO,"xhci: no controllers found");
     } else if(device_count==0 && probe_stats.connected_ports==0){
@@ -1334,9 +1320,6 @@ bool xhci_rescan(uint32_t linux_name_base){
     probe_stats.max_ports=0;
     probe_stats.usb_status=0;
     probe_stats.scratchpad_count=0;
-
-    // usbscan вызывается из userspace - там мерцания нет, можно писать подробно в ring,
-    // но в терминал выводим только кратко, детали - через dmesg. Поэтому логируем в ring с выключенным экраном.
     bool was_screen=klog_is_screen_enabled();
     klog_set_screen_enabled(false);
     struct storage_controller_info controllers[8];
@@ -1358,7 +1341,6 @@ bool xhci_rescan(uint32_t linux_name_base){
     }
     klog_set_screen_enabled(was_screen);
     known_port_bitmap=connected_port_bitmap();
-    // краткий итог остаётся на экране userspace через syscall klog, но usbscan сам выводит детали
     klogf(KLOG_INFO,"xhci: rescan done disks=%u connected=%u addressed=%u error=%u stage=%u",device_count,probe_stats.connected_ports,probe_stats.addressed_devices,probe_stats.last_error,probe_stats.last_stage);
     return device_count>0;
 }

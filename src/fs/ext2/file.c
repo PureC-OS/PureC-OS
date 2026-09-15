@@ -82,27 +82,20 @@ int64_t ext2_file_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
     if (target < 0) {
         return -3;
     }
-    // ext2 reads walk block pointers from the inode on every call, so no
-    // cached cluster state needs resyncing (unlike FAT32).
     h->position = (uint32_t)(target > 0xFFFFFFFFLL ? 0xFFFFFFFFLL : target);
     return (int64_t)h->position;
 }
 
 static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size) {
     struct ext2_volume *vol = ext2_volume();
-    uint32_t bsz = vol->block_size;      /* actual block size (1024, 2048, or 4096) */
-    uint32_t per = bsz / 4;             /* number of block pointers per indirect block */
+    uint32_t bsz = vol->block_size;
+    uint32_t per = bsz / 4;
     uint8_t ib[256];
     uint8_t old_ib[256];
     if (!ext2_inode_read(ino, ib)) return -1;
     memcpy(old_ib, ib, 256);
     uint32_t bcnt = (size + bsz - 1) / bsz;
     memset(ib + 40, 0, 60);
-    /*
-     * These buffers must survive the entire loop, so they cannot alias
-     * ext2_scratch_block() which is reused as tmp inside the loop.
-     * FS access is serialised by filesystem_syscall_lock(), so static is safe.
-     */
     static uint8_t single_buf[4096];
     static uint8_t dind_buf_s[4096];
     static uint8_t tind_buf_s[4096];
@@ -115,14 +108,12 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
     memset(dind_buf, 0, bsz);
     memset(tind_buf, 0, bsz);
     uint32_t single_blk = 0, dind_blk = 0, tind_blk = 0;
-    uint32_t dind_used = 0;  /* current slot index being built in dind_buf */
+    uint32_t dind_used = 0;
     uint32_t cur_ind_blk = 0;
     bool fail = false;
     for (uint32_t i = 0; i < bcnt; i++) {
         uint32_t nb = ext2_alloc_block();
         if (!nb) { klogf(KLOG_ERROR,"ext2: alloc block failed i=%u bcnt=%u size=%u",i,bcnt,size); fail = true; break; }
-        /* write this logical block's data — ext2_scratch_block() is safe here as
-         * single/dind_buf/tind_buf/cur_ind now use their own static buffers */
         uint8_t *tmp = ext2_scratch_block();
         memset(tmp, 0, bsz);
         uint32_t off = i * bsz;
@@ -143,13 +134,12 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
             if (which != dind_used) {
                 if (cur_ind_blk) {
                     if (!ext2_write_block(cur_ind_blk, cur_ind)) { fail = true; break; }
-                    /* Fix: was (which - 1) which is wrong when which jumps; use dind_used = previous slot */
                     ext2_write_u32(dind_buf + dind_used * 4, cur_ind_blk);
                 }
                 cur_ind_blk = ext2_alloc_block();
                 if (!cur_ind_blk) { ext2_free_block(nb); fail = true; break; }
                 memset(cur_ind, 0, bsz);
-                dind_used = which; /* track current slot index */
+                dind_used = which;
             } else if (!cur_ind_blk) {
                 cur_ind_blk = ext2_alloc_block();
                 if (!cur_ind_blk) { ext2_free_block(nb); fail = true; break; }
@@ -174,7 +164,6 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
             if (!dblk) {
                 dblk = ext2_alloc_block();
                 if (!dblk) { ext2_free_block(nb); fail = true; break; }
-                /* use scratch_block() for zero buf — safe because tmp was already used above and we don't need it */
                 uint8_t *zero = ext2_scratch_block();
                 memset(zero, 0, bsz);
                 if (!ext2_write_block(dblk, zero)) { ext2_free_block(dblk); ext2_free_block(nb); fail = true; break; }
@@ -186,7 +175,7 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
             if (!iblk) {
                 iblk = ext2_alloc_block();
                 if (!iblk) { ext2_free_block(nb); fail = true; break; }
-                uint8_t *zero2 = ext2_scratch_block();  /* scratch_block() ≠ scratch_block2() → no alias */
+                uint8_t *zero2 = ext2_scratch_block();
                 memset(zero2, 0, bsz);
                 if (!ext2_write_block(iblk, zero2)) { ext2_free_block(iblk); ext2_free_block(nb); fail = true; break; }
                 ext2_write_u32(dbuf2 + w * 4, iblk);
@@ -199,28 +188,18 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
         }
     }
     if (fail) {
-        // free any partially allocated new blocks to avoid leak
-        // Use current ib (partially built) to free what we allocated
         if (single_blk) ext2_write_u32(ib + 40 + 12 * 4, single_blk);
         if (dind_blk) {
             if (cur_ind_blk) {
-                // cur_ind not yet flushed - free it
                 ext2_free_block(cur_ind_blk);
-                // dind_buf still holds previous entries, but not yet written? we wrote dind_buf partly
-                // To be safe, free dind already allocated and its children via inode free
             }
             if (dind_used > 0) {
-                // ensure dind_buf written? if not, can't free via inode walk - free manually
-                // Instead let inode free walk handle: temporarily set dind pointer
                 ext2_write_u32(ib + 40 + 13 * 4, dind_blk);
             } else {
                 ext2_free_block(dind_blk);
             }
         }
         if (tind_blk) ext2_write_u32(ib + 40 + 14 * 4, tind_blk);
-        // if we set pointers, free via helper which understands structure
-        // For single, need to ensure pointer set before free walk
-        // We'll do a best-effort cleanup using the helper
         ext2_inode_free_blocks(ib);
         return -4;
     }
@@ -241,13 +220,11 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
         ext2_write_u32(ib + 40 + 14 * 4, tind_blk);
     }
     ext2_write_u32(ib + 4, size);
-    ext2_write_u32(ib + 28, bcnt * (bsz / 512));  /* i_blocks: 512-byte units */
+    ext2_write_u32(ib + 28, bcnt * (bsz / 512));
     ext2_write_u16(ib + 24, 1);
-    // preserve mode type but ensure regular file
     uint16_t old_mode = ext2_read_u16(old_ib);
     if ((old_mode & 0xF000) == 0x4000) ext2_write_u16(ib, 0x41ED);
     else ext2_write_u16(ib, 0x81A4);
-    // free old blocks after successful new allocation
     ext2_inode_free_blocks(old_ib);
     return ext2_write_inode(ino, ib) ? (int32_t)size : -1;
 }
@@ -275,7 +252,6 @@ static int32_t ext2_create_file_internal(const char *path) {
         if(blen>=sizeof(base)) return -3;
         memcpy(base,p,blen);
     }
-    // actually simplify: use dir_resolve for parent
     uint32_t par_ino;
     char pardir[256];
     if(slash){
@@ -348,12 +324,9 @@ int32_t ext2_file_append(const char *path, const void *buffer, uint32_t count) {
     uint32_t old = ext2_read_u32(ib + 4);
     if (old == 0) return ext2_write_data(ino, (const uint8_t*)buffer, count);
     uint32_t nsize = old + count;
-    // guard against overflow
     if (nsize < old) return -3;
-    // allocate temporary buffer using pmm to avoid scratch overflow
     uint64_t pages = (nsize + 4095) / 4096;
     if (pages == 0) pages = 1;
-    // limit to 64 MiB to avoid huge allocation starvation
     if (nsize > 64 * 1024 * 1024) return -4;
     uint64_t phys = pmm_allocate_contiguous(pages);
     if (!phys) return -4;

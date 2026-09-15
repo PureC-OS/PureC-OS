@@ -22,9 +22,17 @@
 #define KBD_DEVICE_SCAN_SET     0xF0
 #define KBD_DEVICE_ENABLE_SCAN  0xF4
 
-static inline void outb(uint16_t port, uint8_t val){ __asm__ volatile("outb %0,%1"::"a"(val),"Nd"(port)); }
-static inline uint8_t inb(uint16_t port){ uint8_t ret; __asm__ volatile("inb %1,%0":"=a"(ret):"Nd"(port)); return ret; }
-static inline void io_wait(void){ outb(0x80,0); }
+static inline void outb(uint16_t port, uint8_t val) {
+    __asm__ volatile("outb %0,%1"::"a"(val),"Nd"(port)); 
+}
+static inline uint8_t inb(uint16_t port){ 
+    uint8_t ret; 
+    __asm__ volatile("inb %1,%0":"=a"(ret):"Nd"(port)); 
+    return ret; 
+}
+static inline void io_wait(void){ 
+    outb(0x80,0); 
+}
 
 static bool shift_pressed = false;
 static bool control_pressed = false;
@@ -35,7 +43,6 @@ static bool set2_extended = false;
 static bool set1_extended = false;
 static uint8_t set2_pause_bytes = 0;
 
-// US QWERTY scancode set 1, без shift
 static const char scancode_set1_map[128] = {
     0,  27, '1','2','3','4','5','6','7','8','9','0','-','=', '\b',
     '\t','q','w','e','r','t','y','u','i','o','p','[',']','\n', 0,
@@ -56,8 +63,6 @@ static const char scancode_set1_shift_map[128] = {
     0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
-// Native PS/2 Scan Code Set 2. Real hardware commonly exposes this set when
-// the 8042 translation bit is disabled. For example, A=0x1C and Enter=0x5A.
 static const char scancode_set2_map[128] = {
     [0x0D]='\t', [0x0E]='`',
     [0x15]='q', [0x16]='1', [0x1A]='z', [0x1B]='s', [0x1C]='a', [0x1D]='w', [0x1E]='2',
@@ -164,20 +169,19 @@ static void handle_scancode_set1(uint8_t sc){
         control_pressed = false;
         return;
     }
-    if(sc == 0x2A || sc == 0x36){ // LSHIFT / RSHIFT press
+    if(sc == 0x2A || sc == 0x36){
         shift_pressed = true;
         return;
     }
-    if(sc == 0xAA || sc == 0xB6){ // shift release
+    if(sc == 0xAA || sc == 0xB6){
         shift_pressed = false;
         return;
     }
-    if(sc == 0x3A){ // caps
+    if(sc == 0x3A){
         caps_lock = !caps_lock;
         return;
     }
     if(sc & 0x80){
-        // release of other keys, ignore
         return;
     }
     if(sc == 0x3B){
@@ -202,7 +206,6 @@ static void handle_scancode_set2(uint8_t sc){
         return;
     }
     if(sc == 0xE1){
-        // Pause is E1 14 77 E1 F0 14 F0 77 and produces no shell character.
         set2_pause_bytes = 7;
         set2_break_pending = false;
         set2_extended = false;
@@ -222,7 +225,7 @@ static void handle_scancode_set2(uint8_t sc){
     set2_break_pending = false;
     set2_extended = false;
 
-    if(sc == 0x12 || sc == 0x59){ // LSHIFT / RSHIFT
+    if(sc == 0x12 || sc == 0x59){
         shift_pressed = !released;
         return;
     }
@@ -232,8 +235,8 @@ static void handle_scancode_set2(uint8_t sc){
     }
     if(released) return;
     if(extended){
-        if(sc == 0x5A) kbd_push('\n'); // keypad Enter
-        if(sc == 0x4A) kbd_push('/');  // keypad slash
+        if(sc == 0x5A) kbd_push('\n');
+        if(sc == 0x4A) kbd_push('/');
         if(sc == 0x6C) special_push(KEYBOARD_SPECIAL_HOME);
         if(sc == 0x69) special_push(KEYBOARD_SPECIAL_END);
         if(sc == 0x7D) special_push(KEYBOARD_SPECIAL_PAGE_UP);
@@ -257,7 +260,7 @@ static void handle_scancode_set2(uint8_t sc){
         special_push(KEYBOARD_SPECIAL_F3);
         return;
     }
-    if(sc == 0x58){ // Caps Lock
+    if(sc == 0x58){
         caps_lock = !caps_lock;
         return;
     }
@@ -287,7 +290,6 @@ static bool read_controller_config(uint8_t *config){
     bool ok = send_controller_command(KBD_CMD_DISABLE_KBD)
         && send_controller_command(KBD_CMD_DISABLE_AUX);
 
-    // Both ports are stopped, so stale bytes can be discarded safely.
     for(uint32_t i=0; i<32 && (inb(KBD_STATUS) & KBD_STATUS_OUTPUT_FULL); i++){
         (void)inb(KBD_DATA);
     }
@@ -329,22 +331,16 @@ static bool send_keyboard_device_byte(uint8_t value){
 }
 
 static bool configure_native_scan_set2(void){
-    // Stop AUX traffic while command replies share port 0x60 with the mouse.
     bool ok = send_controller_command(KBD_CMD_DISABLE_AUX)
         && send_controller_command(KBD_CMD_ENABLE_KBD);
-
     for(uint32_t i=0; i<32 && (inb(KBD_STATUS) & KBD_STATUS_OUTPUT_FULL); i++){
         (void)inb(KBD_DATA);
     }
-
     if(ok) ok = send_keyboard_device_byte(KBD_DEVICE_DISABLE_SCAN);
     if(ok) ok = send_keyboard_device_byte(KBD_DEVICE_SCAN_SET);
     if(ok) ok = send_keyboard_device_byte(0x02);
-
-    // Always try to resume scanning, including recovery from a failed Set 2 command.
     bool enable_scan_ok = send_keyboard_device_byte(KBD_DEVICE_ENABLE_SCAN);
     if(!enable_scan_ok) ok = false;
-
     if(!send_controller_command(KBD_CMD_ENABLE_AUX)) ok = false;
     return ok;
 }
@@ -360,14 +356,12 @@ static bool decoder_self_test(void){
     set2_pause_bytes = 0;
     kbd_head = kbd_tail = kbd_count = 0;
     special_head = special_tail = special_count = 0;
-
-    handle_scancode(0x1C); // A make in Set 2
+    handle_scancode(0x1C);
     handle_scancode(0xF0);
-    handle_scancode(0x1C); // A break
-    handle_scancode(0x5A); // Enter make in Set 2
+    handle_scancode(0x1C);
+    handle_scancode(0x5A);
     handle_scancode(0xE0);
-    handle_scancode(0x7D); // Page Up make in Set 2
-
+    handle_scancode(0x7D);
     char first=0, second=0, extra=0;
     uint8_t navigation=0,extra_special=0;
     bool ok = kbd_pop(&first) && kbd_pop(&second) && !kbd_pop(&extra)
@@ -375,7 +369,6 @@ static bool decoder_self_test(void){
         && special_pop(&navigation)
         && navigation==KEYBOARD_SPECIAL_PAGE_UP
         && !special_pop(&extra_special);
-
     shift_pressed = false;
     control_pressed = false;
     caps_lock = false;
@@ -392,8 +385,6 @@ void keyboard_poll(void){
     for(;;){
         uint8_t status = inb(KBD_STATUS);
         if(!(status & KBD_STATUS_OUTPUT_FULL)) break;
-        // Port 0x60 is shared with the PS/2 mouse. Leave AUX bytes for
-        // ps2_mouse_poll()/IRQ12 instead of decoding them as scan codes.
         if(status & KBD_STATUS_AUX_DATA) break;
         uint8_t sc = inb(KBD_DATA);
         handle_scancode(sc);
@@ -428,22 +419,17 @@ char keyboard_getc(void){
 void keyboard_init(void){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-
     uint8_t config = 0;
     bool config_ok = read_controller_config(&config);
     uint8_t detected_scan_set = config_ok && (config & KBD_CONFIG_TRANSLATION) ? 1 : 2;
     bool device_config_ok = true;
     if(detected_scan_set == 2) device_config_ok = configure_native_scan_set2();
-
-    // оставляем IRQ1 замаскированным для polling (чтобы не триггерить vector 33 без handler)
     uint8_t mask = inb(0x21);
     mask |= (1<<1);
     outb(0x21, mask);
-
     bool self_test_ok = decoder_self_test();
     active_scan_set = detected_scan_set;
     if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
-
     if(!self_test_ok) klog(KLOG_ERROR, "keyboard: Scan Code Set 2 decoder self-test failed");
     if(!config_ok) klog(KLOG_WARN, "keyboard: 8042 config read failed, assuming Scan Code Set 2");
     if(!device_config_ok) klog(KLOG_WARN, "keyboard: device rejected Scan Code Set 2 setup");
@@ -453,5 +439,4 @@ void keyboard_init(void){
 
 void keyboard_set_leds(bool caps, bool num, bool scroll){
     (void)caps; (void)num; (void)scroll;
-    // TODO: send 0xED + leds
 }

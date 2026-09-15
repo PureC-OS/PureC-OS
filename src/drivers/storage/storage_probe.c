@@ -38,7 +38,6 @@ static void set_controller_name(struct storage_controller_info *controller,
 
 static void inspect_pci_device(const struct pci_device_info *device, void *context){
     (void)context;
-    // логируем все PCI устройства для диагностики "невидимых" USB (UHCI/OHCI)
     klogf(KLOG_DEBUG,"pci scan: %02x:%02x.%u vend=%04x dev=%04x class=%02x sub=%02x prog=%02x rev=%02x",
           device->bus,device->slot,device->function,device->vendor_id,device->device_id,
           device->class_code,device->subclass,device->programming_interface,device->revision);
