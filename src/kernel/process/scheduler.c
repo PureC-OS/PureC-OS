@@ -591,6 +591,16 @@ void scheduler_exit(void){
 
 void scheduler_on_timer_interrupt(void){
     if(!started) return;
+    if(!smp_this_ok()){
+        char *p=sched_panic_reason;
+        const char *prefix="sched: tick cpu id broken rdpid=";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, smp_index_rdpid(), 8); p+=8;
+        const char *mid=" lapic="; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, smp_index_lapic(), 8); p+=8;
+        *p='\0';
+        kernel_panic(sched_panic_reason);
+    }
     struct cpu_local *cpu = smp_this();
     spin_lock(&sched_lock);
     total_ticks++;
