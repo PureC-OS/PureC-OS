@@ -4,77 +4,93 @@ PureC OS — Build & Setup TUI
 Usage:
     ./purec.py                  interactive menu
     ./purec.py setup            clone all external repos
-    ./purec.py build            build everything (kernel + programs + iso)
-    ./purec.py build kernel     build kernel only
-    ./purec.py build programs   build ring-3 programs
-    ./purec.py build iso        build ISO image
+    ./purec.py build [target]   build (all / kernel / programs / iso / libs / notepad / hexedit / userspace)
     ./purec.py run              launch in QEMU
     ./purec.py clean            remove build artefacts
     ./purec.py status           show which repos are present
 """
 
-import curses
 import os
+import re
+import select
 import subprocess
 import sys
-import textwrap
+import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, List, Optional
 
-# ─────────────────────────── project root ────────────────────────────────────
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BIN  = os.path.join(ROOT, "bin")
 ISO  = os.path.join(BIN, "purec_limine.iso")
 
-# ────────────────────────── external repos ───────────────────────────────────
-@dataclass
-class Repo:
-    name:    str
-    url:     str
-    dest:    str          # relative to ROOT
-    check:   str          # file that proves the repo is present
-    desc:    str
-
-REPOS: List[Repo] = [
-    Repo("libxcrypt",       "https://github.com/PureC-OS/libxcrypt.git",
-         "libxcrypt",       "libxcrypt/src/sha512.c",
-         "SHA-512 / \$6\$ password hashing"),
-    Repo("PureC-OS-ACPI",   "https://github.com/PureC-OS/PureC-OS-ACPI.git",
-         "acpi",            "acpi/src/acpi.c",
-         "ACPI subsystem (RSDP/XSDT/FADT/DSDT, shutdown/reboot)"),
-    Repo("PureC-TCC",       "https://github.com/PureC-OS/PureC-TCC.git",
-         "tcc",             "tcc",
-         "C compiler port for Ring-3 programs"),
-    Repo("PureC-OS-Userspace","https://github.com/PureC-OS/PureC-OS-Userspace.git",
-         "userspace",       "userspace",
-         "Desktop environment, applications, Ring-3 libraries"),
-    Repo("PureC-notepad-OS","https://github.com/PureC-OS/PureC-notepad-OS.git",
-         "purec-notepad-os","purec-notepad-os/Makefile",
-         "PureC Notepad with Syscall Lib and GUI Lib"),
-]
-
-# ─────────────────────────── ANSI palette ────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
+# Catppuccin Mocha palette
+# ──────────────────────────────────────────────────────────────
 class C:
-    RESET  = "\033[0m"
+    RST    = "\033[0m"
     BOLD   = "\033[1m"
     DIM    = "\033[2m"
-    # Catppuccin Mocha-ish
     MAUVE  = "\033[38;2;203;166;247m"
     BLUE   = "\033[38;2;137;180;250m"
     GREEN  = "\033[38;2;166;227;161m"
     YELLOW = "\033[38;2;249;226;175m"
     RED    = "\033[38;2;243;139;168m"
     PEACH  = "\033[38;2;250;179;135m"
+    SKY    = "\033[38;2;137;220;235m"
     TEXT   = "\033[38;2;205;214;244m"
-    SUBTEXT= "\033[38;2;166;173;200m"
-    BASE   = "\033[48;2;30;30;46m"
-    SURFACE= "\033[48;2;49;50;68m"
+    SUB    = "\033[38;2;166;173;200m"
+    OVERLAY= "\033[38;2;108;112;134m"
+    BG     = "\033[48;2;30;30;46m"
+    SURF   = "\033[48;2;49;50;68m"
+    HIDE_CURSOR = "\033[?25l"
+    SHOW_CURSOR = "\033[?25h"
+    CLEAR_LINE  = "\033[2K\r"
 
-def clr(color: str, text: str) -> str:
-    return f"{color}{text}{C.RESET}"
+def c(col, text): return f"{col}{text}{C.RST}"
 
-# ─────────────────────────── ASCII logo ──────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
+# Terminal width helper
+# ──────────────────────────────────────────────────────────────
+def tw() -> int:
+    try:    return os.get_terminal_size().columns
+    except: return 80
+
+# ──────────────────────────────────────────────────────────────
+# External repos
+# ──────────────────────────────────────────────────────────────
+@dataclass
+class Repo:
+    name:  str
+    url:   str
+    dest:  str
+    check: str
+    desc:  str
+
+REPOS: List[Repo] = [
+    Repo("libxcrypt",          "https://github.com/PureC-OS/libxcrypt.git",
+         "libxcrypt",          "libxcrypt/src/sha512.c",
+         "SHA-512 / $6$ password hashing"),
+    Repo("PureC-OS-ACPI",      "https://github.com/PureC-OS/PureC-OS-ACPI.git",
+         "acpi",               "acpi/src/acpi.c",
+         "ACPI (shutdown / reboot)"),
+    Repo("PureC-TCC",          "https://github.com/PureC-OS/PureC-TCC.git",
+         "tcc",                "tcc",
+         "C compiler port for Ring-3"),
+    Repo("PureC-OS-Userspace", "https://github.com/PureC-OS/PureC-OS-Userspace.git",
+         "userspace",          "userspace",
+         "Desktop + Ring-3 apps"),
+    Repo("PureC-notepad-OS",   "https://github.com/PureC-OS/PureC-notepad-OS.git",
+         "purec-notepad-os",   "purec-notepad-os/Makefile",
+         "Notepad with GUI & Syscall lib"),
+]
+
+def _present(r: Repo) -> bool:
+    return os.path.exists(os.path.join(ROOT, r.check))
+
+# ──────────────────────────────────────────────────────────────
+# ASCII logo
+# ──────────────────────────────────────────────────────────────
 LOGO = [
     r" ____                  ____   ___  ____  ",
     r"|  _ \ _   _ _ __ ___ / ___| / _ \/ ___| ",
@@ -83,204 +99,339 @@ LOGO = [
     r"|_|    \__,_|_|  \___|\____|\___/|____/ ",
 ]
 
-# ──────────────────────────── helpers ────────────────────────────────────────
-def _abs(rel: str) -> str:
-    return os.path.join(ROOT, rel)
-
-def _present(repo: Repo) -> bool:
-    return os.path.exists(_abs(repo.check))
-
-def _print_header():
+def _header():
     print()
     for line in LOGO:
-        print(clr(C.MAUVE, C.BOLD + line))
-    print(clr(C.SUBTEXT, "  64-bit OS written in C and x86_64 assembly"))
+        print(c(C.MAUVE, C.BOLD + line))
+    w = tw()
+    subtitle = "  64-bit OS written in C and x86_64 assembly"
+    print(c(C.SUB, subtitle))
+    print(c(C.OVERLAY, "  " + "─" * (w - 4)))
     print()
 
-def _box(title: str, lines: List[str], width: int = 62):
-    tl, tr, bl, br, h, v = "╭", "╮", "╰", "╯", "─", "│"
-    inner = width - 2
-    title_str = f" {title} "
-    pad = inner - len(title_str)
-    top = tl + title_str + h * pad + tr
-    bot = bl + h * inner + br
-    print(clr(C.BLUE, top))
-    for l in lines:
-        line = l[:inner].ljust(inner)
-        print(clr(C.BLUE, v) + " " + clr(C.TEXT, line[:-1]) + clr(C.BLUE, v))
-    print(clr(C.BLUE, bot))
+# ──────────────────────────────────────────────────────────────
+# Spinner
+# ──────────────────────────────────────────────────────────────
+SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 
-def _run(cmd: List[str], cwd: str = ROOT) -> int:
-    print(clr(C.DIM + C.SUBTEXT, "  $ " + " ".join(cmd)))
-    result = subprocess.run(cmd, cwd=cwd)
-    return result.returncode
+class Spinner:
+    def __init__(self, label: str):
+        self.label   = label
+        self._stop   = threading.Event()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
 
-def _step(label: str):
-    print(f"\n{clr(C.MAUVE, '●')} {clr(C.BOLD + C.TEXT, label)}")
+    def _spin(self):
+        i = 0
+        print(C.HIDE_CURSOR, end="", flush=True)
+        while not self._stop.is_set():
+            frame = c(C.MAUVE, SPINNER_FRAMES[i % len(SPINNER_FRAMES)])
+            lbl   = c(C.TEXT, self.label)
+            sys.stdout.write(f"{C.CLEAR_LINE}  {frame}  {lbl}")
+            sys.stdout.flush()
+            time.sleep(0.08)
+            i += 1
 
-def _ok(msg: str):
-    print(f"  {clr(C.GREEN, '✓')} {clr(C.TEXT, msg)}")
+    def start(self):
+        self._thread.start()
+        return self
 
-def _warn(msg: str):
-    print(f"  {clr(C.YELLOW, '⚠')} {clr(C.YELLOW, msg)}")
+    def stop(self, ok: bool = True, note: str = ""):
+        self._stop.set()
+        self._thread.join()
+        icon  = c(C.GREEN, "✓") if ok else c(C.RED, "✗")
+        label = c(C.TEXT, self.label)
+        extra = (c(C.SUB, "  " + note)) if note else ""
+        sys.stdout.write(f"{C.CLEAR_LINE}  {icon}  {label}{extra}\n")
+        sys.stdout.flush()
+        print(C.SHOW_CURSOR, end="", flush=True)
 
-def _err(msg: str):
-    print(f"  {clr(C.RED, '✗')} {clr(C.RED, msg)}")
+# ──────────────────────────────────────────────────────────────
+# Live-log box (shows last N lines of process output)
+# ──────────────────────────────────────────────────────────────
 
-def _die(msg: str):
-    _err(msg)
-    sys.exit(1)
+# Noise patterns we want to hide
+_NOISE = re.compile(
+    r"^\s*(make\[|\bNothing to be done\b|^make:.*Entering|^make:.*Leaving"
+    r"|^\s*$)", re.IGNORECASE
+)
 
-# ──────────────────────────── commands ───────────────────────────────────────
+def _clean_line(raw: str) -> str:
+    """Strip ANSI, trailing whitespace."""
+    ansi = re.compile(r"\033\[[0-9;]*[a-zA-Z]")
+    return ansi.sub("", raw).rstrip()
+
+LOG_LINES = 6   # how many lines to show in the live box
+
+class LiveLog:
+    """Renders a fixed-height scrolling log panel in the terminal."""
+
+    def __init__(self, title: str):
+        self.title  = title
+        self.lines: List[str] = []
+        self._rendered = 0
+
+    def _box_top(self):
+        w   = tw() - 2
+        ttl = f" {self.title} "
+        bar = "─" * (w - len(ttl) - 2)
+        print(c(C.BLUE, f"╭{ttl}{bar}╮"))
+
+    def _box_bot(self):
+        w = tw() - 2
+        print(c(C.BLUE, f"╰{'─' * w}╯"))
+
+    def push(self, raw: str):
+        cl = _clean_line(raw)
+        if not cl or _NOISE.match(cl):
+            return
+        # Truncate to terminal width
+        w = tw() - 6
+        if len(cl) > w:
+            cl = cl[:w-1] + "…"
+        self.lines.append(cl)
+        self._redraw()
+
+    def _redraw(self):
+        visible = self.lines[-LOG_LINES:]
+        # Move cursor up to overwrite previous render
+        if self._rendered:
+            sys.stdout.write(f"\033[{self._rendered + 2}A")
+
+        self._box_top()
+        w = tw() - 4
+        for ln in visible:
+            row = ln[:w].ljust(w)
+            print(c(C.BLUE, "│") + " " + c(C.SUB, row) + " " + c(C.BLUE, "│"))
+        # Pad empty rows
+        for _ in range(LOG_LINES - len(visible)):
+            print(c(C.BLUE, "│") + " " * (w + 2) + c(C.BLUE, "│"))
+        self._box_bot()
+        self._rendered = LOG_LINES
+        sys.stdout.flush()
+
+    def clear(self):
+        if self._rendered:
+            # erase the box lines
+            for _ in range(self._rendered + 2):
+                sys.stdout.write(f"\033[1A{C.CLEAR_LINE}")
+        self._rendered = 0
+        sys.stdout.flush()
+
+# ──────────────────────────────────────────────────────────────
+# Process runner with live output
+# ──────────────────────────────────────────────────────────────
+
+def _run_live(cmd: List[str], title: str, cwd: str = ROOT) -> int:
+    """Run cmd, stream stdout/stderr into a LiveLog box. Return exit code."""
+    log = LiveLog(title)
+    # Print initial empty box
+    log._redraw()
+
+    proc = subprocess.Popen(
+        cmd, cwd=cwd,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    )
+    for line in proc.stdout:
+        log.push(line)
+    proc.wait()
+
+    # Final status line
+    ok = proc.returncode == 0
+    icon = c(C.GREEN, "✓") if ok else c(C.RED, "✗")
+    status = c(C.GREEN, "Success") if ok else c(C.RED, f"Failed (exit {proc.returncode})")
+    # Replace bottom border with status
+    sys.stdout.write(f"\033[1A{C.CLEAR_LINE}")
+    print(c(C.BLUE, "│") + f" {icon} {status}".ljust(tw() - 4) + " " + c(C.BLUE, "│"))
+    print(c(C.BLUE, f"╰{'─' * (tw() - 2)}╯"))
+    sys.stdout.flush()
+    return proc.returncode
+
+
+def _run_git_clone(url: str, dest: str, name: str) -> int:
+    """Clone with progress shown in spinner + live log."""
+    print(f"\n  {c(C.BLUE, '↓')}  Cloning {c(C.MAUVE + C.BOLD, name)}")
+    cmd = ["git", "clone", "--depth=1", "--progress", url, dest]
+    return _run_live(cmd, f"git clone {name}")
+
+
+def _make_live(title: str, *args: str) -> int:
+    cmd = ["make", "-C", ROOT, *args]
+    return _run_live(cmd, title)
+
+# ──────────────────────────────────────────────────────────────
+# Feedback helpers
+# ──────────────────────────────────────────────────────────────
+def _ok(msg):   print(f"  {c(C.GREEN,  '✓')}  {c(C.TEXT, msg)}")
+def _warn(msg): print(f"  {c(C.YELLOW, '⚠')}  {c(C.YELLOW, msg)}")
+def _err(msg):  print(f"  {c(C.RED,    '✗')}  {c(C.RED, msg)}")
+def _step(msg): print(f"\n  {c(C.MAUVE, '●')}  {c(C.BOLD + C.TEXT, msg)}\n")
+def _die(msg):  _err(msg); print(C.SHOW_CURSOR); sys.exit(1)
+
+# ──────────────────────────────────────────────────────────────
+# Commands
+# ──────────────────────────────────────────────────────────────
 
 def cmd_status():
-    _print_header()
-    rows = []
+    _header()
+    w = tw() - 2
+    ttl = " Dependency Status "
+    bar = "─" * (w - len(ttl) - 2)
+    print(c(C.BLUE, f"╭{ttl}{bar}╮"))
     for r in REPOS:
-        icon = clr(C.GREEN, "✓ present ") if _present(r) else clr(C.RED, "✗ missing ")
-        rows.append(f"{icon} {r.name:<26} {clr(C.SUBTEXT, r.desc)}")
-    _box("Dependency Status", rows, width=72)
-    iso_status = clr(C.GREEN, "✓ " + ISO) if os.path.isfile(ISO) else clr(C.RED, "✗ not built")
-    print(f"\n  ISO: {iso_status}\n")
+        present = _present(r)
+        icon  = c(C.GREEN, "✓ present") if present else c(C.RED,  "✗ missing")
+        name  = c(C.MAUVE if present else C.RED, f"{r.name:<26}")
+        desc  = c(C.SUB, r.desc)
+        row   = f" {icon}  {name} {desc}"
+        pad   = w - len(_clean_line(row))
+        print(c(C.BLUE, "│") + row + " " * max(pad, 1) + c(C.BLUE, "│"))
+    print(c(C.BLUE, f"╰{'─' * w}╯"))
+    print()
+    if os.path.isfile(ISO):
+        mb = os.path.getsize(ISO) / 1_048_576
+        _ok(f"ISO: {ISO}  ({mb:.1f} MB)")
+    else:
+        _warn("ISO: not built yet")
+    print()
 
 
 def cmd_setup(only: Optional[str] = None):
-    _print_header()
+    _header()
     _step("Fetching external repositories")
-    ok_count = 0
+    total = ok_count = 0
     for r in REPOS:
         if only and r.name.lower() != only.lower():
             continue
-        dest_abs = _abs(r.dest)
+        total += 1
         if _present(r):
-            _ok(f"{r.name} — already present, skipping")
+            _ok(f"{r.name} — already present")
             ok_count += 1
             continue
-        print(f"\n  {clr(C.BLUE, '↓')} Cloning {clr(C.MAUVE, r.name)} …")
-        rc = _run(["git", "clone", "--depth=1", r.url, dest_abs])
+        dest_abs = os.path.join(ROOT, r.dest)
+        rc = _run_git_clone(r.url, dest_abs, r.name)
         if rc != 0:
             _err(f"Failed to clone {r.name}")
         else:
-            _ok(f"{r.name} cloned → {r.dest}/")
+            _ok(f"{r.name} → {r.dest}/")
             ok_count += 1
     print()
-    _ok(f"Done — {ok_count}/{len(REPOS)} repos ready") if not only else None
+    _ok(f"Done — {ok_count}/{total} repos ready")
+    print()
 
 
-def _make(*args: str) -> int:
-    return _run(["make", "-C", ROOT, "--no-print-directory", *args])
+TARGETS = {
+    "all":       ([], "Build everything"),
+    "kernel":    (["kernel"], "Build kernel"),
+    "programs":  (["programs"], "Build Ring-3 programs"),
+    "iso":       (["iso"], "Assemble ISO image"),
+    "libs":      (["libraries"], "Build libraries"),
+    "notepad":   (["notepad"], "Build PureC Notepad"),
+    "hexedit":   (["hexedit"], "Build HexEdit"),
+    "userspace": (["userspace"], "Build Userspace"),
+}
 
-
-def cmd_build(target: str = "all"):
-    _print_header()
-    targets_map = {
-        "all":      [],
-        "kernel":   ["kernel"],
-        "programs": ["programs"],
-        "iso":      ["iso"],
-        "libs":     ["libraries"],
-        "notepad":  ["notepad"],
-        "hexedit":  ["hexedit"],
-        "userspace":["userspace"],
-    }
-    if target not in targets_map:
-        _die(f"Unknown build target '{target}'. Choose: {', '.join(targets_map)}")
-
-    _step(f"Building: {target}")
-    rc = _make(*targets_map[target])
+def cmd_build(target: str = "all") -> int:
+    _header()
+    if target not in TARGETS:
+        _die(f"Unknown target '{target}'. Choose: {', '.join(TARGETS)}")
+    args, title = TARGETS[target]
+    _step(title)
+    rc = _make_live(title, *args)
     print()
     if rc == 0:
         _ok("Build succeeded!")
         if target in ("all", "iso") and os.path.isfile(ISO):
-            size_mb = os.path.getsize(ISO) / 1_048_576
-            _ok(f"ISO ready: {ISO}  ({size_mb:.1f} MB)")
+            mb = os.path.getsize(ISO) / 1_048_576
+            _ok(f"ISO: {ISO}  ({mb:.1f} MB)")
     else:
         _err(f"Build failed (exit {rc})")
+    print()
     return rc
 
 
 def cmd_clean():
-    _print_header()
+    _header()
     _step("Cleaning build artefacts")
-    _make("clean")
+    _make_live("make clean", "clean")
     _ok("Done")
+    print()
 
 
 def cmd_run():
-    _print_header()
+    _header()
     if not os.path.isfile(ISO):
         _warn("ISO not found — building first…")
-        rc = cmd_build("all")
-        if rc != 0:
+        if cmd_build("all") != 0:
             _die("Build failed, cannot run")
-
-    # Try QEMU
     qemu = "qemu-system-x86_64"
     if subprocess.run(["which", qemu], capture_output=True).returncode == 0:
-        _step("Launching in QEMU")
-        _run([
-            qemu,
-            "-cdrom", ISO,
-            "-m", "512M",
-            "-enable-kvm",
-            "-serial", "stdio",
-            "-vga", "std",
-            "-boot", "d",
-        ])
+        _step("Launching PureC OS in QEMU")
+        _run_live([
+            qemu, "-cdrom", ISO, "-m", "512M",
+            "-enable-kvm", "-serial", "stdio",
+            "-vga", "std", "-boot", "d",
+        ], "QEMU")
     else:
-        _warn("QEMU not found. Install qemu-system-x86 or open the ISO in VirtualBox:")
-        print(f"  {clr(C.PEACH, ISO)}")
+        _warn("QEMU not found. Open the ISO in VirtualBox:")
+        print(f"  {c(C.PEACH, ISO)}")
+    print()
 
-
-# ──────────────────────── interactive TUI menu ───────────────────────────────
-
+# ──────────────────────────────────────────────────────────────
+# Interactive TUI menu
+# ──────────────────────────────────────────────────────────────
 @dataclass
 class MenuItem:
-    key:   str
-    label: str
-    desc:  str
+    key:    str
+    label:  str
+    desc:   str
     action: Callable
 
-def _interactive_menu():
+def _menu():
     items: List[MenuItem] = [
-        MenuItem("1", "Setup / Fetch deps",   "Clone all external repositories",          lambda: cmd_setup()),
-        MenuItem("2", "Build all",            "Build kernel + programs + ISO",            lambda: cmd_build("all")),
-        MenuItem("3", "Build kernel",         "Build kernel only",                        lambda: cmd_build("kernel")),
-        MenuItem("4", "Build programs",       "Build Ring-3 user programs",               lambda: cmd_build("programs")),
-        MenuItem("5", "Build ISO",            "Assemble the bootable ISO image",          lambda: cmd_build("iso")),
-        MenuItem("6", "Run (QEMU)",           "Launch PureC OS in QEMU",                  lambda: cmd_run()),
-        MenuItem("7", "Dependency status",    "Show which external repos are present",    lambda: cmd_status()),
-        MenuItem("8", "Clean",                "Remove all build artefacts",               lambda: cmd_clean()),
-        MenuItem("q", "Quit",                 "",                                         lambda: sys.exit(0)),
+        MenuItem("1", "Setup / Fetch deps",    "Clone all external repositories",   lambda: cmd_setup()),
+        MenuItem("2", "Build all",             "Build kernel + programs + ISO",     lambda: cmd_build("all")),
+        MenuItem("3", "Build kernel",          "Build kernel only",                 lambda: cmd_build("kernel")),
+        MenuItem("4", "Build programs",        "Build Ring-3 user programs",        lambda: cmd_build("programs")),
+        MenuItem("5", "Build ISO",             "Assemble the bootable ISO image",   lambda: cmd_build("iso")),
+        MenuItem("6", "Run  (QEMU)",           "Launch PureC OS in QEMU",           lambda: cmd_run()),
+        MenuItem("7", "Dependency status",     "Show which external repos present", lambda: cmd_status()),
+        MenuItem("8", "Clean",                 "Remove all build artefacts",        lambda: cmd_clean()),
+        MenuItem("q", "Quit",                  "",                                  lambda: sys.exit(0)),
     ]
 
     while True:
         os.system("clear")
-        _print_header()
+        _header()
 
-        key_w  = 4
-        lab_w  = 24
-        desc_w = 40
-        sep = clr(C.BLUE, "│")
+        w = tw()
+        # Column widths
+        K, L, D = 5, 22, 38
 
-        header = (clr(C.SURFACE, " ") +
-                  clr(C.BOLD + C.MAUVE, " Key ") + sep +
-                  clr(C.BOLD + C.MAUVE, f" {'Action':<{lab_w}}") + sep +
-                  clr(C.BOLD + C.MAUVE, f" {'Description':<{desc_w}}"))
-        print(header)
-        print(clr(C.BLUE, "─" * (key_w + lab_w + desc_w + 6)))
+        def _sep(): print(c(C.OVERLAY, "  " + "─" * (K + L + D + 6)))
+
+        head = (f"  {c(C.BOLD + C.MAUVE, 'Key'):<{K+14}} "
+                f"{c(C.BLUE, '│')} {c(C.BOLD + C.MAUVE, 'Action'):<{L+14}} "
+                f"{c(C.BLUE, '│')} {c(C.BOLD + C.MAUVE, 'Description')}")
+        print(head)
+        _sep()
 
         for it in items:
-            key_str  = clr(C.YELLOW, f" [{it.key}]")
-            lab_str  = f" {clr(C.TEXT, it.label):<{lab_w + 10}}"
-            desc_str = f" {clr(C.SUBTEXT, it.desc)}"
-            print(f"{key_str} {sep}{lab_str}{sep}{desc_str}")
+            key  = c(C.YELLOW, f"[{it.key}]")
+            lab  = c(C.TEXT,   it.label)
+            desc = c(C.SUB,    it.desc)
+            # fixed width via raw-length padding
+            key_p  = key  + " " * max(0, K  - len(it.key) - 2)
+            lab_p  = lab  + " " * max(0, L  - len(it.label))
+            print(f"  {key_p}  {c(C.BLUE,'│')} {lab_p}  {c(C.BLUE,'│')} {desc}")
 
-        print(clr(C.BLUE, "─" * (key_w + lab_w + desc_w + 6)))
+        _sep()
         print()
 
         try:
-            choice = input(clr(C.MAUVE, "  ❯ ") + clr(C.TEXT, "Enter choice: ")).strip().lower()
+            choice = input(
+                f"  {c(C.MAUVE,'❯')} {c(C.TEXT,'Choice: ')}"
+            ).strip().lower()
         except (KeyboardInterrupt, EOFError):
             print()
             sys.exit(0)
@@ -288,45 +439,34 @@ def _interactive_menu():
         matched = [it for it in items if it.key == choice]
         if not matched:
             _warn(f"Unknown option '{choice}'")
-            time.sleep(1)
+            time.sleep(0.8)
             continue
 
         print()
         matched[0].action()
-        print()
-        input(clr(C.SUBTEXT, "  Press Enter to return to menu…"))
+        try:
+            input(c(C.SUB, "  Press Enter to return to menu…"))
+        except (KeyboardInterrupt, EOFError):
+            print()
+            sys.exit(0)
 
-
-# ──────────────────────────── entry point ────────────────────────────────────
-
+# ──────────────────────────────────────────────────────────────
+# Entry point
+# ──────────────────────────────────────────────────────────────
 def main():
     args = sys.argv[1:]
-
     if not args:
-        _interactive_menu()
+        _menu()
         return
-
     cmd = args[0].lower()
-
-    if cmd == "setup":
-        cmd_setup(args[1] if len(args) > 1 else None)
-    elif cmd == "build":
-        target = args[1] if len(args) > 1 else "all"
-        sys.exit(cmd_build(target))
-    elif cmd == "run":
-        cmd_run()
-    elif cmd == "clean":
-        cmd_clean()
-    elif cmd == "status":
-        cmd_status()
-    elif cmd in ("-h", "--help", "help"):
-        print(__doc__)
+    if   cmd == "setup":   cmd_setup(args[1] if len(args) > 1 else None)
+    elif cmd == "build":   sys.exit(cmd_build(args[1] if len(args) > 1 else "all"))
+    elif cmd == "run":     cmd_run()
+    elif cmd == "clean":   cmd_clean()
+    elif cmd == "status":  cmd_status()
+    elif cmd in ("-h","--help","help"): print(__doc__)
     else:
-        print(clr(C.RED, f"Unknown command: {cmd}"))
-        print(__doc__)
-        sys.exit(1)
-
+        print(c(C.RED, f"Unknown command: {cmd}")); print(__doc__); sys.exit(1)
 
 if __name__ == "__main__":
     main()
-
