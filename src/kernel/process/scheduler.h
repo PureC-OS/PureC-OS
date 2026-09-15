@@ -18,6 +18,7 @@ enum thread_state {
 };
 
 struct thread {
+    uint64_t canary_head;
     uint64_t rsp;
     void (*entry)(void *arg);
     void *arg;
@@ -39,6 +40,7 @@ struct thread {
     int16_t last_cpu;
     uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
     uint8_t fpu_state[512] __attribute__((aligned(16)));
+    uint64_t canary_tail;
 };
 
 void scheduler_init(void);

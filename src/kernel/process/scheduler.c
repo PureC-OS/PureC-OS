@@ -16,7 +16,19 @@ static bool initialized = false;
 static volatile bool started = false;
 static volatile uint64_t total_ticks;
 static volatile uint64_t idle_ticks;
+#define SCHED_THREAD_CANARY 0x9E3779B97F4A7C15ULL
+
 static void thread_trampoline(void);
+
+static void thread_set_canary(struct thread *t){
+    t->canary_head = SCHED_THREAD_CANARY;
+    t->canary_tail = SCHED_THREAD_CANARY;
+}
+
+static bool thread_canary_ok(const struct thread *t){
+    return t && t->canary_head == SCHED_THREAD_CANARY
+        && t->canary_tail == SCHED_THREAD_CANARY;
+}
 static struct thread *pick_next(struct cpu_local *cpu);
 static uint64_t create_initial_stack(struct thread *thread);
 static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
@@ -71,6 +83,30 @@ static void validate_switch_target(const struct thread *prev,
                                      const struct thread *next){
     if(!next){
         kernel_panic("scheduler: null next thread");
+    }
+    if(!thread_canary_ok(prev) || !thread_canary_ok(next)){
+        char *p=sched_panic_reason;
+        const char *prefix="sched: canary dead prev=";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        const char *mid=" next="; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, next ? next->id : 0xFFFFFFFFu, 8); p+=8;
+        *p='\0';
+        spin_unlock(&sched_lock);
+        __asm__ volatile("sti" ::: "memory");
+        kernel_panic(sched_panic_reason);
+    }
+    if(!smp_this_ok()){
+        char *p=sched_panic_reason;
+        const char *prefix="sched: cpu id broken rdpid=";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, smp_index_rdpid(), 8); p+=8;
+        const char *mid=" lapic="; for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, smp_index_lapic(), 8); p+=8;
+        *p='\0';
+        spin_unlock(&sched_lock);
+        __asm__ volatile("sti" ::: "memory");
+        kernel_panic(sched_panic_reason);
     }
     if(!thread_stack_valid(next)){
         char *p=sched_panic_reason;
@@ -146,6 +182,7 @@ void scheduler_init(void){
     smp_early_bsp();
     struct thread *idle = &threads[0];
     idle->id = 0;
+    thread_set_canary(idle);
     idle->state = THREAD_RUNNING;
     idle->priority = 7;
     idle->affinity = 0;
@@ -196,6 +233,7 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
         return -1;
     }
     memset(t, 0, sizeof(*t));
+    thread_set_canary(t);
     t->id = next_id++;
     t->entry = entry;
     t->arg = arg;
@@ -329,6 +367,25 @@ static bool thread_owns_stack(const struct thread *thread, uint64_t rsp){
 static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
     uint64_t live_rsp;
     __asm__ volatile("mov %%rsp,%0" : "=r"(live_rsp));
+    if(!thread_canary_ok(prev) || !smp_this_ok()){
+        char *p=sched_panic_reason;
+        const char *prefix="sched: integrity fail cpu=";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, cpu->index, 2); p+=2;
+        const char *mid=" prev=";
+        for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        const char *mid2=" rdpid=";
+        for(int i=0;mid2[i];i++) *p++=mid2[i];
+        write_hex_digits(p, smp_index_rdpid(), 8); p+=8;
+        const char *mid3=" lapic=";
+        for(int i=0;mid3[i];i++) *p++=mid3[i];
+        write_hex_digits(p, smp_index_lapic(), 8); p+=8;
+        *p='\0';
+        spin_unlock(&sched_lock);
+        __asm__ volatile("sti" ::: "memory");
+        kernel_panic(sched_panic_reason);
+    }
     if(thread_is_cpu_idle(prev)) return;
     if(thread_owns_stack(prev, live_rsp)) return;
     int32_t owner_id = -1;

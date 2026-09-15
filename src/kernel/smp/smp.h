@@ -9,6 +9,7 @@ struct thread;
 #define SMP_MAX_CPUS 16
 
 struct cpu_local {
+    uint64_t canary;
     struct thread *current;
     uint32_t present;
     uint32_t online;
@@ -30,5 +31,8 @@ uint32_t smp_online_count(void);
 uint32_t smp_cpu_index(void);
 struct cpu_local *smp_this(void);
 struct cpu_local *smp_cpu(uint32_t index);
+uint32_t smp_index_rdpid(void);
+uint32_t smp_index_lapic(void);
+bool smp_this_ok(void);
 void smp_bind_cpu(uint32_t index);
 void ap_main(void *boot_arg);

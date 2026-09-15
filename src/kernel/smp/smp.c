@@ -47,6 +47,31 @@ static uint32_t read_cpu_index_rdpid(void){
     return index;
 }
 
+#define SMP_CPU_CANARY 0xC90F2A5B4D6E7F01ULL
+
+static uint32_t cpu_index_from_lapic(void);
+static uint32_t read_cpu_index_rdpid(void);
+
+uint32_t smp_index_rdpid(void){
+    if(!use_rdpid) return 0xFFFFFFFFU;
+    return read_cpu_index_rdpid();
+}
+
+uint32_t smp_index_lapic(void){
+    return cpu_index_from_lapic();
+}
+
+bool smp_this_ok(void){
+    if(!smp_booted) return true;
+    if(!use_rdpid) return true;
+    uint32_t a = read_cpu_index_rdpid();
+    uint32_t b = cpu_index_from_lapic();
+    if(a >= SMP_MAX_CPUS || a != b) return false;
+    struct cpu_local *cpu = &cpus[a];
+    if(cpu->canary != SMP_CPU_CANARY) return false;
+    return a == cpu->index;
+}
+
 static uint32_t cpu_index_from_lapic(void){
     uint32_t lapic_id = apic_raw_lapic_id();
     for(uint32_t i = 0; i < SMP_MAX_CPUS; i++){
@@ -89,6 +114,7 @@ void smp_bind_cpu(uint32_t index){
 void smp_early_bsp(void){
     memset(cpus, 0, sizeof(cpus));
     use_rdpid = cpu_has_rdpid();
+    for(uint32_t i = 0; i < SMP_MAX_CPUS; i++) cpus[i].canary = SMP_CPU_CANARY;
     cpus[0].present = 1;
     cpus[0].online = 1;
     cpus[0].index = 0;
