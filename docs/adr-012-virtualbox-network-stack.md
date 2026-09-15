@@ -37,6 +37,13 @@ Ring sizes, packet queues and protocol tables will be compile-time bounded.
   M88E1000 PHY via CTRL_EXT SDP4, auto-negotiates over MDIC and forces
   the MAC to the negotiated speed/duplex, then registers the next free
   `ethN` interface. Fiber (`8086:1001`) is recognized and skipped.
+- `drivers/net/pcnet` is the AMD PCnet-PCI II (Am79C970A) driver for PCI
+  `1022:2000` (`1022:2001` accepted with the same software style). It is
+  I/O-port mapped (RAP/RDP/BDP), reads the MAC from the APROM, switches
+  to 32-bit DWIO, programs BCR20 SWSTYLE 2 + SSIZE32, initializes the
+  28-byte init block with 16-entry RX/TX descriptor rings, then registers
+  the next free `ethN` interface. Polling strips the 4-byte FCS trailer
+  and pads TX runts to 60 bytes in software.
 - `net/core/net_device` owns the driver-neutral device API, counters and bounded
   raw-frame receive queues. It contains no IPv4, UDP, DHCP, DNS or TCP logic.
 - `net/core/net_service` owns deferred polling and protocol housekeeping.

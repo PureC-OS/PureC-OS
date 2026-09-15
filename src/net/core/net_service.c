@@ -9,6 +9,7 @@
 #include "../diagnostics/icmp.h"
 #include "e1000_82540em.h"
 #include "e1000_82543gc.h"
+#include "pcnet_am79c970a.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
@@ -34,7 +35,8 @@ bool net_service_init(void){
     }
     bool em_ready=e1000_82540em_init();
     bool gc_ready=e1000_82543gc_init();
-    ready=em_ready||gc_ready;
+    bool pcnet_ready=pcnet_am79c970a_init();
+    ready=em_ready||gc_ready||pcnet_ready;
     if(!ready) klog(KLOG_WARN,"net: no supported network adapter found");
     else {
         for(uint32_t index=0;index<net_device_count();index++)
