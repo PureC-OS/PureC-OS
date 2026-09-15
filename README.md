@@ -60,7 +60,7 @@ Components not residing in the kernel core are pulled in via separate repositori
 
 
 
-## Сборка и запуск
+## Build Toolschain
 <details>
 <summary><b>Linux (Ubuntu)</b></summary>
 
