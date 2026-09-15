@@ -18,17 +18,14 @@
 #define PCNET_INIT_TIMEOUT 1000000U
 #define PCNET_START_TIMEOUT 100000U
 
-/* 16-bit (word) access offsets, valid right after reset. */
 #define PCNET16_RDP 0x10
 #define PCNET16_RAP 0x12
 #define PCNET16_RESET 0x14
-/* 32-bit (dword) access offsets, valid after DWIO switch. */
 #define PCNET32_RDP 0x10
 #define PCNET32_RAP 0x14
 #define PCNET32_RESET 0x18
 #define PCNET32_BDP 0x1C
 
-/* CSR0 bits. */
 #define PCNET_CSR0_INIT 0x0001U
 #define PCNET_CSR0_STRT 0x0002U
 #define PCNET_CSR0_STOP 0x0004U
@@ -42,11 +39,9 @@
 #define PCNET_CSR_INIT_HIGH 2
 #define PCNET_CSR_INT_MASK 3
 
-/* BCR20: SSIZE32 (bit 8) + SWSTYLE 2 (PCnet-PCI II 32-bit). */
 #define PCNET_BCR_SWSTYLE 20
 #define PCNET_BCR_SWSTYLE_VALUE 0x0102U
 
-/* Descriptor status bits (shared STP/ENP/OWN positions). */
 #define PCNET_DESC_OWN 0x8000U
 #define PCNET_DESC_ERR 0x4000U
 #define PCNET_DESC_STP 0x0200U
@@ -198,7 +193,6 @@ static bool pcnet_allocate_dma(struct pcnet_device *device){
         pcnet_release_dma(device);
         return false;
     }
-    /* The 32-bit init block and descriptors cannot address above 4 GiB. */
     if((device->init_block_physical>>32)
        || (device->rx_ring_physical>>32)
        || (device->tx_ring_physical>>32)){
@@ -226,8 +220,6 @@ static bool pcnet_allocate_dma(struct pcnet_device *device){
     return true;
 }
 
-/* Reset covers both DWIO states and leaves the card in 16-bit mode so the
-   APROM bytes stay readable; the caller then switches to 32-bit I/O. */
 static void pcnet_soft_reset(struct pcnet_device *device){
     (void)port_inl((uint16_t)(device->io_base+PCNET32_RESET));
     (void)port_inw((uint16_t)(device->io_base+PCNET16_RESET));
@@ -235,7 +227,6 @@ static void pcnet_soft_reset(struct pcnet_device *device){
 }
 
 static bool pcnet_enter_dword_mode(struct pcnet_device *device){
-    /* After reset RAP points at CSR0, so this harmless write selects DWIO. */
     port_outl((uint16_t)(device->io_base+PCNET32_RDP),0);
     for(uint32_t attempt=0;attempt<PCNET_INIT_TIMEOUT;attempt++){
         uint16_t csr0=pcnet_csr_read(device,0);
@@ -296,7 +287,6 @@ static bool pcnet_start(struct pcnet_device *device){
         __asm__ volatile("pause");
     }
     if(!done) return false;
-    /* Acknowledge IDON, then START the controller. */
     pcnet_csr_write(device,0,PCNET_CSR0_IDON);
     pcnet_csr_write(device,0,PCNET_CSR0_STRT);
     for(uint32_t attempt=0;attempt<PCNET_START_TIMEOUT;attempt++){
@@ -322,7 +312,6 @@ static bool pcnet_transmit(void *context, const uint8_t *frame,
         __atomic_clear(&device->tx_locked,__ATOMIC_RELEASE);
         return false;
     }
-    /* The controller cannot send runts; pad short frames in software. */
     uint32_t wire_length=length<60 ? 60 : length;
     memcpy(device->tx_buffers[index],frame,length);
     if(wire_length>length)
@@ -334,7 +323,6 @@ static bool pcnet_transmit(void *context, const uint8_t *frame,
     descriptor->status=PCNET_TX_READY;
     __atomic_thread_fence(__ATOMIC_RELEASE);
     device->tx_next=(uint16_t)((index+1)%PCNET_RING_COUNT);
-    /* Demand transmission without waiting for the poll timer. */
     pcnet_csr_write(device,0,PCNET_CSR0_TDMD);
     __atomic_clear(&device->tx_locked,__ATOMIC_RELEASE);
     return true;
@@ -353,7 +341,6 @@ static void pcnet_poll(void *context, uint32_t budget){
         if(descriptor->status&PCNET_DESC_OWN) break;
         uint16_t status=descriptor->status;
         uint32_t raw_length=descriptor->message_length&0x0FFFU;
-        /* The byte count includes the 4-byte FCS trailer. */
         uint32_t frame_length=raw_length>=4 ? raw_length-4 : 0;
         if(!(status&PCNET_DESC_ERR)
            && (status&(PCNET_DESC_STP|PCNET_DESC_ENP))
@@ -423,7 +410,6 @@ static bool pcnet_init_one(struct pcnet_device *device,
 
     pcnet_soft_reset(device);
 
-    /* APROM bytes are readable while the card is in 16-bit reset state. */
     uint8_t mac[6];
     for(uint32_t index=0;index<6;index++)
         mac[index]=port_inb((uint16_t)(device->io_base+index));
@@ -444,7 +430,6 @@ static bool pcnet_init_one(struct pcnet_device *device,
         return false;
     }
 
-    /* Select the 32-bit PCnet-PCI II software style. */
     pcnet_bcr_write(device,PCNET_BCR_SWSTYLE,PCNET_BCR_SWSTYLE_VALUE);
     if((pcnet_bcr_read(device,PCNET_BCR_SWSTYLE)&0x01FFU)
        !=PCNET_BCR_SWSTYLE_VALUE){
