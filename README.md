@@ -219,8 +219,8 @@ sudo modprobe vboxdrv
 # Fix 
 
 todo:
-
 [ ] UserSpace will be migrated to Ring 3.
+
 [ ] Remaining programs currently running in Ring 0 will also be migrated to Ring 3.
 
 --- 
