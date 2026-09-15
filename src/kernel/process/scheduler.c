@@ -97,6 +97,23 @@ static void validate_switch_target(const struct thread *prev,
         write_hex_digits(p, next->id, 8); p+=8;
         const char *mid2=" prev=0x"; for(int i=0;mid2[i];i++) *p++=mid2[i];
         write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
+        const char *mid3=" trsp="; for(int i=0;mid3[i];i++) *p++=mid3[i];
+        write_hex_digits(p, next->rsp, 16); p+=16;
+        const char *mid4=" tstate="; for(int i=0;mid4[i];i++) *p++=mid4[i];
+        write_hex_digits(p, next->state, 2); p+=2;
+        const char *mid5=" tlast="; for(int i=0;mid5[i];i++) *p++=mid5[i];
+        write_hex_digits(p, (uint32_t)(uint16_t)next->last_cpu, 4); p+=4;
+        for(uint32_t ci = 0; ci < SMP_MAX_CPUS; ci++){
+            struct cpu_local *c = smp_cpu(ci);
+            if(!c || !c->present) continue;
+            const char *midc=" c";
+            for(int i=0;midc[i];i++) *p++=midc[i];
+            write_hex_digits(p, ci, 2); p+=2;
+            const char *mide="=";
+            for(int i=0;mide[i];i++) *p++=mide[i];
+            write_hex_digits(p, c->current ? c->current->id : 0xFFFFFFFFu, 8);
+            p+=8;
+        }
         *p='\0';
         kernel_panic(sched_panic_reason);
     }
