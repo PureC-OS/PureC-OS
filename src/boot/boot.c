@@ -13,7 +13,7 @@
 #include "../drivers/usb/xhci.h"
 #include "../drivers/usb/ehci.h"
 #include "../arch/x86_64/gdt/include/gdt.h"
-#include "../arch/x86_64/idt.h"
+#include "../arch/x86_64/idt/include/idt.h"
 #include "../arch/x86_64/mmio.h"
 #include "../kernel/core/kernel.h"
 #include "../kernel/diagnostics/klog.h"

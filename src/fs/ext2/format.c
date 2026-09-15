@@ -54,11 +54,11 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     uint32_t bmb0 = 2 + gd_blocks;
     uint32_t imb0 = bmb0 + 1;
     uint32_t itb0 = imb0 + 1;
-    uint32_t meta_g0 = 2 + gd_blocks + 1 + 1 + 128; // boot, sb, gd, bmb, imb, itb(128)
+    uint32_t meta_g0 = 2 + gd_blocks + 1 + 1 + 128;
     uint32_t root_data_block = meta_g0;
-    uint32_t meta_g0_alloc = meta_g0 + 1; // plus root data block
+    uint32_t meta_g0_alloc = meta_g0 + 1;
 
-    uint32_t meta_blocks_other = 130; // bmb(1) + imb(1) + itb(128)
+    uint32_t meta_blocks_other = 130;
 
     uint64_t free_blocks_tmp = 0;
     for (uint32_t g = 0; g < groups; g++) {
@@ -99,7 +99,6 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     memcpy(sec, sb + 512, 512);
     if (!block_device_write(sb_lba + 1, sec)) return -1;
 
-    // Write Group Descriptor Table
     uint32_t current_g = 0;
     for (uint32_t b = 0; b < gd_blocks; b++) {
         memset(blk, 0, 1024);
@@ -138,8 +137,6 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
         memcpy(sec, blk + 512, 512);
         if (!block_device_write(gd_lba + 1, sec)) return -1;
     }
-
-    // Write Group 0 Block Bitmap
     memset(blk, 0, 1024);
     for (uint32_t bit = 0; bit < meta_g0_alloc; bit++) {
         blk[bit / 8] |= (uint8_t)(1 << (bit % 8));
@@ -149,8 +146,6 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     if (!block_device_write(bm0_lba, sec)) return -1;
     memcpy(sec, blk + 512, 512);
     if (!block_device_write(bm0_lba + 1, sec)) return -1;
-
-    // Write Group 0 Inode Bitmap
     memset(blk, 0, 1024);
     for (int i = 0; i < 11; i++) {
         blk[i / 8] |= (uint8_t)(1 << (i % 8));
@@ -160,12 +155,10 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     if (!block_device_write(ibm0_lba, sec)) return -1;
     memcpy(sec, blk + 512, 512);
     if (!block_device_write(ibm0_lba + 1, sec)) return -1;
-
-    // Write Group 0 Inode Table (128 blocks)
     for (uint32_t b = 0; b < 128; b++) {
         memset(blk, 0, 1024);
         if (b == 0) {
-            uint8_t *ino2 = blk + 128; // Inode 2
+            uint8_t *ino2 = blk + 128;
             ext2_write_u16(ino2 + 0, 0x41ED);
             ext2_write_u32(ino2 + 4, 1024);
             ext2_write_u32(ino2 + 28, 1);
@@ -179,7 +172,6 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
         if (!block_device_write(lba + 1, sec)) return -1;
     }
 
-    // Write Root Directory Block
     memset(blk, 0, 1024);
     ext2_write_u32(blk + 0, 2);
     ext2_write_u16(blk + 4, 12);
@@ -198,7 +190,6 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     memcpy(sec, blk + 512, 512);
     if (!block_device_write(root_lba + 1, sec)) return -1;
 
-    // Write metadata for groups 1..groups-1
     for (uint32_t g = 1; g < groups; g++) {
         uint32_t bmb = g * blocks_per_group;
         uint32_t imb = bmb + 1;
@@ -217,7 +208,6 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
         memcpy(sec, blk + 512, 512);
         if (!block_device_write(part_lba + imb * 2 + 1, sec)) return -1;
 
-        // Zero out first block of inode table
         if (!block_device_write(part_lba + itb * 2, sec)) return -1;
         if (!block_device_write(part_lba + itb * 2 + 1, sec)) return -1;
     }

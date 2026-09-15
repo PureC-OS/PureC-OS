@@ -20,7 +20,6 @@ static void scroll(void){
 void vga_clear(void){
     for(int i=0;i<80*25;i++) VGA[i]= (COLOR<<8)|' ';
     cur_x=0; cur_y=0;
-    // move cursor via ports 0x3D4/0x3D5?
 }
 
 void vga_init(void){ vga_clear(); }

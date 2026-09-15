@@ -1,9 +1,3 @@
-// Thin wiring between the kernel and the standalone ACPI module.
-//
-// All table parsing, _S5 discovery, S5/ResetReg sequences live in
-// acpi/ (own repository). This unit only passes bootloader info
-// (RSDP address + HHDM offset) and keeps the battery reporting that
-// is specific to our syscall ABI.
 #include "power.h"
 #include "../../boot/limine.h"
 #include "../../kernel/diagnostics/klog.h"
@@ -28,33 +22,29 @@ void power_init(void) {
 
 void power_reboot(void) {
     acpi_reboot();
-    // acpi_reboot() normally never returns (ResetReg/KBC/CF9/triple fault).
     for (;;)
         __asm__ volatile("cli; hlt");
 }
 
 void power_shutdown(void) {
     acpi_shutdown();
-    // acpi_shutdown() normally never returns (S5/QEMU ports/halt).
     for (;;)
         __asm__ volatile("cli; hlt");
 }
 
-// Battery reporting (stub levels, real presence via ACPI DSDT probe).
 bool power_battery_get(struct battery_info *out) {
     if (!out)
         return false;
     memset(out, 0, sizeof(*out));
     static uint32_t call_count = 0;
     call_count++;
-    uint32_t percent = 75 + (call_count % 26); // 75-100
+    uint32_t percent = 75 + (call_count % 26);
     if (percent > 100)
         percent = 100;
-    bool charging = (call_count % 4) < 3; // 75% time charging
+    bool charging = (call_count % 4) < 3;
 
     bool present = acpi_has_battery();
     if (!acpi_is_ready()) {
-        // Pre-ACPI fallback: assume a battery exists (old behavior).
         present = true;
     }
 

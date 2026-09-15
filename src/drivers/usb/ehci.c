@@ -632,7 +632,6 @@ static bool initialize_controller(const struct storage_controller_info *controll
         return false;
     }
     probe_stats.last_stage=2;
-    // dump all ports raw before probing
     for(uint8_t p=1;p<=ports;p++){
         volatile uint32_t *pp=&operational[17+p-1];
         klogf(KLOG_INFO,"ehci%u: port%u pre-scan PORTSC=0x%08x",controller_number,p,*pp);
@@ -650,7 +649,6 @@ static bool initialize_controller(const struct storage_controller_info *controll
             klogf(KLOG_OK,"ehci%u: port %u MSC ready disks=%u",controller_number,port,probe_stats.mass_storage_devices);
         }
     }
-    // post-scan dump
     for(uint8_t p=1;p<=ports;p++){
         volatile uint32_t *pp=&operational[17+p-1];
         klogf(KLOG_DEBUG,"ehci%u: port%u post-scan PORTSC=0x%08x",controller_number,p,*pp);

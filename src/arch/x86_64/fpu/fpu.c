@@ -1,12 +1,7 @@
-// x86-64 FPU/SSE enable + per-thread state (see fpu.h).
-// Eager switching: fxsave/fxrstor on every context switch. ~100-200
-// cycles each, negligible next to everything else a switch does, and
-// trivially correct (no #NM lazy dance).
-
-#include "fpu.h"
-#include "../../kernel/diagnostics/klog.h"
-#include "../../kernel/diagnostics/panic.h"
-#include "../../lib/string.h"
+#include "include/fpu.h"
+#include "../../../kernel/diagnostics/klog.h"
+#include "../../../kernel/diagnostics/panic.h"
+#include "../../../lib/string.h"
 
 #define FPU_CR0_EM (1ULL << 2)
 #define FPU_CR0_TS (1ULL << 3)
@@ -50,10 +45,8 @@ void fpu_init(void) {
     cpuid(1, &eax, &ebx, &ecx, &edx);
     if (!(edx & (1U << 24))) kernel_panic("CPU lacks FXSR, cannot run SSE userspace");
     if (!(edx & (1U << 25))) kernel_panic("CPU lacks SSE, cannot run SSE userspace");
-    // Native x87 errors, no emulation, no task-switch traps (eager switch).
     write_cr0((read_cr0() & ~(FPU_CR0_EM | FPU_CR0_TS)) | FPU_CR0_NE);
     write_cr4(read_cr4() | FPU_CR4_OSFXSR | FPU_CR4_OSXMMEXCPT);
-    // Canonical clean state: all exceptions masked, MXCSR default.
     __asm__ volatile("fninit");
     __asm__ volatile("fxsave %0" : "=m"(fpu_template) :: "memory");
     fpu_ready = true;

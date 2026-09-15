@@ -10,7 +10,6 @@ static uint32_t cur_x=0, cur_y=0;
 static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
 static const uint32_t SCALE=1;
 
-// 8x8 font basic - public domain
 static const uint8_t font[128][8] = {
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, // 0
   {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00},
@@ -189,7 +188,6 @@ static void draw_char(char c, uint32_t x, uint32_t y){
         uint8_t bits=font[ch][row];
         for(int col=0;col<8;col++){
             uint32_t colr = (bits & (1<<(7-col))) ? fg : bg;
-            // scale 1 pixel = 1, but double for readability? keep 1
             put_pixel(x+col, y+row, colr);
             if(SCALE==2){ put_pixel(x+col*2, y+row*2, colr); put_pixel(x+col*2+1, y+row*2, colr); put_pixel(x+col*2, y+row*2+1, colr); put_pixel(x+col*2+1, y+row*2+1, colr); }
         }

@@ -108,10 +108,9 @@ bool ext2_write_inode(uint32_t ino, const uint8_t *in) {
 }
 
 static uint32_t ext2_metadata_blocks_per_group(void) {
-    // bmb + imb + inode tables
     uint32_t itb = (g_vol.inodes_per_group + g_vol.inodes_per_block - 1) / g_vol.inodes_per_block;
     if (itb == 0) itb = 1;
-    return 2 + itb; // 1 block bitmap + 1 inode bitmap + itb
+    return 2 + itb;
 }
 
 uint32_t ext2_alloc_block(void) {
@@ -126,7 +125,6 @@ uint32_t ext2_alloc_block(void) {
         uint8_t bmp[4096];
         if (!ext2_read_block(bmb, bmp)) continue;
         uint32_t start = (g == 0) ? 135 : meta;
-        // for 1k: meta=130, g0 reserved 135 includes superblock+gd
         uint32_t end = g_vol.blocks_per_group;
         if (g == groups - 1) {
             uint32_t rem = g_vol.total_blocks % g_vol.blocks_per_group;

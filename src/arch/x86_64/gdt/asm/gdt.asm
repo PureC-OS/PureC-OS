@@ -1,9 +1,7 @@
-; gdt.asm - load GDT64 and reload segments
 [BITS 64]
 section .text
 global gdt_flush
 
-; void gdt_flush(uint64_t gdt_ptr)
 gdt_flush:
     lgdt [rdi]
     ; reload CS via far return

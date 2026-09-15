@@ -325,7 +325,6 @@ static bool lfn_entry_matches(const uint8_t *entry, const char *component){
 static int32_t find_lfn_entry(uint32_t directory_cluster, const char *component,
                               struct fat32_entry_ref *result){
     if(!valid_cluster(directory_cluster)) return FS_ERROR_NOT_DIR;
-    // поддержка цепочек LFN до 20 записей (255 символов) для firmware
     char pending_long[256];
     uint32_t pending_len=0;
     uint8_t pending_checksum=0;
