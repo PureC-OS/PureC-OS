@@ -3,16 +3,26 @@
 <img src="/docs/logo/purec-01-catppuccin-dark.svg" alt="PureC OS Logo" width="256" height="256" style="display: block; margin: 0 auto;" />
 
 
-PureC OS - это простая 64-битная операционная система, написанная на C и ассемблере x86_64 И немного C++20. Она включает в себя 
+PureC OS is a simple 64-bit operating system written in C and x86_64 assembly language and a bit of C++20. It includes
 - UserSpace
-- Интернет поддержка только в VirtualBox Инетрфейс только Intel Pro 100 82540EM
-- Файлловую систему FAT32 и VFS и EXT2 
-- Реализованы драйверы экрана, клавиатуры и диска
-- Реализованы драйверы USB
-- User Программы В Ring 3
-- У purec Syscall ~100
-- Начали Портировать TCC в PureC OS
-- Есть Login Screen и Login Gate (Ring-3) [Это на будущее]
+- Internet support only in VirtualBox I only described the interface in this block [Network Support](#network-support)
+- File system FAT32 and VFS and EXT2
+- Implemented screen, keyboard and disk drivers
+- Implemented USB drivers
+- User Programs In Ring 3
+- purec Syscall ~100
+- Started porting TCC to PureC OS
+- There is Login Screen and Login Gate (Ring-3) [This is for the future]
+
+
+---
+## Network Support
+
+Intel Pro 1000 MT Desktop 82540EM Supported only in VirtualBox
+Intel Pro 1000 T Server 82543GC Supported only in VirtualBox
+PCnet-PCI II (Am79C970A) Supported only in VirtualBox
+
+And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test version—there's almost nothing in it.
 
 --- 
 
@@ -27,24 +37,24 @@ PureC OS - это простая 64-битная операционная сис
 
 ---
 
-## Подробности про Syscall PureC OS
-[Link на Syscall Reference](docs/syscalls-reference.md)
+## Details about Syscall PureC OS
+[Link to Syscall Reference](docs/syscalls-reference.md)
 
 ---
 
-## Исходники и связанные репозитории
+## Sources and Related Repositories
 
-Ядро: [pablaofficeal/My-OS-Kernel-C](https://github.com/pablaofficeal/My-OS-Kernel-C) (этот репозиторий).
+Kernel: [pablaofficeal/My-OS-Kernel-C](https://github.com/pablaofficeal/My-OS-Kernel-C) (this repository).
 
-Всё, что не живёт в ядре, подключается отдельными репозиториями через fetch-цели главного `Makefile` (`crypt-fetch`, `acpi-fetch`, `tcc-fetch`, `userspace-fetch`) — при сборке они автоматически клонируются, если папки нет:
+Components not residing in the kernel core are pulled in via separate repositories using fetch targets in the main `Makefile` (`crypt-fetch`, `acpi-fetch`, `tcc-fetch`, `userspace-fetch`); they are automatically cloned during the build process if the corresponding directory does not exist:
 
-| Репозиторий | Папка | Назначение |
+| Repository | Directory | Purpose |
 |---|---|---|
-| [PureC-OS/PureC-OS-ACPI](https://github.com/PureC-OS/PureC-OS-ACPI) | `acpi/` | ACPI подсистема: таблицы RSDP/XSDT/FADT/DSDT, `_S5`, shutdown/reboot. Исходники компилируются прямо в образ ядра, плюс собирается релокабельный `bin/modules/acpi.elf` |
-| [PureC-OS/libxcrypt](https://github.com/PureC-OS/libxcrypt) | `libxcrypt/` | SHA-512 / `$6$` хеширование паролей. Исходники компилируются в ядро, плюс модуль `bin/modules/crypt.elf` |
-| [PureC-OS/PureC-TCC](https://github.com/PureC-OS/PureC-TCC) | `tcc/` | Компилятор C (порт TCC) для сборки Ring-3 программ внутри ОС |
-| [PureC-OS/PureC-OS-Userspace](https://github.com/PureC-OS/PureC-OS-Userspace) | `userspace/` | Userspace: рабочий стол, приложения и библиотеки Ring-3 (Rust/C) |
-| [PureC-OS/PureC-notepad-OS](https://github.com/PureC-OS/PureC-notepad-OS) | `notepad/` | Notepad для PureC OS это отдельный проект, который содержит исходники Notepad для PureC OS. у него свои Syscall Lib Gui Lib и linker script. |
+| [PureC-OS/PureC-OS-ACPI](https://github.com/PureC-OS/PureC-OS-ACPI) | `acpi/` | ACPI subsystem: RSDP/XSDT/FADT/DSDT tables, `_S5`, shutdown/reboot. Source code is compiled directly into the kernel image; a relocatable `bin/modules/acpi.elf` module is also built. |
+| [PureC-OS/libxcrypt](https://github.com/PureC-OS/libxcrypt) | `libxcrypt/` | SHA-512 / `$6$` password hashing. Source code is compiled into the kernel; a `bin/modules/crypt.elf` module is also built. |
+| [PureC-OS/PureC-TCC](https://github.com/PureC-OS/PureC-TCC) | `tcc/` | C compiler (TCC port) for building Ring-3 programs within the OS. |
+| [PureC-OS/PureC-OS-Userspace](https://github.com/PureC-OS/PureC-OS-Userspace) | `userspace/` | Userspace: desktop environment, applications, and Ring-3 libraries (Rust/C). |
+| [PureC-OS/PureC-notepad-OS](https://github.com/PureC-OS/PureC-notepad-OS) | `notepad/` | Notepad for PureC OS: a separate project containing the source code for the PureC OS Notepad; it includes its own Syscall Lib, GUI Lib, and linker script. |
 
 ---
 
@@ -54,13 +64,13 @@ PureC OS - это простая 64-битная операционная сис
 <details>
 <summary><b>Linux (Ubuntu)</b></summary>
 
-На Ubuntu:
+On Ubuntu:
 ```bash
 sudo apt update
 sudo apt install make gcc g++ limine nasm
 ```
 
-Если нет в репах (старый Ubuntu), то нужно установить `limine` вручную.
+If not in the repositories (Old Ubuntu), then need to install `limine` manually.
 
 ```bash
 sudo apt install xorriso mtools
@@ -68,12 +78,12 @@ git clone https://github.com/limine-bootloader/limine.git --branch=v8.x-binary -
 cd limine && make
 ```
 
-### Ставив Кросс-компилятор для x86_64
+### Installing Cross-Compiler for x86_64
 
 ```bash
 sudo apt install build-essential bison flex libgmp-dev libmpc-dev libmpfr-dev texinfo
 
-# Качаем исходники
+# Download sources
 
 wget https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.gz
 wget https://ftp.gnu.org/gnu/gcc/gcc-14.1.0/gcc-14.1.0.tar.gz
@@ -81,14 +91,14 @@ wget https://ftp.gnu.org/gnu/gcc/gcc-14.1.0/gcc-14.1.0.tar.gz
 tar -xf binutils-2.42.tar.gz
 tar -xf gcc-14.1.0.tar.gz
 
-# Собираем binutils
+# Build binutils
 
 mkdir build-binutils && cd build-binutils
 ../binutils-2.42/configure --target=x86_64-elf --prefix=/usr/local --with-sysroot --disable-nls --disable-werror
 make -j$(nproc) && sudo make install
 cd ..
 
-# Собираем GCC
+# Build GCC
 
 mkdir build-gcc && cd build-gcc
 ../gcc-14.1.0/configure --target=x86_64-elf --prefix=/usr/local --disable-nls --enable-languages=c,c++ --without-headers
@@ -99,12 +109,12 @@ make all-target-libgcc -j$(nproc) && sudo make install-target-libgcc
 
 <details>
 <summary><b>Linux (Fedora)</b></summary>
-На Fedora:
+On Fedora:
 ```bash
 sudo dnf update --refresh
 sudo dnf install make gcc g++ limine nasm
 ```
-Если нет в репах (старый Fedora), то нужно установить `limine` вручную.
+If not in the repositories (Old Fedora), then need to install `limine` manually.
 
 ```bash
 sudo dnf install xorriso mtools
@@ -112,26 +122,26 @@ git clone https://github.com/limine-bootloader/limine.git --depth=1
 cd limine && make
 ```
 
-### Ставив Кросс-компилятор для x86_64 Fedora
+### Installing Cross-Compiler for x86_64 Fedora
 
 
 ```bash
 sudo dnf install gcc gcc-c++ make bison flex gmp-devel libmpc-devel mpfr-devel texinfo
 
-# Качаем исходники
+# Download sources
 wget https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.gz
 wget https://ftp.gnu.org/gnu/gcc/gcc-14.1.0/gcc-14.1.0.tar.gz
 
 tar -xf binutils-2.42.tar.gz
 tar -xf gcc-14.1.0.tar.gz
 
-# Собираем binutils
+# Build binutils
 mkdir build-binutils && cd build-binutils
 ../binutils-2.42/configure --target=x86_64-elf --prefix=/usr/local --with-sysroot --disable-nls --disable-werror
 make -j$(nproc) && sudo make install
 cd ..
 
-# Собираем GCC
+# Build GCC
 mkdir build-gcc && cd build-gcc
 ../gcc-14.1.0/configure --target=x86_64-elf --prefix=/usr/local --disable-nls --enable-languages=c,c++ --without-headers
 make all-gcc -j$(nproc) && sudo make install-gcc
@@ -146,55 +156,57 @@ make all-target-libgcc -j$(nproc) && sudo make install-target-libgcc
 ```bash
 sudo pacman -Syu
 
-// Установить базовые зависимости
+// Install basic dependencies
 sudo pacman -S --needed base-devel git
 
-// Установить зависимости
+// Install dependencies
 sudo pacman -S make gcc g++ limine nasm
 ```
 
-### Скачайте исходный код `yay` из официального репозитория AUR:
+### Download source code `yay` from official AUR:
 ```bash
 git clone https://aur.archlinux.org/yay.git
 ```
 
-### Переход в директорию и сборка
-Перейдите в папку с клонированным проектом и запустите сборку и установку пакета:
+### Build and install `yay` from source code:
+Navigate to the folder containing the cloned project and run the build and installation of the package:
 ```bash
 cd yay
 makepkg -si
 ```
 
-### Проверьте установку `yay`:
+### Check the installation of `yay`:
 ```bash
 yay -V
 ```
 
-## Собераем крос компилятор для x86_64
+## Building cross compiler for x86_64
 ```bash
 yay -S x86_64-elf-gcc x86_64-elf-binutils
 ```
 
-## Ставим VirtualBox
+## Installing VirtualBox
 
-### Установка пакетовОбновите систему и установите основной пакет:
+### Package installation: Update the system and install the main package:
 ```bash
 sudo pacman -S virtualbox
 ```
 
 
-### Выберите хост-модули ядра 
-В зависимости от вашего ядра (обычно используется virtualbox-host-modules-arch для стандартного ядра Linux или virtualbox-host-dkms, если вы используете кастомное или ZEN-ядро):
+### Select host kernel modules
+Depending on your kernel (usually `virtualbox-host-modules-arch` is used for the standard Linux kernel, or `virtualbox-host-dkms` if you are using a custom or ZEN kernel):
+
 ```bash
 sudo pacman -S virtualbox-host-modules-arch
 ```
-### Настройка после установки
-Добавьте вашего пользователя в группу vboxusers, чтобы получить доступ к USB-устройствам:
+### Configuration after installation
+Add your user to the vboxusers group to get access to USB devices:
 ```bash
 sudo usermod -aG vboxusers $USER
 ```
 
-### Загрузите модули ядра (или перезагрузите компьютер):
+### Load kernel modules
+Load the kernel modules:
 ```bash
 sudo modprobe vboxdrv
 ```
@@ -206,8 +218,10 @@ sudo modprobe vboxdrv
 
 # Fix 
 
-А так же будет сделана миграция UserSpace в Ring 3.
-И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3.
+todo:
+
+[ ] UserSpace will be migrated to Ring 3.
+[ ] Remaining programs currently running in Ring 0 will also be migrated to Ring 3.
 
 --- 
 
