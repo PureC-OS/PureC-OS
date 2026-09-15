@@ -157,6 +157,23 @@ void pmm_free_page(uint64_t physical_address){
     spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
+void pmm_reserve(uint64_t physical_base, uint64_t size){
+    if(!size) return;
+    if(physical_base + size < physical_base) return;
+    uint64_t flags = spin_lock_irqsave(&pmm_lock);
+    uint64_t begin = physical_base & ~(PMM_PAGE_SIZE - 1);
+    uint64_t end = (physical_base + size + PMM_PAGE_SIZE - 1)
+        & ~(PMM_PAGE_SIZE - 1);
+    for(uint64_t address = begin; address < end; address += PMM_PAGE_SIZE){
+        uint64_t frame = address / PMM_PAGE_SIZE;
+        if(frame == 0 || frame >= frame_limit) continue;
+        if(frame_is_used(frame)) continue;
+        set_frame(frame);
+        if(free_frames) free_frames--;
+    }
+    spin_unlock_irqrestore(&pmm_lock, flags);
+}
+
 void *pmm_physical_to_virtual(uint64_t physical_address){
     return (void*)(uintptr_t)(physical_address+direct_map_offset);
 }
