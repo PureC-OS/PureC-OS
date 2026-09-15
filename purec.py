@@ -442,7 +442,7 @@ def _menu():
             time.sleep(0.8)
             continue
 
-        print()
+        os.system("clear")
         matched[0].action()
         try:
             input(c(C.SUB, "  Press Enter to return to menu…"))
