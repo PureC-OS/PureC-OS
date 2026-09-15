@@ -10,9 +10,12 @@
 #include "e1000_82540em.h"
 #include "e1000_82543gc.h"
 #include "pcnet_am79c970a.h"
+#include "ar9285.h"
+#include "../wifi/wifi.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
+#include "../../lib/string.h"
 
 #define NET_POLL_BUDGET 32U
 #define NET_POLL_INTERVAL_MS 1U
@@ -36,11 +39,17 @@ bool net_service_init(void){
     bool em_ready=e1000_82540em_init();
     bool gc_ready=e1000_82543gc_init();
     bool pcnet_ready=pcnet_am79c970a_init();
-    ready=em_ready||gc_ready||pcnet_ready;
+    wifi_system_init();
+    bool ar9285_ready=ar9285_init();
+    ready=em_ready||gc_ready||pcnet_ready||ar9285_ready;
     if(!ready) klog(KLOG_WARN,"net: no supported network adapter found");
     else {
-        for(uint32_t index=0;index<net_device_count();index++)
-            (void)dhcp_start(net_device_get(index));
+        for(uint32_t index=0;index<net_device_count();index++) {
+            struct net_device *dev=net_device_get(index);
+            // wlan* без association: DHCP стартует только после wifi_notify_connected().
+            if(dev && strncmp(dev->name,"wlan",4)==0) continue;
+            (void)dhcp_start(dev);
+        }
     }
     return ready;
 }

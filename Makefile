@@ -59,6 +59,7 @@ kernel: crypt-fetch acpi-fetch
 	$(MAKE) -C src/drivers/net/e1000 module
 	$(MAKE) -C src/drivers/net/82543gc module
 	$(MAKE) -C src/drivers/net/pcnet module
+	$(MAKE) -C src/drivers/net/ath9k module
 	$(MAKE) -C $(CRYPT_DIR) module
 	$(MAKE) -C $(ACPI_DIR) module
 
@@ -126,6 +127,8 @@ iso: kernel programs
 	if [ -f "$(BIN_DIR)/modules/e1000_82543gc.ko" ]; then cp "$(BIN_DIR)/modules/e1000_82543gc.ko" "$(ISO_ROOT)/bin/modules/e1000_82543gc.ko"; fi; \
 	if [ -f "$(BIN_DIR)/modules/pcnet_am79c970a.elf" ]; then cp "$(BIN_DIR)/modules/pcnet_am79c970a.elf" "$(ISO_ROOT)/bin/modules/pcnet_am79c970a.elf"; fi; \
 	if [ -f "$(BIN_DIR)/modules/pcnet_am79c970a.ko" ]; then cp "$(BIN_DIR)/modules/pcnet_am79c970a.ko" "$(ISO_ROOT)/bin/modules/pcnet_am79c970a.ko"; fi; \
+	if [ -f "$(BIN_DIR)/modules/ar9285.elf" ]; then cp "$(BIN_DIR)/modules/ar9285.elf" "$(ISO_ROOT)/bin/modules/ar9285.elf"; fi; \
+	if [ -f "$(BIN_DIR)/modules/ar9285.ko" ]; then cp "$(BIN_DIR)/modules/ar9285.ko" "$(ISO_ROOT)/bin/modules/ar9285.ko"; fi; \
 	if [ -d "$(BIN_DIR)/modules" ]; then cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/bin/modules/" 2>/dev/null || true; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \
