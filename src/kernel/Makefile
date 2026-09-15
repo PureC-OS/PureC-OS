@@ -18,6 +18,8 @@ E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
 E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
 CPPFLAGS += -I$(E1000_GC_DIR)/include
+PCNET_DIR := $(ROOT_DIR)/src/drivers/net/pcnet
+CPPFLAGS += -I$(PCNET_DIR)/include
 
 C_SOURCES := \
 	boot/boot.c \
@@ -50,6 +52,7 @@ C_SOURCES := \
 	drivers/pci/pci.c \
 	drivers/net/e1000/e1000_82540em.c \
 	drivers/net/82543gc/e1000_82543gc.c \
+	drivers/net/pcnet/pcnet_am79c970a.c \
 	net/wifi/wifi.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \

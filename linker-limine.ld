@@ -19,6 +19,7 @@ SECTIONS
     .bss : AT(ADDR(.bss) - 0xffffffff80000000 + 0x100000) {
         *(COMMON)
         *(.bss .bss.*)
+        PROVIDE(_kernel_end = .);
     }
     /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
 }
