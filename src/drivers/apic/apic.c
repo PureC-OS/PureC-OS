@@ -88,6 +88,11 @@ uint32_t apic_lapic_id(void){
     return lapic_read(LAPIC_REG_ID) >> 24;
 }
 
+uint32_t apic_raw_lapic_id(void){
+    if(!lapic) return 0xFFFFFFFFU;
+    return lapic[LAPIC_REG_ID / 4] >> 24;
+}
+
 void apic_eoi(void){
     if(lapic) lapic_write(LAPIC_REG_EOI, 0);
 }

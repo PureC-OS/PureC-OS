@@ -1,6 +1,7 @@
 #include "panic.h"
 #include "boot_diag.h"
 #include "klog.h"
+#include "../../drivers/apic/apic.h"
 #include "../../drivers/display/gop.h"
 #include "../process/scheduler.h"
 #include <stdbool.h>
@@ -32,10 +33,34 @@ static __attribute__((noreturn)) void panic_halt(void) {
     for (;;) __asm__ volatile("cli; hlt");
 }
 
+static void panic_serial_putc(char c){
+    uint8_t status;
+    do {
+        __asm__ volatile("inb %1,%0" : "=a"(status) : "Nd"((uint16_t)0x3FD));
+    } while(!(status & 0x20));
+    uint8_t b = (uint8_t)c;
+    __asm__ volatile("outb %0,%1" :: "a"(b), "Nd"((uint16_t)0x3F8));
+}
+
+static void panic_serial_puts(const char *s){
+    if(!s) return;
+    while(*s) panic_serial_putc(*s++);
+}
+
+static void panic_serial_hex(uint64_t value, int digits){
+    static const char hexdigits[] = "0123456789abcdef";
+    for(int i = digits - 1; i >= 0; i--)
+        panic_serial_putc(hexdigits[(value >> (i * 4)) & 0xF]);
+}
+
 static void panic_header(const char *title) {
     __asm__ volatile("cli");
-    if (panic_active) panic_halt();
-    panic_active = true;
+    panic_serial_puts("\r\nPANIC! lapic=");
+    panic_serial_hex(apic_raw_lapic_id(), 8);
+    panic_serial_puts(" reason=");
+    panic_serial_puts(title ? title : "unknown");
+    panic_serial_puts("\r\n");
+    if(__atomic_test_and_set(&panic_active, __ATOMIC_ACQUIRE)) panic_halt();
     gop_cancel_compose();
     klog_set_screen_enabled(true);
     klog_clear();
