@@ -441,6 +441,28 @@ static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
     kernel_panic(sched_panic_reason);
 }
 
+static void check_no_double_dispatch(struct cpu_local *cpu,
+                                        struct thread *next){
+    for(uint32_t i = 0; i < SMP_MAX_CPUS; i++){
+        struct cpu_local *c = smp_cpu(i);
+        if(!c || !c->present || i == cpu->index) continue;
+        if(c->current == next){
+            char *p=sched_panic_reason;
+            const char *prefix="sched: double dispatch tgt=";
+            for(int k=0;prefix[k];k++) *p++=prefix[k];
+            write_hex_digits(p, next ? next->id : 0xFFFFFFFFu, 8); p+=8;
+            const char *mid=" by="; for(int k=0;mid[k];k++) *p++=mid[k];
+            write_hex_digits(p, cpu->index, 2); p+=2;
+            const char *mid2=" holder="; for(int k=0;mid2[k];k++) *p++=mid2[k];
+            write_hex_digits(p, i, 2); p+=2;
+            *p='\0';
+            spin_unlock(&sched_lock);
+            __asm__ volatile("sti" ::: "memory");
+            kernel_panic(sched_panic_reason);
+        }
+    }
+}
+
 static void schedule_locked(struct cpu_local *cpu, int prev_state,
                             uint64_t flags, bool restore_flags){
     struct thread *prev = cpu->current;
@@ -455,6 +477,7 @@ static void schedule_locked(struct cpu_local *cpu, int prev_state,
     next->state=THREAD_RUNNING;
     next->ticks_remaining=SCHEDULER_TIME_SLICE_MS;
     next->last_cpu=(int16_t)cpu->index;
+    check_no_double_dispatch(cpu, next);
     cpu->current=next;
     if(next!=prev){
         activate_thread(next);
@@ -576,6 +599,7 @@ void scheduler_on_timer_interrupt(void){
     next->state=THREAD_RUNNING;
     next->ticks_remaining=SCHEDULER_TIME_SLICE_MS;
     next->last_cpu=(int16_t)cpu->index;
+    check_no_double_dispatch(cpu, next);
     cpu->current=next;
     if(next==current){
         spin_unlock(&sched_lock);
@@ -616,6 +640,7 @@ void scheduler_enter(void){
     next->state=THREAD_RUNNING;
     next->ticks_remaining=SCHEDULER_TIME_SLICE_MS;
     next->last_cpu=(int16_t)cpu->index;
+    check_no_double_dispatch(cpu, next);
     cpu->current=next;
     activate_thread(next);
     validate_switch_target(NULL, next);
