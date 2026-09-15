@@ -36,6 +36,7 @@ struct thread {
     void *wait_channel;
     struct thread *wait_next;
     volatile bool wait_woken;
+    int16_t last_cpu;
     uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
     uint8_t fpu_state[512] __attribute__((aligned(16)));
 };

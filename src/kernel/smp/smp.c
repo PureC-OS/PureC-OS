@@ -43,7 +43,7 @@ static bool cpu_has_rdpid(void){
 
 static uint32_t read_cpu_index_rdpid(void){
     uint32_t index;
-    __asm__ volatile("rdpid %0" : "=r"(index));
+    __asm__ volatile(".byte 0xF3, 0x0F, 0xC7, 0xF8" : "=a"(index));
     return index;
 }
 

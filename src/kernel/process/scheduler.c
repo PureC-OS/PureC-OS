@@ -30,6 +30,15 @@ static bool kernel_text_address_valid(uint64_t address){
     return address >= 0xffffffff80000000ULL;
 }
 
+static bool thread_is_cpu_idle(const struct thread *thread){
+    if(!thread) return false;
+    for(uint32_t i = 0; i < SMP_MAX_CPUS; i++){
+        struct cpu_local *cpu = smp_cpu(i);
+        if(cpu && cpu->present && cpu->idle == thread) return true;
+    }
+    return false;
+}
+
 static bool thread_stack_valid(const struct thread *thread){
     if(!thread) return false;
     if(thread->rsp & 0x7ULL) return false;
@@ -37,7 +46,7 @@ static bool thread_stack_valid(const struct thread *thread){
     uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
     uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
     if(thread->rsp >= stack_base+64 && thread->rsp < stack_top) return true;
-    if(thread->id==0) return true;
+    if(thread_is_cpu_idle(thread)) return true;
     return false;
 }
 
@@ -294,6 +303,36 @@ static void activate_thread(struct thread *thread){
     vmm_switch_address_space(thread->address_space);
 }
 
+static bool thread_owns_stack(const struct thread *thread, uint64_t rsp){
+    if(!thread) return false;
+    uint64_t base = (uint64_t)(uintptr_t)thread->stack;
+    return rsp >= base && rsp < base + SCHEDULER_STACK_SIZE;
+}
+
+static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
+    uint64_t live_rsp;
+    __asm__ volatile("mov %%rsp,%0" : "=r"(live_rsp));
+    if(thread_is_cpu_idle(prev)) return;
+    if(thread_owns_stack(prev, live_rsp)) return;
+    char *p = sched_panic_reason;
+    const char *prefix = "sched: live RSP mismatch cpu=";
+    for(int i = 0; prefix[i]; i++) *p++ = prefix[i];
+    write_hex_digits(p, cpu->index, 2); p += 2;
+    const char *mid = " prev=";
+    for(int i = 0; mid[i]; i++) *p++ = mid[i];
+    write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p += 8;
+    const char *mid2 = " live=";
+    for(int i = 0; mid2[i]; i++) *p++ = mid2[i];
+    write_hex_digits(p, live_rsp, 16); p += 16;
+    const char *mid3 = " base=";
+    for(int i = 0; mid3[i]; i++) *p++ = mid3[i];
+    write_hex_digits(p, (uint64_t)(uintptr_t)prev->stack, 16); p += 16;
+    *p = '\0';
+    spin_unlock(&sched_lock);
+    __asm__ volatile("sti" ::: "memory");
+    kernel_panic(sched_panic_reason);
+}
+
 static void schedule_locked(struct cpu_local *cpu, int prev_state,
                             uint64_t flags, bool restore_flags){
     struct thread *prev = cpu->current;
@@ -307,10 +346,12 @@ static void schedule_locked(struct cpu_local *cpu, int prev_state,
     if(!next) next = cpu->idle;
     next->state=THREAD_RUNNING;
     next->ticks_remaining=SCHEDULER_TIME_SLICE_MS;
+    next->last_cpu=(int16_t)cpu->index;
     cpu->current=next;
     if(next!=prev){
         activate_thread(next);
         validate_switch_target(prev, next);
+        check_live_stack(cpu, prev);
         fpu_save(prev->fpu_state);
         fpu_restore(next->fpu_state);
     }
@@ -426,6 +467,7 @@ void scheduler_on_timer_interrupt(void){
     if(!next) next = cpu->idle;
     next->state=THREAD_RUNNING;
     next->ticks_remaining=SCHEDULER_TIME_SLICE_MS;
+    next->last_cpu=(int16_t)cpu->index;
     cpu->current=next;
     if(next==current){
         spin_unlock(&sched_lock);
@@ -433,6 +475,25 @@ void scheduler_on_timer_interrupt(void){
     }
     activate_thread(next);
     validate_switch_target(current, next);
+    {
+        uint64_t live_rsp;
+        __asm__ volatile("mov %%rsp,%0" : "=r"(live_rsp));
+        if(!thread_is_cpu_idle(current) && !thread_owns_stack(current, live_rsp)){
+            char *p = sched_panic_reason;
+            const char *prefix = "sched: ISR live RSP mismatch cpu=";
+            for(int i = 0; prefix[i]; i++) *p++ = prefix[i];
+            write_hex_digits(p, cpu->index, 2); p += 2;
+            const char *mid = " cur=";
+            for(int i = 0; mid[i]; i++) *p++ = mid[i];
+            write_hex_digits(p, current ? current->id : 0xFFFFFFFFu, 8); p += 8;
+            const char *mid2 = " live=";
+            for(int i = 0; mid2[i]; i++) *p++ = mid2[i];
+            write_hex_digits(p, live_rsp, 16); p += 16;
+            *p = '\0';
+            spin_unlock(&sched_lock);
+            kernel_panic(sched_panic_reason);
+        }
+    }
     fpu_save(current->fpu_state);
     fpu_restore(next->fpu_state);
     spin_unlock(&sched_lock);

@@ -81,7 +81,7 @@ static void panic_thread_info(void) {
         klog(KLOG_ERROR, "CPU:  <none>  (scheduler not running)");
         return;
     }
-    klogf(KLOG_ERROR, "CPU:  tid=%-4u  name=%-16s  state=%u",
+    klogf(KLOG_ERROR, "CPU:  tid=%u  name=%s  state=%u",
           t->id, t->name[0] ? t->name : "?", (unsigned int)t->state);
     klogf(KLOG_ERROR, "      rsp=0x%016llx  entry=%p",
           (unsigned long long)t->rsp, t->entry);
