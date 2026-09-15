@@ -359,9 +359,32 @@ static bool thread_owns_stack(const struct thread *thread, uint64_t rsp){
     return rsp >= base && rsp < base + SCHEDULER_STACK_SIZE;
 }
 
+static bool thread_in_table(const struct thread *t){
+    uintptr_t base = (uintptr_t)&threads[0];
+    uintptr_t addr = (uintptr_t)t;
+    return addr >= base && addr < base + sizeof(threads)
+        && ((addr - base) % sizeof(threads[0])) == 0;
+}
+
 static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
     uint64_t live_rsp;
     __asm__ volatile("mov %%rsp,%0" : "=r"(live_rsp));
+    if(!thread_in_table(prev)){
+        char *p=sched_panic_reason;
+        const char *prefix="sched: prev outside table cpu=";
+        for(int i=0;prefix[i];i++) *p++=prefix[i];
+        write_hex_digits(p, cpu->index, 2); p+=2;
+        const char *mid=" prev=";
+        for(int i=0;mid[i];i++) *p++=mid[i];
+        write_hex_digits(p, (uint64_t)(uintptr_t)prev, 16); p+=16;
+        const char *mid2=" live=";
+        for(int i=0;mid2[i];i++) *p++=mid2[i];
+        write_hex_digits(p, live_rsp, 16); p+=16;
+        *p='\0';
+        spin_unlock(&sched_lock);
+        __asm__ volatile("sti" ::: "memory");
+        kernel_panic(sched_panic_reason);
+    }
     if(!thread_canary_ok(prev) || !smp_this_ok()){
         char *p=sched_panic_reason;
         const char *prefix="sched: integrity fail cpu=";
