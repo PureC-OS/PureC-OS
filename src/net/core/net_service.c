@@ -7,7 +7,8 @@
 #include "../name/dns.h"
 #include "../config/dhcp.h"
 #include "../diagnostics/icmp.h"
-#include "../../drivers/net/e1000_82540em.h"
+#include "e1000_82540em.h"
+#include "e1000_82543gc.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
@@ -31,7 +32,9 @@ bool net_service_init(void){
         ready=false;
         return false;
     }
-    ready=e1000_82540em_init();
+    bool em_ready=e1000_82540em_init();
+    bool gc_ready=e1000_82543gc_init();
+    ready=em_ready||gc_ready;
     if(!ready) klog(KLOG_WARN,"net: no supported network adapter found");
     else {
         for(uint32_t index=0;index<net_device_count();index++)

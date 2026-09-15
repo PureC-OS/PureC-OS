@@ -56,6 +56,8 @@ userspace:
 kernel: crypt-fetch acpi-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
+	$(MAKE) -C src/drivers/net/e1000 module
+	$(MAKE) -C src/drivers/net/82543gc module
 	$(MAKE) -C $(CRYPT_DIR) module
 	$(MAKE) -C $(ACPI_DIR) module
 
@@ -117,6 +119,10 @@ iso: kernel programs
 	if [ -f "$(BIN_DIR)/modules/crypt.ko" ]; then cp "$(BIN_DIR)/modules/crypt.ko" "$(ISO_ROOT)/bin/modules/crypt.ko"; fi; \
 	if [ -f "$(BIN_DIR)/modules/acpi.elf" ]; then cp "$(BIN_DIR)/modules/acpi.elf" "$(ISO_ROOT)/bin/modules/acpi.elf"; fi; \
 	if [ -f "$(BIN_DIR)/modules/acpi.ko" ]; then cp "$(BIN_DIR)/modules/acpi.ko" "$(ISO_ROOT)/bin/modules/acpi.ko"; fi; \
+	if [ -f "$(BIN_DIR)/modules/e1000.elf" ]; then cp "$(BIN_DIR)/modules/e1000.elf" "$(ISO_ROOT)/bin/modules/e1000.elf"; fi; \
+	if [ -f "$(BIN_DIR)/modules/e1000.ko" ]; then cp "$(BIN_DIR)/modules/e1000.ko" "$(ISO_ROOT)/bin/modules/e1000.ko"; fi; \
+	if [ -f "$(BIN_DIR)/modules/e1000_82543gc.elf" ]; then cp "$(BIN_DIR)/modules/e1000_82543gc.elf" "$(ISO_ROOT)/bin/modules/e1000_82543gc.elf"; fi; \
+	if [ -f "$(BIN_DIR)/modules/e1000_82543gc.ko" ]; then cp "$(BIN_DIR)/modules/e1000_82543gc.ko" "$(ISO_ROOT)/bin/modules/e1000_82543gc.ko"; fi; \
 	if [ -d "$(BIN_DIR)/modules" ]; then cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/bin/modules/" 2>/dev/null || true; fi; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)" "$(ISO_ROOT)/limine.conf"; \

@@ -1,10 +1,10 @@
 #include "e1000_82540em.h"
-#include "../pci/pci.h"
-#include "../../arch/x86_64/mmio.h"
-#include "../../kernel/diagnostics/klog.h"
-#include "../../lib/string.h"
-#include "../../mm/pmm.h"
-#include "../../net/core/net_device.h"
+#include "drivers/pci/pci.h"
+#include "arch/x86_64/mmio.h"
+#include "kernel/diagnostics/klog.h"
+#include "lib/string.h"
+#include "mm/pmm.h"
+#include "net/core/net_device.h"
 #include <stddef.h>
 #include <stdint.h>
 

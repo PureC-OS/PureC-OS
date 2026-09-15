@@ -32,6 +32,11 @@ Ring sizes, packet queues and protocol tables will be compile-time bounded.
 
 - `drivers/net/e1000_82540em` owns PCI `8086:100e`, controller reset, MAC,
   MMIO registers and legacy RX/TX DMA descriptors.
+- `drivers/net/e1000/82543gc` is the standalone Intel PRO/1000 T Server
+  driver for PCI `8086:1004` (82543GC copper). It resets the external
+  M88E1000 PHY via CTRL_EXT SDP4, auto-negotiates over MDIC and forces
+  the MAC to the negotiated speed/duplex, then registers the next free
+  `ethN` interface. Fiber (`8086:1001`) is recognized and skipped.
 - `net/core/net_device` owns the driver-neutral device API, counters and bounded
   raw-frame receive queues. It contains no IPv4, UDP, DHCP, DNS or TCP logic.
 - `net/core/net_service` owns deferred polling and protocol housekeeping.

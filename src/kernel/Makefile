@@ -1,27 +1,23 @@
 ROOT_DIR ?= $(abspath ../..)
 include $(ROOT_DIR)/mk/toolchain.mk
-
 OBJ_DIR := $(BIN_DIR)/obj/kernel
 KERNEL_DIR := $(BIN_DIR)/kernel
 TARGET := $(KERNEL_DIR)/kernel-limine.elf
 FALLBACK := $(KERNEL_DIR)/kernel-fallback.elf
 LINKER_SCRIPT := $(ROOT_DIR)/linker-limine.ld
-
-# Password-hashing library (separate libxcrypt repo). Its freestanding
-# sources are compiled straight into the kernel image; the top-level
-# Makefile additionally ships them as a loadable bin/modules/crypt.ko.
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 CRYPT_REPO ?= https://github.com/PureC-OS/libxcrypt.git
 CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
 CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
-
-# ACPI subsystem (separate repo). Its freestanding sources are compiled
-# straight into the kernel image, same pattern as libxcrypt.
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
 ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c
 ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include
+E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
+CPPFLAGS += -I$(E1000_DIR)/include
+E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
+CPPFLAGS += -I$(E1000_GC_DIR)/include
 
 C_SOURCES := \
 	boot/boot.c \
@@ -52,7 +48,8 @@ C_SOURCES := \
 	kernel/diagnostics/panic.c \
 	drivers/input/keyboard.c \
 	drivers/pci/pci.c \
-	drivers/net/e1000_82540em.c \
+	drivers/net/e1000/e1000_82540em.c \
+	drivers/net/82543gc/e1000_82543gc.c \
 	net/wifi/wifi.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \
@@ -113,15 +110,12 @@ OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(CRYPT_OBJECTS) $(ACPI_OB
 all: crypt-fetch acpi-fetch $(TARGET)
 	@if [ ! -f $(FALLBACK) ]; then cp $(TARGET) $(FALLBACK); fi
 
-# Fetch libxcrypt on demand so a direct `make -C src/kernel` also works
-# on a fresh checkout without the nested repo.
 crypt-fetch:
 	@if [ ! -f $(CRYPT_DIR)/src/sha512.c ]; then \
 		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
 		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
 	fi
 
-# Fetch ACPI module on demand (same pattern as crypt-fetch).
 acpi-fetch:
 	@if [ ! -f $(ACPI_DIR)/src/acpi.c ]; then \
 		echo "acpi module not found, cloning $(ACPI_REPO)..."; \
@@ -140,12 +134,10 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
-# libxcrypt lives outside src/, hence the explicit rule (same flags).
 $(OBJ_DIR)/libxcrypt/%.o: $(CRYPT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
-# ACPI module lives outside src/, hence the explicit rule (same flags).
 $(OBJ_DIR)/acpi/%.o: $(ACPI_DIR)/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
