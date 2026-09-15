@@ -313,7 +313,41 @@ static bool gc_phy_probe(struct e1000_gc_device *device){
     return false;
 }
 
+static void gc_decode_pssr(struct e1000_gc_device *device, uint16_t pssr){
+    device->full_duplex=(pssr&E1000_GC_M88_PSSR_DPLX)!=0;
+    switch(pssr&E1000_GC_M88_PSSR_SPEED_MASK){
+    case E1000_GC_M88_PSSR_1000MBS: device->link_speed_mbps=1000; break;
+    case E1000_GC_M88_PSSR_100MBS: device->link_speed_mbps=100; break;
+    default: device->link_speed_mbps=10; break;
+    }
+}
+
+static void gc_program_mac(struct e1000_gc_device *device){
+    uint32_t ctrl=gc_reg_read(device,E1000_GC_REG_CTRL);
+    ctrl|=E1000_GC_CTRL_SLU|E1000_GC_CTRL_FRCSPD|E1000_GC_CTRL_FRCDPX;
+    ctrl&=~(E1000_GC_CTRL_SPD_SEL|E1000_GC_CTRL_ILOS);
+    if(device->full_duplex) ctrl|=E1000_GC_CTRL_FD;
+    if(device->link_speed_mbps==1000) ctrl|=E1000_GC_CTRL_SPD_1000;
+    else if(device->link_speed_mbps==100) ctrl|=E1000_GC_CTRL_SPD_100;
+    gc_reg_write(device,E1000_GC_REG_CTRL,ctrl);
+}
+
 static bool gc_setup_link(struct e1000_gc_device *device){
+    timer_sleep(20);
+    if(gc_reg_read(device,E1000_GC_REG_STATUS)&E1000_GC_STATUS_LU){
+        uint16_t pssr=0;
+        uint16_t link_bits=E1000_GC_M88_PSSR_LINK|E1000_GC_M88_PSSR_RESOLVED;
+        if(gc_phy_probe(device)
+           && gc_mdio_read(device,device->phy_addr,E1000_GC_M88_PSSR,&pssr)
+           && (pssr&link_bits)==link_bits)
+            gc_decode_pssr(device,pssr);
+        else{
+            device->link_speed_mbps=1000;
+            device->full_duplex=true;
+        }
+        gc_program_mac(device);
+        return true;
+    }
     uint32_t ext=gc_reg_read(device,E1000_GC_REG_CTRL_EXT);
     gc_reg_write(device,E1000_GC_REG_CTRL_EXT,
                  (ext|E1000_GC_CTRL_EXT_SDP4_DIR)
@@ -332,11 +366,7 @@ static bool gc_setup_link(struct e1000_gc_device *device){
              " continuing with 1000/full");
         device->link_speed_mbps=1000;
         device->full_duplex=true;
-        ctrl=gc_reg_read(device,E1000_GC_REG_CTRL);
-        ctrl|=E1000_GC_CTRL_SLU|E1000_GC_CTRL_FRCSPD|E1000_GC_CTRL_FRCDPX
-            |E1000_GC_CTRL_FD|E1000_GC_CTRL_SPD_1000;
-        ctrl&=~E1000_GC_CTRL_ILOS;
-        gc_reg_write(device,E1000_GC_REG_CTRL,ctrl);
+        gc_program_mac(device);
         return true;
     }
 
@@ -376,12 +406,7 @@ static bool gc_setup_link(struct e1000_gc_device *device){
     }
 
     if(resolved){
-        device->full_duplex=(pssr&E1000_GC_M88_PSSR_DPLX)!=0;
-        switch(pssr&E1000_GC_M88_PSSR_SPEED_MASK){
-        case E1000_GC_M88_PSSR_1000MBS: device->link_speed_mbps=1000; break;
-        case E1000_GC_M88_PSSR_100MBS: device->link_speed_mbps=100; break;
-        default: device->link_speed_mbps=10; break;
-        }
+        gc_decode_pssr(device,pssr);
     }else if(gc_reg_read(device,E1000_GC_REG_STATUS)&E1000_GC_STATUS_LU){
         device->link_speed_mbps=1000;
         device->full_duplex=true;
@@ -393,13 +418,7 @@ static bool gc_setup_link(struct e1000_gc_device *device){
         klog(KLOG_WARN,"e1000: 82543GC: no link, interface stays down");
     }
 
-    ctrl=gc_reg_read(device,E1000_GC_REG_CTRL);
-    ctrl|=E1000_GC_CTRL_FRCSPD|E1000_GC_CTRL_FRCDPX;
-    ctrl&=~(E1000_GC_CTRL_SPD_SEL|E1000_GC_CTRL_ILOS);
-    if(device->full_duplex) ctrl|=E1000_GC_CTRL_FD;
-    if(device->link_speed_mbps==1000) ctrl|=E1000_GC_CTRL_SPD_1000;
-    else if(device->link_speed_mbps==100) ctrl|=E1000_GC_CTRL_SPD_100;
-    gc_reg_write(device,E1000_GC_REG_CTRL,ctrl);
+    gc_program_mac(device);
     return true;
 }
 
