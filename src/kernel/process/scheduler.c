@@ -42,15 +42,6 @@ static bool kernel_text_address_valid(uint64_t address){
     return address >= 0xffffffff80000000ULL;
 }
 
-static bool thread_is_cpu_idle(const struct thread *thread){
-    if(!thread) return false;
-    for(uint32_t i = 0; i < SMP_MAX_CPUS; i++){
-        struct cpu_local *cpu = smp_cpu(i);
-        if(cpu && cpu->present && cpu->idle == thread) return true;
-    }
-    return false;
-}
-
 static bool thread_stack_valid(const struct thread *thread){
     if(!thread) return false;
     if(thread->rsp & 0x7ULL) return false;
@@ -58,7 +49,6 @@ static bool thread_stack_valid(const struct thread *thread){
     uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
     uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
     if(thread->rsp >= stack_base+64 && thread->rsp < stack_top) return true;
-    if(thread_is_cpu_idle(thread)) return true;
     return false;
 }
 
@@ -84,7 +74,7 @@ static void validate_switch_target(const struct thread *prev,
     if(!next){
         kernel_panic("scheduler: null next thread");
     }
-    if(!thread_canary_ok(prev) || !thread_canary_ok(next)){
+    if((prev && !thread_canary_ok(prev)) || !thread_canary_ok(next)){
         char *p=sched_panic_reason;
         const char *prefix="sched: canary dead prev=";
         for(int i=0;prefix[i];i++) *p++=prefix[i];
@@ -155,10 +145,14 @@ static void validate_switch_target(const struct thread *prev,
     }
 }
 
-static void idle_thread_func(void *arg){
-    (void)arg;
+static void schedule_locked(struct cpu_local *cpu, int prev_state,
+                            uint64_t flags, bool restore_flags);
+
+static void scheduler_idle_entry(void *arg){
+    struct cpu_local *cpu = arg ? (struct cpu_local *)arg : smp_this();
     for(;;){
-        __asm__ volatile("hlt");
+        uint64_t flags = spin_lock_irqsave(&sched_lock);
+        schedule_locked(cpu, THREAD_READY, flags, true);
     }
 }
 
@@ -188,7 +182,8 @@ void scheduler_init(void){
     idle->affinity = 0;
     idle->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     strncpy(idle->name, "idle0", sizeof(idle->name)-1);
-    idle->entry = idle_thread_func;
+    idle->entry = scheduler_idle_entry;
+    idle->arg = smp_cpu(0);
     idle->address_space=vmm_kernel_address_space();
     idle->rsp=create_initial_stack(idle);
     fpu_thread_init(idle->fpu_state);
@@ -386,7 +381,6 @@ static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
         __asm__ volatile("sti" ::: "memory");
         kernel_panic(sched_panic_reason);
     }
-    if(thread_is_cpu_idle(prev)) return;
     if(thread_owns_stack(prev, live_rsp)) return;
     int32_t owner_id = -1;
     uint32_t owner_state = 99;
@@ -602,24 +596,35 @@ static int create_idle_thread(uint32_t cpu){
     name[4]=(char)('0'+(cpu/10)%10);
     name[5]=(char)('0'+cpu%10);
     name[6]='\0';
-    return create_thread(idle_thread_func,0,name,7,(int16_t)cpu,
-                         vmm_kernel_address_space(),0,false);
+    return create_thread(scheduler_idle_entry, smp_cpu(cpu), name, 7,
+                         (int16_t)cpu, vmm_kernel_address_space(), 0, false);
 }
 
 void scheduler_enter(void){
     struct cpu_local *cpu = smp_this();
     if(!cpu->idle){
         int id = create_idle_thread(cpu->index);
-        uint64_t flags = spin_lock_irqsave(&sched_lock);
+        uint64_t found_flags = spin_lock_irqsave(&sched_lock);
         for(int i=0;i<SCHEDULER_MAX_THREADS;i++)
             if(threads[i].id==(uint32_t)id) cpu->idle=&threads[i];
-        spin_unlock_irqrestore(&sched_lock, flags);
+        spin_unlock_irqrestore(&sched_lock, found_flags);
     }
     if(!cpu->current) cpu->current=cpu->idle;
-    for(;;){
-        uint64_t flags = spin_lock_irqsave(&sched_lock);
-        schedule_locked(cpu, THREAD_READY, flags, true);
-    }
+    uint64_t flags = spin_lock_irqsave(&sched_lock);
+    struct thread *next = pick_next(cpu);
+    if(!next) next = cpu->idle;
+    next->state=THREAD_RUNNING;
+    next->ticks_remaining=SCHEDULER_TIME_SLICE_MS;
+    next->last_cpu=(int16_t)cpu->index;
+    cpu->current=next;
+    activate_thread(next);
+    validate_switch_target(NULL, next);
+    fpu_restore(next->fpu_state);
+    spin_unlock(&sched_lock);
+    (void)flags;
+    uint64_t discard;
+    scheduler_asm_switch(&discard, &next->rsp);
+    for(;;) __asm__ volatile("cli; hlt");
 }
 
 void scheduler_start(void){
