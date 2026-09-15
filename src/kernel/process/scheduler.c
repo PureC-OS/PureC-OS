@@ -314,6 +314,17 @@ static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
     __asm__ volatile("mov %%rsp,%0" : "=r"(live_rsp));
     if(thread_is_cpu_idle(prev)) return;
     if(thread_owns_stack(prev, live_rsp)) return;
+    int32_t owner_id = -1;
+    uint32_t owner_state = 99;
+    int16_t owner_cpu = -1;
+    for(int i = 0; i < SCHEDULER_MAX_THREADS; i++){
+        if(thread_owns_stack(&threads[i], live_rsp)){
+            owner_id = (int32_t)threads[i].id;
+            owner_state = threads[i].state;
+            owner_cpu = threads[i].last_cpu;
+            break;
+        }
+    }
     char *p = sched_panic_reason;
     const char *prefix = "sched: live RSP mismatch cpu=";
     for(int i = 0; prefix[i]; i++) *p++ = prefix[i];
@@ -327,6 +338,18 @@ static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
     const char *mid3 = " base=";
     for(int i = 0; mid3[i]; i++) *p++ = mid3[i];
     write_hex_digits(p, (uint64_t)(uintptr_t)prev->stack, 16); p += 16;
+    const char *mid4 = " prevcpu=";
+    for(int i = 0; mid4[i]; i++) *p++ = mid4[i];
+    write_hex_digits(p, (uint32_t)(uint16_t)prev->last_cpu, 4); p += 4;
+    const char *mid5 = " owner=";
+    for(int i = 0; mid5[i]; i++) *p++ = mid5[i];
+    write_hex_digits(p, (uint32_t)owner_id, 8); p += 8;
+    const char *mid6 = " ostate=";
+    for(int i = 0; mid6[i]; i++) *p++ = mid6[i];
+    write_hex_digits(p, owner_state, 2); p += 2;
+    const char *mid7 = " ocpu=";
+    for(int i = 0; mid7[i]; i++) *p++ = mid7[i];
+    write_hex_digits(p, (uint32_t)(uint16_t)owner_cpu, 4); p += 4;
     *p = '\0';
     spin_unlock(&sched_lock);
     __asm__ volatile("sti" ::: "memory");
@@ -475,25 +498,7 @@ void scheduler_on_timer_interrupt(void){
     }
     activate_thread(next);
     validate_switch_target(current, next);
-    {
-        uint64_t live_rsp;
-        __asm__ volatile("mov %%rsp,%0" : "=r"(live_rsp));
-        if(!thread_is_cpu_idle(current) && !thread_owns_stack(current, live_rsp)){
-            char *p = sched_panic_reason;
-            const char *prefix = "sched: ISR live RSP mismatch cpu=";
-            for(int i = 0; prefix[i]; i++) *p++ = prefix[i];
-            write_hex_digits(p, cpu->index, 2); p += 2;
-            const char *mid = " cur=";
-            for(int i = 0; mid[i]; i++) *p++ = mid[i];
-            write_hex_digits(p, current ? current->id : 0xFFFFFFFFu, 8); p += 8;
-            const char *mid2 = " live=";
-            for(int i = 0; mid2[i]; i++) *p++ = mid2[i];
-            write_hex_digits(p, live_rsp, 16); p += 16;
-            *p = '\0';
-            spin_unlock(&sched_lock);
-            kernel_panic(sched_panic_reason);
-        }
-    }
+    check_live_stack(cpu, current);
     fpu_save(current->fpu_state);
     fpu_restore(next->fpu_state);
     spin_unlock(&sched_lock);
