@@ -32,7 +32,7 @@ C_SOURCES := \
 	mm/pmm.c \
 	mm/vmm.c \
 	arch/x86_64/gdt/c/gdt.c \
-	arch/x86_64/idt.c \
+	arch/x86_64/idt/c/idt.c \
 	arch/x86_64/fpu/fpu.c \
 	arch/x86_64/mmio.c \
 	kernel/syscall/syscall.c \
@@ -101,7 +101,7 @@ C_SOURCES := \
 CPP_SOURCES := userspace/apps/audio_panel.cpp
 ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
-	arch/x86_64/idt.asm \
+	arch/x86_64/idt/asm/idt.asm \
 	arch/x86_64/scheduler.asm \
 	arch/x86_64/user.asm
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)
