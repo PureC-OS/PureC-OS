@@ -83,10 +83,7 @@ TARGETS := \
  	$(PROGRAM_DIR)/imgview \
  	$(PROGRAM_DIR)/hello \
  	$(PROGRAM_DIR)/fputest
-
-# TCC (TinyCC) port: only when the user-cloned tcc/ tree is present
-# (it is git-ignored). Builds the amalgamated tcc.c with SSE enabled
-# (TCC needs doubles) against the hosted libc.
+	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
 TARGETS += $(PROGRAM_DIR)/tcc
