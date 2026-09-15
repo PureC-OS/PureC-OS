@@ -31,6 +31,8 @@ GENERAL_SOURCES := \
 	nano/window.c \
 	gui_demo/main.c \
 	game/tetris/main.c \
+	game/puzzle15/puzzle15.c \
+	game/2048/game2048.c \
 	files/main.c \
 	files/app.c \
 	files/model.c \
@@ -65,6 +67,8 @@ TARGETS := \
 	$(PROGRAM_DIR)/installer \
 	$(PROGRAM_DIR)/snake \
 	$(PROGRAM_DIR)/tetris \
+	$(PROGRAM_DIR)/puzzle15 \
+	$(PROGRAM_DIR)/2048 \
 	$(PROGRAM_DIR)/terminal \
 	$(PROGRAM_DIR)/nano \
 	$(PROGRAM_DIR)/system \
@@ -79,10 +83,7 @@ TARGETS := \
  	$(PROGRAM_DIR)/imgview \
  	$(PROGRAM_DIR)/hello \
  	$(PROGRAM_DIR)/fputest
-
-# TCC (TinyCC) port: only when the user-cloned tcc/ tree is present
-# (it is git-ignored). Builds the amalgamated tcc.c with SSE enabled
-# (TCC needs doubles) against the hosted libc.
+	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
 TARGETS += $(PROGRAM_DIR)/tcc
@@ -170,6 +171,16 @@ $(PROGRAM_DIR)/logview: $(OBJ_DIR)/logview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 $(PROGRAM_DIR)/tetris: $(OBJ_DIR)/game/tetris/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/puzzle15: $(OBJ_DIR)/game/puzzle15/puzzle15.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/2048: $(OBJ_DIR)/game/2048/game2048.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+
 
 $(PROGRAM_DIR)/hexedit: $(GENERAL_CPP_OBJECTS) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

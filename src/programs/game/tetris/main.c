@@ -29,10 +29,6 @@ struct sfx_note {
     uint16_t tone_ms;
     uint16_t gap_ms;
 };
-
-// Melodies measured from src/audio/tetris/*.mp3 via spectral analysis:
-// move ~= 1050 Hz / 40 ms blip; clear = rising arpeggio with gaps;
-// game over = low descending buzz.
 static const struct sfx_note SFX_MOVE[]={
     {1050,40,0}
 };
@@ -56,9 +52,6 @@ static uint32_t sfx_len=0;
 static uint32_t sfx_idx=0;
 static uint32_t sfx_timer=0;
 static bool sfx_playing=false;
-
-// Sampled SFX preloaded from /game/sound (22050 Hz mono). When samples
-// or the PCM backend are unavailable the tone sequencer below is used.
 static int16_t sfx_move_buf[1000];
 static uint32_t sfx_move_n;
 static int16_t sfx_clear_buf[12200];
@@ -221,6 +214,12 @@ static const int8_t SHAPES[7][4][4][2]={
         {{1,0},{-1,1},{0,1},{1,1}},
         {{0,-1},{0,0},{0,1},{1,1}},
         {{-1,0},{-1,1},{0,1},{1,1}},
+        {{-1,-1},{0,-1},{0,0},{0,1}}
+    },
+    {
+        {{-1,0},{-1,1},{0,1},{1,1}},
+        {{0,-1},{1,-1},{0,0},{0,1}},
+        {{-1,1},{0,1},{1,1},{1,0}},
         {{-1,-1},{0,-1},{0,0},{0,1}}
     }
 };
