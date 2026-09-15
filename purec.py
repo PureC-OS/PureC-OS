@@ -358,24 +358,114 @@ def cmd_clean():
     print()
 
 
-def cmd_run():
+LOG_FILE = os.path.join(ROOT, "bin", "qemu-debug.log")
+
+def _ensure_iso() -> bool:
+    if os.path.isfile(ISO):
+        return True
+    _warn("ISO not found — building first…")
+    return cmd_build("all") == 0
+
+def _qemu_ok() -> bool:
+    return subprocess.run(["which", "qemu-system-x86_64"],
+                          capture_output=True).returncode == 0
+
+def _qemu_base() -> List[str]:
+    return ["qemu-system-x86_64", "-cdrom", ISO, "-m", "512M",
+            "-enable-kvm", "-boot", "d"]
+
+# ─── 4 debug modes ───────────────────────────────────────────────
+def qemu_graphics():
     _header()
-    if not os.path.isfile(ISO):
-        _warn("ISO not found — building first…")
-        if cmd_build("all") != 0:
-            _die("Build failed, cannot run")
-    qemu = "qemu-system-x86_64"
-    if subprocess.run(["which", qemu], capture_output=True).returncode == 0:
-        _step("Launching PureC OS in QEMU")
-        _run_live([
-            qemu, "-cdrom", ISO, "-m", "512M",
-            "-enable-kvm", "-serial", "stdio",
-            "-vga", "std", "-boot", "d",
-        ], "QEMU")
-    else:
-        _warn("QEMU not found. Open the ISO in VirtualBox:")
-        print(f"  {c(C.PEACH, ISO)}")
-    print()
+    if not _ensure_iso() or not _qemu_ok(): return
+    _step("QEMU — graphical mode")
+    _run_live(_qemu_base() + ["-vga", "std", "-serial", "stdio"], "QEMU (graphics)")
+
+def qemu_nographic():
+    _header()
+    if not _ensure_iso() or not _qemu_ok(): return
+    _step("QEMU — no graphics  (Ctrl-A X to quit)")
+    print(c(C.SUB, "  Tip: Ctrl-A then X exits QEMU\n"))
+    subprocess.run(_qemu_base() + ["-nographic"])
+
+def qemu_log_console():
+    _header()
+    if not _ensure_iso() or not _qemu_ok(): return
+    _step("QEMU — graphics + live serial log in TUI")
+    _run_live(_qemu_base() + ["-vga", "std", "-serial", "stdio"],
+              "QEMU (serial → console)")
+
+def qemu_log_file():
+    _header()
+    if not _ensure_iso() or not _qemu_ok(): return
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    int_log = LOG_FILE.replace(".log", "-internal.log")
+    _step(f"QEMU — graphics + logs → file")
+    print(c(C.SUB, f"  Serial : {LOG_FILE}"))
+    print(c(C.SUB, f"  QEMU   : {int_log}\n"))
+    _run_live(
+        _qemu_base() + [
+            "-vga", "std",
+            "-serial", f"file:{LOG_FILE}",
+            "-D", int_log,
+            "-d", "int,cpu_reset,guest_errors",
+        ],
+        "QEMU (log → file)",
+    )
+    if os.path.isfile(LOG_FILE):
+        _ok(f"Serial log: {LOG_FILE}")
+
+# ─── Debug submenu ───────────────────────────────────────────────
+def cmd_debug():
+    while True:
+        os.system("clear")
+        _header()
+
+        K, L, D = 5, 26, 42
+        def _sep(): print(c(C.OVERLAY, "  " + "─" * (K + L + D + 6)))
+
+        print(f"  {c(C.BOLD + C.PEACH, '⚙  Debug / Run options')}\n")
+        head = (f"  {c(C.BOLD+C.PEACH,'Key'):<{K+14}} {c(C.BLUE,'│')} "
+                f"{c(C.BOLD+C.PEACH,'Mode'):<{L+14}} {c(C.BLUE,'│')} "
+                f"{c(C.BOLD+C.PEACH,'Description')}")
+        print(head)
+        _sep()
+
+        debug_items = [
+            ("1", "Run with graphics",    "Normal QEMU window, serial → console",   qemu_graphics),
+            ("2", "Run without graphics", "No window — serial in terminal (nographic)", qemu_nographic),
+            ("3", "Log → console",        "Graphics + live serial log in TUI box",  qemu_log_console),
+            ("4", "Log → file",           f"Graphics + serial & QEMU log → bin/*.log", qemu_log_file),
+            ("b", "Back",                 "",                                        None),
+        ]
+        for key, lab, desc, _ in debug_items:
+            k  = c(C.YELLOW, f"[{key}]") + " " * max(0, K - len(key) - 2)
+            l  = c(C.TEXT, lab)          + " " * max(0, L - len(lab))
+            d  = c(C.SUB, desc)
+            print(f"  {k}  {c(C.BLUE,'│')} {l}  {c(C.BLUE,'│')} {d}")
+        _sep()
+        print()
+
+        try:
+            choice = input(f"  {c(C.PEACH,'❯')} {c(C.TEXT,'Choice: ')}").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            return
+
+        if choice == "b":
+            return
+        matched = [(k, l, d, fn) for k, l, d, fn in debug_items if k == choice]
+        if not matched:
+            _warn(f"Unknown option '{choice}'"); time.sleep(0.8); continue
+
+        os.system("clear")
+        matched[0][3]()
+        try:
+            input(c(C.SUB, "  Press Enter to return to debug menu…"))
+        except (KeyboardInterrupt, EOFError):
+            return
+
+def cmd_run():
+    qemu_graphics()
 
 # ──────────────────────────────────────────────────────────────
 # Interactive TUI menu
@@ -397,6 +487,7 @@ def _menu():
         MenuItem("6", "Run  (QEMU)",           "Launch PureC OS in QEMU",           lambda: cmd_run()),
         MenuItem("7", "Dependency status",     "Show which external repos present", lambda: cmd_status()),
         MenuItem("8", "Clean",                 "Remove all build artefacts",        lambda: cmd_clean()),
+        MenuItem("9", "Debug / Run options",   "Submenu: graphics / nographic / logs", lambda: cmd_debug()),
         MenuItem("q", "Quit",                  "",                                  lambda: sys.exit(0)),
     ]
 
