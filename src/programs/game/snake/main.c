@@ -21,9 +21,6 @@ static int16_t direction_x;
 static int16_t direction_y;
 static uint32_t random_state=0x51A7E123;
 static uint32_t score;
-
-// Sampled SFX preloaded from /game/sound or /bin/sound (22050 Hz mono).
-// Falls back to tone blips when files or the PCM backend are missing.
 static int16_t sfx_turn[1100];
 static uint32_t sfx_turn_frames;
 static int16_t sfx_eat[2700];
