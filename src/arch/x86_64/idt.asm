@@ -84,28 +84,5 @@ isr_common:
     pop rcx
     pop rbx
     pop rax
-    ; rsp -> vector. NMI/DF/MC use IST and always carry the full
-    ; SS/RSP frame; anything else from kernel mode (CS RPL 0) is a
-    ; short frame, so synthesize RSP/SS instead of popping garbage.
-    mov eax, [rsp]
-    cmp eax, 2
-    je .full_frame
-    cmp eax, 8
-    je .full_frame
-    cmp eax, 18
-    je .full_frame
-    test dword [rsp+24], 3
-    jnz .full_frame
-    mov rax, [rsp+16]      ; RIP
-    mov rcx, [rsp+24]      ; CS
-    mov rdx, [rsp+32]      ; RFLAGS
-    lea rsi, [rsp+40]      ; original RSP
-    mov [rsp], rax
-    mov [rsp+8], rcx
-    mov [rsp+16], rdx
-    mov [rsp+24], rsi
-    mov qword [rsp+32], 0x10
-    iretq
-.full_frame:
     add rsp, 16 ; drop vector+err
     iretq
