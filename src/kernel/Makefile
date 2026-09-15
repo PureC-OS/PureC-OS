@@ -16,7 +16,7 @@ ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
-E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/e1000/82543gc
+E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
 CPPFLAGS += -I$(E1000_GC_DIR)/include
 
 C_SOURCES := \
@@ -49,7 +49,7 @@ C_SOURCES := \
 	drivers/input/keyboard.c \
 	drivers/pci/pci.c \
 	drivers/net/e1000/e1000_82540em.c \
-	drivers/net/e1000/82543gc/e1000_82543gc.c \
+	drivers/net/82543gc/e1000_82543gc.c \
 	net/wifi/wifi.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \

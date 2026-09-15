@@ -57,7 +57,7 @@ kernel: crypt-fetch acpi-fetch
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C src/drivers/net/e1000 module
-	$(MAKE) -C src/drivers/net/e1000/82543gc module
+	$(MAKE) -C src/drivers/net/82543gc module
 	$(MAKE) -C $(CRYPT_DIR) module
 	$(MAKE) -C $(ACPI_DIR) module
 
