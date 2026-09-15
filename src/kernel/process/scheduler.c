@@ -367,6 +367,23 @@ static void check_live_stack(struct cpu_local *cpu, struct thread *prev){
     const char *mid7 = " ocpu=";
     for(int i = 0; mid7[i]; i++) *p++ = mid7[i];
     write_hex_digits(p, (uint32_t)(uint16_t)owner_cpu, 4); p += 4;
+    const char *mid8 = " pstate=";
+    for(int i = 0; mid8[i]; i++) *p++ = mid8[i];
+    write_hex_digits(p, prev->state, 2); p += 2;
+    const char *mid9 = " plast=";
+    for(int i = 0; mid9[i]; i++) *p++ = mid9[i];
+    write_hex_digits(p, (uint32_t)(uint16_t)prev->last_cpu, 4); p += 4;
+    for(uint32_t ci = 0; ci < SMP_MAX_CPUS; ci++){
+        struct cpu_local *c = smp_cpu(ci);
+        if(!c || !c->present) continue;
+        const char *midc = " c";
+        for(int i = 0; midc[i]; i++) *p++ = midc[i];
+        write_hex_digits(p, ci, 2); p += 2;
+        const char *mide = "=";
+        for(int i = 0; mide[i]; i++) *p++ = mide[i];
+        write_hex_digits(p, c->current ? c->current->id : 0xFFFFFFFFu, 8);
+        p += 8;
+    }
     *p = '\0';
     spin_unlock(&sched_lock);
     __asm__ volatile("sti" ::: "memory");

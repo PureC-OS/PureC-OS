@@ -53,8 +53,13 @@ static void panic_serial_hex(uint64_t value, int digits){
         panic_serial_putc(hexdigits[(value >> (i * 4)) & 0xF]);
 }
 
-static void panic_header(const char *title) {
-    __asm__ volatile("cli");
+static volatile uint32_t panic_serial_lock = 0;
+
+static bool panic_serial_try_acquire(void){
+    return !__atomic_test_and_set(&panic_serial_lock, __ATOMIC_ACQUIRE);
+}
+
+static void panic_header_locked(const char *title) {
     panic_serial_puts("\r\nPANIC! lapic=");
     panic_serial_hex(apic_raw_lapic_id(), 8);
     panic_serial_puts(" reason=");
@@ -157,7 +162,9 @@ static void panic_footer(void) {
     klog(KLOG_ERROR, "https://github.com/PureC-OS/PureC-OS/issues/new");
 }
 void kernel_panic(const char *reason) {
-    panic_header(reason);
+    __asm__ volatile("cli");
+    if(!panic_serial_try_acquire()) panic_halt();
+    panic_header_locked(reason);
     panic_ctrl_regs();
     panic_thread_info();
     uint64_t rbp;
@@ -176,6 +183,7 @@ void kernel_panic_exception(uint64_t vector,
                              uint64_t cr2,
                              const struct panic_registers *regs) {
     __asm__ volatile("cli");
+    if(!panic_serial_try_acquire()) panic_halt();
     panic_serial_puts("\r\nEXC vec=");
     panic_serial_hex(vector, 2);
     panic_serial_puts(" err=");
@@ -198,7 +206,7 @@ void kernel_panic_exception(uint64_t vector,
         *p = '\0';
     }
 
-    panic_header(title);
+    panic_header_locked(title);
 
     klogf(KLOG_ERROR, "error_code: 0x%016llx  CS: 0x%04llx",
           (unsigned long long)error_code, (unsigned long long)cs);
@@ -229,7 +237,9 @@ void kernel_panic_exception(uint64_t vector,
 void kernel_panic_manual(const char *reason,
                           uint64_t rip, uint64_t rsp, uint64_t rbp,
                           const struct panic_registers *regs) {
-    panic_header(reason);
+    __asm__ volatile("cli");
+    if(!panic_serial_try_acquire()) panic_halt();
+    panic_header_locked(reason);
     klog(KLOG_ERROR, "[manual panic — triggered by kernel code]");
     klog(KLOG_ERROR, "");
     panic_ctrl_regs();
