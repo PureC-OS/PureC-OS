@@ -1,4 +1,5 @@
 #include "idt.h"
+#include "../../drivers/apic/apic.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/display/fb.h"
 #include "../../kernel/syscall/syscall.h"
@@ -7,6 +8,7 @@
 #include "../../kernel/process/scheduler.h"
 #include "../../kernel/process/process.h"
 #include "../../kernel/diagnostics/klog.h"
+#include "../../mm/vmm.h"
 #include <stdint.h>
 
 struct idt_entry {
@@ -67,6 +69,14 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         pic_eoi(12);
         return;
     }
+    if (vector == LAPIC_TIMER_VECTOR) {
+        apic_eoi();
+        scheduler_on_timer_interrupt();
+        return;
+    }
+    if (vector == LAPIC_SPURIOUS_VECTOR) {
+        return;
+    }
     if (vector == 32) { // IRQ0 timer
         timer_tick();
         // Acknowledge the PIC before a context switch can suspend this frame.
@@ -85,6 +95,13 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     uint64_t cr2 = 0;
     if(vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
     if((cs&3)==3 && process_current_is_user()){
+        if(vector == 14){
+            uint64_t page = cr2 & ~(uint64_t)0xFFF;
+            if(vmm_translate(process_current_address_space(), page) != 0){
+                __asm__ volatile("invlpg (%0)" :: "r"(cr2) : "memory");
+                return;
+            }
+        }
         klogf(KLOG_ERROR,
               "process: pid=%d exception=%u rip=0x%llx cr2=0x%llx",
               process_current_pid(),(uint32_t)vector,rip,cr2);
@@ -108,5 +125,9 @@ void idt_init(void) {
     idt_set_gate(0x80, (uint64_t)isr_stub_table[0x80], 0xEE); // DPL3 для syscalls
     idtp.limit = sizeof(idt)-1;
     idtp.base  = (uint64_t)&idt;
+    idt_load((uint64_t)&idtp);
+}
+
+void idt_install_cpu(void) {
     idt_load((uint64_t)&idtp);
 }

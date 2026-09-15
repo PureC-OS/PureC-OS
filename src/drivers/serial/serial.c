@@ -1,7 +1,10 @@
 #include "serial.h"
+#include "../../kernel/sync/spinlock.h"
 #include <stdint.h>
 
 #define COM1 0x3F8
+
+static spinlock_t serial_lock;
 
 static inline void outb(uint16_t port, uint8_t val) {
     __asm__ volatile("outb %0,%1" : : "a"(val), "Nd"(port));
@@ -25,14 +28,26 @@ static int serial_transmit_empty(void) {
 }
 
 void serial_putc(char c) {
+    uint64_t flags = spin_lock_irqsave(&serial_lock);
     while(serial_transmit_empty()==0);
     outb(COM1, c);
     if(c=='\n') {
         while(serial_transmit_empty()==0);
         outb(COM1, '\r');
     }
+    spin_unlock_irqrestore(&serial_lock, flags);
 }
 
 void serial_write_string(const char *s) {
-    while(*s) serial_putc(*s++);
+    uint64_t flags = spin_lock_irqsave(&serial_lock);
+    while(*s){
+        char c = *s++;
+        while(serial_transmit_empty()==0);
+        outb(COM1, c);
+        if(c=='\n') {
+            while(serial_transmit_empty()==0);
+            outb(COM1, '\r');
+        }
+    }
+    spin_unlock_irqrestore(&serial_lock, flags);
 }

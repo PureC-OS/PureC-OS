@@ -40,6 +40,9 @@ C_SOURCES := \
 	drivers/display/vga.c \
 	drivers/interrupts/pic.c \
 	drivers/interrupts/timer.c \
+	drivers/apic/apic.c \
+	kernel/sync/mutex.c \
+	kernel/smp/smp.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
 	drivers/mouse/ps2_mouse.c \
@@ -103,6 +106,7 @@ ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
 	arch/x86_64/idt.asm \
 	arch/x86_64/scheduler.asm \
+	arch/x86_64/smp_trampoline.asm \
 	arch/x86_64/user.asm
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPP_OBJECTS := $(CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)

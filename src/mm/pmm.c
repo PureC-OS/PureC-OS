@@ -1,5 +1,6 @@
 #include "pmm.h"
 #include "../kernel/diagnostics/klog.h"
+#include "../kernel/sync/spinlock.h"
 #include "../lib/string.h"
 
 #define PMM_MAX_PHYSICAL_BYTES (32ULL*1024ULL*1024ULL*1024ULL)
@@ -12,6 +13,7 @@ static uint64_t frame_limit;
 static uint64_t free_frames;
 static uint64_t allocation_cursor;
 static bool ready;
+static spinlock_t pmm_lock;
 
 static void set_frame(uint64_t frame){
     frame_bitmap[frame>>3]|=(uint8_t)(1U<<(frame&7));
@@ -61,7 +63,11 @@ void pmm_init(const struct limine_memmap_response *memory_map,
 }
 
 uint64_t pmm_allocate_page(void){
-    if(!ready || !free_frames) return 0;
+    uint64_t flags = spin_lock_irqsave(&pmm_lock);
+    if(!ready || !free_frames){
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        return 0;
+    }
     for(uint64_t pass=0;pass<2;pass++){
         uint64_t end=pass==0 ? frame_limit : allocation_cursor;
         uint64_t begin=pass==0 ? allocation_cursor : 1;
@@ -72,16 +78,28 @@ uint64_t pmm_allocate_page(void){
             allocation_cursor=frame+1;
             void *page=pmm_physical_to_virtual(frame*PMM_PAGE_SIZE);
             memset(page,0,PMM_PAGE_SIZE);
+            spin_unlock_irqrestore(&pmm_lock, flags);
             return frame*PMM_PAGE_SIZE;
         }
     }
+    spin_unlock_irqrestore(&pmm_lock, flags);
     return 0;
 }
 
 uint64_t pmm_allocate_contiguous(uint64_t page_count){
-    if(!ready || !free_frames || !page_count) return 0;
-    if(page_count==1) return pmm_allocate_page();
-    if(page_count>free_frames) return 0;
+    uint64_t flags = spin_lock_irqsave(&pmm_lock);
+    if(!ready || !free_frames || !page_count){
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        return 0;
+    }
+    if(page_count==1){
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        return pmm_allocate_page();
+    }
+    if(page_count>free_frames){
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        return 0;
+    }
     for(uint64_t pass=0;pass<2;pass++){
         uint64_t end=pass==0 ? frame_limit : allocation_cursor;
         uint64_t begin=pass==0 ? allocation_cursor : 1;
@@ -99,16 +117,22 @@ uint64_t pmm_allocate_contiguous(uint64_t page_count){
                 void *page=pmm_physical_to_virtual((frame+off)*PMM_PAGE_SIZE);
                 memset(page,0,PMM_PAGE_SIZE);
             }
+            spin_unlock_irqrestore(&pmm_lock, flags);
             return frame*PMM_PAGE_SIZE;
         }
     }
+    spin_unlock_irqrestore(&pmm_lock, flags);
     return 0;
 }
 
 void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count){
     if((physical_address&(PMM_PAGE_SIZE-1))!=0 || !page_count) return;
+    uint64_t flags = spin_lock_irqsave(&pmm_lock);
     uint64_t start_frame=physical_address/PMM_PAGE_SIZE;
-    if(start_frame==0 || start_frame+page_count>frame_limit) return;
+    if(start_frame==0 || start_frame+page_count>frame_limit){
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        return;
+    }
     for(uint64_t off=0;off<page_count;off++){
         uint64_t frame=start_frame+off;
         if(!frame_is_used(frame)) continue;
@@ -116,15 +140,21 @@ void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count){
         free_frames++;
         if(frame<allocation_cursor) allocation_cursor=frame;
     }
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 void pmm_free_page(uint64_t physical_address){
     if((physical_address&(PMM_PAGE_SIZE-1))!=0) return;
+    uint64_t flags = spin_lock_irqsave(&pmm_lock);
     uint64_t frame=physical_address/PMM_PAGE_SIZE;
-    if(frame==0 || frame>=frame_limit || !frame_is_used(frame)) return;
+    if(frame==0 || frame>=frame_limit || !frame_is_used(frame)){
+        spin_unlock_irqrestore(&pmm_lock, flags);
+        return;
+    }
     clear_frame(frame);
     free_frames++;
     if(frame<allocation_cursor) allocation_cursor=frame;
+    spin_unlock_irqrestore(&pmm_lock, flags);
 }
 
 void *pmm_physical_to_virtual(uint64_t physical_address){

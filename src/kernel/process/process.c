@@ -8,6 +8,7 @@
 #include "../../boot/install_source.h"
 #include "../../fs/vfs.h"
 #include "../../mm/pmm.h"
+#include "../sync/spinlock.h"
 #include "../../mm/vmm.h"
 #include "../../lib/string.h"
 #include "../../userspace/window_manager.h"
@@ -23,6 +24,7 @@ extern void arch_enter_user(uint64_t instruction_pointer,
 static struct process processes[PROCESS_MAX_COUNT];
 static uint32_t next_pid=1;
 static uint64_t process_sample_tick;
+static spinlock_t process_table_lock;
 
 static bool environment_name_valid(const char *name){
     if(!name || !name[0]) return false;
@@ -82,6 +84,7 @@ static void environment_initialize(struct process *process,
 }
 
 static struct process *allocate_process(void){
+    uint64_t flags = spin_lock_irqsave(&process_table_lock);
     for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
         if(processes[index].state==PROCESS_FREE){
             struct process *process=&processes[index];
@@ -91,9 +94,11 @@ static struct process *allocate_process(void){
             process->descriptors[0]=VFS_FD_STDIN;
             process->descriptors[1]=VFS_FD_STDOUT;
             process->descriptors[2]=VFS_FD_STDERR;
+            spin_unlock_irqrestore(&process_table_lock, flags);
             return process;
         }
     }
+    spin_unlock_irqrestore(&process_table_lock, flags);
     return 0;
 }
 
@@ -140,7 +145,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
         process->state=PROCESS_FREE;
         return -1;
     }
-    process->pid=next_pid++;
+    process->pid=(int32_t)__atomic_fetch_add(&next_pid, 1, __ATOMIC_RELAXED);
     process->parent_pid=(uint32_t)(process_current_pid()>0
         ? process_current_pid() : 0);
     process->state=PROCESS_READY;

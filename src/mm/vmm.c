@@ -1,6 +1,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "../kernel/diagnostics/klog.h"
+#include "../kernel/sync/spinlock.h"
 #include "../lib/string.h"
 
 #define PAGE_ADDRESS_MASK 0x000FFFFFFFFFF000ULL
@@ -8,6 +9,7 @@
 
 static uint64_t kernel_address_space;
 static bool nx_enabled;
+static spinlock_t vmm_lock;
 
 static void enable_nx(void){
     uint32_t maximum,eax,ebx,ecx,edx;
@@ -55,16 +57,22 @@ void vmm_init(void){
 uint64_t vmm_kernel_address_space(void){ return kernel_address_space; }
 
 uint64_t vmm_create_address_space(void){
+    uint64_t flags = spin_lock_irqsave(&vmm_lock);
     uint64_t physical=pmm_allocate_page();
-    if(!physical) return 0;
+    if(!physical){
+        spin_unlock_irqrestore(&vmm_lock, flags);
+        return 0;
+    }
     uint64_t *destination=(uint64_t*)pmm_physical_to_virtual(physical);
     uint64_t *kernel=(uint64_t*)pmm_physical_to_virtual(kernel_address_space);
     for(uint16_t index=256;index<512;index++) destination[index]=kernel[index];
+    spin_unlock_irqrestore(&vmm_lock, flags);
     return physical;
 }
 
 void vmm_destroy_address_space(uint64_t address_space){
     if(!address_space || address_space==kernel_address_space) return;
+    uint64_t flags = spin_lock_irqsave(&vmm_lock);
     uint64_t *pml4=(uint64_t*)pmm_physical_to_virtual(address_space);
     for(uint16_t pml4_index=0;pml4_index<256;pml4_index++){
         if(!(pml4[pml4_index]&VMM_PAGE_PRESENT)) continue;
@@ -89,12 +97,11 @@ void vmm_destroy_address_space(uint64_t address_space){
         pmm_free_page(pdpt_physical);
     }
     pmm_free_page(address_space);
+    spin_unlock_irqrestore(&vmm_lock, flags);
 }
 
-bool vmm_map_page(uint64_t address_space, uint64_t virtual_address,
-                  uint64_t physical_address, uint64_t flags){
-    if((virtual_address&(PMM_PAGE_SIZE-1))
-       || (physical_address&(PMM_PAGE_SIZE-1))) return false;
+static bool map_page_locked(uint64_t address_space, uint64_t virtual_address,
+                            uint64_t physical_address, uint64_t flags){
     uint64_t *pml4=(uint64_t*)pmm_physical_to_virtual(address_space);
     uint64_t *pdpt=next_table(pml4,(virtual_address>>39)&0x1FF,true,flags);
     if(!pdpt) return false;
@@ -110,17 +117,34 @@ bool vmm_map_page(uint64_t address_space, uint64_t virtual_address,
     return true;
 }
 
+bool vmm_map_page(uint64_t address_space, uint64_t virtual_address,
+                  uint64_t physical_address, uint64_t flags){
+    if((virtual_address&(PMM_PAGE_SIZE-1))
+       || (physical_address&(PMM_PAGE_SIZE-1))) return false;
+    uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
+    bool ok = map_page_locked(address_space, virtual_address,
+                              physical_address, flags);
+    spin_unlock_irqrestore(&vmm_lock, irq_flags);
+    return ok;
+}
+
 bool vmm_map_new_pages(uint64_t address_space, uint64_t virtual_address,
                        uint64_t page_count, uint64_t flags){
+    uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
     for(uint64_t page=0;page<page_count;page++){
         uint64_t physical=pmm_allocate_page();
-        if(!physical) return false;
-        if(!vmm_map_page(address_space,virtual_address+page*PMM_PAGE_SIZE,
-                         physical,flags)){
+        if(!physical){
+            spin_unlock_irqrestore(&vmm_lock, irq_flags);
+            return false;
+        }
+        if(!map_page_locked(address_space,virtual_address+page*PMM_PAGE_SIZE,
+                            physical,flags)){
             pmm_free_page(physical);
+            spin_unlock_irqrestore(&vmm_lock, irq_flags);
             return false;
         }
     }
+    spin_unlock_irqrestore(&vmm_lock, irq_flags);
     return true;
 }
 

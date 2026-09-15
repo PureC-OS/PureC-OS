@@ -4,6 +4,7 @@
 #include "../diagnostics/panic.h"
 #include "../process/scheduler.h"
 #include "../process/process.h"
+#include "../smp/smp.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
@@ -25,12 +26,8 @@ void init_process_start(uint32_t detected_cpu_count){
     boot_log_pause();
 
     scheduler_init();
+    smp_init();
     int core_count=scheduler_get_core_count();
-    if(detected_cpu_count>1){
-        klogf(KLOG_WARN,
-              "sched: Limine detected %u CPUs; 1 CPU active until AP scheduler support is installed",
-              detected_cpu_count);
-    }
     klogf(KLOG_INFO, "sched: active cores=%d, creating init threads",
           core_count);
 
@@ -43,10 +40,10 @@ void init_process_start(uint32_t detected_cpu_count){
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
                          "init and desktop ready, starting scheduler");
 
-    scheduler_create_thread(userspace_input_thread, 0, "init-input", 1, 0);
-    scheduler_create_thread(userspace_keyboard_thread, 0, "desktop-keyboard", 1, 0);
-    scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, 0);
-    if(scheduler_create_thread(net_service_thread,0,"net-rx",2,0)<0)
+    scheduler_create_thread(userspace_input_thread, 0, "init-input", 1, -1);
+    scheduler_create_thread(userspace_keyboard_thread, 0, "desktop-keyboard", 1, -1);
+    scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, -1);
+    if(scheduler_create_thread(net_service_thread,0,"net-rx",2,-1)<0)
         klog(KLOG_WARN,"net: failed to create polling thread");
     klog(KLOG_OK, "sched: init threads created, starting scheduler");
     serial_write_string("[SCHED] start\n");
