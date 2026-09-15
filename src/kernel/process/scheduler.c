@@ -65,7 +65,7 @@ static void write_hex_digits(char *out, uint64_t value, int digits){
     }
 }
 
-static char sched_panic_reason[224];
+static char sched_panic_reason[1024];
 
 static void validate_switch_target(const struct thread *prev,
                                      const struct thread *next){
