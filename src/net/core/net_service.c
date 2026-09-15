@@ -7,7 +7,7 @@
 #include "../name/dns.h"
 #include "../config/dhcp.h"
 #include "../diagnostics/icmp.h"
-#include "../../drivers/net/e1000_82540em.h"
+#include "e1000_82540em.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
