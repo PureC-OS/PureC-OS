@@ -25,6 +25,22 @@
 static volatile uint32_t *lapic = NULL;
 static uint32_t timer_ticks_1ms = 0;
 static bool ready = false;
+static volatile uint64_t test_ticks = 0;
+
+void apic_test_tick(void){
+    test_ticks++;
+}
+
+uint64_t apic_test_ticks(void){
+    return test_ticks;
+}
+
+bool apic_wait_tick(uint32_t timeout_ms){
+    uint64_t deadline = timer_ticks() + timeout_ms;
+    while(test_ticks == 0 && timer_ticks() < deadline)
+        __asm__ volatile("pause");
+    return test_ticks != 0;
+}
 
 static uint64_t read_msr(uint32_t msr){
     uint32_t low, high;
@@ -53,6 +69,14 @@ static uint32_t lapic_read(uint32_t offset){
 
 static void lapic_write(uint32_t offset, uint32_t value){
     lapic[offset / 4] = value;
+}
+
+void apic_disable(void){
+    if(lapic){
+        lapic_write(LAPIC_REG_LVT_TIMER, LAPIC_LVT_MASKED);
+        lapic_write(LAPIC_REG_INITIAL_COUNT, 0);
+    }
+    ready = false;
 }
 
 bool apic_present(void){
@@ -96,14 +120,21 @@ bool apic_init(void){
         return false;
     }
     uint64_t base = read_msr(APIC_MSR_BASE);
-    if(base & APIC_MSR_X2APIC)
-        base &= ~APIC_MSR_X2APIC;
+    if(base & APIC_MSR_X2APIC){
+        write_msr(APIC_MSR_BASE, base & ~(APIC_MSR_ENABLE | APIC_MSR_X2APIC));
+        base = read_msr(APIC_MSR_BASE);
+    }
     base |= APIC_MSR_ENABLE;
     write_msr(APIC_MSR_BASE, base);
     uint64_t lapic_physical = base & 0xFFFFFF000ULL;
     lapic = mmio_map(lapic_physical, 0x1000);
     if(!lapic){
         klog(KLOG_ERROR, "apic: cannot map LAPIC registers");
+        return false;
+    }
+    if(lapic_read(LAPIC_REG_SPURIOUS) == 0xFFFFFFFFU){
+        klog(KLOG_ERROR, "apic: LAPIC MMIO readback failed");
+        lapic = NULL;
         return false;
     }
     lapic_write(LAPIC_REG_SPURIOUS,

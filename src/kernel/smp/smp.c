@@ -95,6 +95,12 @@ void smp_init(void){
         klog(KLOG_WARN, "smp: APIC unavailable, single CPU");
         return;
     }
+    __asm__ volatile("sti" ::: "memory");
+    if(!apic_wait_tick(30)){
+        klog(KLOG_WARN, "smp: no LAPIC tick, single CPU on PIT");
+        apic_disable();
+        return;
+    }
     cpus[0].lapic_id = apic_lapic_id();
     uint64_t detected = smp_response_ptr->cpu_count;
     if(detected > SMP_MAX_CPUS) detected = SMP_MAX_CPUS;

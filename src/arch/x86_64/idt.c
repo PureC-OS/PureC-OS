@@ -71,6 +71,7 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     }
     if (vector == LAPIC_TIMER_VECTOR) {
         apic_eoi();
+        apic_test_tick();
         scheduler_on_timer_interrupt();
         return;
     }
