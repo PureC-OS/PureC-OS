@@ -7,7 +7,7 @@
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/panic.h"
 #include "../../arch/x86_64/mmio.h"
-#include "../../arch/x86_64/fpu.h"
+#include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../drivers/power/power.h"
 #include "../../lib/string.h"
 #include "init.h"

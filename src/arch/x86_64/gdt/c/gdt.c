@@ -63,17 +63,13 @@ extern void gdt_flush(uint64_t);
 void gdt_init(void) {
     gdt.entries[0] = (struct gdt_entry){0,0,0,0,0,0};
     gdt.entries[1] = (struct gdt_entry){0,0,0,0x9A,0xA0,0};
-    // kernel data
     gdt.entries[2] = (struct gdt_entry){0,0,0,0x92,0x00,0};
-    // ring-3 code and data. Selectors are 0x1B and 0x23.
     gdt.entries[3] = (struct gdt_entry){0,0,0,0xFA,0xA0,0};
     gdt.entries[4] = (struct gdt_entry){0,0,0,0xF2,0x00,0};
-
     tss.ist1=(uint64_t)(uintptr_t)&double_fault_stack[EMERGENCY_STACK_SIZE];
     tss.ist2=(uint64_t)(uintptr_t)&nmi_stack[EMERGENCY_STACK_SIZE];
     tss.ist3=(uint64_t)(uintptr_t)&machine_check_stack[EMERGENCY_STACK_SIZE];
     tss.iomap_base=sizeof(tss);
-
     uint64_t tss_base=(uint64_t)(uintptr_t)&tss;
     uint32_t tss_limit=sizeof(tss)-1;
     gdt.tss.limit_low=(uint16_t)tss_limit;
@@ -84,14 +80,11 @@ void gdt_init(void) {
     gdt.tss.base_high=(uint8_t)(tss_base>>24);
     gdt.tss.base_upper=(uint32_t)(tss_base>>32);
     gdt.tss.reserved=0;
-
     gp.limit = sizeof(gdt) - 1;
     gp.base  = (uint64_t)&gdt;
-
     gdt_flush((uint64_t)&gp);
     __asm__ volatile("mov $0x28, %%ax; ltr %%ax" ::: "rax", "memory");
 }
-
 void gdt_set_kernel_stack(uint64_t stack_top){
     tss.rsp0=stack_top;
 }

@@ -1,12 +1,12 @@
-#include "idt.h"
-#include "../../drivers/serial/serial.h"
-#include "../../drivers/display/fb.h"
-#include "../../kernel/syscall/syscall.h"
-#include "../../kernel/diagnostics/panic.h"
-#include "../../drivers/interrupts/timer.h"
-#include "../../kernel/process/scheduler.h"
-#include "../../kernel/process/process.h"
-#include "../../kernel/diagnostics/klog.h"
+#include "../include/idt.h"
+#include "../../../drivers/serial/serial.h"
+#include "../../../drivers/display/fb.h"
+#include "../../../kernel/syscall/syscall.h"
+#include "../../../kernel/diagnostics/panic.h"
+#include "../../../drivers/interrupts/timer.h"
+#include "../../../kernel/process/scheduler.h"
+#include "../../../kernel/process/process.h"
+#include "../../../kernel/diagnostics/klog.h"
 #include <stdint.h>
 
 struct idt_entry {
