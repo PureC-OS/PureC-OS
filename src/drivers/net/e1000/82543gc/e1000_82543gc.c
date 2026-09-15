@@ -1,20 +1,3 @@
-/* Intel PRO/1000 T Server driver: 82543GC (PCI 8086:1004, copper).
- *
- * Standalone driver living next to the 82540EM one; the sibling driver is
- * intentionally not touched, so the bounded RX/TX ring handling is
- * mirrored here (both chips share the descriptor format and the ring
- * registers).
- *
- * 82543 specifics: the external Marvell M88E1000 PHY is hardware-reset
- * through the CTRL_EXT SDP4 pin, the link is auto-negotiated over MDIO
- * (register MDIC) and the MAC is forced to the negotiated speed/duplex.
- * Up to E1000_GC_MAX_ADAPTERS adapters are probed and registered as the
- * next free ethN names (net_service brings the 82540EM up first, so a
- * mixed setup yields eth0=82540EM, eth1+=82543GC).
- *
- * Reference: Intel PCI/PCI-X Family Software Developer's Manual,
- * Linux drivers/net/ethernet/intel/e1000, iPXE e1000_82543.c.
- */
 #include "e1000_82543gc.h"
 #include "arch/x86_64/mmio.h"
 #include "drivers/interrupts/timer.h"
@@ -72,7 +55,6 @@
 #define E1000_GC_CTRL_RST (1U << 26)
 #define E1000_GC_STATUS_LU (1U << 1)
 
-/* 82543 PHY reset rides on the SDP4 general-purpose pin. */
 #define E1000_GC_CTRL_EXT_SDP4_DIR 0x00400000U
 #define E1000_GC_CTRL_EXT_SDP4_DATA 0x00000010U
 
@@ -91,8 +73,6 @@
 #define E1000_GC_TCTL_PSP (1U << 3)
 #define E1000_GC_TCTL_CT_SHIFT 4
 #define E1000_GC_TCTL_COLD_SHIFT 12
-/* Linux e1000: collision distance is 63 for 82543 and newer (0-based,
- * half-duplex only; a don't-care at full duplex). */
 #define E1000_GC_TCTL_COLD 63U
 #define E1000_GC_RX_STATUS_DD (1U << 0)
 #define E1000_GC_RX_STATUS_EOP (1U << 1)
@@ -101,7 +81,6 @@
 #define E1000_GC_TX_CMD_RS (1U << 3)
 #define E1000_GC_TX_STATUS_DD (1U << 0)
 
-/* Standard MII registers and bits (the 82543 PHY lives at MDIO address 1). */
 #define E1000_GC_MII_BMCR 0x00
 #define E1000_GC_MII_BMSR 0x01
 #define E1000_GC_MII_PHYSID1 0x02
@@ -115,7 +94,6 @@
 #define E1000_GC_ANAR_PAUSE_SYM 0x0400U
 #define E1000_GC_1000T_ADV_FULL 0x0200U
 
-/* Marvell 88E1000 PHY specific status (register 17). */
 #define E1000_GC_M88_PSSR 0x11
 #define E1000_GC_M88_PSSR_LINK 0x0400U
 #define E1000_GC_M88_PSSR_RESOLVED 0x0800U
@@ -265,8 +243,6 @@ static void gc_program_receive_address(struct e1000_gc_device *device,
 static bool gc_reset_controller(struct e1000_gc_device *device){
     gc_reg_write(device,E1000_GC_REG_IMC,0xFFFFFFFFU);
     (void)gc_reg_read(device,E1000_GC_REG_ICR);
-    /* Let outstanding PCI transactions drain before the global reset,
-     * as in iPXE e1000_reset_hw_82543. */
     gc_reg_write(device,E1000_GC_REG_RCTL,0);
     gc_reg_write(device,E1000_GC_REG_TCTL,E1000_GC_TCTL_PSP);
     (void)gc_reg_read(device,E1000_GC_REG_ICR);
@@ -284,7 +260,6 @@ static bool gc_reset_controller(struct e1000_gc_device *device){
     return false;
 }
 
-/* MDIO access to the external PHY through the MDIC register. */
 static bool gc_mdio_read(struct e1000_gc_device *device, uint8_t phy,
                          uint8_t reg, uint16_t *value){
     gc_reg_write(device,E1000_GC_REG_MDIC,
@@ -319,8 +294,6 @@ static bool gc_mdio_write(struct e1000_gc_device *device, uint8_t phy,
     return false;
 }
 
-/* The 82543 PHY is a Marvell M88E1000 at MDIO address 1, but probe the
- * whole range so other board layouts still work. */
 static bool gc_phy_probe(struct e1000_gc_device *device){
     for(uint8_t pass=0;pass<2;pass++){
         for(uint8_t addr=0;addr<32;addr++){
@@ -340,10 +313,6 @@ static bool gc_phy_probe(struct e1000_gc_device *device){
     return false;
 }
 
-/* Link bring-up: hardware-reset the PHY, restart auto-negotiation, wait
- * for the link, then force the MAC to the negotiated speed/duplex.
- * Absent link is a warning (the interface is still registered, link
- * down); unreadable MDIO is fatal for this adapter. */
 static bool gc_setup_link(struct e1000_gc_device *device){
     uint32_t ext=gc_reg_read(device,E1000_GC_REG_CTRL_EXT);
     gc_reg_write(device,E1000_GC_REG_CTRL_EXT,
@@ -359,8 +328,16 @@ static bool gc_setup_link(struct e1000_gc_device *device){
     gc_reg_write(device,E1000_GC_REG_CTRL,ctrl);
 
     if(!gc_phy_probe(device)){
-        klog(KLOG_ERROR,"e1000: 82543GC: no PHY answers on MDIC");
-        return false;
+        klog(KLOG_WARN,"e1000: 82543GC: no PHY on MDIC,"
+             " continuing with 1000/full");
+        device->link_speed_mbps=1000;
+        device->full_duplex=true;
+        ctrl=gc_reg_read(device,E1000_GC_REG_CTRL);
+        ctrl|=E1000_GC_CTRL_SLU|E1000_GC_CTRL_FRCSPD|E1000_GC_CTRL_FRCDPX
+            |E1000_GC_CTRL_FD|E1000_GC_CTRL_SPD_1000;
+        ctrl&=~E1000_GC_CTRL_ILOS;
+        gc_reg_write(device,E1000_GC_REG_CTRL,ctrl);
+        return true;
     }
 
     gc_mdio_write(device,device->phy_addr,E1000_GC_MII_ANAR,
@@ -406,8 +383,6 @@ static bool gc_setup_link(struct e1000_gc_device *device){
         default: device->link_speed_mbps=10; break;
         }
     }else if(gc_reg_read(device,E1000_GC_REG_STATUS)&E1000_GC_STATUS_LU){
-        /* Some emulators report link in STATUS but no PHY detail;
-         * assume gigabit full duplex rather than failing the NIC. */
         device->link_speed_mbps=1000;
         device->full_duplex=true;
         klog(KLOG_WARN,"e1000: 82543GC: PHY status unreadable,"
@@ -448,7 +423,6 @@ static void gc_initialize_transmit(struct e1000_gc_device *device){
     gc_reg_write(device,E1000_GC_REG_TDH,0);
     gc_reg_write(device,E1000_GC_REG_TDT,0);
     device->tx_next=0;
-    /* Gigabit timing; slower links use safe 10/10/10 spacing. */
     uint32_t ipgt=10,ipgr1=10,ipgr2=10;
     if(device->link_speed_mbps==1000){ ipgr1=8; ipgr2=6; }
     gc_reg_write(device,E1000_GC_REG_TIPG,ipgt|(ipgr1<<10)|(ipgr2<<20));
@@ -573,8 +547,7 @@ static bool gc_init_one(struct e1000_gc_device *device,
         return false;
     }
     gc_program_receive_address(device,device->net.mac);
-    if(!gc_setup_link(device))
-        return false;
+    gc_setup_link(device);
     if(!gc_allocate_dma(device)){
         klog(KLOG_ERROR,"e1000: 82543GC: cannot allocate bounded DMA rings");
         return false;
@@ -587,9 +560,6 @@ static bool gc_init_one(struct e1000_gc_device *device,
     gc_reg_write(device,E1000_GC_REG_CTRL,
                  gc_reg_read(device,E1000_GC_REG_CTRL)|E1000_GC_CTRL_SLU);
 
-    /* Next free ethN name: net_service brings the 82540EM up first, so a
-     * mixed setup lands here as eth1+. Single digit is enough (the device
-     * layer caps at four interfaces). */
     uint32_t if_index=net_device_count();
     if(if_index>9) if_index=9;
     device->net.name[0]='e';
@@ -620,8 +590,6 @@ static bool gc_init_one(struct e1000_gc_device *device,
     return true;
 }
 
-/* Probe every 82543GC adapter and bring up as many as possible.
- * Returns true when at least one interface was registered. */
 bool e1000_82543gc_init(void){
     struct e1000_gc_discovery found;
     memset(&found,0,sizeof(found));
