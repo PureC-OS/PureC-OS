@@ -1,229 +1,489 @@
+#if __has_include("../../../libc/include/purec.h")
+#include "../../../libgui/include/puregui.h"
+#include "../../../libgui/include/pguiw.h"
+#include "../../../libc/include/purec.h"
+#include "../../../libaudio/include/pureaudio.h"
+#include "../../../drivers/input/keyboard.h"
+#elif __has_include("src/libc/include/purec.h")
+#include "src/libgui/include/puregui.h"
+#include "src/libgui/include/pguiw.h"
+#include "src/libc/include/purec.h"
+#include "src/libaudio/include/pureaudio.h"
+#include "src/drivers/input/keyboard.h"
+#else
+#include <puregui.h>
+#include <pguiw.h>
 #include <purec.h>
-#define COLOR_BG        0x1E1E2E
-#define COLOR_BOARD_BG  0x181825
-#define COLOR_TILE      0x89B4FA
-#define COLOR_TILE_HL   0xB4BEFE
-#define COLOR_TILE_TXT  0x1E1E2E
-#define COLOR_EMPTY     0x313244
-#define COLOR_WIN_BG    0xA6E3A1
-#define COLOR_WIN_TXT   0x1E1E2E
-#define COLOR_HEADER    0xCDD6F4
-#define COLOR_SUBTEXT   0x6C7086
-#define COLOR_BORDER    0x45475A
-#define WIN_X      100
-#define WIN_Y       60
-#define WIN_W      500
-#define WIN_H      560
-#define BOARD_X    (WIN_X + 40)
-#define BOARD_Y    (WIN_Y + 110)
-#define BOARD_SIZE 420
-#define TILE_SIZE  (BOARD_SIZE / 4)
-#define GAP          4
-static int board[4][4];
-static int empty_r, empty_c;
-static int moves;
-static int won;
+#include <pureaudio.h>
+#endif
 
-static void int_to_str(int n, char *buf) {
-    if (n == 0) { buf[0] = '0'; buf[1] = '\0'; return; }
-    char tmp[12]; int i = 0;
-    while (n > 0) { tmp[i++] = '0' + (n % 10); n /= 10; }
-    int j = 0; while (i > 0) buf[j++] = tmp[--i];
-    buf[j] = '\0';
-}
+#ifndef KEYBOARD_SPECIAL_LEFT
+#define KEYBOARD_SPECIAL_LEFT  8
+#define KEYBOARD_SPECIAL_RIGHT 9
+#define KEYBOARD_SPECIAL_UP    10
+#define KEYBOARD_SPECIAL_DOWN  11
+#endif
 
-static int str_len(const char *s) {int n = 0; while (s[n]) n++; return n;}
+#define WIN_WIDTH   380
+#define WIN_HEIGHT  460
 
-static int check_win(void) {
-    int expected = 1;
-    for (int r = 0; r < 4; r++)
-        for (int c = 0; c < 4; c++) {
-            if (r == 3 && c == 3) { if (board[r][c] != 0) return 0; }
-            else { if (board[r][c] != expected++) return 0; }
+#define BOARD_ROWS  4
+#define BOARD_COLS  4
+#define TILE_SIZE   72
+#define GAP         6
+#define BOARD_PIXELS (BOARD_COLS * TILE_SIZE + (BOARD_COLS + 1) * GAP)
+
+#define COLOR_WIN_BG      0x1E1E2E
+#define COLOR_BOARD_BG    0x181825
+#define COLOR_BOARD_EDGE  0x45475A
+#define COLOR_TILE_BASE   0x89B4FA
+#define COLOR_TILE_HOVER  0xB4BEFE
+#define COLOR_TILE_DONE   0xA6E3A1
+#define COLOR_TILE_TEXT   0x11111B
+#define COLOR_SLOT_EMPTY  0x242438
+#define COLOR_TEXT_MAIN   0xCDD6F4
+#define COLOR_TEXT_MUTED  0x6C7086
+
+static int board[BOARD_ROWS][BOARD_COLS];
+static int empty_r = 3;
+static int empty_c = 3;
+static uint32_t moves = 0;
+static bool won = false;
+static uint32_t elapsed_sec = 0;
+static uint32_t timer_ms = 0;
+static int hover_r = -1;
+static int hover_c = -1;
+
+static uint32_t rng_state = 0x51A7E123;
+
+static int16_t sfx_move_buf[2048];
+static uint32_t sfx_move_len = 0;
+static int16_t sfx_win_buf[14000];
+static uint32_t sfx_win_len = 0;
+
+static uint32_t sfx_preload(const char *name, int16_t *buffer, uint32_t capacity) {
+    static const char *dirs[] = {"/game/sound/", "/bin/sound/"};
+    for (uint32_t d = 0; d < sizeof(dirs)/sizeof(dirs[0]); d++) {
+        char path[64];
+        uint32_t pos = 0;
+        const char *dir = dirs[d];
+        while (dir[pos] && pos + 1 < sizeof(path)) {
+            path[pos] = dir[pos];
+            pos++;
         }
-    return 1;
+        for (uint32_t i = 0; name[i] && pos + 1 < sizeof(path); i++) {
+            path[pos++] = name[i];
+        }
+        path[pos] = '\0';
+        uint32_t frames = 0;
+        if (pa_wav_load(path, buffer, capacity, &frames) == 0 && frames > 0) {
+            return frames;
+        }
+    }
+    return 0;
 }
 
-static unsigned int rng_state = 0;
-static unsigned int rng_next(void) {
+static void sfx_init(void) {
+    sfx_move_len = sfx_preload("move.wav", sfx_move_buf, sizeof(sfx_move_buf)/sizeof(sfx_move_buf[0]));
+    sfx_win_len  = sfx_preload("clear.wav", sfx_win_buf, sizeof(sfx_win_buf)/sizeof(sfx_win_buf[0]));
+}
+
+static void play_move_sound(void) {
+    if (sfx_move_len > 0 && pa_sfx_play(sfx_move_buf, sfx_move_len) == 0) return;
+    pa_play_tone(950, 35);
+}
+
+static void play_win_sound(void) {
+    if (sfx_win_len > 0 && pa_sfx_play(sfx_win_buf, sfx_win_len) == 0) return;
+    pa_play_tone(1600, 220);
+}
+
+static uint32_t rng_next(void) {
     rng_state = rng_state * 1664525u + 1013904223u;
     return rng_state;
 }
 
-static void shuffle(void) {
-    int val = 1;
-    for (int r = 0; r < 4; r++)
-        for (int c = 0; c < 4; c++) {
-            board[r][c] = (r == 3 && c == 3) ? 0 : val++;
+static void format_u32(uint32_t val, char *dst) {
+    if (val == 0) {
+        dst[0] = '0';
+        dst[1] = '\0';
+        return;
+    }
+    char tmp[12];
+    int len = 0;
+    while (val > 0) {
+        tmp[len++] = (char)('0' + (val % 10));
+        val /= 10;
+    }
+    int pos = 0;
+    while (len > 0) {
+        dst[pos++] = tmp[--len];
+    }
+    dst[pos] = '\0';
+}
+
+static int str_length(const char *s) {
+    int len = 0;
+    while (s[len]) len++;
+    return len;
+}
+
+static bool check_win(void) {
+    int expected = 1;
+    for (int r = 0; r < BOARD_ROWS; r++) {
+        for (int c = 0; c < BOARD_COLS; c++) {
+            if (r == BOARD_ROWS - 1 && c == BOARD_COLS - 1) {
+                if (board[r][c] != 0) return false;
+            } else {
+                if (board[r][c] != expected++) return false;
+            }
         }
-    empty_r = 3; empty_c = 3;
+    }
+    return true;
+}
+
+static void shuffle_board(void) {
+    int val = 1;
+    for (int r = 0; r < BOARD_ROWS; r++) {
+        for (int c = 0; c < BOARD_COLS; c++) {
+            board[r][c] = (r == BOARD_ROWS - 1 && c == BOARD_COLS - 1) ? 0 : val++;
+        }
+    }
+    empty_r = BOARD_ROWS - 1;
+    empty_c = BOARD_COLS - 1;
+
     struct cpu_monitor_info cpu;
-    if (pc_cpu_info(&cpu)) rng_state = (unsigned int)cpu.uptime_ms;
-    else rng_state = 0xDEADBEEF;
-    int dr[] = {-1, 1,  0, 0};
-    int dc[] = { 0, 0, -1, 1};
-    for (int i = 0; i < 500; i++) {
-        int dir = (int)(rng_next() % 4);
-        int nr = empty_r + dr[dir];
-        int nc = empty_c + dc[dir];
-        if (nr < 0 || nr > 3 || nc < 0 || nc > 3) continue;
+    if (pc_cpu_info(&cpu)) {
+        rng_state = (uint32_t)cpu.uptime_ms ^ 0x9B1C5D37u;
+    } else {
+        rng_state ^= 0xA5A55A5Au;
+    }
+
+    const int dr[4] = {-1, 1, 0, 0};
+    const int dc[4] = {0, 0, -1, 1};
+    const int opp[4] = {1, 0, 3, 2};
+    int last_dir = -1;
+
+    for (int step = 0; step < 260; step++) {
+        int dirs[4];
+        int count = 0;
+        for (int d = 0; d < 4; d++) {
+            if (d == last_dir) continue;
+            int nr = empty_r + dr[d];
+            int nc = empty_c + dc[d];
+            if (nr >= 0 && nr < BOARD_ROWS && nc >= 0 && nc < BOARD_COLS) {
+                dirs[count++] = d;
+            }
+        }
+        if (count == 0) continue;
+        int choice = dirs[rng_next() % (uint32_t)count];
+        int nr = empty_r + dr[choice];
+        int nc = empty_c + dc[choice];
         board[empty_r][empty_c] = board[nr][nc];
         board[nr][nc] = 0;
-        empty_r = nr; empty_c = nc;
+        empty_r = nr;
+        empty_c = nc;
+        last_dir = opp[choice];
     }
+
+    if (check_win()) {
+        int nr = empty_r > 0 ? empty_r - 1 : empty_r + 1;
+        board[empty_r][empty_c] = board[nr][empty_c];
+        board[nr][empty_c] = 0;
+        empty_r = nr;
+    }
+
     moves = 0;
-    won = 0;
+    won = false;
+    elapsed_sec = 0;
+    timer_ms = 0;
+    hover_r = -1;
+    hover_c = -1;
 }
 
-static int try_move(int tr, int tc) {
-    if (tr < 0 || tr > 3 || tc < 0 || tc > 3) return 0;
-    if (board[tr][tc] == 0) return 0;
-    int dr = tr - empty_r, dc = tc - empty_c;
-    if ((dr == 0 && (dc == 1 || dc == -1)) || (dc == 0 && (dr == 1 || dr == -1))) {
-        board[empty_r][empty_c] = board[tr][tc];
-        board[tr][tc] = 0;
-        empty_r = tr; empty_c = tc;
-        moves++;
-        if (check_win()) won = 1;
+static bool can_slide(int r, int c) {
+    if (r < 0 || r >= BOARD_ROWS || c < 0 || c >= BOARD_COLS) return false;
+    if (board[r][c] == 0) return false;
+    return (r == empty_r && c != empty_c) || (c == empty_c && r != empty_r);
+}
+
+static bool try_slide(int r, int c) {
+    if (!can_slide(r, c)) return false;
+
+    if (r == empty_r) {
+        if (c < empty_c) {
+            for (int i = empty_c; i > c; i--) {
+                board[r][i] = board[r][i - 1];
+            }
+            board[r][c] = 0;
+            empty_c = c;
+        } else {
+            for (int i = empty_c; i < c; i++) {
+                board[r][i] = board[r][i + 1];
+            }
+            board[r][c] = 0;
+            empty_c = c;
+        }
+    } else if (c == empty_c) {
+        if (r < empty_r) {
+            for (int i = empty_r; i > r; i--) {
+                board[i][c] = board[i - 1][c];
+            }
+            board[r][c] = 0;
+            empty_r = r;
+        } else {
+            for (int i = empty_r; i < r; i++) {
+                board[i][c] = board[i + 1][c];
+            }
+            board[r][c] = 0;
+            empty_r = r;
+        }
+    }
+
+    moves++;
+    play_move_sound();
+
+    if (check_win()) {
+        won = true;
+        play_win_sound();
+    }
+    return true;
+}
+
+static void draw_hud(struct pg_window *window, uint32_t board_x) {
+    char buf[48];
+
+    buf[0] = '\0';
+    char moves_val[12];
+    format_u32(moves, moves_val);
+    const char *mv_hdr = "Moves: ";
+    int p = 0;
+    for (int i = 0; mv_hdr[i]; i++) buf[p++] = mv_hdr[i];
+    for (int i = 0; moves_val[i]; i++) buf[p++] = moves_val[i];
+    buf[p] = '\0';
+    pg_window_text(window, board_x, 12, buf, COLOR_TEXT_MAIN);
+
+    uint32_t mm = elapsed_sec / 60;
+    uint32_t ss = elapsed_sec % 60;
+    buf[0] = 'T'; buf[1] = 'i'; buf[2] = 'm'; buf[3] = 'e'; buf[4] = ':'; buf[5] = ' ';
+    buf[6] = (char)('0' + (mm / 10));
+    buf[7] = (char)('0' + (mm % 10));
+    buf[8] = ':';
+    buf[9] = (char)('0' + (ss / 10));
+    buf[10] = (char)('0' + (ss % 10));
+    buf[11] = '\0';
+    pg_window_text(window, board_x + 115, 12, buf, COLOR_TEXT_MAIN);
+
+    const char *snd_txt = pa_is_muted() ? "Sound: OFF" : "Sound: ON";
+    pg_window_text(window, board_x + 230, 12, snd_txt, COLOR_TEXT_MAIN);
+
+    pg_window_text(window, board_x, 32, "[R] Restart   [M] Sound   [Q] Exit", COLOR_TEXT_MUTED);
+}
+
+static void draw_board(struct pg_window *window, uint32_t board_x, uint32_t board_y) {
+    pg_window_rect(window, (struct pg_rect){board_x - 3, board_y - 3, BOARD_PIXELS + 6, BOARD_PIXELS + 6}, COLOR_BOARD_EDGE);
+    pg_window_rect(window, (struct pg_rect){board_x, board_y, BOARD_PIXELS, BOARD_PIXELS}, COLOR_BOARD_BG);
+
+    for (int r = 0; r < BOARD_ROWS; r++) {
+        for (int c = 0; c < BOARD_COLS; c++) {
+            uint32_t tx = board_x + GAP + (uint32_t)c * (TILE_SIZE + GAP);
+            uint32_t ty = board_y + GAP + (uint32_t)r * (TILE_SIZE + GAP);
+            int val = board[r][c];
+
+            if (val == 0) {
+                pg_window_rect(window, (struct pg_rect){tx, ty, TILE_SIZE, TILE_SIZE}, COLOR_SLOT_EMPTY);
+                pg_window_rect(window, (struct pg_rect){tx + 1, ty + 1, TILE_SIZE - 2, TILE_SIZE - 2}, COLOR_BOARD_BG);
+            } else {
+                uint32_t col = COLOR_TILE_BASE;
+                if (won) {
+                    col = COLOR_TILE_DONE;
+                } else if (r == hover_r && c == hover_c && can_slide(r, c)) {
+                    col = COLOR_TILE_HOVER;
+                }
+
+                pg_window_rect(window, (struct pg_rect){tx, ty, TILE_SIZE, TILE_SIZE}, col);
+                pg_window_rect(window, (struct pg_rect){tx, ty, TILE_SIZE, 3}, col + 0x151515);
+                pg_window_rect(window, (struct pg_rect){tx, ty, 3, TILE_SIZE}, col + 0x151515);
+                pg_window_rect(window, (struct pg_rect){tx, ty + TILE_SIZE - 3, TILE_SIZE, 3}, 0x181825);
+                pg_window_rect(window, (struct pg_rect){tx + TILE_SIZE - 3, ty, 3, TILE_SIZE}, 0x181825);
+
+                char num_str[8];
+                format_u32((uint32_t)val, num_str);
+                int len = str_length(num_str);
+                uint32_t tw = (uint32_t)len * 24;
+                uint32_t nx = tx + (TILE_SIZE > tw ? (TILE_SIZE - tw) / 2 : 0);
+                uint32_t ny = ty + (TILE_SIZE > 24 ? (TILE_SIZE - 24) / 2 : 0);
+                pg_window_text_sized(window, nx, ny, num_str, COLOR_TILE_TEXT, 24);
+            }
+        }
+    }
+}
+
+static void draw_footer(struct pg_window *window, uint32_t board_x, uint32_t board_y) {
+    uint32_t footer_y = board_y + BOARD_PIXELS + 12;
+    if (won) {
+        pg_window_rect(window, (struct pg_rect){board_x, footer_y - 2, BOARD_PIXELS, 32}, COLOR_TILE_DONE);
+        pg_window_text(window, board_x + 18, footer_y + 8, "VICTORY! Solved! Press R to replay", COLOR_TILE_TEXT);
+    } else {
+        pg_window_rect(window, (struct pg_rect){board_x, footer_y - 2, BOARD_PIXELS, 32}, COLOR_WIN_BG);
+        pg_window_text(window, board_x + 22, footer_y + 8, "Click tile or use Arrows / WASD", COLOR_TEXT_MUTED);
+    }
+}
+
+static void redraw(struct pg_window *window) {
+    pg_window_begin(window);
+    pg_window_clear(window, COLOR_WIN_BG);
+
+    uint32_t client_w = window->client.width;
+    uint32_t board_x = client_w > BOARD_PIXELS ? (client_w - BOARD_PIXELS) / 2 : 10;
+    uint32_t board_y = 56;
+
+    draw_hud(window, board_x);
+    draw_board(window, board_x, board_y);
+    draw_footer(window, board_x, board_y);
+
+    pg_window_end(window);
+}
+
+static bool screen_to_cell(const struct pg_window *window, int32_t sx, int32_t sy, int *out_r, int *out_c) {
+    int32_t cx = sx - (int32_t)window->client.x;
+    int32_t cy = sy - (int32_t)window->client.y;
+
+    uint32_t client_w = window->client.width;
+    int32_t bx = (int32_t)(client_w > BOARD_PIXELS ? (client_w - BOARD_PIXELS) / 2 : 10);
+    int32_t by = 56;
+
+    int32_t rx = cx - bx;
+    int32_t ry = cy - by;
+
+    if (rx < 0 || rx >= (int32_t)BOARD_PIXELS || ry < 0 || ry >= (int32_t)BOARD_PIXELS) {
+        return false;
+    }
+
+    int c = rx / (TILE_SIZE + GAP);
+    int r = ry / (TILE_SIZE + GAP);
+    if (r >= 0 && r < BOARD_ROWS && c >= 0 && c < BOARD_COLS) {
+        *out_r = r;
+        *out_c = c;
+        return true;
+    }
+    return false;
+}
+
+static void handle_input(struct pg_window *window, struct pg_event *event) {
+    if (event->type == PG_EVENT_CLOSE) {
+        pg_window_close(window);
+        return;
+    }
+
+    if (event->type == PG_EVENT_KEY) {
+        int32_t k = event->key;
+        if (k == 'q' || k == 'Q') {
+            pg_window_close(window);
+            return;
+        }
+        if (k == 'r' || k == 'R') {
+            shuffle_board();
+            redraw(window);
+            return;
+        }
+        if (k == 'm' || k == 'M') {
+            pa_toggle_mute();
+            redraw(window);
+            return;
+        }
+        if (!won) {
+            bool moved = false;
+            if (k == 'w' || k == 'W') {
+                moved = try_slide(empty_r - 1, empty_c);
+            } else if (k == 's' || k == 'S') {
+                moved = try_slide(empty_r + 1, empty_c);
+            } else if (k == 'a' || k == 'A') {
+                moved = try_slide(empty_r, empty_c - 1);
+            } else if (k == 'd' || k == 'D') {
+                moved = try_slide(empty_r, empty_c + 1);
+            }
+            if (moved) redraw(window);
+        }
+    } else if (event->type == PG_EVENT_SPECIAL_KEY) {
+        if (!won) {
+            bool moved = false;
+            if (event->key == KEYBOARD_SPECIAL_UP) {
+                moved = try_slide(empty_r - 1, empty_c);
+            } else if (event->key == KEYBOARD_SPECIAL_DOWN) {
+                moved = try_slide(empty_r + 1, empty_c);
+            } else if (event->key == KEYBOARD_SPECIAL_LEFT) {
+                moved = try_slide(empty_r, empty_c - 1);
+            } else if (event->key == KEYBOARD_SPECIAL_RIGHT) {
+                moved = try_slide(empty_r, empty_c + 1);
+            }
+            if (moved) redraw(window);
+        }
+    } else if (event->type == PG_EVENT_MOUSE_MOVE) {
+        int cr = -1, cc = -1;
+        bool on_board = screen_to_cell(window, event->x, event->y, &cr, &cc);
+        int new_hr = on_board ? cr : -1;
+        int new_hc = on_board ? cc : -1;
+        if (new_hr != hover_r || new_hc != hover_c) {
+            hover_r = new_hr;
+            hover_c = new_hc;
+            redraw(window);
+        }
+    } else if (event->type == PG_EVENT_MOUSE_DOWN && event->button == 1) {
+        if (!won) {
+            int cr = -1, cc = -1;
+            if (screen_to_cell(window, event->x, event->y, &cr, &cc)) {
+                if (try_slide(cr, cc)) {
+                    redraw(window);
+                }
+            }
+        }
+    }
+}
+
+int puzzle15_main(void) {
+    struct pg_window window;
+    if (!pg_window_center(&window, "15-Puzzle", WIN_WIDTH, WIN_HEIGHT)) {
         return 1;
     }
-    return 0;
-}
 
-static void draw_centered_number(int n, int rx, int ry, int rw, int rh, uint32_t fg, uint32_t bg) {
-    char buf[4];
-    int_to_str(n, buf);
-    int len = str_len(buf);
-    int scale = 3;
-    int glyph_w = 8 * scale;
-    int text_w  = len * glyph_w;
-    int tx = rx + (rw - text_w) / 2;
-    int ty = ry + (rh - 24) / 2;
-    pc_draw_rect(rx, ry, rw, rh, bg);
-    pc_draw_text_sized(tx, ty, buf, fg, bg, 24);
-}
+    sfx_init();
+    shuffle_board();
+    redraw(&window);
 
-static void render(int hover_r, int hover_c) {
-    pc_display_begin_update();
-    pc_draw_rect(WIN_X, WIN_Y, WIN_W, WIN_H, COLOR_BG);
-    pc_draw_text_sized(WIN_X + 30, WIN_Y + 18, "Пятнашки  15-Puzzle", COLOR_HEADER, COLOR_BG, 24);
-    char mv_buf[32];
-    const char *mv_label = "Ходов: ";
-    char mv_num[12]; int_to_str(moves, mv_num);
-    int i = 0, j = 0;
-    while (mv_label[j]) mv_buf[i++] = mv_label[j++];
-    j = 0; while (mv_num[j]) mv_buf[i++] = mv_num[j++];
-    mv_buf[i] = '\0';
-    pc_draw_rect(WIN_X + 30, WIN_Y + 58, 200, 30, COLOR_BG);
-    pc_draw_text_sized(WIN_X + 30, WIN_Y + 62, mv_buf, COLOR_HEADER, COLOR_BG, 16);
-    pc_draw_rect(WIN_X + 270, WIN_Y + 58, 210, 30, COLOR_BG);
-    pc_draw_text_sized(WIN_X + 270, WIN_Y + 62, "R=новая  ESC=выход", COLOR_SUBTEXT, COLOR_BG, 12);
-    pc_draw_rect(BOARD_X - 4, BOARD_Y - 4, BOARD_SIZE + 8, BOARD_SIZE + 8, COLOR_BORDER);
-    pc_draw_rect(BOARD_X, BOARD_Y, BOARD_SIZE, BOARD_SIZE, COLOR_BOARD_BG);
-    for (int r = 0; r < 4; r++) {
-        for (int c = 0; c < 4; c++) {
-            int tx = BOARD_X + c * TILE_SIZE + GAP;
-            int ty = BOARD_Y + r * TILE_SIZE + GAP;
-            int tw = TILE_SIZE - GAP * 2;
-            int th = TILE_SIZE - GAP * 2;
-            int val = board[r][c];
-            if (val == 0) {
-                pc_draw_rect(tx, ty, tw, th, COLOR_EMPTY);
+    while (pg_window_is_open(&window)) {
+        struct pg_event event;
+        bool has_event = pg_window_poll_event(&window, &event);
+
+        if (has_event) {
+            if (event.type == PG_EVENT_REPAINT || event.type == PG_EVENT_MOVE || event.type == PG_EVENT_FOCUS) {
+                redraw(&window);
             } else {
-                uint32_t tile_col = (r == hover_r && c == hover_c)
-                                    ? COLOR_TILE_HL : COLOR_TILE;
-                if (won) tile_col = COLOR_WIN_BG;
-                draw_centered_number(val, tx, ty, tw, th, COLOR_TILE_TXT, tile_col);
+                handle_input(&window, &event);
+            }
+            if (!pg_window_is_open(&window)) break;
+        } else {
+            pc_sleep(16);
+        }
+
+        pa_update();
+
+        if (pg_window_is_minimized(&window)) continue;
+
+        if (!won) {
+            timer_ms += 16;
+            if (timer_ms >= 1000) {
+                timer_ms -= 1000;
+                elapsed_sec++;
+                redraw(&window);
             }
         }
     }
-    if (won) {
-        pc_draw_rect(WIN_X + 60, WIN_Y + 490, 380, 50, COLOR_WIN_BG);
-        pc_draw_text_sized(WIN_X + 90, WIN_Y + 505, "Победа! Нажми R для новой игры", COLOR_WIN_TXT, COLOR_WIN_BG, 16);
-    } else {
-        pc_draw_rect(WIN_X + 60, WIN_Y + 490, 380, 50, COLOR_BG);
-        pc_draw_text_sized(WIN_X + 80, WIN_Y + 505, "Кликни плитку рядом с пустой клеткой", COLOR_SUBTEXT, COLOR_BG, 12);
-    }
-    pc_display_end_update();
-}
 
-static int px_to_cell(int px, int py, int *out_r, int *out_c) {
-    int rel_x = px - BOARD_X;
-    int rel_y = py - BOARD_Y;
-    if (rel_x < 0 || rel_x >= BOARD_SIZE || rel_y < 0 || rel_y >= BOARD_SIZE)
-        return 0;
-    *out_c = rel_x / TILE_SIZE;
-    *out_r = rel_y / TILE_SIZE;
-    return 1;
-}
-
-int main(void) {
-    struct gui_window_request win_req = { .x = WIN_X, .y = WIN_Y, .width = WIN_W, .height = WIN_H };
-    pc_gui_window_register(&win_req);
-    shuffle();
-    int hover_r = -1, hover_c = -1;
-    int last_mouse_x = -1, last_mouse_y = -1;
-    int left_was_down = 0;
-    render(hover_r, hover_c);
-
-    while (1) {
-        int need_redraw = 0;
-        struct mouse_state ms;
-        if (pc_mouse_get(&ms) && ms.has_data) {
-            int cr = -1, cc = -1;
-            int on_board = px_to_cell(ms.x, ms.y, &cr, &cc);
-            if (ms.x != last_mouse_x || ms.y != last_mouse_y) {
-                last_mouse_x = ms.x; last_mouse_y = ms.y;
-                int new_hr = on_board ? cr : -1;
-                int new_hc = on_board ? cc : -1;
-                if (new_hr != hover_r || new_hc != hover_c) {
-                    hover_r = new_hr; hover_c = new_hc;
-                    need_redraw = 1;
-                }
-            }
-            int left_now = (ms.buttons & 1) ? 1 : 0;
-            if (left_now && !left_was_down) {
-                if (!won && on_board) {
-                    if (try_move(cr, cc)) need_redraw = 1;
-                }
-            }
-            left_was_down = left_now;
-        }
-        int key = pc_try_getchar();
-        if (key > 0) {
-            if (key == 27) {
-                break;
-            } else if (key == 'r' || key == 'R') {
-                shuffle();
-                hover_r = -1; hover_c = -1;
-                need_redraw = 1;
-            } else if (!won) {
-                if (key == 'w' || key == 'W')
-                    { if (try_move(empty_r - 1, empty_c)) need_redraw = 1; }
-                else if (key == 's' || key == 'S')
-                    { if (try_move(empty_r + 1, empty_c)) need_redraw = 1; }
-                else if (key == 'a' || key == 'A')
-                    { if (try_move(empty_r, empty_c - 1)) need_redraw = 1; }
-                else if (key == 'd' || key == 'D')
-                    { if (try_move(empty_r, empty_c + 1)) need_redraw = 1; }
-            }
-        }
-        int sp = pc_try_get_special();
-        if (sp > 0 && !won) {
-            if (sp == 1) { if (try_move(empty_r - 1, empty_c)) need_redraw = 1; }
-            if (sp == 2) { if (try_move(empty_r + 1, empty_c)) need_redraw = 1; }
-            if (sp == 3) { if (try_move(empty_r, empty_c - 1)) need_redraw = 1; }
-            if (sp == 4) { if (try_move(empty_r, empty_c + 1)) need_redraw = 1; }
-        }
-        uint32_t wstate = pc_gui_window_state();
-        if (wstate & GUI_WINDOW_STATE_REPAINT) {
-            need_redraw = 1;
-            pc_gui_window_repaint_done();
-        }
-        if (need_redraw) render(hover_r, hover_c);
-        pc_syscall(SYS_SCHED_YIELD, 0, 0, 0);
-    }
-    pc_gui_window_unregister();
-    pc_desktop_redraw();
+    pg_window_close(&window);
     return 0;
+}
+
+void _start(void) {
+    pc_exit(puzzle15_main());
 }

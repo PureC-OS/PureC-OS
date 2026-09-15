@@ -31,6 +31,7 @@ GENERAL_SOURCES := \
 	nano/window.c \
 	gui_demo/main.c \
 	game/tetris/main.c \
+	game/puzzle15/puzzle15.c \
 	files/main.c \
 	files/app.c \
 	files/model.c \
@@ -65,6 +66,7 @@ TARGETS := \
 	$(PROGRAM_DIR)/installer \
 	$(PROGRAM_DIR)/snake \
 	$(PROGRAM_DIR)/tetris \
+	$(PROGRAM_DIR)/puzzle15 \
 	$(PROGRAM_DIR)/terminal \
 	$(PROGRAM_DIR)/nano \
 	$(PROGRAM_DIR)/system \
@@ -168,6 +170,10 @@ $(PROGRAM_DIR)/logview: $(OBJ_DIR)/logview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/tetris: $(OBJ_DIR)/game/tetris/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/puzzle15: $(OBJ_DIR)/game/puzzle15/puzzle15.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

@@ -35,6 +35,9 @@
 /bin/tetris /bin/tetris - 0 bin/programs/tetris
 /bin/program/tetris /bin/program/tetris - 0 bin/programs/tetris
 /bin/tetris /game/tetris - 0 bin/programs/tetris
+/bin/puzzle15 /bin/puzzle15 - 0 bin/programs/puzzle15
+/bin/program/puzzle15 /bin/program/puzzle15 - 0 bin/programs/puzzle15
+/bin/puzzle15 /game/puzzle15 - 0 bin/programs/puzzle15
 /bin/program/settings /bin/program/settings - 0 bin/programs/settings
 /bin/program/monitor /bin/program/monitor - 0 bin/programs/monitor
 /bin/program/disks /bin/program/disks - 0 bin/programs/disks
@@ -59,6 +62,7 @@
 /bin/program/install.desktop /bin/program/install.desktop /bin/program/INSTALL.DES 0 src/userspace/desktop_entries/install.desktop
 /bin/program/disks.desktop /bin/program/disks.desktop /bin/program/DISKS.DES 0 src/userspace/desktop_entries/disks.desktop
 /bin/program/tetris.desktop /bin/program/tetris.desktop /bin/program/TETRIS.DES 0 src/userspace/desktop_entries/tetris.desktop
+/bin/program/puzzle15.desktop /bin/program/puzzle15.desktop /bin/program/PUZZLE15.DES 0 src/userspace/desktop_entries/puzzle15.desktop
 /bin/program/logview.desktop /bin/program/logview.desktop /bin/program/LOGVIEW.DES 0 src/userspace/desktop_entries/logview.desktop
 /bin/program/hexedit.desktop /bin/program/hexedit.desktop /bin/program/HEXEDIT.DES 0 src/userspace/desktop_entries/hexedit.desktop
 /bin/program/notepad.desktop /bin/program/notepad.desktop /bin/program/NOTEPAD.DES 0 src/userspace/desktop_entries/notepad.desktop
