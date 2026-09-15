@@ -173,8 +173,18 @@ void kernel_panic_exception(uint64_t vector,
                             uint64_t rip,
                             uint64_t cs,
                             uint64_t rflags,
-                            uint64_t cr2,
-                            const struct panic_registers *regs) {
+                             uint64_t cr2,
+                             const struct panic_registers *regs) {
+    __asm__ volatile("cli");
+    panic_serial_puts("\r\nEXC vec=");
+    panic_serial_hex(vector, 2);
+    panic_serial_puts(" err=");
+    panic_serial_hex(error_code, 16);
+    panic_serial_puts(" rip=");
+    panic_serial_hex(rip, 16);
+    panic_serial_puts(" cr2=");
+    panic_serial_hex(cr2, 16);
+    panic_serial_puts("\r\n");
     char title[64];
     const char *name = exception_name(vector);
     {

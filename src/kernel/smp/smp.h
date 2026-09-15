@@ -30,5 +30,5 @@ uint32_t smp_online_count(void);
 uint32_t smp_cpu_index(void);
 struct cpu_local *smp_this(void);
 struct cpu_local *smp_cpu(uint32_t index);
-void smp_gs_set(uint32_t index);
+void smp_bind_cpu(uint32_t index);
 void ap_main(void *boot_arg);

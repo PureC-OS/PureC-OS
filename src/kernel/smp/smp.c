@@ -25,20 +25,47 @@ static struct ap_boot_info ap_boot[SMP_MAX_CPUS];
 static uint8_t ap_stacks[SMP_MAX_CPUS][AP_STACK_SIZE]
     __attribute__((aligned(16)));
 static uint32_t online_count = 1;
-static bool gs_active = false;
+static bool smp_booted = false;
+static bool use_rdpid = false;
 
-static void write_gs_base(uint64_t base){
-    uint32_t low = (uint32_t)base;
-    uint32_t high = (uint32_t)(base >> 32);
-    __asm__ volatile("wrmsr" :: "c"(0xC0000101U), "a"(low), "d"(high)
+static void write_tsc_aux(uint32_t value){
+    __asm__ volatile("wrmsr" :: "c"(0xC0000103U), "a"(value), "d"(0U)
                      : "memory");
 }
 
+static bool cpu_has_rdpid(void){
+    uint32_t eax, ebx, ecx, edx;
+    __asm__ volatile("cpuid"
+                     : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                     : "a"(7), "c"(0));
+    return (ebx & (1U << 22)) != 0;
+}
+
+static uint32_t read_cpu_index_rdpid(void){
+    uint32_t index;
+    __asm__ volatile("rdpid %0" : "=r"(index));
+    return index;
+}
+
+static uint32_t cpu_index_from_lapic(void){
+    uint32_t lapic_id = apic_raw_lapic_id();
+    for(uint32_t i = 0; i < SMP_MAX_CPUS; i++){
+        if(cpus[i].present && cpus[i].lapic_id == lapic_id)
+            return i;
+    }
+    return 0;
+}
+
 struct cpu_local *smp_this(void){
-    if(!gs_active) return &cpus[0];
-    struct cpu_local *cpu;
-    __asm__ volatile("mov %%gs:0,%0" : "=r"(cpu));
-    return cpu;
+    if(!smp_booted) return &cpus[0];
+    uint32_t index;
+    if(use_rdpid){
+        index = read_cpu_index_rdpid();
+        if(index >= SMP_MAX_CPUS) index = 0;
+    } else {
+        index = cpu_index_from_lapic();
+    }
+    return &cpus[index];
 }
 
 struct cpu_local *smp_cpu(uint32_t index){
@@ -54,18 +81,19 @@ uint32_t smp_cpu_index(void){
     return smp_this()->index;
 }
 
-void smp_gs_set(uint32_t index){
+void smp_bind_cpu(uint32_t index){
     if(index >= SMP_MAX_CPUS) index = 0;
-    write_gs_base((uint64_t)(uintptr_t)&cpus[index]);
-    gs_active = true;
+    if(use_rdpid) write_tsc_aux(index);
 }
 
 void smp_early_bsp(void){
     memset(cpus, 0, sizeof(cpus));
+    use_rdpid = cpu_has_rdpid();
     cpus[0].present = 1;
     cpus[0].online = 1;
     cpus[0].index = 0;
-    smp_gs_set(0);
+    smp_bind_cpu(0);
+    smp_booted = true;
 }
 
 void ap_main(void *boot_arg){
@@ -74,7 +102,7 @@ void ap_main(void *boot_arg){
     gdt_install_cpu(index);
     idt_install_cpu();
     fpu_enable_cpu();
-    smp_gs_set(index);
+    smp_bind_cpu(index);
     cpus[index].lapic_id = apic_lapic_id();
     apic_cpu_enable();
     __asm__ volatile("sti" ::: "memory");
