@@ -44,19 +44,17 @@ static void write_cr4(uint64_t value) {
     __asm__ volatile("mov %0, %%cr4" ::"r"(value) : "memory");
 }
 
-void fpu_enable_cpu(void) {
-    write_cr0((read_cr0() & ~(FPU_CR0_EM | FPU_CR0_TS)) | FPU_CR0_NE);
-    write_cr4(read_cr4() | FPU_CR4_OSFXSR | FPU_CR4_OSXMMEXCPT);
-    __asm__ volatile("fninit");
-}
-
 void fpu_init(void) {
     if (fpu_ready) return;
     uint32_t eax, ebx, ecx, edx;
     cpuid(1, &eax, &ebx, &ecx, &edx);
     if (!(edx & (1U << 24))) kernel_panic("CPU lacks FXSR, cannot run SSE userspace");
     if (!(edx & (1U << 25))) kernel_panic("CPU lacks SSE, cannot run SSE userspace");
-    fpu_enable_cpu();
+    // Native x87 errors, no emulation, no task-switch traps (eager switch).
+    write_cr0((read_cr0() & ~(FPU_CR0_EM | FPU_CR0_TS)) | FPU_CR0_NE);
+    write_cr4(read_cr4() | FPU_CR4_OSFXSR | FPU_CR4_OSXMMEXCPT);
+    // Canonical clean state: all exceptions masked, MXCSR default.
+    __asm__ volatile("fninit");
     __asm__ volatile("fxsave %0" : "=m"(fpu_template) :: "memory");
     fpu_ready = true;
     klog(KLOG_OK, "fpu: FXSR/SSE enabled, per-thread eager switching");

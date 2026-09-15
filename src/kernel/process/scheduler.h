@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define SCHEDULER_MAX_THREADS 64
+#define SCHEDULER_MAX_THREADS 16
 #define SCHEDULER_STACK_SIZE 16384
 #define SCHEDULER_TIME_SLICE_MS 5
 
@@ -18,7 +18,6 @@ enum thread_state {
 };
 
 struct thread {
-    uint64_t canary_head;
     uint64_t rsp;
     void (*entry)(void *arg);
     void *arg;
@@ -29,18 +28,13 @@ struct thread {
     char name[32];
     uint32_t ticks_remaining;
     uint64_t runtime_ticks;
-    uint32_t waited;
     uint64_t wake_tick;
     uint64_t address_space;
     struct process *process;
     bool user_mode;
-    void *wait_channel;
-    struct thread *wait_next;
-    volatile bool wait_woken;
-    int16_t last_cpu;
     uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
+    // Eager-switched FPU/SSE state (fxsave area, 16-byte aligned).
     uint8_t fpu_state[512] __attribute__((aligned(16)));
-    uint64_t canary_tail;
 };
 
 void scheduler_init(void);
@@ -55,8 +49,6 @@ void scheduler_block(void);
 void scheduler_unblock(int tid);
 void scheduler_exit(void);
 void scheduler_start(void);
-void scheduler_enter(void);
-bool scheduler_is_started(void);
 struct thread *scheduler_current_thread(void);
 int scheduler_current_tid(void);
 uint32_t scheduler_thread_count(void);
@@ -65,8 +57,6 @@ uint64_t scheduler_total_ticks(void);
 uint64_t scheduler_idle_ticks(void);
 void scheduler_set_affinity(int tid, int16_t core);
 int scheduler_get_core_count(void);
-void scheduler_wait_queued(void);
-void scheduler_make_ready(struct thread *thread);
 
 void scheduler_on_timer_interrupt(void);
 void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp);

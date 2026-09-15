@@ -1,6 +1,4 @@
 #include "klog.h"
-#include "../smp/smp.h"
-#include "../sync/spinlock.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/vga.h"
 #include "../../drivers/serial/serial.h"
@@ -18,36 +16,6 @@ static bool klog_verbose = true;
 static bool klog_screen_enabled = true; // если false, логи идут только в serial+ring, не на экран (для userspace)
 static bool klog_inited = false;
 static uint64_t klog_boot_tsc = 0;
-static spinlock_t klog_lock;
-static volatile int32_t klog_lock_owner = -1;
-static uint32_t klog_lock_depth[SMP_MAX_CPUS];
-static uint64_t klog_lock_flags[SMP_MAX_CPUS];
-
-static void klog_enter(void){
-    uint32_t cpu = smp_cpu_index();
-    if(cpu >= SMP_MAX_CPUS) cpu = 0;
-    if(__atomic_load_n(&klog_lock_owner, __ATOMIC_ACQUIRE) == (int32_t)cpu){
-        klog_lock_depth[cpu]++;
-        return;
-    }
-    klog_lock_flags[cpu] = spin_lock_irqsave(&klog_lock);
-    __atomic_store_n(&klog_lock_owner, (int32_t)cpu, __ATOMIC_RELEASE);
-    klog_lock_depth[cpu] = 1;
-}
-
-static void klog_leave(void){
-    uint32_t cpu = smp_cpu_index();
-    if(cpu >= SMP_MAX_CPUS) cpu = 0;
-    if(__atomic_load_n(&klog_lock_owner, __ATOMIC_ACQUIRE) != (int32_t)cpu)
-        return;
-    if(klog_lock_depth[cpu] > 1){
-        klog_lock_depth[cpu]--;
-        return;
-    }
-    klog_lock_depth[cpu] = 0;
-    __atomic_store_n(&klog_lock_owner, -1, __ATOMIC_RELEASE);
-    spin_unlock_irqrestore(&klog_lock, klog_lock_flags[cpu]);
-}
 
 static inline uint64_t rdtsc(void){
     uint32_t lo, hi;
@@ -217,23 +185,19 @@ void klog_clear(void){
 
 void klog_raw(const char *s){
     if(!s) return;
-    klog_enter();
     if(gop_is_available()) gop_set_color(KLOG_FG, KLOG_BG);
     while(*s) klog_putc_raw(*s++);
-    klog_leave();
 }
 
 void klog(enum klog_level lvl, const char *msg){
     if(!msg) return;
     if(lvl==KLOG_DEBUG && !klog_verbose) return;
-    klog_enter();
     size_t mlen = strlen(msg);
     bool need_nl = (mlen==0 || msg[mlen-1]!='\n');
     klog_emit_prefix(lvl);
     if(gop_is_available()) gop_set_color(KLOG_FG, KLOG_BG);
     while(*msg) klog_putc_raw(*msg++);
     if(need_nl) klog_putc_raw('\n');
-    klog_leave();
 }
 
 // вспомогательная для форматированного вывода без префикса
@@ -333,24 +297,22 @@ static void klog_vprintf_internal(const char *fmt, va_list ap){
 
 void klogf(enum klog_level lvl, const char *fmt, ...){
     if(lvl==KLOG_DEBUG && !klog_verbose) return;
-    klog_enter();
     klog_emit_prefix(lvl);
     va_list ap;
     va_start(ap, fmt);
     klog_vprintf_internal(fmt, ap);
     va_end(ap);
+    // гарантируем \n
     if(fmt && fmt[0]){
         size_t l = strlen(fmt);
         if(l>0 && fmt[l-1]!='\n') klog_putc_raw('\n');
     } else {
         klog_putc_raw('\n');
     }
-    klog_leave();
 }
 
 void klog_vf(enum klog_level lvl, const char *fmt, va_list ap){
     if(lvl==KLOG_DEBUG && !klog_verbose) return;
-    klog_enter();
     klog_emit_prefix(lvl);
     klog_vprintf_internal(fmt, ap);
     if(fmt && fmt[0]){
@@ -359,22 +321,17 @@ void klog_vf(enum klog_level lvl, const char *fmt, va_list ap){
     } else {
         klog_putc_raw('\n');
     }
-    klog_leave();
 }
 
 void kprintf(const char *fmt, ...){
-    klog_enter();
     va_list ap;
     va_start(ap, fmt);
     klog_vprintf_internal(fmt, ap);
     va_end(ap);
-    klog_leave();
 }
 
 void kvprintf(const char *fmt, va_list ap){
-    klog_enter();
     klog_vprintf_internal(fmt, ap);
-    klog_leave();
 }
 
 void klog_dump(void){

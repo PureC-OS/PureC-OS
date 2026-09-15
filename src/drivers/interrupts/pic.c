@@ -20,10 +20,3 @@ void pic_mask_all(void){
     outb(0x21,0xFF);
     outb(0xA1,0xFF);
 }
-
-void pic_mask_irq(uint8_t irq){
-    if(irq>=16) return;
-    uint16_t port = irq<8 ? 0x21 : 0xA1;
-    uint8_t mask = inb(port);
-    outb(port, (uint8_t)(mask | (1U<<(irq&7))));
-}

@@ -1,7 +1,6 @@
 #include "panic.h"
 #include "boot_diag.h"
 #include "klog.h"
-#include "../../drivers/apic/apic.h"
 #include "../../drivers/display/gop.h"
 #include "../process/scheduler.h"
 #include <stdbool.h>
@@ -33,39 +32,10 @@ static __attribute__((noreturn)) void panic_halt(void) {
     for (;;) __asm__ volatile("cli; hlt");
 }
 
-static void panic_serial_putc(char c){
-    uint8_t status;
-    do {
-        __asm__ volatile("inb %1,%0" : "=a"(status) : "Nd"((uint16_t)0x3FD));
-    } while(!(status & 0x20));
-    uint8_t b = (uint8_t)c;
-    __asm__ volatile("outb %0,%1" :: "a"(b), "Nd"((uint16_t)0x3F8));
-}
-
-static void panic_serial_puts(const char *s){
-    if(!s) return;
-    while(*s) panic_serial_putc(*s++);
-}
-
-static void panic_serial_hex(uint64_t value, int digits){
-    static const char hexdigits[] = "0123456789abcdef";
-    for(int i = digits - 1; i >= 0; i--)
-        panic_serial_putc(hexdigits[(value >> (i * 4)) & 0xF]);
-}
-
-static volatile uint32_t panic_serial_lock = 0;
-
-static bool panic_serial_try_acquire(void){
-    return !__atomic_test_and_set(&panic_serial_lock, __ATOMIC_ACQUIRE);
-}
-
-static void panic_header_locked(const char *title) {
-    panic_serial_puts("\r\nPANIC! lapic=");
-    panic_serial_hex(apic_raw_lapic_id(), 8);
-    panic_serial_puts(" reason=");
-    panic_serial_puts(title ? title : "unknown");
-    panic_serial_puts("\r\n");
-    if(__atomic_test_and_set(&panic_active, __ATOMIC_ACQUIRE)) panic_halt();
+static void panic_header(const char *title) {
+    __asm__ volatile("cli");
+    if (panic_active) panic_halt();
+    panic_active = true;
     gop_cancel_compose();
     klog_set_screen_enabled(true);
     klog_clear();
@@ -86,7 +56,7 @@ static void panic_thread_info(void) {
         klog(KLOG_ERROR, "CPU:  <none>  (scheduler not running)");
         return;
     }
-    klogf(KLOG_ERROR, "CPU:  tid=%u  name=%s  state=%u",
+    klogf(KLOG_ERROR, "CPU:  tid=%-4u  name=%-16s  state=%u",
           t->id, t->name[0] ? t->name : "?", (unsigned int)t->state);
     klogf(KLOG_ERROR, "      rsp=0x%016llx  entry=%p",
           (unsigned long long)t->rsp, t->entry);
@@ -162,9 +132,7 @@ static void panic_footer(void) {
     klog(KLOG_ERROR, "https://github.com/PureC-OS/PureC-OS/issues/new");
 }
 void kernel_panic(const char *reason) {
-    __asm__ volatile("cli");
-    if(!panic_serial_try_acquire()) panic_halt();
-    panic_header_locked(reason);
+    panic_header(reason);
     panic_ctrl_regs();
     panic_thread_info();
     uint64_t rbp;
@@ -180,19 +148,8 @@ void kernel_panic_exception(uint64_t vector,
                             uint64_t rip,
                             uint64_t cs,
                             uint64_t rflags,
-                             uint64_t cr2,
-                             const struct panic_registers *regs) {
-    __asm__ volatile("cli");
-    if(!panic_serial_try_acquire()) panic_halt();
-    panic_serial_puts("\r\nEXC vec=");
-    panic_serial_hex(vector, 2);
-    panic_serial_puts(" err=");
-    panic_serial_hex(error_code, 16);
-    panic_serial_puts(" rip=");
-    panic_serial_hex(rip, 16);
-    panic_serial_puts(" cr2=");
-    panic_serial_hex(cr2, 16);
-    panic_serial_puts("\r\n");
+                            uint64_t cr2,
+                            const struct panic_registers *regs) {
     char title[64];
     const char *name = exception_name(vector);
     {
@@ -206,7 +163,7 @@ void kernel_panic_exception(uint64_t vector,
         *p = '\0';
     }
 
-    panic_header_locked(title);
+    panic_header(title);
 
     klogf(KLOG_ERROR, "error_code: 0x%016llx  CS: 0x%04llx",
           (unsigned long long)error_code, (unsigned long long)cs);
@@ -237,9 +194,7 @@ void kernel_panic_exception(uint64_t vector,
 void kernel_panic_manual(const char *reason,
                           uint64_t rip, uint64_t rsp, uint64_t rbp,
                           const struct panic_registers *regs) {
-    __asm__ volatile("cli");
-    if(!panic_serial_try_acquire()) panic_halt();
-    panic_header_locked(reason);
+    panic_header(reason);
     klog(KLOG_ERROR, "[manual panic — triggered by kernel code]");
     klog(KLOG_ERROR, "");
     panic_ctrl_regs();

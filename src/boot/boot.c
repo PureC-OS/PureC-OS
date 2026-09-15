@@ -20,7 +20,6 @@
 #include "../kernel/diagnostics/boot_diag.h"
 #include "../kernel/diagnostics/panic.h"
 #include "../lib/string.h"
-#include "../mm/pmm.h"
 #include "install_source.h"
 
 __attribute__((used, section(".requests_start_marker")))
@@ -186,41 +185,6 @@ void boot_log_modules(void){
 uint64_t boot_get_module_count(void){
     if(!module_request.response) return 0;
     return module_request.response->module_count;
-}
-
-extern char _kernel_end[];
-
-static bool range_in_usable_ram(uint64_t base, uint64_t size){
-    if(!size || base + size < base) return false;
-    if(!memmap_response_ptr) return false;
-    uint64_t end = base + size;
-    for(uint64_t i = 0; i < memmap_response_ptr->entry_count; i++){
-        const struct limine_memmap_entry *e = memmap_response_ptr->entries[i];
-        if(!e || e->type != LIMINE_MEMMAP_USABLE) continue;
-        if(base >= e->base && end <= e->base + e->length) return true;
-    }
-    return false;
-}
-
-void boot_reserve_kernel_memory(void){
-    if(kernel_address_request.response){
-        uint64_t vbase = kernel_address_request.response->virtual_base;
-        uint64_t pbase = kernel_address_request.response->physical_base;
-        uint64_t kend = (uint64_t)(uintptr_t)&_kernel_end;
-        if(kend > vbase)
-            pmm_reserve(pbase, kend - vbase);
-    }
-    if(module_request.response && module_request.response->modules){
-        for(uint64_t i = 0; i < module_request.response->module_count; i++){
-            struct limine_file *m = module_request.response->modules[i];
-            if(!m || !m->address || !m->size) continue;
-            uint64_t addr = (uint64_t)(uintptr_t)m->address;
-            uint64_t phys = (addr >= hhdm_offset_global && hhdm_offset_global)
-                ? addr - hhdm_offset_global : addr;
-            if(range_in_usable_ram(phys, m->size))
-                pmm_reserve(phys, m->size);
-        }
-    }
 }
 
 void _start(void) {

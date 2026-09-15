@@ -8,7 +8,6 @@
 
 void pmm_init(const struct limine_memmap_response *memory_map,
                uint64_t hhdm_offset);
-void pmm_reserve(uint64_t physical_base, uint64_t size);
 uint64_t pmm_allocate_page(void);
 uint64_t pmm_allocate_contiguous(uint64_t page_count);
 void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count);

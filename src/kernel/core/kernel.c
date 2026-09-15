@@ -20,7 +20,6 @@ extern struct limine_smp_response *smp_response_ptr;
 extern uint64_t hhdm_offset_global;
 #include <stdint.h>
 
-extern void boot_reserve_kernel_memory(void);
 static inline int64_t do_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4, uint64_t a5){
     int64_t ret;
     __asm__ volatile("int $0x80" : "=a"(ret) : "a"(n), "b"(a1), "c"(a2), "d"(a3), "S"(a4), "D"(a5) : "r10","r8","memory");
@@ -43,7 +42,6 @@ void kernel_main(struct limine_framebuffer *fb) {
     boot_diag_checkpoint(BOOT_STAGE_SYSTEM_INFO,"initializing physical memory");
     pmm_init(memmap_response_ptr,hhdm_offset_global);
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
-    boot_reserve_kernel_memory();
     vmm_init();
     fpu_init();
     power_init(); // ACPI tables + _S5/ResetReg discovery (needs only HHDM+RSDP)

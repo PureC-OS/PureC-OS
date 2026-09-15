@@ -2,5 +2,4 @@
 #include <stdint.h>
 
 void gdt_init(void);
-void gdt_install_cpu(uint32_t cpu);
 void gdt_set_kernel_stack(uint64_t stack_top);
