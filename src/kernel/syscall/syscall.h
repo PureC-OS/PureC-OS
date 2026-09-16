@@ -12,11 +12,8 @@
 #define SYS_DRAW_LINE 101
 #define SYS_GET_MOUSE 102
 #define SYS_FB_INFO 103
-#define SYS_DRAW_TEXT 104
-#define SYS_DRAW_TEXT_SIZED 105
+
 #define SYS_SCROLL_RECT_UP 106
-#define SYS_SET_FONT_FACE 107
-#define SYS_GET_FONT_FACE 108
 #define SYS_FB_BEGIN_UPDATE 109
 #define SYS_FB_END_UPDATE 110
 #define SYS_FILE_OPEN   200
@@ -79,6 +76,7 @@
 #define SYS_PROCESS_LIST 257
 #define SYS_TRY_GET_SPECIAL 258
 #define SYS_NET_PING 259
+#define SYS_NET_IF_LIST 290
 #define SYS_WIFI_SCAN 260
 #define SYS_WIFI_LIST 261
 #define SYS_WIFI_CONNECT 262
@@ -96,7 +94,7 @@
 #define SYS_AUDIO_PCM_START 279
 #define SYS_AUDIO_PCM_STOP 280
 #define SYS_DIR_LIST_LONG 288
-#define SYS_PANIC_TEST    299   /* ручной тест экрана паники */
+#define SYS_PANIC_TEST    299
 
 #define FS_TYPE_FAT32 0
 #define FS_TYPE_EXT2 1
@@ -132,6 +130,28 @@ struct network_ping_result {
     uint16_t sequence;
     uint8_t ttl;
     uint8_t reserved;
+};
+
+#define NET_IF_NAME_CAPACITY 16
+#define NET_IF_MAX_COUNT 4
+
+struct net_if_info {
+    char name[NET_IF_NAME_CAPACITY];
+    uint8_t mac[6];
+    uint16_t mtu;
+    uint32_t link_up;
+    uint32_t has_ip;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    uint32_t dns_server;
+    uint32_t dhcp_bound;
+    uint64_t rx_packets;
+    uint64_t tx_packets;
+    uint64_t rx_bytes;
+    uint64_t tx_bytes;
+    uint64_t rx_dropped;
+    uint64_t tx_dropped;
 };
 
 #define GUI_WINDOW_STATE_FOCUSED 1
@@ -231,15 +251,6 @@ struct framebuffer_info {
     char protocol_name[16];
 };
 
-struct framebuffer_text_request {
-    uint32_t x;
-    uint32_t y;
-    const char *text;
-    uint32_t fg;
-    uint32_t bg;
-    uint32_t size;
-};
-
 struct framebuffer_scroll_request {
     uint32_t x;
     uint32_t y;
@@ -293,6 +304,9 @@ struct battery_info {
     char name[32];
     char status_text[32];
 };
+
+#define BATTERY_PERCENT_UNKNOWN 0xFFFFFFFFu
+#define BATTERY_VALUE_UNKNOWN_U32 0u
 
 #define AUDIO_BACKEND_NONE 0
 #define AUDIO_BACKEND_PC_SPEAKER 1

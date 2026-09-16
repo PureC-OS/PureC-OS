@@ -87,6 +87,10 @@ void pc_draw_text(uint32_t x, uint32_t y, const char *text,
 void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text,
                         uint32_t foreground, uint32_t background,
                         uint32_t size);
+void pc_draw_text_tr(uint32_t x, uint32_t y, const char *text,
+                     uint32_t foreground);
+void pc_draw_text_sized_tr(uint32_t x, uint32_t y, const char *text,
+                           uint32_t foreground, uint32_t size);
 bool pc_mouse_get(struct mouse_state *state);
 int32_t pc_list_disks(struct storage_device_info *devices, uint32_t capacity);
 void pc_reboot(void);
@@ -112,6 +116,7 @@ int32_t pc_wifi_list(struct wifi_network_info *networks, uint32_t capacity);
 int32_t pc_wifi_connect(const char *ssid, const char *password);
 int32_t pc_wifi_disconnect(void);
 bool pc_wifi_status(struct wifi_status_info *status);
+int32_t pc_net_if_list(struct net_if_info *infos, uint32_t capacity);
 int32_t pc_save_klog(const char *device, const char *path);
 int32_t pc_get_root_device(char *buffer, uint32_t capacity);
 int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb);
@@ -122,5 +127,5 @@ int32_t pc_ext2_stat(const char *path, struct ext2_stat_info *out);
 int32_t pc_ext2_inode(uint32_t ino, struct ext2_stat_info *out);
 int32_t pc_ext2_super(struct ext2_super_info *out);
 int32_t pc_ext2_blocks(const char *path, struct ext2_blocks_info *out);
-void pc_panic_test(const char *message);  /* ручной тест экрана паники */
+void pc_panic_test(const char *message);
 void pc_exit(int32_t status) __attribute__((noreturn));

@@ -1,5 +1,6 @@
 #include "include/purec.h"
 #include "../kernel/syscall/syscall.h"
+#include "../gfx/text.h"
 
 int64_t pc_syscall(uint64_t number, uint64_t argument1,
                    uint64_t argument2, uint64_t argument3){
@@ -339,23 +340,39 @@ void pc_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height,
     (void)syscall5(SYS_DRAW_RECT,x,y,width,height,color);
 }
 
+static void pc_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                       uint32_t color, void *ctx){
+    (void)ctx;
+    if(w && h) pc_draw_rect(x, y, w, h, color);
+}
+
 void pc_draw_text(uint32_t x, uint32_t y, const char *text,
                   uint32_t foreground, uint32_t background){
-    struct framebuffer_text_request request={
-        .x=x,.y=y,.text=text,.fg=foreground,.bg=background,.size=8
-    };
-    (void)pc_syscall(SYS_DRAW_TEXT,(uint64_t)(uintptr_t)&request,0,0);
+    if(!text || !*text) return;
+    gfx_draw_text_opaque(text, x, y, foreground, background, 8,
+                         GFX_FONT_CLASSIC, pc_rect_cb, 0);
 }
 
 void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text,
                         uint32_t foreground, uint32_t background,
                         uint32_t size){
-    if(size<8) size=8;
-    if(size>48) size=48;
-    struct framebuffer_text_request request={
-        .x=x,.y=y,.text=text,.fg=foreground,.bg=background,.size=size
-    };
-    (void)pc_syscall(SYS_DRAW_TEXT_SIZED,(uint64_t)(uintptr_t)&request,0,0);
+    if(!text || !*text) return;
+    gfx_draw_text_opaque(text, x, y, foreground, background, size,
+                         GFX_FONT_CLASSIC, pc_rect_cb, 0);
+}
+
+void pc_draw_text_tr(uint32_t x, uint32_t y, const char *text,
+                     uint32_t foreground){
+    if(!text || !*text) return;
+    gfx_draw_text(text, x, y, foreground, 8,
+                  GFX_FONT_CLASSIC, pc_rect_cb, 0);
+}
+
+void pc_draw_text_sized_tr(uint32_t x, uint32_t y, const char *text,
+                           uint32_t foreground, uint32_t size){
+    if(!text || !*text) return;
+    gfx_draw_text(text, x, y, foreground, size,
+                  GFX_FONT_CLASSIC, pc_rect_cb, 0);
 }
 
 bool pc_mouse_get(struct mouse_state *state){
@@ -420,6 +437,10 @@ int32_t pc_wifi_connect(const char *ssid, const char *password){
 int32_t pc_wifi_disconnect(void){ return (int32_t)pc_syscall(SYS_WIFI_DISCONNECT,0,0,0); }
 bool pc_wifi_status(struct wifi_status_info *status){
     return status && pc_syscall(SYS_WIFI_STATUS,(uint64_t)(uintptr_t)status,0,0)>=0;
+}
+int32_t pc_net_if_list(struct net_if_info *infos, uint32_t capacity){
+    if(capacity>NET_IF_MAX_COUNT) return -1;
+    return (int32_t)pc_syscall(SYS_NET_IF_LIST,(uint64_t)(uintptr_t)infos,capacity,0);
 }
 int32_t pc_save_klog(const char *device, const char *path){
     if(!device || !path) return -1;

@@ -70,7 +70,7 @@ static void draw_storage_page(struct pg_window *window,
 
 void settings_app_draw(struct settings_app *app,struct pg_window *window,
                        const struct pg_event *event){
-    /* Live theme preview: the Settings window itself follows the theme. */
+
     window->theme=pg_theme_by_name(app->appearance.theme);
     pg_window_begin(window);
     if(pg_window_is_minimized(window)){ pg_window_end(window); return; }
@@ -91,7 +91,7 @@ void settings_app_draw(struct settings_app *app,struct pg_window *window,
     const char *footer=app->tab==0
         ? "Sound changes are applied and saved immediately"
         : app->tab==1 ? "Destructive disk actions require confirmation"
-        : app->tab==2 ? "Network driver work is staged for the next iteration"
+        : app->tab==2 ? "Wired + Wi-Fi status, DHCP/DNS, ping test"
                       : "Appearance saves to /config/appear.ini, desktop picks it up";
     pg_window_text(window,18,footer_y+13,footer,0xBAC2DE);
     pg_window_end(window);

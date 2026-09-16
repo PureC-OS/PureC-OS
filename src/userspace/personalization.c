@@ -1,6 +1,6 @@
 #include "personalization.h"
 #include "wallpaper.h"
-#include "../drivers/display/gop.h"
+#include "display.h"
 #include "../drivers/interrupts/timer.h"
 #include "../fs/vfs.h"
 #include "../kernel/diagnostics/klog.h"
@@ -83,7 +83,7 @@ uint32_t personalization_font_face(const char *font){
     if(!font) return 1;
     if(strcmp(font,"classic")==0) return 0;
     if(strcmp(font,"bold")==0) return 2;
-    return 1; /* clean + future *.ttf fallback */
+    return 1;
 }
 
 uint32_t personalization_font_size_clamped(uint32_t size){
@@ -95,7 +95,7 @@ uint32_t personalization_font_size_clamped(uint32_t size){
 bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
-    if(!vfs_is_root_mounted()) return true; /* early boot: defaults */
+    if(!vfs_is_root_mounted()) return true;
     filesystem_syscall_lock();
     int32_t fd=vfs_open(PERSONALIZATION_PATH);
     char buffer[512];
@@ -157,14 +157,14 @@ static bool same_personalization(const struct personalization *a,
 void personalization_apply(const struct personalization *p){
     if(!p) return;
     uint32_t face=personalization_font_face(p->font);
-    gop_set_font_face(face==0 ? GOP_FONT_CLASSIC
-        : face==2 ? GOP_FONT_BOLD : GOP_FONT_CLEAN);
+    display_set_font_face(face==0 ? DISPLAY_FONT_CLASSIC
+        : face==2 ? DISPLAY_FONT_BOLD : DISPLAY_FONT_CLEAN);
     wallpaper_set_path(p->wallpaper);
 }
 
 bool personalization_poll(void){
     uint64_t now=timer_ticks();
-    if(g_has_current && now-g_last_poll_tick<500) return false; /* ~2Hz, ms */
+    if(g_has_current && now-g_last_poll_tick<500) return false;
     g_last_poll_tick=now;
     struct personalization next;
     personalization_load(&next);

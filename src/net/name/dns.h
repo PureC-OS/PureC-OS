@@ -18,6 +18,7 @@ enum dns_result {
 
 bool dns_init(void);
 bool dns_set_server(struct net_device *device, uint32_t server);
+uint32_t dns_get_server(struct net_device *device);
 enum dns_result dns_resolve_ipv4(struct net_device *device,
                                  const char *hostname, uint32_t timeout_ms,
                                  uint32_t *address);

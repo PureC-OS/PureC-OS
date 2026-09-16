@@ -4,6 +4,7 @@
 #include "apps/desktop_apps.h"
 #include "apps/desktop_entries.h"
 #include "apps/audio_panel.h"
+#include "apps/bottom_panel.h"
 #include "window_manager.h"
 #include "syscall.h"
 #include "audio.h"
@@ -245,6 +246,7 @@ static void draw_desktop(void){
     audio_panel_draw(desktop_width);
     draw_desktop_icons();
     draw_power_button();
+    bottom_panel_draw(desktop_width, desktop_height);
 }
 
 
@@ -254,6 +256,7 @@ static void redraw_scene(void){
     if(desktop_apps_is_visible()) desktop_apps_draw();
     audio_panel_draw(desktop_width);
     draw_power_menu();
+    bottom_panel_draw(desktop_width, desktop_height);
     mouse_end_framebuffer_update();
 }
 
@@ -319,13 +322,49 @@ static void launch_entry(const struct desktop_entry *e){
     }
 }
 
+static void service_bottom_panel_actions(void){
+    enum bottom_panel_action kind;
+    char path[128];
+    char builtin[16];
+    if(!bottom_panel_take_action(&kind, path, sizeof(path),
+                                 builtin, sizeof(builtin)))
+        return;
+    if(kind == BOTTOM_ACTION_EXEC && path[0]){
+        if(strcmp(path, "/bin/installer") == 0)
+            launch_installer();
+        else
+            (void)userspace_run_program(path);
+    } else if(kind == BOTTOM_ACTION_BUILTIN && builtin[0]){
+        if(strcmp(builtin, "clock") == 0)
+            desktop_apps_open(DESKTOP_APP_CLOCK, desktop_width, desktop_height);
+        else if(strcmp(builtin, "calc") == 0)
+            desktop_apps_open(DESKTOP_APP_CALCULATOR, desktop_width, desktop_height);
+        else if(strcmp(builtin, "calendar") == 0)
+            desktop_apps_open(DESKTOP_APP_CALENDAR, desktop_width, desktop_height);
+    } else if(kind == BOTTOM_ACTION_REBOOT){
+        desktop_apps_save_time();
+        (void)userspace_syscall(SYS_REBOOT, 0, 0, 0);
+    } else if(kind == BOTTOM_ACTION_SHUTDOWN){
+        desktop_apps_save_time();
+        (void)userspace_syscall(SYS_SHUTDOWN, 0, 0, 0);
+    }
+}
+
 static void handle_desktop_mouse(void){
     struct mouse_state mouse = mouse_get_state();
     bool pressed  = (mouse.buttons & 1) && !(previous_mouse_buttons & 1);
     bool released = !(mouse.buttons & 1) && (previous_mouse_buttons & 1);
     bool redraw   = false;
     bool consumed = false;
-    if(pressed && point_inside(mouse.x, mouse.y,
+    if(!consumed){
+        bool panel_redraw = false;
+        consumed = bottom_panel_handle_mouse(
+            mouse.x, mouse.y, mouse.buttons, pressed, released,
+            desktop_width, desktop_height, &panel_redraw);
+        redraw = redraw || panel_redraw;
+        if(consumed) service_bottom_panel_actions();
+    }
+    if(pressed && !consumed && point_inside(mouse.x, mouse.y,
                                desktop_width - 38, 3, 30, 22)){
         power_menu_visible = !power_menu_visible;
         consumed = true;
@@ -386,10 +425,12 @@ static void handle_desktop_mouse(void){
         if(e){
             int32_t next_x = mouse.x - icon_drag_offset_x;
             int32_t next_y = mouse.y - icon_drag_offset_y;
+            int32_t max_y = (int32_t)desktop_height - (int32_t)ICON_H
+                - (int32_t)BOTTOM_PANEL_HEIGHT;
             if(next_x < 0) next_x = 0;
             if(next_x > (int32_t)desktop_width  - ICON_W) next_x = (int32_t)desktop_width  - ICON_W;
-            if(next_y < TOPBAR_HEIGHT)                     next_y = TOPBAR_HEIGHT;
-            if(next_y > (int32_t)desktop_height - ICON_H)  next_y = (int32_t)desktop_height - ICON_H;
+            if(next_y < (int32_t)TOPBAR_HEIGHT)          next_y = (int32_t)TOPBAR_HEIGHT;
+            if(next_y > max_y)                           next_y = max_y;
             if((uint32_t)next_x != e->x || (uint32_t)next_y != e->y){
                 icon_drag_moved = true;
                 desktop_entries_set_position((uint32_t)dragged_icon,
@@ -463,6 +504,7 @@ void userspace_init(void){
     mouse_set_bounds((int32_t)desktop_width, (int32_t)desktop_height);
     userspace_set_mouse_debug(false);
     audio_panel_init();
+    bottom_panel_init();
     desktop_apps_init();
     desktop_entries_set_installer_visible(!installation_present());
     personalization_poll();
@@ -493,6 +535,7 @@ void userspace_input_thread(void *arg){
             redraw_managed_scene(0);
         handle_desktop_mouse();
         desktop_apps_update();
+        if(bottom_panel_needs_redraw()) redraw_managed_scene(0);
         scheduler_sleep(1);
     }
 }
@@ -599,6 +642,7 @@ void userspace_run(void){
         while(!window_manager_has_focus() && keyboard_try_getc(&c))
             (void)desktop_apps_handle_key(c);
         desktop_apps_update();
+        if(bottom_panel_needs_redraw()) redraw_managed_scene(0);
 
         __asm__ volatile("pause");
         for(volatile uint32_t wait = 0; wait < 10000; wait++){

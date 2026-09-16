@@ -83,11 +83,11 @@
 | **101** | `SYS_DRAW_LINE` | `pc_syscall(SYS_DRAW_LINE, ...)` | Рисование отрезка прямой линии |
 | **102** | `SYS_GET_MOUSE` | `pc_mouse_get()` | Опрос координат и кнопок мыши |
 | **103** | `SYS_FB_INFO` | `pc_display_get_info()` | Получение параметров видеорежима (GOP) |
-| **104** | `SYS_DRAW_TEXT` | `pc_draw_text()` | Отрисовка текста стандартным шрифтом 8x16 |
-| **105** | `SYS_DRAW_TEXT_SIZED` | `pc_draw_text_sized()` | Отрисовка масштабируемого текста (8..48 px) |
+| **104** | ~~`SYS_DRAW_TEXT`~~ удалён | — | Текст рисует userspace-бэкенд `src/gfx/text.h` поверх `SYS_DRAW_RECT`; `pc_draw_text()` в libc сохранён и работает без ядра |
+| **105** | ~~`SYS_DRAW_TEXT_SIZED`~~ удалён | — | Аналогично, `pc_draw_text_sized()` рендерится в userspace |
 | **106** | `SYS_SCROLL_RECT_UP` | `pc_syscall(SYS_SCROLL_RECT_UP, ...)` | Прокрутка прямоугольной области вверх |
-| **107** | `SYS_SET_FONT_FACE` | `pc_syscall(SYS_SET_FONT_FACE, ...)` | Выбор начертания шрифта (Normal / Bold) |
-| **108** | `SYS_GET_FONT_FACE` | `pc_syscall(SYS_GET_FONT_FACE, ...)` | Получение текущего начертания шрифта |
+| **107** | ~~`SYS_SET_FONT_FACE`~~ удалён | — | Начертание — настройка бэкенда (`gfx_font_face_t`), у ядра шрифтов нет |
+| **108** | ~~`SYS_GET_FONT_FACE`~~ удалён | — | См. выше |
 | **109** | `SYS_FB_BEGIN_UPDATE` | `pc_display_begin_update()` | Захват кадра (скрытие курсора перед рисованием) |
 | **110** | `SYS_FB_END_UPDATE` | `pc_display_end_update()` | Окончание кадра (восстановление курсора) |
 | **200** | `SYS_FILE_OPEN` (`SYS_OPEN`) | `pc_file_open()`, `open()`, `fopen()` | Открытие файла по пути |
@@ -152,6 +152,7 @@
 | **257** | `SYS_PROCESS_LIST` | `pc_process_list()` | Список запущенных процессов и статистика |
 | **258** | `SYS_TRY_GET_SPECIAL` | `pc_try_get_special()` | Чтение спец. клавиш (стрелки, F-клавиши) |
 | **259** | `SYS_NET_PING` | `pc_ping()` | ICMP Ping хоста по IP или доменному имени |
+| **281** | `SYS_AC_INFO` | `pc_ac_info()` | AC-адаптер: найден ли, от сети или от батареи |
 | **260** | `SYS_WIFI_SCAN` | `pc_wifi_scan()` | Запуск фонового сканирования Wi-Fi сетей |
 | **261** | `SYS_WIFI_LIST` | `pc_wifi_list()` | Получение списка обнаруженных Wi-Fi точек |
 | **262** | `SYS_WIFI_CONNECT` | `pc_wifi_connect()` | Подключение к Wi-Fi сети (SSID + пароль) |
@@ -174,6 +175,7 @@
 | **279** | `SYS_AUDIO_PCM_START` | `pc_audio_pcm_start()` | Запуск воспроизведения цифрового PCM аудио |
 | **280** | `SYS_AUDIO_PCM_STOP` | `pc_audio_pcm_stop()` | Немедленная остановка воспроизведения PCM |
 | **288** | `SYS_DIR_LIST_LONG` | `pc_directory_list_long()` | Расширенное чтение каталога (длинные имена) |
+| **290** | `SYS_NET_IF_LIST` | `pc_net_if_list()` | Список проводных интерфейсов: link/IP/GW/DNS/DHCP/статистика |
 
 ---
 

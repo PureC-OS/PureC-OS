@@ -16,6 +16,11 @@ void window_manager_finish_repaint(uint32_t pid);
 bool window_manager_handle_pointer(int32_t x, int32_t y, bool pressed,
                                    bool *focus_changed);
 bool window_manager_has_focus(void);
+uint32_t window_manager_focused_pid(void);
+bool window_manager_focus_pid(uint32_t pid);
+uint32_t window_manager_list(uint32_t *pids,
+                             struct gui_window_request *frames,
+                             uint32_t capacity);
 void window_manager_set_suspended(bool suspended);
 void window_manager_request_repaint(uint32_t excluded_pid);
 bool window_manager_repaint_pending(void);

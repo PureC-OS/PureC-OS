@@ -36,30 +36,30 @@ bool power_battery_get(struct battery_info *out) {
     if (!out)
         return false;
     memset(out, 0, sizeof(*out));
-    static uint32_t call_count = 0;
-    call_count++;
-    uint32_t percent = 75 + (call_count % 26);
-    if (percent > 100)
-        percent = 100;
-    bool charging = (call_count % 4) < 3;
-
-    bool present = acpi_has_battery();
-    if (!acpi_is_ready()) {
-        present = true;
-    }
+    bool present = acpi_is_ready() ? acpi_has_battery() : false;
 
     out->present = present ? 1 : 0;
-    out->percent = percent;
-    out->charging = charging ? 1 : 0;
-    out->remaining_minutes = charging ? (100 - percent) * 2 : percent * 3;
-    out->voltage_mv = 12000 + percent * 10;
-    out->current_ma = charging ? 1500 : -800;
-    strncpy(out->name, "BAT0", sizeof(out->name) - 1);
-    if (charging && percent >= 100)
-        strncpy(out->status_text, "Charged", sizeof(out->status_text) - 1);
-    else if (charging)
-        strncpy(out->status_text, "Charging", sizeof(out->status_text) - 1);
+    out->percent = BATTERY_PERCENT_UNKNOWN;
+    out->charging = 0;
+    out->remaining_minutes = 0;
+    out->voltage_mv = 0;
+    out->current_ma = 0;
+
+    const char *aname = acpi_battery_name();
+    if (present && aname && aname[0]) {
+        strncpy(out->name, aname, sizeof(out->name) - 1);
+        out->name[sizeof(out->name) - 1] = '\0';
+    } else if (present) {
+        strncpy(out->name, "BAT0", sizeof(out->name) - 1);
+    } else {
+        strncpy(out->name, "none", sizeof(out->name) - 1);
+    }
+
+    if (!present)
+        strncpy(out->status_text, "No battery", sizeof(out->status_text) - 1);
+    else if (!acpi_battery_has_bst() && !acpi_battery_has_bif())
+        strncpy(out->status_text, "Unknown (no _BIF/_BST)", sizeof(out->status_text) - 1);
     else
-        strncpy(out->status_text, "Discharging", sizeof(out->status_text) - 1);
+        strncpy(out->status_text, "Unknown (no AML)", sizeof(out->status_text) - 1);
     return true;
 }

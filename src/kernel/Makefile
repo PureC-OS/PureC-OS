@@ -94,6 +94,7 @@ C_SOURCES := \
 	userspace/apps/calendar_app.c \
 	userspace/apps/calculator_app.c \
 	userspace/apps/desktop_apps.c \
+	userspace/apps/bottom_panel.c \
 	kernel/process/scheduler.c \
 	drivers/power/power.c \
 	drivers/audio/audio_hda.c \

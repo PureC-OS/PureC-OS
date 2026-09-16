@@ -48,9 +48,25 @@ GENERAL_SOURCES := \
 	login/main.c \
  	monitor/main.c \
 	disks/main.c \
+	devmgr/main.c \
 	logview/main.c \
  	imgview/main.c \
- 	fputest/main.c
+ 	fputest/main.c \
+	cd/cd.c \
+	help/help.c \
+	ls/ls.c \
+	cat/cat.c \
+	touch/touch.c \
+	mkdir/mkdir.c \
+	mkfs/mkfs.c \
+	pwd/pwd.c \
+	clear/clear.c \
+	echo/echo.c \
+	battery/battery.c \
+	reboot/reboot.c \
+	poweroff/poweroff.c \
+	shutdown/shutdown.c \
+	halt/halt.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
@@ -78,11 +94,27 @@ TARGETS := \
 	$(PROGRAM_DIR)/login \
  	$(PROGRAM_DIR)/monitor \
 	$(PROGRAM_DIR)/disks \
+	$(PROGRAM_DIR)/devmgr \
 	$(PROGRAM_DIR)/logview \
  	$(PROGRAM_DIR)/hexedit \
  	$(PROGRAM_DIR)/imgview \
  	$(PROGRAM_DIR)/hello \
- 	$(PROGRAM_DIR)/fputest
+ 	$(PROGRAM_DIR)/fputest \
+	$(PROGRAM_DIR)/cd \
+	$(PROGRAM_DIR)/help \
+	$(PROGRAM_DIR)/ls \
+	$(PROGRAM_DIR)/cat \
+	$(PROGRAM_DIR)/touch \
+	$(PROGRAM_DIR)/mkdir \
+	$(PROGRAM_DIR)/mkfs \
+	$(PROGRAM_DIR)/pwd \
+	$(PROGRAM_DIR)/clear \
+	$(PROGRAM_DIR)/echo \
+	$(PROGRAM_DIR)/battery \
+	$(PROGRAM_DIR)/reboot \
+	$(PROGRAM_DIR)/poweroff \
+	$(PROGRAM_DIR)/shutdown \
+	$(PROGRAM_DIR)/halt
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -164,6 +196,10 @@ $(PROGRAM_DIR)/disks: $(OBJ_DIR)/disks/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUR
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
+$(PROGRAM_DIR)/devmgr: $(OBJ_DIR)/devmgr/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
 $(PROGRAM_DIR)/logview: $(OBJ_DIR)/logview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
@@ -193,6 +229,69 @@ $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/cd: $(OBJ_DIR)/cd/cd.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/help: $(OBJ_DIR)/help/help.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/ls: $(OBJ_DIR)/ls/ls.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/cat: $(OBJ_DIR)/cat/cat.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/touch: $(OBJ_DIR)/touch/touch.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/mkdir: $(OBJ_DIR)/mkdir/mkdir.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/mkfs: $(OBJ_DIR)/mkfs/mkfs.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/pwd: $(OBJ_DIR)/pwd/pwd.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/clear: $(OBJ_DIR)/clear/clear.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/echo: $(OBJ_DIR)/echo/echo.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/battery: $(OBJ_DIR)/battery/battery.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/reboot: $(OBJ_DIR)/reboot/reboot.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/poweroff: $(OBJ_DIR)/poweroff/poweroff.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/shutdown: $(OBJ_DIR)/shutdown/shutdown.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/halt: $(OBJ_DIR)/halt/halt.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+
+
 
 ifneq ($(TCC_PRESENT),)
 TCC_PATCH_MARK := TCC_TARGET_PUREC

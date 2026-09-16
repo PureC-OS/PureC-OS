@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Devices
+Exec=/bin/program/devmgr
+IconColor=0x89DCEB
+IconText=DV
+Type=Application

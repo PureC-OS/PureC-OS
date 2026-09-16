@@ -99,4 +99,9 @@ void pg_window_text(struct pg_window *window, uint32_t x, uint32_t y,
                     const char *text, uint32_t color);
 void pg_window_text_sized(struct pg_window *window, uint32_t x, uint32_t y,
                           const char *text, uint32_t color, uint32_t size);
+#define PG_FONT_CLASSIC 0
+#define PG_FONT_CLEAN 1
+#define PG_FONT_BOLD 2
+void pg_set_font_face(uint32_t face);
+void pg_font_sync(void);
 bool pg_window_poll_event(struct pg_window *window, struct pg_event *event);
