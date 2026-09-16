@@ -221,13 +221,8 @@ sudo modprobe vboxdrv
 
 ---
 
-# Fix 
-
-todo:
-- [ ] UserSpace will be migrated to Ring 3.
-
-- [ ] Remaining programs currently running in Ring 0 will also be migrated to Ring 3.
-
+# TODO PureC OS Project
+[todo.md](todo.md)
 --- 
 
 # Demo Foto
