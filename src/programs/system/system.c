@@ -210,6 +210,25 @@ static int command_debug(const char *arguments){
     return 0;
 }
 
+int system_platform_command(const char *name, const char *arguments){
+    if(pc_strcmp(name,"disks")==0) return command_disks();
+    if(pc_strcmp(name,"usbscan")==0) return command_usbscan();
+    if(pc_strcmp(name,"install")==0 || pc_strcmp(name,"setup")==0
+       || pc_strcmp(name,"update")==0 || pc_strcmp(name,"mkfs.fat32")==0)
+        return run_program("/bin/installer",arguments);
+    if(pc_strcmp(name,"uname")==0){
+        pc_write("PureC OS 0.1.0 x86_64\n");
+        return 0;
+    }
+    if(pc_strcmp(name,"about")==0){
+        pc_write("PureC userspace 0.3.0, standalone system programs\n");
+        return 0;
+    }
+    if(pc_strcmp(name,"systeminfo")==0) return command_systeminfo();
+    if(pc_strcmp(name,"htop")==0) return command_htop();
+    if(pc_strcmp(name,"font")==0) return command_font(arguments);
+    if(pc_strcmp(name,"snake")==0) return run_program("/bin/snake",arguments);
+    if(pc_strcmp(name,"tetris")==0) return run_program("/bin/tetris",arguments);
     if(pc_strcmp(name,"mouse")==0) return command_mouse();
     if(pc_strcmp(name,"debug")==0) return command_debug(arguments);
     return -1;
