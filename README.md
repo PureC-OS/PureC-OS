@@ -219,26 +219,26 @@ sudo modprobe vboxdrv
 # Fix 
 
 todo:
-[ ] UserSpace will be migrated to Ring 3.
+- [ ] UserSpace will be migrated to Ring 3.
 
-[ ] Remaining programs currently running in Ring 0 will also be migrated to Ring 3.
+- [ ] Remaining programs currently running in Ring 0 will also be migrated to Ring 3.
 
 --- 
 
 # Demo Foto
 ## Boot Screen
-![Perc OC Boot](demo/Boot.png)
+![PureC OC Boot](demo/Boot.png)
 ## UserSpace on the bare metal
-![Perc OC UserSpace on the metal](demo/bare-metal-userspace.png)
+![PureC OC UserSpace on the metal](demo/bare-metal-userspace.png)
 ## UserSpace
-![Perc OC UserSpace](demo/userspace.png)
-## Systemsetings
-![Perc OC Systemsetings](demo/systemsetings.png)
+![PureC OC UserSpace](demo/userspace.png)
+## System Settings
+![PureC OC System Settings](demo/system-settings.png)
 ## Network
-![Perc OC Network](demo/network.png)
+![PureC OC Network](demo/network.png)
 ## Filesystem
-![Perc OC Filesystem](demo/filesystem.png)
+![PureC OC Filesystem](demo/filesystem.png)
 ## Hex Editor
-![Perc OC Hex](demo/Hex.png)
+![PureC OC Hex](demo/Hex.png)
 ## System Monitor
-![Perc OC SystemMonitor](demo/system-monitor.png)
+![PureC OC System Monitor](demo/system-monitor.png)
