@@ -8,6 +8,7 @@ static const char *system_program_names[]={
     "mkdir",
     "disks",
     "usbscan",
+    "mkfs",
     "mkfs.fat32",
     "install",
     "setup",

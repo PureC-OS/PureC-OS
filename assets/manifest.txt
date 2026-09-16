@@ -34,12 +34,14 @@
 /bin/program/system/cat /bin/program/system/cat - 1 bin/programs/cat
 /bin/program/system/touch /bin/program/system/touch - 1 bin/programs/touch
 /bin/program/system/mkdir /bin/program/system/mkdir - 1 bin/programs/mkdir
+/bin/program/system/mkfs /bin/program/system/mkfs - 1 bin/programs/mkfs
 /bin/cd /bin/cd - 1 bin/programs/cd
 /bin/help /bin/help - 1 bin/programs/help
 /bin/ls /bin/ls - 1 bin/programs/ls
 /bin/cat /bin/cat - 1 bin/programs/cat
 /bin/touch /bin/touch - 1 bin/programs/touch
 /bin/mkdir /bin/mkdir - 1 bin/programs/mkdir
+/bin/mkfs /bin/mkfs - 1 bin/programs/mkfs
 /bin/program/files /bin/program/files - 1 bin/programs/files
 /bin/gui-demo /bin/gui-demo - 1 bin/programs/gui-demo
 
