@@ -54,7 +54,10 @@ GENERAL_SOURCES := \
  	fputest/main.c \
 	cd/cd.c \
 	help/help.c \
-	ls/ls.c
+	ls/ls.c \
+	cat/cat.c \
+	touch/touch.c \
+	mkdir/mkdir.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
@@ -90,7 +93,10 @@ TARGETS := \
  	$(PROGRAM_DIR)/fputest \
 	$(PROGRAM_DIR)/cd \
 	$(PROGRAM_DIR)/help \
-	$(PROGRAM_DIR)/ls
+	$(PROGRAM_DIR)/ls \
+	$(PROGRAM_DIR)/cat \
+	$(PROGRAM_DIR)/touch \
+	$(PROGRAM_DIR)/mkdir
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -217,6 +223,19 @@ $(PROGRAM_DIR)/help: $(OBJ_DIR)/help/help.o $(LIBPUREC) $(LINKER_SCRIPT)
 $(PROGRAM_DIR)/ls: $(OBJ_DIR)/ls/ls.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/cat: $(OBJ_DIR)/cat/cat.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/touch: $(OBJ_DIR)/touch/touch.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/mkdir: $(OBJ_DIR)/mkdir/mkdir.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
 
 
 
