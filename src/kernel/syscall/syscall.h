@@ -186,6 +186,7 @@ struct process_environment_variable {
 struct cpu_monitor_info {
     char name[CPU_MONITOR_NAME_CAPACITY];
     uint32_t logical_processors;
+    uint32_t physical_cores;
     uint32_t usage_percent;
     uint64_t frequency_hz;
     uint64_t uptime_ms;
