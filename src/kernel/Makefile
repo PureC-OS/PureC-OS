@@ -54,6 +54,7 @@ C_SOURCES := \
 	drivers/pci/pci.c \
 	drivers/net/e1000/e1000_82540em.c \
 	drivers/net/82543gc/e1000_82543gc.c \
+	net/802.11/assoc.c \
 	drivers/net/pcnet/pcnet_am79c970a.c \
 	drivers/net/ath9k/ar9285.c \
 	net/wifi/wifi.c \

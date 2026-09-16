@@ -6,6 +6,7 @@
 #include "lib/string.h"
 #include "mm/pmm.h"
 #include "net/802.11/include/802.h"
+#include "net/802.11/assoc.c"
 #include "net/core/net_device.h"
 #include "net/wifi/wifi.h"
 #include <stddef.h>
