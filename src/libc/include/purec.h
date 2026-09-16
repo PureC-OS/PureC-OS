@@ -112,6 +112,7 @@ int32_t pc_wifi_list(struct wifi_network_info *networks, uint32_t capacity);
 int32_t pc_wifi_connect(const char *ssid, const char *password);
 int32_t pc_wifi_disconnect(void);
 bool pc_wifi_status(struct wifi_status_info *status);
+int32_t pc_net_if_list(struct net_if_info *infos, uint32_t capacity);
 int32_t pc_save_klog(const char *device, const char *path);
 int32_t pc_get_root_device(char *buffer, uint32_t capacity);
 int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb);

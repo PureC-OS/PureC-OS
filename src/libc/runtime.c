@@ -421,6 +421,10 @@ int32_t pc_wifi_disconnect(void){ return (int32_t)pc_syscall(SYS_WIFI_DISCONNECT
 bool pc_wifi_status(struct wifi_status_info *status){
     return status && pc_syscall(SYS_WIFI_STATUS,(uint64_t)(uintptr_t)status,0,0)>=0;
 }
+int32_t pc_net_if_list(struct net_if_info *infos, uint32_t capacity){
+    if(capacity>NET_IF_MAX_COUNT) return -1;
+    return (int32_t)pc_syscall(SYS_NET_IF_LIST,(uint64_t)(uintptr_t)infos,capacity,0);
+}
 int32_t pc_save_klog(const char *device, const char *path){
     if(!device || !path) return -1;
     struct save_klog_request req={0};

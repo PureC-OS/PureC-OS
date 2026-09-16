@@ -26,6 +26,10 @@
 #include "../../userspace/window_manager.h"
 #include "../../net/api/ping.h"
 #include "../../net/wifi/wifi.h"
+#include "../../net/core/net_device.h"
+#include "../../net/network/ipv4.h"
+#include "../../net/config/dhcp.h"
+#include "../../net/name/dns.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -901,6 +905,44 @@ int64_t syscall_handler(struct syscall_regs *r){
             if (a1 && readable_string((const char *)(uintptr_t)a1))
                 msg = (const char *)(uintptr_t)a1;
             KERNEL_PANIC_HERE(msg);
+        }
+        case SYS_NET_IF_LIST: {
+            struct net_if_info *buffer=(struct net_if_info*)(uintptr_t)a1;
+            uint32_t capacity=(uint32_t)a2;
+            if(capacity>NET_IF_MAX_COUNT) return -1;
+            if(capacity && !writable(buffer,capacity*sizeof(*buffer))) return -1;
+            uint32_t total=net_device_count();
+            if(total>NET_IF_MAX_COUNT) total=NET_IF_MAX_COUNT;
+            if(capacity==0) return (int64_t)total;
+            uint32_t copy = total<capacity ? total : capacity;
+            for(uint32_t i=0;i<copy;i++){
+                struct net_device *dev=net_device_get(i);
+                struct net_if_info info;
+                memset(&info,0,sizeof(info));
+                if(dev){
+                    strncpy(info.name,dev->name,sizeof(info.name)-1);
+                    memcpy(info.mac,dev->mac,6);
+                    info.mtu=dev->mtu;
+                    info.link_up=dev->cached_link_up ? 1 : 0;
+                    struct ipv4_interface_config cfg;
+                    if(ipv4_get_config(dev,&cfg) && cfg.configured){
+                        info.has_ip=1;
+                        info.ip_address=cfg.address;
+                        info.netmask=cfg.netmask;
+                        info.gateway=cfg.gateway;
+                    }
+                    info.dns_server=dns_get_server(dev);
+                    info.dhcp_bound=dhcp_is_bound(dev) ? 1 : 0;
+                    info.rx_packets=dev->stats.rx_packets;
+                    info.tx_packets=dev->stats.tx_packets;
+                    info.rx_bytes=dev->stats.rx_bytes;
+                    info.tx_bytes=dev->stats.tx_bytes;
+                    info.rx_dropped=dev->stats.rx_dropped+dev->stats.rx_errors;
+                    info.tx_dropped=dev->stats.tx_dropped+dev->stats.tx_errors;
+                }
+                buffer[i]=info;
+            }
+            return (int64_t)copy;
         }
         default:
             serial_write_string("[SYSCALL] unknown n="); print_hex(n); serial_write_string("\n");

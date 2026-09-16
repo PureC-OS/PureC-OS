@@ -152,6 +152,7 @@
 | **257** | `SYS_PROCESS_LIST` | `pc_process_list()` | Список запущенных процессов и статистика |
 | **258** | `SYS_TRY_GET_SPECIAL` | `pc_try_get_special()` | Чтение спец. клавиш (стрелки, F-клавиши) |
 | **259** | `SYS_NET_PING` | `pc_ping()` | ICMP Ping хоста по IP или доменному имени |
+| **281** | `SYS_NET_IF_LIST` | `pc_net_if_list()` | Список проводных интерфейсов: link/IP/GW/DNS/DHCP/статистика |
 | **260** | `SYS_WIFI_SCAN` | `pc_wifi_scan()` | Запуск фонового сканирования Wi-Fi сетей |
 | **261** | `SYS_WIFI_LIST` | `pc_wifi_list()` | Получение списка обнаруженных Wi-Fi точек |
 | **262** | `SYS_WIFI_CONNECT` | `pc_wifi_connect()` | Подключение к Wi-Fi сети (SSID + пароль) |

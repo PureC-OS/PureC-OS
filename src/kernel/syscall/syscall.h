@@ -79,6 +79,7 @@
 #define SYS_PROCESS_LIST 257
 #define SYS_TRY_GET_SPECIAL 258
 #define SYS_NET_PING 259
+#define SYS_NET_IF_LIST 281
 #define SYS_WIFI_SCAN 260
 #define SYS_WIFI_LIST 261
 #define SYS_WIFI_CONNECT 262
@@ -132,6 +133,28 @@ struct network_ping_result {
     uint16_t sequence;
     uint8_t ttl;
     uint8_t reserved;
+};
+
+#define NET_IF_NAME_CAPACITY 16
+#define NET_IF_MAX_COUNT 4
+
+struct net_if_info {
+    char name[NET_IF_NAME_CAPACITY];
+    uint8_t mac[6];
+    uint16_t mtu;
+    uint32_t link_up;
+    uint32_t has_ip;
+    uint32_t ip_address;
+    uint32_t netmask;
+    uint32_t gateway;
+    uint32_t dns_server;
+    uint32_t dhcp_bound;
+    uint64_t rx_packets;
+    uint64_t tx_packets;
+    uint64_t rx_bytes;
+    uint64_t tx_bytes;
+    uint64_t rx_dropped;
+    uint64_t tx_dropped;
 };
 
 #define GUI_WINDOW_STATE_FOCUSED 1

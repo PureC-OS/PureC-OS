@@ -185,6 +185,13 @@ bool dns_set_server(struct net_device *device, uint32_t server){
     return true;
 }
 
+uint32_t dns_get_server(struct net_device *device){
+    if(!device) return 0;
+    struct dns_server_entry *entry=server_entry(device,false);
+    if(!entry) return 0;
+    return __atomic_load_n(&entry->address,__ATOMIC_ACQUIRE);
+}
+
 enum dns_result dns_resolve_ipv4(struct net_device *device,
                                  const char *hostname, uint32_t timeout_ms,
                                  uint32_t *address){
