@@ -14,3 +14,4 @@ test.txt
 *212/
 lang/Cargo.lock
 *target/
+*.VSCodeCounter/
