@@ -220,7 +220,7 @@ static const int8_t SHAPES[7][4][4][2]={
 
 static void compute_layout(void){
     struct pc_display_info info;
-    uint32_t disp_w=1024, disp_h=768;
+    uint32_t disp_w=640, disp_h=480;
     if(pc_display_get_info(&info) && info.available && info.width>=640 && info.height>=480){
         disp_w=info.width;
         disp_h=info.height;
