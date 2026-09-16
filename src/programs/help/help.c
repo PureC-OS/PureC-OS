@@ -12,6 +12,7 @@ int help_main(void){
     pc_write("  install | setup | update | mkfs.fat32\n");
     pc_write("  uname | about | systeminfo | htop | font | snake | tetris | files | gui-demo\n");
     pc_write("  mouse | debug | battery | reboot | poweroff | shutdown | halt\n");
+    pc_write("  devmgr\n");
     return 0;
 }
 
