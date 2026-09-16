@@ -18,11 +18,16 @@ PureC OS is a simple 64-bit operating system written in C and x86_64 assembly la
 ---
 ## Network Support
 
-Intel Pro 1000 MT Desktop 82540EM Supported only in VirtualBox
-Intel Pro 1000 T Server 82543GC Supported only in VirtualBox
-PCnet-PCI II (Am79C970A) Supported only in VirtualBox
+Intel Pro 1000 MT Desktop 82540EM Supported only in VirtualBox or QEMU
+
+Intel Pro 1000 T Server 82543GC Supported only in VirtualBox or QEMU
+
+PCnet-PCI II (Am79C970A) Supported only in VirtualBox or QEMU
 
 And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test version—there's almost nothing in it.
+
+
+802.11 association for Wi-Fi support will be implemented for future use.
 
 --- 
 
@@ -156,10 +161,10 @@ make all-target-libgcc -j$(nproc) && sudo make install-target-libgcc
 ```bash
 sudo pacman -Syu
 
-// Install basic dependencies
+# Install basic dependencies
 sudo pacman -S --needed base-devel git
 
-// Install dependencies
+# Install dependencies
 sudo pacman -S make gcc g++ limine nasm
 ```
 

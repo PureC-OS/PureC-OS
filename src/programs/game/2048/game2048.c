@@ -23,7 +23,6 @@
 #include "../../../libgui/include/pguiw.h"
 #include "../../../libc/include/purec.h"
 #include "../../../libaudio/include/pureaudio.h"
-#include "../../../drivers/input/keyboard.h"
 
 /* ─────────────────────────────────────────
    Параметры игры
@@ -371,7 +370,7 @@ static void draw_tile(struct pg_window *win,
     uint32_t tx = px + (cs > tw ? (cs - tw) / 2 : 2);
     uint32_t ty = py + (cs > th ? (cs - th) / 2 : 2);
 
-    pc_draw_text_sized(tx, ty, buf, fg, bg, font);
+    pg_window_text_sized(win, tx, ty, buf, fg, font);
 }
 
 static void draw_board(struct pg_window *win) {
@@ -403,8 +402,8 @@ static void draw_hud(struct pg_window *win) {
 
     /* Название */
     uint32_t title_font = (field >= 350) ? 32 : 24;
-    pc_draw_text_sized(g_hud_x + 10, g_hud_y + 10,
-                       "2048", C_TEXT_HI, win->theme.titlebar, title_font);
+    pg_window_text_sized(win, g_hud_x + 10, g_hud_y + 10,
+                         "2048", C_TEXT_HI, title_font);
 
     /* Score */
     char buf[32];

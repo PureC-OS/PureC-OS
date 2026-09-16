@@ -13,7 +13,6 @@ LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 
 PLAIN_SOURCES := \
 	init/main.c \
-	game/snake/main.c \
 	nano/main.c \
 	nano/editor.c \
 	system/main.c \
@@ -30,6 +29,7 @@ GENERAL_SOURCES := \
 	terminal/window.c \
 	nano/window.c \
 	gui_demo/main.c \
+	game/snake/main.c \
 	game/tetris/main.c \
 	game/puzzle15/puzzle15.c \
 	game/2048/game2048.c \
@@ -156,7 +156,7 @@ $(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progr
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/snake: $(OBJ_DIR)/game/snake/main.o $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/snake: $(OBJ_DIR)/game/snake/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

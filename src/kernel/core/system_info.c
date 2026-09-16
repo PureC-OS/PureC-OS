@@ -131,13 +131,9 @@ void system_info_init(const struct limine_memmap_response *memory_map){
 }
 
 const char *system_info_cpu_name(void){ return cpu_name; }
-
 uint64_t system_info_usable_ram_bytes(void){ return usable_ram_bytes; }
-
 uint64_t system_info_total_ram_bytes(void){ return total_ram_bytes; }
-
 uint64_t system_info_tsc_frequency_hz(void){ return tsc_frequency_hz; }
-
 uint32_t system_info_logical_processors(void){ return logical_processors; }
 
 uint64_t system_info_uptime_ms(void){
