@@ -36,6 +36,7 @@ bool pg_window_init(struct pg_window *window, const char *title,
     if(y>display.height-height) y=display.height-height;
     window->frame=(struct pg_rect){x,y,width,height};
     window->theme=pg_theme_default();
+    pg_font_sync();
     pc_copy(window->title,title ? title : "PureGUI",sizeof(window->title));
     window->previous_mouse_x=-1;
     window->previous_mouse_y=-1;
