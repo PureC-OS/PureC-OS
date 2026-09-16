@@ -99,16 +99,12 @@ static int command_htop(void){
 }
 
 static int command_font(const char *arguments){
-    if(pc_strcmp(arguments,"classic")==0)
-        return pc_syscall(SYS_SET_FONT_FACE,0,0,0)<0;
-    if(pc_strcmp(arguments,"clean")==0)
-        return pc_syscall(SYS_SET_FONT_FACE,1,0,0)<0;
-    if(pc_strcmp(arguments,"bold")==0)
-        return pc_syscall(SYS_SET_FONT_FACE,2,0,0)<0;
-    int64_t face=pc_syscall(SYS_GET_FONT_FACE,0,0,0);
-    pc_write("Font: ");
-    pc_write(face==1 ? "clean\n" : (face==2 ? "bold\n" : "classic\n"));
-    pc_write("Use classic, clean or bold.\n");
+    (void)arguments;
+    /* No global kernel font anymore: faces live in the graphic backend
+     * (src/gfx/text.h). The desktop reads font=/font_size= from its
+     * personalization config; console keeps its own face. */
+    pc_write("Font backend: userspace (gfx/text.h), faces: classic/clean/bold\n");
+    pc_write("Desktop font is set via personalization config.\n");
     return 0;
 }
 

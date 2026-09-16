@@ -178,42 +178,6 @@ int64_t syscall_handler(struct syscall_regs *r){
                     sizeof(info->protocol_name)-1);
             return 0;
         }
-        case SYS_DRAW_TEXT: {
-            struct framebuffer_text_request *request=
-                (struct framebuffer_text_request*)(uintptr_t)a1;
-            if(!readable(request,sizeof(*request))
-               || !readable_string(request->text)) return -1;
-            gop_draw_text_at(request->x,request->y,request->text,
-                             request->fg,request->bg);
-            return 0;
-        }
-        case SYS_DRAW_TEXT_SIZED: {
-            struct framebuffer_text_request *request=
-                (struct framebuffer_text_request*)(uintptr_t)a1;
-            if(!readable(request,sizeof(*request))
-               || !readable_string(request->text)) return -1;
-            gop_draw_text_sized_at(request->x,request->y,request->text,
-                                   request->fg,request->bg,request->size);
-            return 0;
-        }
-        case SYS_DRAW_TEXT_TR: {
-            struct framebuffer_text_request *request=
-                (struct framebuffer_text_request*)(uintptr_t)a1;
-            if(!readable(request,sizeof(*request))
-               || !readable_string(request->text)) return -1;
-            gop_draw_text_transparent_at(request->x,request->y,request->text,
-                                         request->fg);
-            return 0;
-        }
-        case SYS_DRAW_TEXT_SIZED_TR: {
-            struct framebuffer_text_request *request=
-                (struct framebuffer_text_request*)(uintptr_t)a1;
-            if(!readable(request,sizeof(*request))
-               || !readable_string(request->text)) return -1;
-            gop_draw_text_sized_transparent_at(request->x,request->y,request->text,
-                                               request->fg,request->size);
-            return 0;
-        }
         case SYS_SCROLL_RECT_UP: {
             struct framebuffer_scroll_request *request=
                 (struct framebuffer_scroll_request*)(uintptr_t)a1;
@@ -222,12 +186,10 @@ int64_t syscall_handler(struct syscall_regs *r){
                                request->amount,request->fill_color);
             return 0;
         }
-        case SYS_SET_FONT_FACE:
-            if(a1>GOP_FONT_BOLD) return -1;
-            gop_set_font_face((enum gop_font_face)a1);
-            return 0;
-        case SYS_GET_FONT_FACE:
-            return (int64_t)gop_get_font_face();
+        /* NOTE: no text syscalls. Glyph rasterization lives in the
+         * graphic backend (src/gfx/text.h); the kernel exposes only
+         * pixels/rects/scroll/present. SYS_DRAW_TEXT* and
+         * SYS_*_FONT_FACE were removed for that reason. */
         case SYS_FB_BEGIN_UPDATE:
             mouse_begin_framebuffer_update();
             return 0;
