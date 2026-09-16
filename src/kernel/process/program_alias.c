@@ -2,13 +2,8 @@
 #include "../../lib/string.h"
 
 static const char *system_program_names[]={
-    "ls",
-    "cat",
-    "touch",
-    "mkdir",
     "disks",
     "usbscan",
-    "mkfs",
     "mkfs.fat32",
     "install",
     "setup",
@@ -22,12 +17,7 @@ static const char *system_program_names[]={
     "font",
     "snake",
     "mouse",
-    "debug",
-    "reboot",
-    "poweroff",
-    "shutdown",
-    "battery",
-    "halt"
+    "debug"
 };
 
 bool program_alias_resolve(const char *requested_path, const char **module_path){

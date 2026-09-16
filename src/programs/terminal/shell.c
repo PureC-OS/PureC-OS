@@ -466,19 +466,8 @@ static bool execute_line(struct terminal_window *terminal, char *line){
     split_line(line,&command,&arguments);
     if(!command[0]) return true;
     if(pc_strcmp(command,"exit")==0) return false;
-    else if(pc_strcmp(command,"clear")==0) pc_console_clear();
-    else if(pc_strcmp(command,"pwd")==0){
-        char directory[SHELL_PATH_CAPACITY];
-        if(pc_getenv("PWD",directory,sizeof(directory))>=0) pc_write(directory);
-        pc_write("\n");
-    } else if(pc_strcmp(command,"cd")==0) change_directory(terminal,arguments);
-    else if(pc_strcmp(command,"echo")==0){
-        char expanded[SHELL_LINE_CAPACITY];
-        if(shell_expand_environment(arguments,expanded,sizeof(expanded)))
-            pc_write(expanded);
-        else pc_write("echo: expanded text is too long");
-        pc_write("\n");
-    } else if(pc_strcmp(command,"env")==0) shell_print_environment();
+    else if(pc_strcmp(command,"cd")==0) change_directory(terminal,arguments);
+    else if(pc_strcmp(command,"env")==0) shell_print_environment();
     else if(pc_strcmp(command,"ping")==0) command_ping(arguments);
     else if(pc_strcmp(command,"set")==0) set_variable(arguments);
     else if(pc_strcmp(command,"unset")==0){

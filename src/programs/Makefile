@@ -58,7 +58,15 @@ GENERAL_SOURCES := \
 	cat/cat.c \
 	touch/touch.c \
 	mkdir/mkdir.c \
-	mkfs/mkfs.c
+	mkfs/mkfs.c \
+	pwd/pwd.c \
+	clear/clear.c \
+	echo/echo.c \
+	battery/battery.c \
+	reboot/reboot.c \
+	poweroff/poweroff.c \
+	shutdown/shutdown.c \
+	halt/halt.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
@@ -98,7 +106,15 @@ TARGETS := \
 	$(PROGRAM_DIR)/cat \
 	$(PROGRAM_DIR)/touch \
 	$(PROGRAM_DIR)/mkdir \
-	$(PROGRAM_DIR)/mkfs
+	$(PROGRAM_DIR)/mkfs \
+	$(PROGRAM_DIR)/pwd \
+	$(PROGRAM_DIR)/clear \
+	$(PROGRAM_DIR)/echo \
+	$(PROGRAM_DIR)/battery \
+	$(PROGRAM_DIR)/reboot \
+	$(PROGRAM_DIR)/poweroff \
+	$(PROGRAM_DIR)/shutdown \
+	$(PROGRAM_DIR)/halt
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -239,6 +255,38 @@ $(PROGRAM_DIR)/mkdir: $(OBJ_DIR)/mkdir/mkdir.o $(OBJ_DIR)/terminal/path.o $(LIBP
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/mkfs: $(OBJ_DIR)/mkfs/mkfs.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/pwd: $(OBJ_DIR)/pwd/pwd.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/clear: $(OBJ_DIR)/clear/clear.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/echo: $(OBJ_DIR)/echo/echo.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/battery: $(OBJ_DIR)/battery/battery.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/reboot: $(OBJ_DIR)/reboot/reboot.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/poweroff: $(OBJ_DIR)/poweroff/poweroff.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/shutdown: $(OBJ_DIR)/shutdown/shutdown.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/halt: $(OBJ_DIR)/halt/halt.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

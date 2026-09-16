@@ -35,6 +35,14 @@
 /bin/program/system/touch /bin/program/system/touch - 1 bin/programs/touch
 /bin/program/system/mkdir /bin/program/system/mkdir - 1 bin/programs/mkdir
 /bin/program/system/mkfs /bin/program/system/mkfs - 1 bin/programs/mkfs
+/bin/program/system/pwd /bin/program/system/pwd - 1 bin/programs/pwd
+/bin/program/system/clear /bin/program/system/clear - 1 bin/programs/clear
+/bin/program/system/echo /bin/program/system/echo - 1 bin/programs/echo
+/bin/program/system/battery /bin/program/system/battery - 1 bin/programs/battery
+/bin/program/system/reboot /bin/program/system/reboot - 1 bin/programs/reboot
+/bin/program/system/poweroff /bin/program/system/poweroff - 1 bin/programs/poweroff
+/bin/program/system/shutdown /bin/program/system/shutdown - 1 bin/programs/shutdown
+/bin/program/system/halt /bin/program/system/halt - 1 bin/programs/halt
 /bin/cd /bin/cd - 1 bin/programs/cd
 /bin/help /bin/help - 1 bin/programs/help
 /bin/ls /bin/ls - 1 bin/programs/ls
@@ -42,6 +50,14 @@
 /bin/touch /bin/touch - 1 bin/programs/touch
 /bin/mkdir /bin/mkdir - 1 bin/programs/mkdir
 /bin/mkfs /bin/mkfs - 1 bin/programs/mkfs
+/bin/pwd /bin/pwd - 1 bin/programs/pwd
+/bin/clear /bin/clear - 1 bin/programs/clear
+/bin/echo /bin/echo - 1 bin/programs/echo
+/bin/battery /bin/battery - 1 bin/programs/battery
+/bin/reboot /bin/reboot - 1 bin/programs/reboot
+/bin/poweroff /bin/poweroff - 1 bin/programs/poweroff
+/bin/shutdown /bin/shutdown - 1 bin/programs/shutdown
+/bin/halt /bin/halt - 1 bin/programs/halt
 /bin/program/files /bin/program/files - 1 bin/programs/files
 /bin/gui-demo /bin/gui-demo - 1 bin/programs/gui-demo
 

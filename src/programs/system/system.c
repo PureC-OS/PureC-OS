@@ -210,60 +210,7 @@ static int command_debug(const char *arguments){
     return 0;
 }
 
-static int command_battery(void){
-    struct battery_info info={0};
-    if(pc_syscall(SYS_BATTERY_INFO,(uint64_t)(uintptr_t)&info,0,0)<0) return 1;
-    if(!info.present){
-        pc_write("battery: not present\n");
-        return 0;
-    }
-    pc_write(info.name);
-    pc_write(": ");
-    if(info.percent==BATTERY_PERCENT_UNKNOWN)
-        pc_write("unknown");
-    else{
-        pc_write_u64(info.percent);
-        pc_write("%");
-    }
-    pc_write(" ");
-    pc_write(info.status_text);
-    pc_write("\n");
-    if(info.voltage_mv==0)
-        pc_write("voltage: unknown\n");
-    else{
-        pc_write("voltage: ");
-        pc_write_u64(info.voltage_mv);
-        pc_write(" mV\n");
-    }
-    return 0;
-}
-
-int system_platform_command(const char *name, const char *arguments){
-    if(pc_strcmp(name,"disks")==0) return command_disks();
-    if(pc_strcmp(name,"usbscan")==0) return command_usbscan();
-    if(pc_strcmp(name,"install")==0 || pc_strcmp(name,"setup")==0
-       || pc_strcmp(name,"update")==0 || pc_strcmp(name,"mkfs.fat32")==0)
-        return run_program("/bin/installer",arguments);
-    if(pc_strcmp(name,"uname")==0){
-        pc_write("PureC OS 0.1.0 x86_64\n");
-        return 0;
-    }
-    if(pc_strcmp(name,"about")==0){
-        pc_write("PureC userspace 0.3.0, standalone system programs\n");
-        return 0;
-    }
-    if(pc_strcmp(name,"systeminfo")==0) return command_systeminfo();
-    if(pc_strcmp(name,"htop")==0) return command_htop();
-    if(pc_strcmp(name,"font")==0) return command_font(arguments);
-    if(pc_strcmp(name,"snake")==0) return run_program("/bin/snake",arguments);
-    if(pc_strcmp(name,"tetris")==0) return run_program("/bin/tetris",arguments);
     if(pc_strcmp(name,"mouse")==0) return command_mouse();
     if(pc_strcmp(name,"debug")==0) return command_debug(arguments);
-    if(pc_strcmp(name,"reboot")==0)
-        return pc_syscall(SYS_REBOOT,0,0,0)<0;
-    if(pc_strcmp(name,"poweroff")==0 || pc_strcmp(name,"shutdown")==0
-       || pc_strcmp(name,"halt")==0)
-        return pc_syscall(SYS_SHUTDOWN,0,0,0)<0;
-    if(pc_strcmp(name,"battery")==0) return command_battery();
     return -1;
 }
