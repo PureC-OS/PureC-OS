@@ -87,6 +87,10 @@ void pc_draw_text(uint32_t x, uint32_t y, const char *text,
 void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text,
                         uint32_t foreground, uint32_t background,
                         uint32_t size);
+void pc_draw_text_tr(uint32_t x, uint32_t y, const char *text,
+                     uint32_t foreground);
+void pc_draw_text_sized_tr(uint32_t x, uint32_t y, const char *text,
+                           uint32_t foreground, uint32_t size);
 bool pc_mouse_get(struct mouse_state *state);
 int32_t pc_list_disks(struct storage_device_info *devices, uint32_t capacity);
 void pc_reboot(void);

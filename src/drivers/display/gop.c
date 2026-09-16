@@ -805,6 +805,63 @@ void gop_draw_text_sized_at(uint32_t x, uint32_t y, const char *text,
         maybe_present();
     }
 }
+static void draw_char_transparent(char c, uint32_t x, uint32_t y, uint32_t color){
+    uint8_t ch=(uint8_t)c; if(ch>=128) ch='?';
+    for(int r=0;r<8;r++){ uint8_t bits=get_font_row(ch,(uint32_t)r);
+        for(int col=0;col<8;col++){
+        if(bits & (1<<(7-col))) put_pixel(x+col,y+r,color);
+    }}
+}
+static void draw_char_sized_transparent(char c, uint32_t x, uint32_t y, uint32_t size, uint32_t color){
+    if(size==0) return;
+    uint8_t ch=(uint8_t)c; if(ch>=128) ch='?';
+    for(uint32_t py=0; py<size; py++){
+        uint32_t source_row=(py*8)/size;
+        uint8_t bits=get_font_row(ch,source_row);
+        for(uint32_t px=0; px<size; px++){
+            uint32_t source_col=(px*8)/size;
+            if(bits & (1<<(7-source_col))) put_pixel(x+px, y+py, color);
+        }
+    }
+}
+void gop_draw_text_transparent_at(uint32_t x, uint32_t y, const char *text, uint32_t color){
+    if(!gop.available || !text) return;
+    (void)ensure_backbuffer();
+    uint32_t start_x=x;
+    while(*text){
+        if(*text=='\n'){ x=12; y+=10; }
+        else { draw_char_transparent(*text, x, y, color); if(backbuffer) dirty_expand(x, y, 8, 8); x+=8; }
+        text++;
+    }
+    if(backbuffer){
+        if(x>start_x) dirty_expand(start_x, y, x-start_x, 8);
+        maybe_present();
+    }
+}
+void gop_draw_text_sized_transparent_at(uint32_t x, uint32_t y, const char *text, uint32_t color, uint32_t size){
+    if(!gop.available || !text || size==0) return;
+    (void)ensure_backbuffer();
+    uint32_t initial_x=x;
+    uint32_t min_x=x, max_x=x, min_y=y, max_y=y+size;
+    while(*text){
+        if(*text=='\n'){
+            x=initial_x;
+            y+=size+3;
+            if(y+size>max_y) max_y=y+size;
+        } else {
+            draw_char_sized_transparent(*text, x, y, size, color);
+            x+=size;
+            if(x>max_x) max_x=x;
+            if(y<min_y) min_y=y;
+            if(y+size>max_y) max_y=y+size;
+        }
+        text++;
+    }
+    if(backbuffer && max_x>min_x && max_y>min_y){
+        dirty_expand(min_x, min_y, max_x-min_x, max_y-min_y);
+        maybe_present();
+    }
+}
 void gop_draw_rect(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t c){
     if(!gop.available || !gop.addr || !w || !h) return;
     if(x>=gop.width || y>=gop.height) return;

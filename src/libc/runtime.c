@@ -358,6 +358,26 @@ void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text,
     (void)pc_syscall(SYS_DRAW_TEXT_SIZED,(uint64_t)(uintptr_t)&request,0,0);
 }
 
+void pc_draw_text_tr(uint32_t x, uint32_t y, const char *text,
+                     uint32_t foreground){
+    if(!text) return;
+    struct framebuffer_text_request request={
+        .x=x,.y=y,.text=text,.fg=foreground,.bg=0,.size=8
+    };
+    (void)pc_syscall(SYS_DRAW_TEXT_TR,(uint64_t)(uintptr_t)&request,0,0);
+}
+
+void pc_draw_text_sized_tr(uint32_t x, uint32_t y, const char *text,
+                           uint32_t foreground, uint32_t size){
+    if(!text) return;
+    if(size<8) size=8;
+    if(size>48) size=48;
+    struct framebuffer_text_request request={
+        .x=x,.y=y,.text=text,.fg=foreground,.bg=0,.size=size
+    };
+    (void)pc_syscall(SYS_DRAW_TEXT_SIZED_TR,(uint64_t)(uintptr_t)&request,0,0);
+}
+
 bool pc_mouse_get(struct mouse_state *state){
     return state && pc_syscall(SYS_GET_MOUSE,(uint64_t)(uintptr_t)state,0,0)>=0;
 }

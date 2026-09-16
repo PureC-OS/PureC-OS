@@ -196,6 +196,24 @@ int64_t syscall_handler(struct syscall_regs *r){
                                    request->fg,request->bg,request->size);
             return 0;
         }
+        case SYS_DRAW_TEXT_TR: {
+            struct framebuffer_text_request *request=
+                (struct framebuffer_text_request*)(uintptr_t)a1;
+            if(!readable(request,sizeof(*request))
+               || !readable_string(request->text)) return -1;
+            gop_draw_text_transparent_at(request->x,request->y,request->text,
+                                         request->fg);
+            return 0;
+        }
+        case SYS_DRAW_TEXT_SIZED_TR: {
+            struct framebuffer_text_request *request=
+                (struct framebuffer_text_request*)(uintptr_t)a1;
+            if(!readable(request,sizeof(*request))
+               || !readable_string(request->text)) return -1;
+            gop_draw_text_sized_transparent_at(request->x,request->y,request->text,
+                                               request->fg,request->size);
+            return 0;
+        }
         case SYS_SCROLL_RECT_UP: {
             struct framebuffer_scroll_request *request=
                 (struct framebuffer_scroll_request*)(uintptr_t)a1;

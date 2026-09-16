@@ -21,6 +21,7 @@ void pg_internal_draw_text_clipped(uint32_t x, uint32_t y,
                                    const char *text, uint32_t color,
                                    uint32_t background,
                                    const struct pg_rect *clip){
+    (void)background;
     if(!text || !clip || y<clip->y || y+8>clip->y+clip->height) return;
     char chunk[65];
     while(*text && x<clip->x+clip->width){
@@ -32,7 +33,7 @@ void pg_internal_draw_text_clipped(uint32_t x, uint32_t y,
         }
         if(!count) return;
         chunk[count]='\0';
-        pc_draw_text(x,y,chunk,color,background);
+        pc_draw_text_tr(x,y,chunk,color);
         x+=count*8;
         text+=count;
     }
@@ -42,6 +43,7 @@ void pg_internal_draw_text_sized_clipped(uint32_t x, uint32_t y,
                                            const char *text, uint32_t color,
                                            uint32_t background, uint32_t size,
                                            const struct pg_rect *clip){
+    (void)background;
     if(!text || !clip || !size) return;
     if(size<8) size=8;
     if(size>48) size=48;
@@ -56,7 +58,7 @@ void pg_internal_draw_text_sized_clipped(uint32_t x, uint32_t y,
         }
         if(!count) return;
         chunk[count]='\0';
-        pc_draw_text_sized(x,y,chunk,color,background,size);
+        pc_draw_text_sized_tr(x,y,chunk,color,size);
         x+=count*size;
         text+=count;
     }

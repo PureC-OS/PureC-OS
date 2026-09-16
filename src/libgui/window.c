@@ -94,14 +94,13 @@ void pg_window_begin(struct pg_window *window){
                                   window->theme.titlebar,&window->frame);
     pc_draw_rect(window->frame.x+window->frame.width-24,
                  window->frame.y+8,14,14,window->theme.danger);
-    pc_draw_text(window->frame.x+window->frame.width-21,
-                 window->frame.y+11,"x",window->theme.window,
-                 window->theme.danger);
+    pc_draw_text_tr(window->frame.x+window->frame.width-21,
+                 window->frame.y+11,"x",window->theme.window);
     pc_draw_rect(window->frame.x+window->frame.width-44,
                  window->frame.y+8,14,14,window->theme.accent);
-    pc_draw_text(window->frame.x+window->frame.width-41,
+    pc_draw_text_tr(window->frame.x+window->frame.width-41,
                  window->frame.y+11,window->minimized ? "+" : "-",
-                 window->theme.window,window->theme.accent);
+                 window->theme.window);
 }
 
 void pg_window_end(struct pg_window *window){
