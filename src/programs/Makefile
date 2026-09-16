@@ -63,7 +63,6 @@ GENERAL_SOURCES := \
 	clear/clear.c \
 	echo/echo.c \
 	battery/battery.c \
-	cpuinfo/cpuinfo.c \
 	reboot/reboot.c \
 	poweroff/poweroff.c \
 	shutdown/shutdown.c \
@@ -112,7 +111,6 @@ TARGETS := \
 	$(PROGRAM_DIR)/clear \
 	$(PROGRAM_DIR)/echo \
 	$(PROGRAM_DIR)/battery \
-	$(PROGRAM_DIR)/cpuinfo \
 	$(PROGRAM_DIR)/reboot \
 	$(PROGRAM_DIR)/poweroff \
 	$(PROGRAM_DIR)/shutdown \
@@ -199,10 +197,6 @@ $(PROGRAM_DIR)/disks: $(OBJ_DIR)/disks/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUR
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/devmgr: $(OBJ_DIR)/devmgr/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
-
-$(PROGRAM_DIR)/cpuinfo: $(OBJ_DIR)/cpuinfo/cpuinfo.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

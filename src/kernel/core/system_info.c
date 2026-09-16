@@ -14,7 +14,6 @@ static uint64_t boot_tsc;
 static uint64_t cpu_sample_ticks;
 static uint64_t cpu_sample_idle_ticks;
 static uint32_t logical_processors=1;
-static uint32_t physical_cores=1;
 
 static uint64_t read_tsc(void){
     uint32_t low,high;
@@ -22,12 +21,12 @@ static uint64_t read_tsc(void){
     return ((uint64_t)high<<32)|low;
 }
 
-static void cpuid(uint32_t leaf, uint32_t subleaf, uint32_t *eax, uint32_t *ebx,
+static void cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx,
                   uint32_t *ecx, uint32_t *edx){
     __asm__ volatile(
         "cpuid"
         : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
-        : "a"(leaf), "c"(subleaf)
+        : "a"(leaf), "c"(0)
     );
 }
 
@@ -50,11 +49,11 @@ static void remove_leading_spaces(char *text){
 
 static void detect_cpu_name(void){
     uint32_t eax,ebx,ecx,edx;
-    cpuid(0x80000000, 0, &eax,&ebx,&ecx,&edx);
+    cpuid(0x80000000,&eax,&ebx,&ecx,&edx);
 
     if(eax>=0x80000004){
         for(uint32_t part=0;part<3;part++){
-            cpuid(0x80000002+part, 0, &eax,&ebx,&ecx,&edx);
+            cpuid(0x80000002+part,&eax,&ebx,&ecx,&edx);
             char *destination=&cpu_name[part*16];
             copy_register(destination,eax);
             copy_register(destination+4,ebx);
@@ -66,7 +65,7 @@ static void detect_cpu_name(void){
         return;
     }
 
-    cpuid(0, 0, &eax,&ebx,&ecx,&edx);
+    cpuid(0,&eax,&ebx,&ecx,&edx);
     copy_register(cpu_name,ebx);
     copy_register(cpu_name+4,edx);
     copy_register(cpu_name+8,ecx);
@@ -75,57 +74,27 @@ static void detect_cpu_name(void){
 
 static void detect_logical_processors(void){
     uint32_t eax,ebx,ecx,edx;
-    cpuid(0, 0, &eax,&ebx,&ecx,&edx);
-    
-    // Используем CPUID leaf 0xB для детектирования ядер и потоков на современных CPU
-    if(eax >= 0xB) {
-        uint32_t level = 0;
-        uint32_t threads_per_core = 1;
-        uint32_t cores_per_package = 1;
-        
-        while(1) {
-            cpuid(0xB, level, &eax, &ebx, &ecx, &edx);
-            if((ecx & 0xFF) == 0) break; // Если тип уровня невалидный, выходим
-            
-            uint32_t level_type = (ecx >> 8) & 0xFF;
-            uint32_t logical_count = ebx & 0xFFFF;
-            
-            if(level_type == 1) { // Level type = thread (поток)
-                threads_per_core = logical_count;
-            } else if(level_type == 2) { // Level type = core (физическое ядро)
-                cores_per_package = logical_count;
-            }
-            level++;
-        }
-        
-        logical_processors = logical_processors < threads_per_core ? threads_per_core : logical_processors;
-        physical_cores = cores_per_package;
-    } else {
-        // Старый метод для старых процессоров
-        if(eax<1) return;
-        cpuid(1, 0, &eax,&ebx,&ecx,&edx);
-        uint32_t detected=(ebx>>16)&0xFF;
-        if(detected) logical_processors=detected;
-        
-        // Если не удалось получить информацию о физических ядрах, предполагаем 1 ядро на поток (если HT не поддерживается)
-        physical_cores = logical_processors;
-    }
+    cpuid(0,&eax,&ebx,&ecx,&edx);
+    if(eax<1) return;
+    cpuid(1,&eax,&ebx,&ecx,&edx);
+    uint32_t detected=(ebx>>16)&0xFF;
+    if(detected) logical_processors=detected;
 }
 
 static void detect_tsc_frequency(void){
     uint32_t eax,ebx,ecx,edx;
-    cpuid(0, 0, &eax,&ebx,&ecx,&edx);
+    cpuid(0,&eax,&ebx,&ecx,&edx);
     uint32_t maximum_leaf=eax;
 
     if(maximum_leaf>=0x15){
-        cpuid(0x15, 0, &eax,&ebx,&ecx,&edx);
+        cpuid(0x15,&eax,&ebx,&ecx,&edx);
         if(eax && ebx && ecx){
             tsc_frequency_hz=((uint64_t)ecx*ebx)/eax;
             return;
         }
     }
     if(maximum_leaf>=0x16){
-        cpuid(0x16, 0, &eax,&ebx,&ecx,&edx);
+        cpuid(0x16,&eax,&ebx,&ecx,&edx);
         if(eax) tsc_frequency_hz=(uint64_t)eax*1000000;
     }
 }
@@ -166,7 +135,7 @@ uint64_t system_info_usable_ram_bytes(void){ return usable_ram_bytes; }
 uint64_t system_info_total_ram_bytes(void){ return total_ram_bytes; }
 uint64_t system_info_tsc_frequency_hz(void){ return tsc_frequency_hz; }
 uint32_t system_info_logical_processors(void){ return logical_processors; }
-uint32_t system_info_physical_cores(void){ return physical_cores; }
+
 uint64_t system_info_uptime_ms(void){
     if(!tsc_frequency_hz) return 0;
     return ((read_tsc()-boot_tsc)*1000)/tsc_frequency_hz;

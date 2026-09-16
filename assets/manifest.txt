@@ -54,7 +54,6 @@
 /bin/clear /bin/clear - 1 bin/programs/clear
 /bin/echo /bin/echo - 1 bin/programs/echo
 /bin/battery /bin/battery - 1 bin/programs/battery
-/bin/cpuinfo /bin/cpuinfo - 1 bin/programs/cpuinfo
 /bin/reboot /bin/reboot - 1 bin/programs/reboot
 /bin/poweroff /bin/poweroff - 1 bin/programs/poweroff
 /bin/shutdown /bin/shutdown - 1 bin/programs/shutdown

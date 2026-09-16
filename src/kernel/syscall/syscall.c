@@ -531,7 +531,6 @@ int64_t syscall_handler(struct syscall_regs *r){
             memset(info,0,sizeof(*info));
             strncpy(info->name,system_info_cpu_name(),sizeof(info->name)-1);
             info->logical_processors=system_info_logical_processors();
-            info->physical_cores=system_info_physical_cores();
             info->usage_percent=system_info_cpu_usage_percent();
             info->frequency_hz=system_info_tsc_frequency_hz();
             info->uptime_ms=system_info_uptime_ms();
