@@ -305,6 +305,9 @@ struct battery_info {
     char status_text[32];
 };
 
+#define BATTERY_PERCENT_UNKNOWN 0xFFFFFFFFu
+#define BATTERY_VALUE_UNKNOWN_U32 0u
+
 #define AUDIO_BACKEND_NONE 0
 #define AUDIO_BACKEND_PC_SPEAKER 1
 #define AUDIO_BACKEND_HDA 2

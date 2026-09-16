@@ -219,10 +219,22 @@ static int command_battery(void){
     }
     pc_write(info.name);
     pc_write(": ");
-    pc_write_u64(info.percent);
-    pc_write("% ");
+    if(info.percent==BATTERY_PERCENT_UNKNOWN)
+        pc_write("unknown");
+    else{
+        pc_write_u64(info.percent);
+        pc_write("%");
+    }
+    pc_write(" ");
     pc_write(info.status_text);
     pc_write("\n");
+    if(info.voltage_mv==0)
+        pc_write("voltage: unknown\n");
+    else{
+        pc_write("voltage: ");
+        pc_write_u64(info.voltage_mv);
+        pc_write(" mV\n");
+    }
     return 0;
 }
 
