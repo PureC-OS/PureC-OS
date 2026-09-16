@@ -145,6 +145,50 @@ bool window_manager_has_focus(void){
     return !registry_suspended && focused_pid!=0;
 }
 
+uint32_t window_manager_focused_pid(void){
+    return registry_suspended ? 0 : focused_pid;
+}
+
+bool window_manager_focus_pid(uint32_t pid){
+    if(registry_suspended || !pid) return false;
+    struct managed_window *w = find_window(pid);
+    if(!w) return false;
+    focused_pid = pid;
+    w->z_order = next_z_order++;
+    return true;
+}
+
+uint32_t window_manager_list(uint32_t *pids,
+                             struct gui_window_request *frames,
+                             uint32_t capacity){
+    uint32_t count = 0;
+    for(uint32_t pass = 0; pass < 2; pass++){
+        (void)pass;
+        for(uint32_t scan = 0; scan < WINDOW_MANAGER_CAPACITY; scan++){
+            struct managed_window *best = 0;
+            for(uint32_t index = 0; index < WINDOW_MANAGER_CAPACITY; index++){
+                struct managed_window *w = &windows[index];
+                if(!w->used) continue;
+                bool already = false;
+                for(uint32_t k = 0; k < count; k++){
+                    if(pids && pids[k] == w->pid){ already = true; break; }
+                }
+                if(already) continue;
+                if(!best || w->z_order < best->z_order) best = w;
+            }
+            if(!best) break;
+            if(count < capacity){
+                if(pids) pids[count] = best->pid;
+                if(frames) frames[count] = best->frame;
+            }
+            count++;
+            if(count >= WINDOW_MANAGER_CAPACITY) break;
+        }
+        break;
+    }
+    return count;
+}
+
 void window_manager_set_suspended(bool suspended){
     registry_suspended=suspended;
 }

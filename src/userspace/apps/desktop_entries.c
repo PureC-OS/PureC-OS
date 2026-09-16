@@ -196,6 +196,7 @@ static const struct fallback_def kFallback[] = {
     {"settings.desktop", "Settings", "/bin/program/settings", "", 0x94E2D5u, "{}"},
     {"install.desktop", "Install", "/bin/installer", "", 0xCBA6F7u, "OS"},
     {"disks.desktop", "Disks", "/bin/program/disks", "", 0xF9E2AFu, "HD"},
+    {"devmgr.desktop", "Devices", "/bin/program/devmgr", "", 0x89DCEBu, "DV"},
     {"tetris.desktop", "Tetris", "/bin/program/tetris", "", 0xF38BA8u, "[]"},
     {"logview.desktop", "Logs", "/bin/program/logview", "", 0x89B4FAu, "LOG"},
     {"hexedit.desktop", "HexEdit", "/bin/program/hexedit", "", 0xF5C2E7u, "HX"},

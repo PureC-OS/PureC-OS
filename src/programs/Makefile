@@ -48,6 +48,7 @@ GENERAL_SOURCES := \
 	login/main.c \
  	monitor/main.c \
 	disks/main.c \
+	devmgr/main.c \
 	logview/main.c \
  	imgview/main.c \
  	fputest/main.c
@@ -78,6 +79,7 @@ TARGETS := \
 	$(PROGRAM_DIR)/login \
  	$(PROGRAM_DIR)/monitor \
 	$(PROGRAM_DIR)/disks \
+	$(PROGRAM_DIR)/devmgr \
 	$(PROGRAM_DIR)/logview \
  	$(PROGRAM_DIR)/hexedit \
  	$(PROGRAM_DIR)/imgview \
@@ -161,6 +163,10 @@ $(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUR
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/disks: $(OBJ_DIR)/disks/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/devmgr: $(OBJ_DIR)/devmgr/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

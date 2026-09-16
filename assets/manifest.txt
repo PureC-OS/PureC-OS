@@ -45,6 +45,7 @@
 /bin/program/settings /bin/program/settings - 0 bin/programs/settings
 /bin/program/monitor /bin/program/monitor - 0 bin/programs/monitor
 /bin/program/disks /bin/program/disks - 0 bin/programs/disks
+/bin/program/devmgr /bin/program/devmgr - 0 bin/programs/devmgr
 /bin/program/logview /bin/program/logview - 0 bin/programs/logview
 /bin/program/hexedit /bin/program/hexedit - 0 bin/programs/hexedit
 /bin/program/notepad /bin/program/notepad - 0 bin/programs/notepad
@@ -65,6 +66,7 @@
 /bin/program/settings.desktop /bin/program/settings.desktop /bin/program/SETTINGS.DES 0 src/userspace/desktop_entries/settings.desktop
 /bin/program/install.desktop /bin/program/install.desktop /bin/program/INSTALL.DES 0 src/userspace/desktop_entries/install.desktop
 /bin/program/disks.desktop /bin/program/disks.desktop /bin/program/DISKS.DES 0 src/userspace/desktop_entries/disks.desktop
+/bin/program/devmgr.desktop /bin/program/devmgr.desktop /bin/program/DEVMGR.DES 0 src/userspace/desktop_entries/devmgr.desktop
 /bin/program/tetris.desktop /bin/program/tetris.desktop /bin/program/TETRIS.DES 0 src/userspace/desktop_entries/tetris.desktop
 /bin/program/puzzle15.desktop /bin/program/puzzle15.desktop /bin/program/PUZZLE15.DES 0 src/userspace/desktop_entries/puzzle15.desktop
 /bin/program/logview.desktop /bin/program/logview.desktop /bin/program/LOGVIEW.DES 0 src/userspace/desktop_entries/logview.desktop
