@@ -27,7 +27,7 @@
 /bin/snake /game/snake - 1 bin/programs/snake
 /bin/program/terminal /bin/program/terminal - 1 bin/programs/terminal
 /bin/program/nano /bin/program/nano - 1 bin/programs/nano
-/bin/program/system /bin/program/system - 1 bin/programs/system
+/bin/system /bin/system - 1 bin/programs/system
 /bin/program/system/cd /bin/program/system/cd - 1 bin/programs/cd
 /bin/program/system/help /bin/program/system/help - 1 bin/programs/help
 /bin/program/system/ls /bin/program/system/ls - 1 bin/programs/ls
