@@ -50,11 +50,11 @@ static void build_prompt(char *prompt, uint32_t capacity){
 }
 
 static void show_help(void){
-    pc_write("Builtins: help clear cd pwd echo env set unset ping panic exit\n");
+    pc_write("Builtins: help clear pwd echo env set unset ping panic exit\n");
     pc_write("  ping [-c count] <ip|host|url>\n");
     pc_write("EXT2 debug: stat <path> | inode <num> | super | blocks <path> | fsinfo | dumpi <num>\n");
     pc_write("System programs resolve through PATH=/bin/program:/bin:\n");
-    pc_write("  ls [directory] | cat <file> | touch <file> | mkdir <directory>\n");
+    pc_write("  cd [directory] | ls [directory] | cat <file> | touch <file> | mkdir <directory>\n");
     pc_write("  nano <file> | hexedit <file> | disks | usbscan | dmesg | savelog\n");
     pc_write("  install | setup | update | mkfs.fat32\n");
     pc_write("  uname | about | systeminfo | htop | font | snake | tetris | files | gui-demo\n");
@@ -158,15 +158,32 @@ static void command_ping(const char *arguments){
     }
 }
 
-static void change_directory(const char *argument){
+static void change_directory(struct terminal_window *terminal, const char *argument){
     char current[SHELL_PATH_CAPACITY];
     char normalized[SHELL_PATH_CAPACITY];
-    if(!argument[0]) argument="/";
+    const char *target = skip_spaces(argument);
+    if(!target[0]) target = "/";
     if(pc_getenv("PWD",current,sizeof(current))<0)
         pc_copy(current,"/",sizeof(current));
-    if(!shell_path_normalize(current,argument,normalized,sizeof(normalized))
-       || pc_setenv("PWD",normalized)<0){
+    if(!shell_path_normalize(current,target,normalized,sizeof(normalized))){
         pc_write("cd: invalid path\n");
+        return;
+    }
+    int32_t pid = pc_exec_with_args("/bin/program/cd", argument);
+    if(pid < 0) pid = pc_exec_with_args("/bin/cd", argument);
+    if(pid < 0){
+        pc_write("cd: /bin/program/cd: command not found\n");
+        return;
+    }
+    int32_t status = 0;
+    if(pc_wait(pid, &status, false) < 0){
+        (void)terminal_window_restore(terminal);
+        pc_write("cd: wait failed\n");
+        return;
+    }
+    (void)terminal_window_restore(terminal);
+    if(status == 0){
+        pc_setenv("PWD", normalized);
     }
 }
 
@@ -462,7 +479,7 @@ static bool execute_line(struct terminal_window *terminal, char *line){
         char directory[SHELL_PATH_CAPACITY];
         if(pc_getenv("PWD",directory,sizeof(directory))>=0) pc_write(directory);
         pc_write("\n");
-    } else if(pc_strcmp(command,"cd")==0) change_directory(arguments);
+    } else if(pc_strcmp(command,"cd")==0) change_directory(terminal,arguments);
     else if(pc_strcmp(command,"echo")==0){
         char expanded[SHELL_LINE_CAPACITY];
         if(shell_expand_environment(arguments,expanded,sizeof(expanded)))

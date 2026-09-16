@@ -28,6 +28,8 @@
 /bin/program/terminal /bin/program/terminal - 1 bin/programs/terminal
 /bin/program/nano /bin/program/nano - 1 bin/programs/nano
 /bin/program/system /bin/program/system - 1 bin/programs/system
+/bin/program/cd /bin/program/cd - 1 bin/programs/cd
+/bin/cd /bin/cd - 1 bin/programs/cd
 /bin/program/files /bin/program/files - 1 bin/programs/files
 /bin/gui-demo /bin/gui-demo - 1 bin/programs/gui-demo
 

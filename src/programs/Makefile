@@ -51,7 +51,8 @@ GENERAL_SOURCES := \
 	devmgr/main.c \
 	logview/main.c \
  	imgview/main.c \
- 	fputest/main.c
+ 	fputest/main.c \
+	cd/cd.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
@@ -84,7 +85,8 @@ TARGETS := \
  	$(PROGRAM_DIR)/hexedit \
  	$(PROGRAM_DIR)/imgview \
  	$(PROGRAM_DIR)/hello \
- 	$(PROGRAM_DIR)/fputest
+ 	$(PROGRAM_DIR)/fputest \
+	$(PROGRAM_DIR)/cd
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -199,6 +201,11 @@ $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/cd: $(OBJ_DIR)/cd/cd.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
 
 ifneq ($(TCC_PRESENT),)
 TCC_PATCH_MARK := TCC_TARGET_PUREC
