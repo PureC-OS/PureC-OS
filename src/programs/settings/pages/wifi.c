@@ -194,7 +194,7 @@ void wifi_page_draw(struct pg_window *window,const struct pg_event *event){
     uint32_t y = (uint32_t)((int32_t)PAGE_TOP + off);
     pg_window_text(window, PAGE_LEFT, y-2, "Network", window->theme.text);
     y += 18;
-    // summary: one line, no box plaque abuse — single bar
+
     {
         struct pg_rect r = {PAGE_LEFT, y, width, 26};
         pg_window_rect(window, r, 0x2B2D40);
@@ -208,7 +208,7 @@ void wifi_page_draw(struct pg_window *window,const struct pg_event *event){
         pg_window_text(window, PAGE_LEFT+12, y+9, sum, online ? 0xA6E3A1 : window->theme.danger);
         y += 26 + 8;
     }
-    // wired: compact, 3 lines per iface max
+
     {
         uint32_t box_top = y;
         uint32_t box_h = 34 + wired_rows*52;
@@ -240,7 +240,7 @@ void wifi_page_draw(struct pg_window *window,const struct pg_event *event){
         }
         y = box_top + box_h + 10;
     }
-    // wifi: minimal
+
     {
         uint32_t box_top = y;
         uint32_t box_h = 132;

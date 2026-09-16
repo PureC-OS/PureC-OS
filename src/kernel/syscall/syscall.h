@@ -12,10 +12,7 @@
 #define SYS_DRAW_LINE 101
 #define SYS_GET_MOUSE 102
 #define SYS_FB_INFO 103
-/* 104/105 SYS_DRAW_TEXT* removed: text is rendered in userspace
- * (graphic backend src/gfx/text.h) on top of DRAW_RECT. The kernel
- * does not rasterize fonts. 107/108 SYS_*_FONT_FACE removed too:
- * faces are a backend-side setting. */
+
 #define SYS_SCROLL_RECT_UP 106
 #define SYS_FB_BEGIN_UPDATE 109
 #define SYS_FB_END_UPDATE 110
@@ -97,7 +94,7 @@
 #define SYS_AUDIO_PCM_START 279
 #define SYS_AUDIO_PCM_STOP 280
 #define SYS_DIR_LIST_LONG 288
-#define SYS_PANIC_TEST    299   /* ручной тест экрана паники */
+#define SYS_PANIC_TEST    299
 
 #define FS_TYPE_FAT32 0
 #define FS_TYPE_EXT2 1

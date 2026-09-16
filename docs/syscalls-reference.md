@@ -175,6 +175,7 @@
 | **279** | `SYS_AUDIO_PCM_START` | `pc_audio_pcm_start()` | Запуск воспроизведения цифрового PCM аудио |
 | **280** | `SYS_AUDIO_PCM_STOP` | `pc_audio_pcm_stop()` | Немедленная остановка воспроизведения PCM |
 | **288** | `SYS_DIR_LIST_LONG` | `pc_directory_list_long()` | Расширенное чтение каталога (длинные имена) |
+| **290** | `SYS_NET_IF_LIST` | `pc_net_if_list()` | Список проводных интерфейсов: link/IP/GW/DNS/DHCP/статистика |
 
 ---
 

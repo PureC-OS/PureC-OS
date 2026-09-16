@@ -28,7 +28,7 @@ void pg_internal_draw_text_clipped(uint32_t x, uint32_t y,
                                    const char *text, uint32_t color,
                                    uint32_t background,
                                    const struct pg_rect *clip){
-    (void)background; /* transparent by design: backend never paints bg */
+    (void)background;
     if(!text || !clip || y<clip->y || y+8>clip->y+clip->height) return;
     while(*text && x<clip->x+clip->width){
         if(x+8>clip->x+clip->width) break;
@@ -43,7 +43,7 @@ void pg_internal_draw_text_sized_clipped(uint32_t x, uint32_t y,
                                            const char *text, uint32_t color,
                                            uint32_t background, uint32_t size,
                                            const struct pg_rect *clip){
-    (void)background; /* transparent by design: backend never paints bg */
+    (void)background;
     if(!text || !clip || !size) return;
     if(size<8) size=8;
     if(size>48) size=48;

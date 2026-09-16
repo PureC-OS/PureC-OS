@@ -340,8 +340,6 @@ void pc_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height,
     (void)syscall5(SYS_DRAW_RECT,x,y,width,height,color);
 }
 
-/* Text is rendered in userspace: glyphs become filled rects.
- * The kernel only knows pixels/rects and never rasterizes fonts. */
 static void pc_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                        uint32_t color, void *ctx){
     (void)ctx;

@@ -10,7 +10,6 @@ static uint32_t fb_width, fb_height, fb_pitch;
 static uint32_t cur_x=0, cur_y=0;
 static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
 
-
 void fb_init(struct limine_framebuffer *fb){
     if (!fb) return;
     g_fb = fb;
@@ -51,7 +50,6 @@ static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c){
     fb_addr[y*fb_pitch + x]=c;
 }
 
-/* Fallback console glyphs via the shared graphic backend (no fonts here). */
 static void fb_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                        uint32_t color, void *ctx){
     (void)ctx;

@@ -70,7 +70,7 @@ static void draw_storage_page(struct pg_window *window,
 
 void settings_app_draw(struct settings_app *app,struct pg_window *window,
                        const struct pg_event *event){
-    /* Live theme preview: the Settings window itself follows the theme. */
+
     window->theme=pg_theme_by_name(app->appearance.theme);
     pg_window_begin(window);
     if(pg_window_is_minimized(window)){ pg_window_end(window); return; }

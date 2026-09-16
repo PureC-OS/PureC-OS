@@ -6,7 +6,7 @@
 
 static struct display_info cached_info;
 static bool cached_info_valid;
-/* Desktop font face lives here in the graphic backend, not in the kernel. */
+
 static gfx_font_face_t g_desktop_face = GFX_FONT_CLEAN;
 
 static int64_t display_syscall5(uint64_t number, uint64_t argument1,
@@ -75,7 +75,7 @@ const char *display_get_protocol_name(void){
 }
 
 void display_set_font_face(enum display_font_face face){
-    /* Local to the desktop backend: the kernel no longer knows fonts. */
+
     if(face==DISPLAY_FONT_BOLD) g_desktop_face=GFX_FONT_BOLD;
     else if(face==DISPLAY_FONT_CLEAN) g_desktop_face=GFX_FONT_CLEAN;
     else g_desktop_face=GFX_FONT_CLASSIC;

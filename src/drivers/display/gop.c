@@ -19,8 +19,7 @@ static bool dirty_valid = false;
 static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 static uint32_t cur_x=12, cur_y=12;
 static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
-/* Kernel console face only. GUI faces live in the graphic backend
- * callers (desktop, libgui), the driver itself owns no fonts. */
+
 static enum gop_font_face console_face=GOP_FONT_CLEAN;
 
 static gfx_font_face_t console_gfx_face(void){
@@ -29,7 +28,6 @@ static gfx_font_face_t console_gfx_face(void){
     return GFX_FONT_CLEAN;
 }
 
-/* Rect sink for the text backend: raw pixels, no font knowledge here. */
 static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c);
 static void gop_gfx_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                          uint32_t color, void *ctx){
@@ -59,7 +57,6 @@ struct gop_console {
 };
 
 static struct gop_console user_console;
-
 
 void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type){
     if(!fb) { gop.available=false; return; }
@@ -132,23 +129,23 @@ void gop_init_from_multiboot(void *mbi){
     gop.available=false;
 }
 
-bool gop_is_available(void){ 
-    return gop.available; 
+bool gop_is_available(void){
+    return gop.available;
 }
-uint32_t gop_get_width(void){ 
-    return gop.width; 
+uint32_t gop_get_width(void){
+    return gop.width;
 }
-uint32_t gop_get_height(void){ 
-    return gop.height; 
+uint32_t gop_get_height(void){
+    return gop.height;
 }
-uint32_t gop_get_pitch(void){ 
-    return gop.pitch; 
+uint32_t gop_get_pitch(void){
+    return gop.pitch;
 }
-uint8_t gop_get_bpp(void){ 
-    return gop.bpp; 
+uint8_t gop_get_bpp(void){
+    return gop.bpp;
 }
-uint64_t gop_get_framebuffer_size_bytes(void){ 
-    return gop.framebuffer_bytes; 
+uint64_t gop_get_framebuffer_size_bytes(void){
+    return gop.framebuffer_bytes;
 }
 const char *gop_get_protocol_name(void){
     return gop.protocol_name ? gop.protocol_name : "Unavailable";
@@ -332,7 +329,6 @@ void gop_present(void){
     }
 }
 
-
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
     if(!gop.available || !gop.addr || !backbuffer || !w || !h) return;
     if(x>=gop.width || y>=gop.height) return;
@@ -381,9 +377,9 @@ void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
 static void gop_scroll(void){
     if(!gop.available || !gop.addr) return;
     const uint32_t line_h = 10;
-    if(gop.height <= line_h) { 
-        gop_clear(bg); 
-        return; 
+    if(gop.height <= line_h) {
+        gop_clear(bg);
+        return;
     }
     if(ensure_backbuffer()){
         for(uint32_t y=0; y + line_h < gop.height; y++){
@@ -406,9 +402,9 @@ static void gop_scroll(void){
         for(uint32_t y=gop.height-line_h; y<gop.height; y++){
             uint8_t *line=base + y*pitch_bytes;
             for(uint32_t x=0;x<gop.width;x++){
-                line[x*3+0]=(uint8_t)(bg&0xFF); 
-                line[x*3+1]=(uint8_t)((bg>>8)&0xFF); 
-                line[x*3+2]=(uint8_t)((bg>>16)&0xFF); 
+                line[x*3+0]=(uint8_t)(bg&0xFF);
+                line[x*3+1]=(uint8_t)((bg>>8)&0xFF);
+                line[x*3+2]=(uint8_t)((bg>>16)&0xFF);
             }
         }
     } else if(gop.bpp==16){
@@ -458,8 +454,8 @@ void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color){
 }
 
 void gop_clear(uint32_t color){
-    if(!gop.available){ 
-        vga_clear(); return; 
+    if(!gop.available){
+        vga_clear(); return;
     }
     if(ensure_backbuffer()){
         for(uint32_t y=0;y<gop.height;y++){
@@ -500,8 +496,6 @@ void gop_set_color(uint32_t f, uint32_t b){
     bg=b;
 }
 
-/* Kernel console glyphs go through the shared graphic backend.
- * The driver only provides pixels via gop_gfx_rect. */
 static void gop_console_glyph(char c, uint32_t x, uint32_t y,
                               uint32_t cell_fg, uint32_t cell_bg){
     char text[2] = {c, '\0'};
@@ -547,13 +541,13 @@ void gop_putc(char c){
     }
     cur_x+=8;
 }
-void gop_write(const char *s){ 
-    while(*s) gop_putc(*s++); 
+void gop_write(const char *s){
+    while(*s) gop_putc(*s++);
 }
-void gop_write_hex(uint64_t v){ 
-    const char*h="0123456789ABCDEF"; 
-    gop_write("0x"); 
-    for(int i=60;i>=0;i-=4) gop_putc(h[(v>>i)&0xF]); 
+void gop_write_hex(uint64_t v){
+    const char*h="0123456789ABCDEF";
+    gop_write("0x");
+    for(int i=60;i>=0;i-=4) gop_putc(h[(v>>i)&0xF]);
     }
 
 bool gop_console_configure(uint32_t x, uint32_t y,

@@ -137,18 +137,18 @@ static void restore_bg(int32_t x,int32_t y){
         gop_put_pixel((uint32_t)(x+dx), (uint32_t)(y+dy), bg_buf[dy*CURS_W+dx]);
 }
 
-void mouse_set_bounds(int32_t w,int32_t h){ 
-    bound_w=w; 
-    bound_h=h; 
-    if(state.x>=w) state.x=w-1; 
-    if(state.y>=h) state.y=h-1; 
+void mouse_set_bounds(int32_t w,int32_t h){
+    bound_w=w;
+    bound_h=h;
+    if(state.x>=w) state.x=w-1;
+    if(state.y>=h) state.y=h-1;
 }
 
-struct mouse_state mouse_get_state(void){ 
-    return state; 
+struct mouse_state mouse_get_state(void){
+    return state;
 }
-struct mouse_debug_state mouse_get_debug_state(void){ 
-    return *(const struct mouse_debug_state *)&debug_state; 
+struct mouse_debug_state mouse_get_debug_state(void){
+    return *(const struct mouse_debug_state *)&debug_state;
 }
 
 void mouse_set_debug_overlay(bool enabled){
@@ -219,7 +219,6 @@ static inline uint32_t cursor_pixel(int dx, int dy){
     return border ? cursor_border : cursor_color;
 }
 
-// Рисует курсор: стрелка 12x12
 static void draw_cursor(int32_t x,int32_t y){
     if(!gop_is_available()){
         int tx = x / 8;
@@ -435,7 +434,7 @@ void ps2_mouse_init(void){
     if(has_mouse || debug_state.enabled){
         uint8_t m1 = inb(0x21);
         uint8_t m2 = inb(0xA1);
-        m1 &= ~(1<<2); 
+        m1 &= ~(1<<2);
         m2 &= ~(1<<4);
         outb(0x21, m1);
         outb(0xA1, m2);

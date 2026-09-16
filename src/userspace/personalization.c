@@ -83,7 +83,7 @@ uint32_t personalization_font_face(const char *font){
     if(!font) return 1;
     if(strcmp(font,"classic")==0) return 0;
     if(strcmp(font,"bold")==0) return 2;
-    return 1; /* clean + future *.ttf fallback */
+    return 1;
 }
 
 uint32_t personalization_font_size_clamped(uint32_t size){
@@ -95,7 +95,7 @@ uint32_t personalization_font_size_clamped(uint32_t size){
 bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
-    if(!vfs_is_root_mounted()) return true; /* early boot: defaults */
+    if(!vfs_is_root_mounted()) return true;
     filesystem_syscall_lock();
     int32_t fd=vfs_open(PERSONALIZATION_PATH);
     char buffer[512];
@@ -164,7 +164,7 @@ void personalization_apply(const struct personalization *p){
 
 bool personalization_poll(void){
     uint64_t now=timer_ticks();
-    if(g_has_current && now-g_last_poll_tick<500) return false; /* ~2Hz, ms */
+    if(g_has_current && now-g_last_poll_tick<500) return false;
     g_last_poll_tick=now;
     struct personalization next;
     personalization_load(&next);

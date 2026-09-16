@@ -186,10 +186,7 @@ int64_t syscall_handler(struct syscall_regs *r){
                                request->amount,request->fill_color);
             return 0;
         }
-        /* NOTE: no text syscalls. Glyph rasterization lives in the
-         * graphic backend (src/gfx/text.h); the kernel exposes only
-         * pixels/rects/scroll/present. SYS_DRAW_TEXT* and
-         * SYS_*_FONT_FACE were removed for that reason. */
+
         case SYS_FB_BEGIN_UPDATE:
             mouse_begin_framebuffer_update();
             return 0;
@@ -879,8 +876,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             return r;
         }
         case SYS_PANIC_TEST: {
-            /* ручной вызов паники для тестирования экрана.
-             * a1 — необязательное userspace-сообщение (строка), иначе дефолт. */
+
             const char *msg = "SYS_PANIC_TEST called by userspace";
             if (a1 && readable_string((const char *)(uintptr_t)a1))
                 msg = (const char *)(uintptr_t)a1;

@@ -100,9 +100,7 @@ static int command_htop(void){
 
 static int command_font(const char *arguments){
     (void)arguments;
-    /* No global kernel font anymore: faces live in the graphic backend
-     * (src/gfx/text.h). The desktop reads font=/font_size= from its
-     * personalization config; console keeps its own face. */
+
     pc_write("Font backend: userspace (gfx/text.h), faces: classic/clean/bold\n");
     pc_write("Desktop font is set via personalization config.\n");
     return 0;
