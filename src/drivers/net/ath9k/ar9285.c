@@ -94,11 +94,9 @@ static bool ar_read_mac(uint8_t mac[6]) {
         if (mac[i] != 0xFF)
             all_ff = false;
     }
-    // Мультикаст-бит у STA-адреса STA_ID0 не обязан быть 0, проверяем мягче e1000.
+
     return !all_zero && !all_ff;
 }
-
-// --- net_device_ops (заглушки phase 1) ---
 
 static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length) {
     struct ar9285_device *dev = context;
@@ -106,7 +104,7 @@ static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length
     (void)length;
     if (!dev || !dev->initialized)
         return false;
-    // TODO phase 2: QCU/DCU + TX-дескрипторы.
+
     dev->net.stats.tx_dropped++;
     return false;
 }
@@ -114,12 +112,12 @@ static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length
 static void ar9285_poll(void *context, uint32_t budget) {
     (void)context;
     (void)budget;
-    // TODO phase 2: RX-дескрипторы + net_device_receive().
+
 }
 
 static bool ar9285_link_up(void *context) {
     struct ar9285_device *dev = context;
-    // Линк = association, которой пока нет.
+
     return dev && dev->initialized && false;
 }
 
@@ -129,14 +127,12 @@ static const struct net_device_ops ar9285_net_ops = {
     .link_up = ar9285_link_up,
 };
 
-// --- wifi_ops (минимальные, честные) ---
-
 static bool ar9285_wifi_scan(void *context) {
     struct ar9285_device *dev = context;
     if (!dev || !dev->initialized)
         return false;
     klog(KLOG_INFO, "ar9285: scan requested (phase1: no MLME yet, reporting empty)");
-    // TODO phase 2: passive scan по каналам 1..13 + beacons в wifi_report_scan_result().
+
     wifi_notify_scan_done();
     return true;
 }
@@ -154,9 +150,7 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
         dev->target_password[0] = '\0';
     }
     klogf(KLOG_WARN, "ar9285: connect to '%s' deferred (phase1: no assoc/WPA yet)", dev->target_ssid);
-    // Возвращаем true чтобы wifi-менеджер перешёл в CONNECTING,
-    // но is_connected() останется false пока нет phase 2.
-    // TODO phase 2: open-system assoc, затем WPA2 handshake.
+
     return true;
 }
 
@@ -173,7 +167,7 @@ static bool ar9285_wifi_disconnect(void *context) {
 static void ar9285_wifi_poll(void *context, uint64_t now_ms) {
     (void)context;
     (void)now_ms;
-    // TODO phase 2: дотягивать scan/assoc-таймауты, RSSI.
+
 }
 
 static bool ar9285_wifi_is_connected(void *context) {
@@ -249,7 +243,6 @@ bool ar9285_init(void) {
         return false;
     }
 
-    // Гасим прерывания пока нет обработчика.
     ar_reg_write(AR_IMR, 0);
     (void)ar_reg_read(AR_ISR);
 

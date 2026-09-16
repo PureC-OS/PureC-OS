@@ -1,13 +1,4 @@
 #pragma once
-// PureC-OS 802.11 MLME — open-system association (phase 2a).
-//
-// Только management-путь STA: auth (open) -> assoc -> associated.
-// Без WPA/RSN, без IBSS/mesh, без fragmentation. Кадры 802.11 строятся
-// здесь, а драйвер (ar9285) только кладёт их в TX-дескрипторы и отдаёт
-// принятые mgmt-кадры в dot11_mlme_input().
-//
-// Форматы сверены с IEEE 802.11-2016 §9 (MAC frame formats) и общеизвестными
-// значениями subtype/status из Linux mac80211 (GPL, только числовые константы).
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -17,7 +8,6 @@
 #define DOT11_MGMT_MAX 512
 #define DOT11_ADDR_LEN 6
 
-// --- Frame Control ---
 #define DOT11_FTYPE_MGMT 0x00
 #define DOT11_FTYPE_CTRL 0x01
 #define DOT11_FTYPE_DATA 0x02
@@ -37,7 +27,6 @@
 #define DOT11_FC_TYPE(fc) (((fc) >> 2) & 0x3)
 #define DOT11_FC_STYPE(fc) (((fc) >> 4) & 0xF)
 
-// --- Auth / Assoc ---
 #define DOT11_AUTH_ALG_OPEN 0x0000
 #define DOT11_AUTH_SEQ_REQ 0x0001
 #define DOT11_AUTH_SEQ_RESP 0x0002
@@ -50,7 +39,7 @@
 #define DOT11_CAP_IBSS 0x0002
 #define DOT11_CAP_SHORT_PREAMBLE 0x0020
 #define DOT11_CAP_SHORT_SLOT 0x0400
-// STA open-system: ESS + short preamble + short slot.
+
 #define DOT11_CAP_STA_OPEN (DOT11_CAP_ESS | DOT11_CAP_SHORT_PREAMBLE | DOT11_CAP_SHORT_SLOT)
 
 #define DOT11_IE_SSID 0
@@ -58,7 +47,6 @@
 #define DOT11_IE_DS_PARAM 3
 #define DOT11_IE_EXT_RATES 50
 
-// --- MLME состояния ---
 #define DOT11_MLME_IDLE 0
 #define DOT11_MLME_AUTH_SENT 1
 #define DOT11_MLME_AUTH_OK 2
@@ -96,13 +84,13 @@ typedef void (*dot11_event_fn)(void *ctx);
 struct dot11_mlme {
     uint8_t state;
     uint8_t fail_reason;
-    uint16_t last_status; // status code из последнего reject/deauth
+    uint16_t last_status;
     char ssid[DOT11_SSID_MAX + 1];
     uint8_t ssid_len;
     uint8_t ap[DOT11_ADDR_LEN];
     uint8_t self[DOT11_ADDR_LEN];
     uint8_t channel;
-    uint16_t seq; // 12-битный sequence number
+    uint16_t seq;
     uint8_t retries;
     uint64_t last_tx_ms;
     uint16_t aid;
@@ -121,25 +109,17 @@ void dot11_mlme_init(struct dot11_mlme *m, const uint8_t self[DOT11_ADDR_LEN],
                      dot11_event_fn on_associated, dot11_event_fn on_failed,
                      void *event_ctx);
 
-// Старт open-системы. bssid обязан быть ненулевым (иначе NO_BSSID).
-// Возвращает false если SSID/BSSID невалидны или нет tx callback.
 bool dot11_mlme_start_open(struct dot11_mlme *m, const char *ssid,
                            const uint8_t bssid[DOT11_ADDR_LEN],
                            uint8_t channel, uint64_t now_ms);
 void dot11_mlme_stop(struct dot11_mlme *m);
 uint8_t dot11_mlme_state(const struct dot11_mlme *m);
 
-// poll дёргает ретраи: если с last_tx прошло >= TIMEOUT и retries left —
-// перепосылает последний кадр через tx. Если ретраи кончились — FAILED.
-// Вызывать из wifi_poll()/driver poll с монотонным now_ms.
 void dot11_mlme_poll(struct dot11_mlme *m, uint64_t now_ms);
 
-// Входящий mgmt-кадр (уже без radiotap/FCS). Возвращает true если кадр
-// относился к нашей MLME-сессии (auth resp / assoc resp / deauth ...).
 bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
                       uint64_t now_ms);
 
-// --- Билдеры/парсеры (открыты для хост-тестов и драйвера) ---
 uint16_t dot11_build_auth_req(const uint8_t sa[DOT11_ADDR_LEN],
                               const uint8_t bssid[DOT11_ADDR_LEN],
                               uint16_t seq_num, uint8_t *out, uint16_t out_cap);
@@ -150,8 +130,7 @@ bool dot11_parse_auth_resp(const uint8_t *frame, uint16_t len,
 bool dot11_parse_assoc_resp(const uint8_t *frame, uint16_t len,
                             const uint8_t self[DOT11_ADDR_LEN],
                             uint16_t *status_out, uint16_t *aid_out);
-// Минимальный парсинг beacon/probe_resp: достаёт BSSID + SSID + channel.
-// Нужен будущему scan MLME; assoc-путь его не требует, но парсер общий.
+
 bool dot11_parse_beacon(const uint8_t *frame, uint16_t len,
                         uint8_t bssid_out[DOT11_ADDR_LEN],
                         char ssid_out[DOT11_SSID_MAX + 1],

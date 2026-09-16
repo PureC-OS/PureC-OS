@@ -1,10 +1,5 @@
-// PureC-OS 802.11 MLME — open-system association.
-// Логика написана с нуля под PureC-OS, без копипасты GPL-кода.
-// Только числовые константы subtype/status совпадают с IEEE 802.11.
-
 #include "include/802.h"
 
-// Локальный string-минимум чтобы не тянуть lib/string в хост-тесты.
 #ifndef PURECOS_KERNEL
 static void mlme_memcpy(void *d, const void *s, uint32_t n) {
     uint8_t *dd = (uint8_t *)d;
@@ -57,7 +52,7 @@ static uint16_t get_le16(const uint8_t *p) {
 static uint16_t next_seq(struct dot11_mlme *m) {
     uint16_t s = m->seq;
     m->seq = (uint16_t)((m->seq + 1) & 0x0FFF);
-    return (uint16_t)(s << 4); // frag = 0
+    return (uint16_t)(s << 4);
 }
 
 static uint16_t build_hdr(uint8_t *out, uint16_t out_cap, uint8_t stype,
@@ -80,7 +75,7 @@ uint16_t dot11_build_auth_req(const uint8_t sa[DOT11_ADDR_LEN],
                               const uint8_t bssid[DOT11_ADDR_LEN],
                               uint16_t seq_num, uint8_t *out, uint16_t out_cap) {
     if (!sa || !bssid || !out) return 0;
-    // auth body: alg(2) seq(2) status(2) = 6
+
     if (out_cap < sizeof(struct dot11_mgmt_hdr) + 6) return 0;
     uint16_t off = build_hdr(out, out_cap, DOT11_STYPE_AUTH, bssid, sa, bssid, seq_num);
     if (!off) return 0;
@@ -90,14 +85,13 @@ uint16_t dot11_build_auth_req(const uint8_t sa[DOT11_ADDR_LEN],
     return (uint16_t)(off + 6);
 }
 
-// Классический набор rates для assoc req (CCK 1/2/5.5/11 + OFDM 6/9/12/18).
 static const uint8_t assoc_rates[] = {0x82, 0x84, 0x8B, 0x96, 0x0C, 0x12, 0x18, 0x24};
 static const uint8_t assoc_ext_rates[] = {0x30, 0x48, 0x60, 0x6C};
 
 uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_cap) {
     if (!m || !out) return 0;
     if (!m->ssid_len || m->ssid_len > DOT11_SSID_MAX) return 0;
-    // hdr(24) + cap(2) + listen(2) + ssid IE(2+32) + rates IE(2+8) + ext(2+4)
+
     uint16_t need = 24 + 2 + 2 + 2 + m->ssid_len + 2 + (uint16_t)sizeof(assoc_rates) +
                     2 + (uint16_t)sizeof(assoc_ext_rates);
     if (out_cap < need) return 0;
@@ -161,7 +155,7 @@ bool dot11_parse_assoc_resp(const uint8_t *frame, uint16_t len,
     if (self && !dot11_addr_eq(h.da, self)) return false;
     if (len < sizeof(h) + 6) return false;
     const uint8_t *b = frame + sizeof(h);
-    // cap(2) status(2) aid(2)
+
     uint16_t status = get_le16(b + 2);
     uint16_t aid = (uint16_t)(get_le16(b + 4) & 0x3FFF);
     if (status_out) *status_out = status;
@@ -178,7 +172,7 @@ bool dot11_parse_beacon(const uint8_t *frame, uint16_t len,
     if (!mgmt_hdr_parse(frame, len, &stype, &h)) return false;
     if (stype != DOT11_STYPE_BEACON && stype != DOT11_STYPE_PROBE_RESP) return false;
     if (bssid_out) mlme_memcpy(bssid_out, h.bssid, DOT11_ADDR_LEN);
-    // body: timestamp(8) + interval(2) + cap(2) + IEs
+
     if (len < sizeof(h) + 12) return false;
     uint16_t off = (uint16_t)(sizeof(h) + 12);
     bool have_ssid = false;
@@ -323,10 +317,9 @@ bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
     struct dot11_mgmt_hdr h;
     uint8_t stype = 0;
     if (!mgmt_hdr_parse(frame, len, &stype, &h)) return false;
-    // Фильтр: кадр нам (DA == self или broadcast для beacon) и BSSID наш,
-    // кроме beacon/probe_resp где BSSID просто копируется из эфира.
+
     if (stype == DOT11_STYPE_BEACON || stype == DOT11_STYPE_PROBE_RESP) {
-        return true; // scan-путь разберёт сам через dot11_parse_beacon
+        return true;
     }
     if (!dot11_addr_eq(h.bssid, m->ap)) return false;
 
@@ -340,7 +333,7 @@ bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
         }
         m->retries = 0;
         m->state = DOT11_MLME_AUTH_OK;
-        // Сразу шлём assoc — открытый auth без задержек.
+
         if (!mlme_send_assoc(m, now_ms)) {
             mlme_fail(m, DOT11_FAIL_TIMEOUT, 0);
         }
@@ -361,7 +354,7 @@ bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
         return true;
     }
     if (stype == DOT11_STYPE_DEAUTH || stype == DOT11_STYPE_DISASSOC) {
-        // AP рвёт связь в любой момент после начала диалога.
+
         if (m->state == DOT11_MLME_IDLE) return true;
         uint16_t reason = 0;
         if (len >= sizeof(h) + 2) reason = get_le16(frame + sizeof(h));
