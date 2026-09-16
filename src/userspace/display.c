@@ -1,10 +1,13 @@
 #include "display.h"
 #include "syscall.h"
 #include "../kernel/syscall/syscall.h"
+#include "../gfx/text.h"
 #include "../lib/string.h"
 
 static struct display_info cached_info;
 static bool cached_info_valid;
+/* Desktop font face lives here in the graphic backend, not in the kernel. */
+static gfx_font_face_t g_desktop_face = GFX_FONT_CLEAN;
 
 static int64_t display_syscall5(uint64_t number, uint64_t argument1,
                                 uint64_t argument2, uint64_t argument3,
@@ -72,13 +75,15 @@ const char *display_get_protocol_name(void){
 }
 
 void display_set_font_face(enum display_font_face face){
-    (void)userspace_syscall(SYS_SET_FONT_FACE,(uint64_t)face,0,0);
+    /* Local to the desktop backend: the kernel no longer knows fonts. */
+    if(face==DISPLAY_FONT_BOLD) g_desktop_face=GFX_FONT_BOLD;
+    else if(face==DISPLAY_FONT_CLEAN) g_desktop_face=GFX_FONT_CLEAN;
+    else g_desktop_face=GFX_FONT_CLASSIC;
 }
 
 enum display_font_face display_get_font_face(void){
-    int64_t face=userspace_syscall(SYS_GET_FONT_FACE,0,0,0);
-    if(face==DISPLAY_FONT_CLEAN) return DISPLAY_FONT_CLEAN;
-    if(face==DISPLAY_FONT_BOLD) return DISPLAY_FONT_BOLD;
+    if(g_desktop_face==GFX_FONT_BOLD) return DISPLAY_FONT_BOLD;
+    if(g_desktop_face==GFX_FONT_CLEAN) return DISPLAY_FONT_CLEAN;
     return DISPLAY_FONT_CLASSIC;
 }
 
@@ -86,30 +91,24 @@ void display_clear(uint32_t color){
     (void)userspace_syscall(SYS_CLEAR,color,0,0);
 }
 
+static void display_rect_cb(uint32_t x, uint32_t y, uint32_t w,
+                              uint32_t h, uint32_t color, void *ctx){
+    (void)ctx;
+    if(w && h) display_draw_rect(x, y, w, h, color);
+}
+
 void display_draw_text_at(uint32_t x, uint32_t y, const char *text,
                           uint32_t fg, uint32_t bg){
-    struct framebuffer_text_request request={
-        .x=x,
-        .y=y,
-        .text=text,
-        .fg=fg,
-        .bg=bg,
-        .size=8
-    };
-    (void)userspace_syscall(SYS_DRAW_TEXT,(uint64_t)&request,0,0);
+    if(!text || !*text) return;
+    gfx_draw_text_opaque(text, x, y, fg, bg, 8,
+                         g_desktop_face, display_rect_cb, 0);
 }
 
 void display_draw_text_sized_at(uint32_t x, uint32_t y, const char *text,
                                 uint32_t fg, uint32_t bg, uint32_t size){
-    struct framebuffer_text_request request={
-        .x=x,
-        .y=y,
-        .text=text,
-        .fg=fg,
-        .bg=bg,
-        .size=size
-    };
-    (void)userspace_syscall(SYS_DRAW_TEXT_SIZED,(uint64_t)&request,0,0);
+    if(!text || !*text) return;
+    gfx_draw_text_opaque(text, x, y, fg, bg, size,
+                         g_desktop_face, display_rect_cb, 0);
 }
 
 void display_draw_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,

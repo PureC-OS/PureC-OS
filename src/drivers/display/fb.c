@@ -1,4 +1,5 @@
 #include "fb.h"
+#include "../../gfx/text.h"
 #include "../../lib/string.h"
 #include <stdint.h>
 #include <stddef.h>

@@ -1,6 +1,6 @@
 #include "personalization.h"
 #include "wallpaper.h"
-#include "../drivers/display/gop.h"
+#include "display.h"
 #include "../drivers/interrupts/timer.h"
 #include "../fs/vfs.h"
 #include "../kernel/diagnostics/klog.h"
@@ -157,8 +157,8 @@ static bool same_personalization(const struct personalization *a,
 void personalization_apply(const struct personalization *p){
     if(!p) return;
     uint32_t face=personalization_font_face(p->font);
-    gop_set_font_face(face==0 ? GOP_FONT_CLASSIC
-        : face==2 ? GOP_FONT_BOLD : GOP_FONT_CLEAN);
+    display_set_font_face(face==0 ? DISPLAY_FONT_CLASSIC
+        : face==2 ? DISPLAY_FONT_BOLD : DISPLAY_FONT_CLEAN);
     wallpaper_set_path(p->wallpaper);
 }
 

@@ -4,6 +4,7 @@
 #include "../serial/serial.h"
 #include "../display/gop.h"
 #include "../display/vga.h"
+#include "../../gfx/text.h"
 #include "../../kernel/diagnostics/klog.h"
 #include <stdint.h>
 
@@ -81,12 +82,25 @@ static bool debug_overlay_enabled = false;
 static void draw_cursor(int32_t x,int32_t y);
 static void refresh_mouse_ui(void);
 
+static void mouse_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                          uint32_t color, void *ctx){
+    (void)ctx;
+    if(w && h) gop_draw_rect(x, y, w, h, color);
+}
+
+static void mouse_text_opaque(uint32_t x, uint32_t y, const char *text,
+                              uint32_t fg, uint32_t bg){
+    if(!text || !*text) return;
+    gfx_draw_text_opaque(text, x, y, fg, bg, 8,
+                         GFX_FONT_CLASSIC, mouse_rect_cb, 0);
+}
+
 static void draw_hex(uint32_t x, uint32_t y, uint32_t value, int digits){
     char text[9];
     const char *hex="0123456789ABCDEF";
     for(int i=digits-1;i>=0;i--){ text[i]=hex[value&0xF]; value>>=4; }
     text[digits]=0;
-    gop_draw_text_at(x, y, text, 0xCDD6F4, 0x313244);
+    mouse_text_opaque(x, y, text, 0xCDD6F4, 0x313244);
 }
 
 static void draw_debug_overlay(void){
@@ -95,18 +109,18 @@ static void draw_debug_overlay(void){
     const uint32_t x=12, y=38, bg=0x313244;
     struct usb_mouse_info usb=usb_mouse_get_info();
     gop_draw_rect(x, y, 380, 84, bg);
-    gop_draw_text_at(x+6, y+5, "MOUSE DEBUG", 0x89DCEB, bg);
-    gop_draw_text_at(x+6, y+17, "INIT EN IF MIM SIM", 0xCDD6F4, bg);
+    mouse_text_opaque(x+6, y+5, "MOUSE DEBUG", 0x89DCEB, bg);
+    mouse_text_opaque(x+6, y+17, "INIT EN IF MIM SIM", 0xCDD6F4, bg);
     draw_hex(x+6,   y+27, debug_state.initialized, 2);
     draw_hex(x+46,  y+27, debug_state.enabled, 2);
     draw_hex(x+76,  y+27, debug_state.interrupts_enabled, 2);
     draw_hex(x+106, y+27, inb(0x21), 2);
     draw_hex(x+146, y+27, inb(0xA1), 2);
-    gop_draw_text_at(x+6, y+39, "IRQ      POLL     PKT", 0xCDD6F4, bg);
+    mouse_text_opaque(x+6, y+39, "IRQ      POLL     PKT", 0xCDD6F4, bg);
     draw_hex(x+6,   y+49, debug_state.irq_count, 8);
     draw_hex(x+86,  y+49, debug_state.poll_count, 8);
     draw_hex(x+166, y+49, debug_state.packet_count, 8);
-    gop_draw_text_at(x+6, y+61, "X    Y    USB REPORTS", 0xCDD6F4, bg);
+    mouse_text_opaque(x+6, y+61, "X    Y    USB REPORTS", 0xCDD6F4, bg);
     draw_hex(x+6,   y+71, (uint32_t)state.x, 4);
     draw_hex(x+54,  y+71, (uint32_t)state.y, 4);
     draw_hex(x+102, y+71, usb.connected, 2);

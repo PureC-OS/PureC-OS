@@ -1,5 +1,6 @@
 #include "internal.h"
 #include "../libc/include/purec.h"
+#include "../gfx/text.h"
 
 bool pg_internal_point_inside(int32_t x, int32_t y,
                               const struct pg_rect *rect){
@@ -17,25 +18,24 @@ struct pg_rect pg_internal_to_screen(const struct pg_window *window,
     return bounds;
 }
 
+static void pg_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                       uint32_t color, void *ctx){
+    (void)ctx;
+    if(w && h) pc_draw_rect(x, y, w, h, color);
+}
+
 void pg_internal_draw_text_clipped(uint32_t x, uint32_t y,
                                    const char *text, uint32_t color,
                                    uint32_t background,
                                    const struct pg_rect *clip){
-    (void)background;
+    (void)background; /* transparent by design: backend never paints bg */
     if(!text || !clip || y<clip->y || y+8>clip->y+clip->height) return;
-    char chunk[65];
     while(*text && x<clip->x+clip->width){
-        uint32_t count=0;
-        while(text[count] && count<sizeof(chunk)-1
-              && x+(count+1)*8<=clip->x+clip->width){
-            chunk[count]=text[count];
-            count++;
-        }
-        if(!count) return;
-        chunk[count]='\0';
-        pc_draw_text_tr(x,y,chunk,color);
-        x+=count*8;
-        text+=count;
+        if(x+8>clip->x+clip->width) break;
+        gfx_draw_char(*text, x, y, color, 8,
+                      GFX_FONT_CLASSIC, pg_rect_cb, 0);
+        x+=8;
+        text++;
     }
 }
 
@@ -43,24 +43,17 @@ void pg_internal_draw_text_sized_clipped(uint32_t x, uint32_t y,
                                            const char *text, uint32_t color,
                                            uint32_t background, uint32_t size,
                                            const struct pg_rect *clip){
-    (void)background;
+    (void)background; /* transparent by design: backend never paints bg */
     if(!text || !clip || !size) return;
     if(size<8) size=8;
     if(size>48) size=48;
     if(y<clip->y || y+size>clip->y+clip->height) return;
-    char chunk[65];
     while(*text && x<clip->x+clip->width){
-        uint32_t count=0;
-        while(text[count] && count<sizeof(chunk)-1
-              && x+(count+1)*size<=clip->x+clip->width){
-            chunk[count]=text[count];
-            count++;
-        }
-        if(!count) return;
-        chunk[count]='\0';
-        pc_draw_text_sized_tr(x,y,chunk,color,size);
-        x+=count*size;
-        text+=count;
+        if(x+size>clip->x+clip->width) break;
+        gfx_draw_char(*text, x, y, color, size,
+                      GFX_FONT_CLASSIC, pg_rect_cb, 0);
+        x+=size;
+        text++;
     }
 }
 void pg_window_rect(struct pg_window *window, struct pg_rect bounds,
