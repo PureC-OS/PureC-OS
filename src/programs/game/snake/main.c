@@ -1,60 +1,39 @@
+#include "../../../libgui/include/puregui.h"
+#include "../../../libgui/include/pguiw.h"
 #include "../../../libc/include/purec.h"
 #include "../../../libaudio/include/pureaudio.h"
 
-#define BOARD_WIDTH  30
-#define BOARD_HEIGHT 18
-#define CELL_SIZE    18
-#define MAX_LENGTH   (BOARD_WIDTH * BOARD_HEIGHT)
+#define BOARD_COLS 20
+#define BOARD_ROWS 15
+#define MAX_LENGTH (BOARD_COLS * BOARD_ROWS)
 
-#define COLOR_BG          0x1E1E2E
-#define COLOR_PANEL_BG    0x181825
-#define COLOR_PANEL_EDGE  0x45475A
-#define COLOR_SNAKE_BODY  0xA6E3A1
-#define COLOR_SNAKE_HEAD  0x89B4FA
-#define COLOR_SNAKE_EYE   0x11111B
-#define COLOR_FOOD        0xF38BA8
-#define COLOR_FOOD_INNER  0xF9E2AF
-#define COLOR_TEXT        0xCDD6F4
-#define COLOR_TEXT_MUTED  0x6C7086
-#define COLOR_ACCENT      0xCBA6F7
-#define COLOR_WARN        0xFAB387
-#define COLOR_DANGER      0xF38BA8
-#define COLOR_OVERLAY_BG  0x11111B
-#define COLOR_BTN_SEL     0x89B4FA
-#define COLOR_BTN_BG      0x313244
+#define COLOR_WIN_BG     0x1E1E2E
+#define COLOR_BOARD_BG   0x181825
+#define COLOR_BOARD_EDGE 0x45475A
+#define COLOR_SNAKE_HEAD 0x89B4FA
+#define COLOR_SNAKE_BODY 0xA6E3A1
+#define COLOR_SNAKE_EYE  0x11111B
+#define COLOR_FOOD       0xF38BA8
+#define COLOR_FOOD_IN    0xF9E2AF
+#define COLOR_TEXT_MAIN  0xCDD6F4
+#define COLOR_TEXT_MUTED 0x6C7086
+#define COLOR_BTN_BG     0x313244
+#define COLOR_BTN_SEL    0x89B4FA
+#define COLOR_BTN_TEXT   0x11111B
 
-enum game_state {
-    STATE_MENU,
-    STATE_PLAYING,
-    STATE_PAUSED,
-    STATE_GAMEOVER
+enum game_mode {
+    MODE_MENU = 0,
+    MODE_PLAYING,
+    MODE_PAUSED,
+    MODE_GAMEOVER
 };
 
-enum menu_item {
-    MENU_START = 0,
-    MENU_DIFFICULTY,
-    MENU_WALLS,
-    MENU_EXIT,
-    MENU_COUNT
-};
-
-enum difficulty_level {
-    DIFF_EASY = 0,
-    DIFF_NORMAL,
-    DIFF_HARD,
-    DIFF_COUNT
-};
-
-static const char *DIFF_NAMES[DIFF_COUNT] = {
-    "Easy  (Slow)",
-    "Normal (Mid)",
-    "Hard  (Fast)"
-};
-
-static const uint32_t DIFF_DELAYS[DIFF_COUNT] = {
-    140,
-    95,
-    60
+enum menu_action {
+    ACT_PLAY = 0,
+    ACT_DIFF,
+    ACT_WALLS,
+    ACT_EXIT,
+    ACT_COUNT
 };
 
 struct point {
@@ -62,664 +41,586 @@ struct point {
     int16_t y;
 };
 
-static struct point body[MAX_LENGTH];
-static struct point food;
-static uint16_t length;
-static int16_t direction_x;
-static int16_t direction_y;
-static int16_t next_dir_x;
-static int16_t next_dir_y;
-static uint32_t random_state = 0x51A7E123;
+static struct point snake[MAX_LENGTH];
+static uint16_t snake_len = 3;
+static struct point food_pos;
+static int16_t dir_x = 1;
+static int16_t dir_y = 0;
+static int16_t next_dx = 1;
+static int16_t next_dy = 0;
+
 static uint32_t score = 0;
 static uint32_t high_score = 0;
+static enum game_mode mode = MODE_MENU;
+static enum menu_action menu_sel = ACT_PLAY;
+static uint32_t diff_level = 1;
+static bool wrap_walls = false;
 
-static enum game_state current_state = STATE_MENU;
-static enum menu_item selected_menu_item = MENU_START;
-static enum difficulty_level selected_difficulty = DIFF_NORMAL;
-static bool walls_enabled = true;
+static uint32_t rng_state = 0x51A7E123;
+static uint32_t step_timer_ms = 0;
+
+static uint32_t g_win_w = 420;
+static uint32_t g_win_h = 560;
+static uint32_t g_cell = 20;
+static uint32_t g_board_x = 10;
+static uint32_t g_board_y = 70;
+
+static const char *DIFF_LABELS[] = {
+    "Easy",
+    "Normal",
+    "Hard"
+};
+static const uint32_t DIFF_SPEEDS[] = {
+    140,
+    95,
+    60
+};
 
 static int16_t sfx_turn[1100];
-static uint32_t sfx_turn_frames;
+static uint32_t sfx_turn_frames = 0;
 static int16_t sfx_eat[2700];
-static uint32_t sfx_eat_frames;
+static uint32_t sfx_eat_frames = 0;
 static int16_t sfx_die[11100];
-static uint32_t sfx_die_frames;
-static uint32_t sfx_cooldown_ticks;
+static uint32_t sfx_die_frames = 0;
+static uint32_t sfx_cool = 0;
 
-static uint32_t sfx_preload(const char *name, int16_t *buffer, uint32_t capacity){
+static uint32_t sfx_preload(const char *name, int16_t *buf, uint32_t cap) {
     static const char *dirs[] = {"/game/sound/", "/bin/sound/"};
-    for(uint32_t d = 0; d < sizeof(dirs)/sizeof(dirs[0]); d++){
+    for (uint32_t d = 0; d < sizeof(dirs)/sizeof(dirs[0]); d++) {
         char path[64];
         uint32_t pos = 0;
         const char *dir = dirs[d];
-        while(dir[pos] && pos + 1 < sizeof(path)){
+        while (dir[pos] && pos + 1 < sizeof(path)) {
             path[pos] = dir[pos];
             pos++;
         }
-        for(uint32_t i = 0; name[i] && pos + 1 < sizeof(path); i++){
+        for (uint32_t i = 0; name[i] && pos + 1 < sizeof(path); i++) {
             path[pos++] = name[i];
         }
         path[pos] = '\0';
         uint32_t frames = 0;
-        if(pa_wav_load(path, buffer, capacity, &frames) == 0 && frames > 0){
-            return frames;
-        }
+        if (pa_wav_load(path, buf, cap, &frames) == 0 && frames > 0) return frames;
     }
     return 0;
 }
 
-static void sfx_play_buffer(const int16_t *buffer, uint32_t frames,
-                            uint16_t fallback_hz, uint32_t fallback_ms){
-    if(frames > 0 && pa_sfx_play(buffer, frames) == 0) return;
-    pa_play_tone(fallback_hz, fallback_ms);
+static void sfx_play_buf(const int16_t *buf, uint32_t frames, uint16_t hz, uint32_t ms) {
+    if (pa_is_muted()) return;
+    if (frames > 0 && pa_sfx_play(buf, frames) == 0) return;
+    pa_play_tone(hz, ms);
 }
 
-static void sfx_turn_blip(void){
-    if(sfx_cooldown_ticks > 0) return;
-    sfx_play_buffer(sfx_turn, sfx_turn_frames, 1200, 40);
+static void sfx_turn_blip(void) {
+    if (sfx_cool > 0) return;
+    sfx_play_buf(sfx_turn, sfx_turn_frames, 1200, 35);
 }
 
-static void sfx_eat_chime(void){
-    sfx_cooldown_ticks = 1;
-    sfx_play_buffer(sfx_eat, sfx_eat_frames, 950, 75);
+static void sfx_eat_sound(void) {
+    sfx_cool = 1;
+    sfx_play_buf(sfx_eat, sfx_eat_frames, 950, 70);
 }
 
-static void sfx_die_jingle(void){
-    sfx_cooldown_ticks = 4;
-    sfx_play_buffer(sfx_die, sfx_die_frames, 280, 260);
+static void sfx_die_sound(void) {
+    sfx_cool = 3;
+    sfx_play_buf(sfx_die, sfx_die_frames, 280, 260);
 }
 
-static void sfx_menu_move(void){
-    sfx_play_buffer(sfx_turn, sfx_turn_frames, 1400, 25);
-}
-
-static void sfx_menu_select(void){
-    sfx_play_buffer(sfx_eat, sfx_eat_frames, 1100, 50);
-}
-
-static void sfx_init(void){
+static void sfx_init_all(void) {
     sfx_turn_frames = sfx_preload("turn.wav", sfx_turn, sizeof(sfx_turn)/sizeof(sfx_turn[0]));
     sfx_eat_frames  = sfx_preload("eat.wav",  sfx_eat,  sizeof(sfx_eat)/sizeof(sfx_eat[0]));
     sfx_die_frames  = sfx_preload("die.wav",  sfx_die,  sizeof(sfx_die)/sizeof(sfx_die[0]));
 }
 
-static void sfx_shutdown(void){
-    pa_sfx_stop();
-    pa_stop_tone();
+static uint32_t random_val(void) {
+    rng_state ^= rng_state << 13;
+    rng_state ^= rng_state >> 17;
+    rng_state ^= rng_state << 5;
+    return rng_state;
 }
 
-static uint32_t random_value(void){
-    random_state ^= random_state << 13;
-    random_state ^= random_state >> 17;
-    random_state ^= random_state << 5;
-    return random_state;
+static char *append_text(char *dest, const char *src) {
+    while (*src) *dest++ = *src++;
+    *dest = '\0';
+    return dest;
 }
 
-static void format_u32(uint32_t val, char *buf, uint32_t size){
-    if(size == 0) return;
-    if(val == 0){
-        if(size >= 2){ buf[0] = '0'; buf[1] = '\0'; }
-        else { buf[0] = '\0'; }
-        return;
+static char *append_u32(char *dest, uint32_t val) {
+    if (val == 0) {
+        *dest++ = '0';
+        *dest = '\0';
+        return dest;
     }
-    char tmp[16];
+    char tmp[12];
     int pos = 0;
-    while(val > 0 && pos < (int)sizeof(tmp)){
+    while (val > 0) {
         tmp[pos++] = '0' + (val % 10);
         val /= 10;
     }
-    uint32_t out = 0;
-    while(pos > 0 && out + 1 < size){
-        buf[out++] = tmp[--pos];
-    }
-    buf[out] = '\0';
+    while (pos > 0) *dest++ = tmp[--pos];
+    *dest = '\0';
+    return dest;
 }
 
-static bool occupied(int16_t x, int16_t y){
-    for(uint16_t i = 0; i < length; i++){
-        if(body[i].x == x && body[i].y == y) return true;
+static bool is_cell_occupied(int16_t x, int16_t y) {
+    for (uint16_t i = 0; i < snake_len; i++) {
+        if (snake[i].x == x && snake[i].y == y) return true;
     }
     return false;
 }
 
-static void place_food(void){
-    uint32_t tries = 0;
-    do {
-        food.x = (int16_t)(random_value() % BOARD_WIDTH);
-        food.y = (int16_t)(random_value() % BOARD_HEIGHT);
-        tries++;
-        if(tries > 1000) break;
-    } while(occupied(food.x, food.y));
+static void spawn_food(void) {
+    for (int tries = 0; tries < 500; tries++) {
+        int16_t rx = (int16_t)(random_val() % BOARD_COLS);
+        int16_t ry = (int16_t)(random_val() % BOARD_ROWS);
+        if (!is_cell_occupied(rx, ry)) {
+            food_pos.x = rx;
+            food_pos.y = ry;
+            return;
+        }
+    }
+    food_pos.x = 0;
+    food_pos.y = 0;
 }
 
-static void reset_game(void){
-    length = 4;
-    direction_x = 1;
-    direction_y = 0;
-    next_dir_x = 1;
-    next_dir_y = 0;
+static void reset_snake_game(void) {
+    snake_len = 3;
+    dir_x = 1;
+    dir_y = 0;
+    next_dx = 1;
+    next_dy = 0;
     score = 0;
-    for(uint16_t i = 0; i < length; i++){
-        body[i].x = BOARD_WIDTH / 2 - (int16_t)i;
-        body[i].y = BOARD_HEIGHT / 2;
+    step_timer_ms = 0;
+
+    int16_t sx = BOARD_COLS / 2;
+    int16_t sy = BOARD_ROWS / 2;
+    for (uint16_t i = 0; i < snake_len; i++) {
+        snake[i].x = sx - (int16_t)i;
+        snake[i].y = sy;
     }
-    place_food();
+    spawn_food();
 }
 
-static void draw_cell_body(uint32_t origin_x, uint32_t origin_y, struct point pt){
-    uint32_t px = origin_x + pt.x * CELL_SIZE;
-    uint32_t py = origin_y + pt.y * CELL_SIZE;
-    pc_draw_rect(px, py, CELL_SIZE - 2, CELL_SIZE - 2, COLOR_SNAKE_BODY);
-}
-
-static void draw_cell_head(uint32_t origin_x, uint32_t origin_y, struct point pt, int16_t dx, int16_t dy){
-    uint32_t px = origin_x + pt.x * CELL_SIZE;
-    uint32_t py = origin_y + pt.y * CELL_SIZE;
-    pc_draw_rect(px, py, CELL_SIZE - 2, CELL_SIZE - 2, COLOR_SNAKE_HEAD);
-
-    if(CELL_SIZE >= 14){
-        uint32_t e1x, e1y, e2x, e2y;
-        if(dx == 1){
-            e1x = px + CELL_SIZE - 6; e1y = py + 3;
-            e2x = px + CELL_SIZE - 6; e2y = py + CELL_SIZE - 7;
-        } else if(dx == -1){
-            e1x = px + 2; e1y = py + 3;
-            e2x = px + 2; e2y = py + CELL_SIZE - 7;
-        } else if(dy == -1){
-            e1x = px + 3;             e1y = py + 2;
-            e2x = px + CELL_SIZE - 7; e2y = py + 2;
-        } else {
-            e1x = px + 3;             e1y = py + CELL_SIZE - 6;
-            e2x = px + CELL_SIZE - 7; e2y = py + CELL_SIZE - 6;
-        }
-        pc_draw_rect(e1x, e1y, 3, 3, COLOR_SNAKE_EYE);
-        pc_draw_rect(e2x, e2y, 3, 3, COLOR_SNAKE_EYE);
+static void compute_window_layout(void) {
+    struct pc_display_info disp;
+    uint32_t dw = 640, dh = 480;
+    if (pc_display_get_info(&disp) && disp.available && disp.width >= 640) {
+        dw = disp.width;
+        dh = disp.height;
     }
-}
 
-static void draw_cell_food(uint32_t origin_x, uint32_t origin_y, struct point pt){
-    uint32_t px = origin_x + pt.x * CELL_SIZE;
-    uint32_t py = origin_y + pt.y * CELL_SIZE;
-    pc_draw_rect(px, py, CELL_SIZE - 2, CELL_SIZE - 2, COLOR_FOOD);
-    if(CELL_SIZE >= 8){
-        pc_draw_rect(px + 4, py + 4, CELL_SIZE - 10, CELL_SIZE - 10, COLOR_FOOD_INNER);
+    uint32_t budget_w = dw > 60 ? dw - 60 : dw;
+    uint32_t budget_h = dh > 80 ? dh - 80 : dh;
+
+    g_cell = 20;
+    uint32_t b_w = BOARD_COLS * g_cell;
+    uint32_t b_h = BOARD_ROWS * g_cell;
+
+    if (b_w + 30 > budget_w || b_h + 120 > budget_h) {
+        g_cell = 16;
+        b_w = BOARD_COLS * g_cell;
+        b_h = BOARD_ROWS * g_cell;
     }
+
+    g_win_w = b_w + 24 + PG_WINDOW_BORDER * 2;
+    g_win_h = b_h + 110 + PG_TITLEBAR_HEIGHT + PG_WINDOW_BORDER * 2;
+
+    uint32_t client_w = g_win_w - PG_WINDOW_BORDER * 2;
+    g_board_x = (client_w > b_w) ? (client_w - b_w) / 2 : 12;
+    g_board_y = 66;
 }
 
-static void draw_cell_empty(uint32_t origin_x, uint32_t origin_y, struct point pt){
-    uint32_t px = origin_x + pt.x * CELL_SIZE;
-    uint32_t py = origin_y + pt.y * CELL_SIZE;
-    pc_draw_rect(px, py, CELL_SIZE - 2, CELL_SIZE - 2, COLOR_PANEL_BG);
+static void draw_hud(struct pg_window *window) {
+    uint32_t b_w = BOARD_COLS * g_cell;
+
+    pg_window_rect(window, (struct pg_rect){g_board_x, 8, b_w, 48}, window->theme.titlebar);
+    pg_window_rect(window, (struct pg_rect){g_board_x - 1, 7, b_w + 2, 50}, COLOR_BOARD_EDGE);
+
+    char buf[32];
+    char *p = buf;
+    p = append_text(p, "SCORE: "); p = append_u32(p, score);
+    pg_window_text(window, g_board_x + 12, 16, buf, COLOR_TEXT_MAIN);
+
+    p = buf;
+    p = append_text(p, "BEST: "); p = append_u32(p, high_score);
+    pg_window_text(window, g_board_x + 12, 34, buf, COLOR_TEXT_MUTED);
+
+    p = buf;
+    p = append_text(p, "SPD: "); p = append_text(p, DIFF_LABELS[diff_level]);
+    pg_window_text(window, g_board_x + b_w - 110, 16, buf, COLOR_TEXT_MAIN);
+
+    p = buf;
+    p = append_text(p, wrap_walls ? "WALLS: PASS" : "WALLS: DIE");
+    pg_window_text(window, g_board_x + b_w - 110, 34, buf, wrap_walls ? COLOR_SNAKE_BODY : COLOR_FOOD);
 }
 
-static void draw_board_full(uint32_t origin_x, uint32_t origin_y){
-    pc_draw_rect(origin_x - 4, origin_y - 4,
-                 BOARD_WIDTH * CELL_SIZE + 8, BOARD_HEIGHT * CELL_SIZE + 8,
-                 COLOR_PANEL_EDGE);
-    pc_draw_rect(origin_x, origin_y,
-                 BOARD_WIDTH * CELL_SIZE, BOARD_HEIGHT * CELL_SIZE,
-                 COLOR_PANEL_BG);
+static void draw_board(struct pg_window *window) {
+    uint32_t b_w = BOARD_COLS * g_cell;
+    uint32_t b_h = BOARD_ROWS * g_cell;
 
-    draw_cell_food(origin_x, origin_y, food);
+    pg_window_rect(window, (struct pg_rect){g_board_x - 2, g_board_y - 2, b_w + 4, b_h + 4}, COLOR_BOARD_EDGE);
+    pg_window_rect(window, (struct pg_rect){g_board_x, g_board_y, b_w, b_h}, COLOR_BOARD_BG);
 
-    for(uint16_t i = 1; i < length; i++){
-        draw_cell_body(origin_x, origin_y, body[i]);
+    uint32_t fx = g_board_x + (uint32_t)food_pos.x * g_cell;
+    uint32_t fy = g_board_y + (uint32_t)food_pos.y * g_cell;
+    pg_window_rect(window, (struct pg_rect){fx + 1, fy + 1, g_cell - 2, g_cell - 2}, COLOR_FOOD);
+    if (g_cell >= 10) {
+        pg_window_rect(window, (struct pg_rect){fx + 4, fy + 4, g_cell - 8, g_cell - 8}, COLOR_FOOD_IN);
     }
-    if(length > 0){
-        draw_cell_head(origin_x, origin_y, body[0], direction_x, direction_y);
+
+    for (uint16_t i = 1; i < snake_len; i++) {
+        uint32_t bx = g_board_x + (uint32_t)snake[i].x * g_cell;
+        uint32_t by = g_board_y + (uint32_t)snake[i].y * g_cell;
+        pg_window_rect(window, (struct pg_rect){bx + 1, by + 1, g_cell - 2, g_cell - 2}, COLOR_SNAKE_BODY);
     }
-}
 
-static void draw_hud(uint32_t origin_x, uint32_t origin_y){
-    uint32_t board_w = BOARD_WIDTH * CELL_SIZE;
-    pc_draw_rect(origin_x - 4, origin_y - 36, board_w + 8, 30, COLOR_BG);
+    if (snake_len > 0) {
+        uint32_t hx = g_board_x + (uint32_t)snake[0].x * g_cell;
+        uint32_t hy = g_board_y + (uint32_t)snake[0].y * g_cell;
+        pg_window_rect(window, (struct pg_rect){hx + 1, hy + 1, g_cell - 2, g_cell - 2}, COLOR_SNAKE_HEAD);
 
-    char s_score[16];
-    char s_high[16];
-    format_u32(score, s_score, sizeof(s_score));
-    format_u32(high_score, s_high, sizeof(s_high));
-
-    char line1[64];
-    uint32_t p = 0;
-    const char *p1 = "Score: ";
-    while(*p1) line1[p++] = *p1++;
-    const char *p2 = s_score;
-    while(*p2) line1[p++] = *p2++;
-    const char *p3 = "   Best: ";
-    while(*p3) line1[p++] = *p3++;
-    const char *p4 = s_high;
-    while(*p4) line1[p++] = *p4++;
-    const char *p5 = walls_enabled ? "   Walls: ON" : "   Walls: OFF";
-    while(*p5) line1[p++] = *p5++;
-    line1[p] = '\0';
-
-    pc_draw_text(origin_x, origin_y - 30, line1, COLOR_TEXT, COLOR_BG);
-
-    uint32_t bot_y = origin_y + BOARD_HEIGHT * CELL_SIZE + 10;
-    pc_draw_rect(origin_x - 4, bot_y - 2, board_w + 8, 22, COLOR_BG);
-    pc_draw_text(origin_x, bot_y, "WASD/Arrows: Move | P/Space: Pause | M: Menu | Q: Exit",
-                 COLOR_TEXT_MUTED, COLOR_BG);
-}
-
-static void draw_overlay_box(uint32_t origin_x, uint32_t origin_y,
-                             const char *title, uint32_t title_color,
-                             const char *line1, const char *line2, const char *line3){
-    uint32_t board_w = BOARD_WIDTH * CELL_SIZE;
-    uint32_t board_h = BOARD_HEIGHT * CELL_SIZE;
-    uint32_t box_w = 340;
-    uint32_t box_h = 130;
-    uint32_t bx = origin_x + (board_w > box_w ? (board_w - box_w)/2 : 0);
-    uint32_t by = origin_y + (board_h > box_h ? (board_h - box_h)/2 : 0);
-
-    pc_draw_rect(bx - 3, by - 3, box_w + 6, box_h + 6, COLOR_PANEL_EDGE);
-    pc_draw_rect(bx, by, box_w, box_h, COLOR_OVERLAY_BG);
-
-    pc_draw_rect(bx, by, box_w, 32, title_color);
-    pc_draw_text(bx + 18, by + 8, title, 0x11111B, title_color);
-
-    if(line1) pc_draw_text(bx + 20, by + 46, line1, COLOR_TEXT, COLOR_OVERLAY_BG);
-    if(line2) pc_draw_text(bx + 20, by + 72, line2, COLOR_TEXT_MUTED, COLOR_OVERLAY_BG);
-    if(line3) pc_draw_text(bx + 20, by + 98, line3, COLOR_ACCENT, COLOR_OVERLAY_BG);
-}
-
-static void draw_menu_screen(uint32_t disp_w, uint32_t disp_h){
-    pc_display_clear(COLOR_BG);
-
-    uint32_t center_x = disp_w / 2;
-    uint32_t start_y = disp_h > 360 ? (disp_h - 360) / 2 : 20;
-
-    pc_draw_text_sized(center_x - 140, start_y, "S N A K E", COLOR_SNAKE_BODY, COLOR_BG, 24);
-    pc_draw_text(center_x - 136, start_y + 36, "PureC Classic Edition", COLOR_TEXT_MUTED, COLOR_BG);
-
-    uint32_t mw = 360;
-    uint32_t mh = 220;
-    uint32_t mx = center_x > mw/2 ? center_x - mw/2 : 10;
-    uint32_t my = start_y + 70;
-
-    pc_draw_rect(mx - 2, my - 2, mw + 4, mh + 4, COLOR_PANEL_EDGE);
-    pc_draw_rect(mx, my, mw, mh, COLOR_PANEL_BG);
-
-    for(int i = 0; i < MENU_COUNT; i++){
-        uint32_t iy = my + 20 + i * 44;
-        bool sel = (i == (int)selected_menu_item);
-
-        if(sel){
-            pc_draw_rect(mx + 16, iy - 4, mw - 32, 34, COLOR_BTN_SEL);
-        } else {
-            pc_draw_rect(mx + 16, iy - 4, mw - 32, 34, COLOR_BTN_BG);
-        }
-
-        uint32_t text_col = sel ? 0x11111B : COLOR_TEXT;
-        uint32_t bg_col   = sel ? COLOR_BTN_SEL : COLOR_BTN_BG;
-
-        if(i == MENU_START){
-            pc_draw_text(mx + 30, iy + 4, sel ? "> Play Game" : "  Play Game", text_col, bg_col);
-        } else if(i == MENU_DIFFICULTY){
-            char buf[64];
-            uint32_t p = 0;
-            const char *hdr = sel ? "> Speed: < " : "  Speed: < ";
-            while(*hdr) buf[p++] = *hdr++;
-            const char *dn = DIFF_NAMES[selected_difficulty];
-            while(*dn) buf[p++] = *dn++;
-            buf[p++] = ' ';
-            buf[p++] = '>';
-            buf[p] = '\0';
-            pc_draw_text(mx + 30, iy + 4, buf, text_col, bg_col);
-        } else if(i == MENU_WALLS){
-            char buf[64];
-            uint32_t p = 0;
-            const char *hdr = sel ? "> Walls: < " : "  Walls: < ";
-            while(*hdr) buf[p++] = *hdr++;
-            const char *wn = walls_enabled ? "Classic (Death) >" : "Wrap (Pass)    >";
-            while(*wn) buf[p++] = *wn++;
-            buf[p] = '\0';
-            pc_draw_text(mx + 30, iy + 4, buf, text_col, bg_col);
-        } else if(i == MENU_EXIT){
-            pc_draw_text(mx + 30, iy + 4, sel ? "> Exit" : "  Exit", text_col, bg_col);
+        if (g_cell >= 12) {
+            uint32_t e1x, e1y, e2x, e2y;
+            if (dir_x == 1) {
+                e1x = hx + g_cell - 5; e1y = hy + 3;
+                e2x = hx + g_cell - 5; e2y = hy + g_cell - 6;
+            } else if (dir_x == -1) {
+                e1x = hx + 2; e1y = hy + 3;
+                e2x = hx + 2; e2y = hy + g_cell - 6;
+            } else if (dir_y == -1) {
+                e1x = hx + 3;          e1y = hy + 2;
+                e2x = hx + g_cell - 6; e2y = hy + 2;
+            } else {
+                e1x = hx + 3;          e1y = hy + g_cell - 5;
+                e2x = hx + g_cell - 6; e2y = hy + g_cell - 5;
+            }
+            pg_window_rect(window, (struct pg_rect){e1x, e1y, 3, 3}, COLOR_SNAKE_EYE);
+            pg_window_rect(window, (struct pg_rect){e2x, e2y, 3, 3}, COLOR_SNAKE_EYE);
         }
     }
 
-    pc_draw_text(center_x - 170, my + mh + 20,
-                 "Up/Down: Select | Left/Right: Change | Enter: OK",
-                 COLOR_TEXT, COLOR_BG);
-    pc_draw_text(center_x - 120, my + mh + 42,
-                 "Press ESC / Q to Exit", COLOR_TEXT_MUTED, COLOR_BG);
+    uint32_t foot_y = g_board_y + b_h + 10;
+    pg_window_text(window, g_board_x, foot_y,
+                   "WASD/Arrows: Move | P: Pause | M: Menu | Q: Exit",
+                   COLOR_TEXT_MUTED);
 }
 
-static bool advance_game(bool *ate_food, struct point *old_tail){
-    direction_x = next_dir_x;
-    direction_y = next_dir_y;
+static void draw_menu(struct pg_window *window) {
+    uint32_t b_w = BOARD_COLS * g_cell;
+    uint32_t b_h = BOARD_ROWS * g_cell;
 
-    struct point next = {
-        (int16_t)(body[0].x + direction_x),
-        (int16_t)(body[0].y + direction_y)
-    };
+    pg_window_rect(window, (struct pg_rect){g_board_x - 2, g_board_y - 2, b_w + 4, b_h + 4}, COLOR_BOARD_EDGE);
+    pg_window_rect(window, (struct pg_rect){g_board_x, g_board_y, b_w, b_h}, COLOR_BOARD_BG);
 
-    if(walls_enabled){
-        if(next.x < 0 || next.x >= BOARD_WIDTH || next.y < 0 || next.y >= BOARD_HEIGHT){
-            return false;
+    uint32_t mw = b_w > 60 ? b_w - 60 : b_w - 20;
+    uint32_t mx = g_board_x + (b_w - mw) / 2;
+    uint32_t my = g_board_y + 16;
+
+    pg_window_text_sized(window, mx + 20, my, "S N A K E", COLOR_SNAKE_HEAD, 24);
+    pg_window_text(window, mx + 20, my + 30, "Classic Arcade PureC", COLOR_TEXT_MUTED);
+
+    uint32_t item_y = my + 54;
+    for (int i = 0; i < ACT_COUNT; i++) {
+        bool sel = (i == (int)menu_sel);
+        uint32_t bg = sel ? COLOR_BTN_SEL : COLOR_BTN_BG;
+        uint32_t fg = sel ? COLOR_BTN_TEXT : COLOR_TEXT_MAIN;
+
+        pg_window_rect(window, (struct pg_rect){mx, item_y + (uint32_t)i * 38, mw, 30}, bg);
+
+        if (i == ACT_PLAY) {
+            pg_window_text(window, mx + 16, item_y + (uint32_t)i * 38 + 8,
+                           sel ? "> Start Game" : "  Start Game", fg);
+        } else if (i == ACT_DIFF) {
+            char buf[48]; char *p = buf;
+            p = append_text(p, sel ? "> Speed: < " : "  Speed: < ");
+            p = append_text(p, DIFF_LABELS[diff_level]);
+            p = append_text(p, " >");
+            pg_window_text(window, mx + 16, item_y + (uint32_t)i * 38 + 8, buf, fg);
+        } else if (i == ACT_WALLS) {
+            char buf[48]; char *p = buf;
+            p = append_text(p, sel ? "> Walls: < " : "  Walls: < ");
+            p = append_text(p, wrap_walls ? "Pass" : "Death");
+            p = append_text(p, " >");
+            pg_window_text(window, mx + 16, item_y + (uint32_t)i * 38 + 8, buf, fg);
+        } else if (i == ACT_EXIT) {
+            pg_window_text(window, mx + 16, item_y + (uint32_t)i * 38 + 8,
+                           sel ? "> Exit" : "  Exit", fg);
         }
+    }
+
+    uint32_t foot_y = g_board_y + b_h + 10;
+    pg_window_text(window, g_board_x, foot_y,
+                   "Up/Down: Select | Left/Right: Change | Enter: OK",
+                   COLOR_TEXT_MUTED);
+}
+
+static void draw_overlay(struct pg_window *window) {
+    if (mode != MODE_PAUSED && mode != MODE_GAMEOVER) return;
+
+    uint32_t b_w = BOARD_COLS * g_cell;
+    uint32_t b_h = BOARD_ROWS * g_cell;
+    uint32_t ow = 220;
+    uint32_t oh = 68;
+    uint32_t ox = g_board_x + (b_w - ow) / 2;
+    uint32_t oy = g_board_y + (b_h - oh) / 2;
+
+    pg_window_rect(window, (struct pg_rect){ox - 2, oy - 2, ow + 4, oh + 4}, COLOR_BOARD_EDGE);
+
+    if (mode == MODE_PAUSED) {
+        pg_window_rect(window, (struct pg_rect){ox, oy, ow, oh}, 0xF9E2AF);
+        pg_window_text(window, ox + 80, oy + 12, "PAUSED", COLOR_BTN_TEXT);
+        pg_window_text(window, ox + 22, oy + 38, "Press P to continue | M menu", COLOR_BTN_TEXT);
+    } else if (mode == MODE_GAMEOVER) {
+        pg_window_rect(window, (struct pg_rect){ox, oy, ow, oh}, 0xF38BA8);
+        pg_window_text(window, ox + 68, oy + 12, "GAME OVER", COLOR_BTN_TEXT);
+        pg_window_text(window, ox + 18, oy + 38, "Press R to restart | M menu", COLOR_BTN_TEXT);
+    }
+}
+
+static void redraw(struct pg_window *window) {
+    pg_window_begin(window);
+    draw_hud(window);
+    if (mode == MODE_MENU) {
+        draw_menu(window);
     } else {
-        if(next.x < 0) next.x = BOARD_WIDTH - 1;
-        else if(next.x >= BOARD_WIDTH) next.x = 0;
-        if(next.y < 0) next.y = BOARD_HEIGHT - 1;
-        else if(next.y >= BOARD_HEIGHT) next.y = 0;
+        draw_board(window);
+        draw_overlay(window);
     }
-
-    bool ate = (next.x == food.x && next.y == food.y);
-    uint16_t collision_len = ate ? length : length - 1;
-    for(uint16_t i = 0; i < collision_len; i++){
-        if(body[i].x == next.x && body[i].y == next.y){
-            return false;
-        }
-    }
-
-    *old_tail = body[length - 1];
-    if(ate && length < MAX_LENGTH){
-        length++;
-        score++;
-        if(score > high_score) high_score = score;
-    }
-    for(uint16_t i = length - 1; i > 0; i--){
-        body[i] = body[i - 1];
-    }
-    body[0] = next;
-
-    if(ate) place_food();
-    *ate_food = ate;
-    return true;
+    pg_window_end(window);
 }
 
-static void draw_step(uint32_t origin_x, uint32_t origin_y, bool ate_food, struct point old_tail){
-    if(!ate_food){
-        draw_cell_empty(origin_x, origin_y, old_tail);
-    }
-    if(length > 1){
-        draw_cell_body(origin_x, origin_y, body[1]);
-    }
-    draw_cell_head(origin_x, origin_y, body[0], direction_x, direction_y);
-    if(ate_food){
-        draw_cell_food(origin_x, origin_y, food);
-        draw_hud(origin_x, origin_y);
-    }
-}
-
-static void change_direction(int16_t nx, int16_t ny){
-    if(direction_x + nx == 0 && direction_y + ny == 0) return;
-    if(next_dir_x + nx == 0 && next_dir_y + ny == 0) return;
-    next_dir_x = nx;
-    next_dir_y = ny;
+static void set_dir(int16_t dx, int16_t dy) {
+    if (dir_x + dx == 0 && dir_y + dy == 0) return;
+    if (next_dx + dx == 0 && next_dy + dy == 0) return;
+    next_dx = dx;
+    next_dy = dy;
     sfx_turn_blip();
 }
 
-static int snake_main(void){
-    struct pc_display_info display;
-    if(!pc_display_get_info(&display)) return 1;
+static bool advance_snake(void) {
+    dir_x = next_dx;
+    dir_y = next_dy;
 
-    sfx_init();
+    struct point next = {
+        (int16_t)(snake[0].x + dir_x),
+        (int16_t)(snake[0].y + dir_y)
+    };
 
-    uint32_t disp_w = display.width > 0 ? display.width : 640;
-    uint32_t disp_h = display.height > 0 ? display.height : 480;
-
-    uint32_t board_pixel_w = BOARD_WIDTH * CELL_SIZE;
-    uint32_t board_pixel_h = BOARD_HEIGHT * CELL_SIZE;
-    uint32_t origin_x = disp_w > board_pixel_w ? (disp_w - board_pixel_w) / 2 : 10;
-    uint32_t origin_y = disp_h > board_pixel_h + 60 ? (disp_h - board_pixel_h) / 2 + 20 : 45;
-
-    bool app_running = true;
-
-    while(app_running){
-        if(current_state == STATE_MENU){
-            draw_menu_screen(disp_w, disp_h);
-
-            bool in_menu = true;
-            while(in_menu && app_running){
-                int32_t key;
-                int32_t sp = pc_try_get_special();
-
-                if(sp == KEYBOARD_SPECIAL_UP){
-                    if(selected_menu_item > 0) selected_menu_item--;
-                    else selected_menu_item = MENU_COUNT - 1;
-                    sfx_menu_move();
-                    draw_menu_screen(disp_w, disp_h);
-                } else if(sp == KEYBOARD_SPECIAL_DOWN){
-                    if(selected_menu_item + 1 < MENU_COUNT) selected_menu_item++;
-                    else selected_menu_item = 0;
-                    sfx_menu_move();
-                    draw_menu_screen(disp_w, disp_h);
-                } else if(sp == KEYBOARD_SPECIAL_LEFT){
-                    if(selected_menu_item == MENU_DIFFICULTY){
-                        if(selected_difficulty > 0) selected_difficulty--;
-                        else selected_difficulty = DIFF_COUNT - 1;
-                        sfx_menu_move();
-                        draw_menu_screen(disp_w, disp_h);
-                    } else if(selected_menu_item == MENU_WALLS){
-                        walls_enabled = !walls_enabled;
-                        sfx_menu_move();
-                        draw_menu_screen(disp_w, disp_h);
-                    }
-                } else if(sp == KEYBOARD_SPECIAL_RIGHT){
-                    if(selected_menu_item == MENU_DIFFICULTY){
-                        if(selected_difficulty + 1 < DIFF_COUNT) selected_difficulty++;
-                        else selected_difficulty = 0;
-                        sfx_menu_move();
-                        draw_menu_screen(disp_w, disp_h);
-                    } else if(selected_menu_item == MENU_WALLS){
-                        walls_enabled = !walls_enabled;
-                        sfx_menu_move();
-                        draw_menu_screen(disp_w, disp_h);
-                    }
-                }
-
-                while((key = pc_try_getchar()) >= 0){
-                    if(key == 'q' || key == 'Q' || key == 27){
-                        app_running = false;
-                        in_menu = false;
-                        break;
-                    } else if(key == 'w' || key == 'W' || key == 'k' || key == 'K'){
-                        if(selected_menu_item > 0) selected_menu_item--;
-                        else selected_menu_item = MENU_COUNT - 1;
-                        sfx_menu_move();
-                        draw_menu_screen(disp_w, disp_h);
-                    } else if(key == 's' || key == 'S' || key == 'j' || key == 'J'){
-                        if(selected_menu_item + 1 < MENU_COUNT) selected_menu_item++;
-                        else selected_menu_item = 0;
-                        sfx_menu_move();
-                        draw_menu_screen(disp_w, disp_h);
-                    } else if(key == 'a' || key == 'A' || key == 'h' || key == 'H'){
-                        if(selected_menu_item == MENU_DIFFICULTY){
-                            if(selected_difficulty > 0) selected_difficulty--;
-                            else selected_difficulty = DIFF_COUNT - 1;
-                            sfx_menu_move();
-                            draw_menu_screen(disp_w, disp_h);
-                        } else if(selected_menu_item == MENU_WALLS){
-                            walls_enabled = !walls_enabled;
-                            sfx_menu_move();
-                            draw_menu_screen(disp_w, disp_h);
-                        }
-                    } else if(key == 'd' || key == 'D' || key == 'l' || key == 'L'){
-                        if(selected_menu_item == MENU_DIFFICULTY){
-                            if(selected_difficulty + 1 < DIFF_COUNT) selected_difficulty++;
-                            else selected_difficulty = 0;
-                            sfx_menu_move();
-                            draw_menu_screen(disp_w, disp_h);
-                        } else if(selected_menu_item == MENU_WALLS){
-                            walls_enabled = !walls_enabled;
-                            sfx_menu_move();
-                            draw_menu_screen(disp_w, disp_h);
-                        }
-                    } else if(key == '\n' || key == '\r' || key == ' '){
-                        sfx_menu_select();
-                        if(selected_menu_item == MENU_START){
-                            reset_game();
-                            current_state = STATE_PLAYING;
-                            in_menu = false;
-                        } else if(selected_menu_item == MENU_DIFFICULTY){
-                            selected_difficulty = (selected_difficulty + 1) % DIFF_COUNT;
-                            draw_menu_screen(disp_w, disp_h);
-                        } else if(selected_menu_item == MENU_WALLS){
-                            walls_enabled = !walls_enabled;
-                            draw_menu_screen(disp_w, disp_h);
-                        } else if(selected_menu_item == MENU_EXIT){
-                            app_running = false;
-                            in_menu = false;
-                        }
-                    }
-                }
-
-                pa_update();
-                pc_sleep(25);
-            }
-        }
-
-        if(current_state == STATE_PLAYING && app_running){
-            pc_display_clear(COLOR_BG);
-            draw_board_full(origin_x, origin_y);
-            draw_hud(origin_x, origin_y);
-
-            uint32_t step_ms = DIFF_DELAYS[selected_difficulty];
-            uint32_t sub_step_ms = 20;
-            uint32_t sub_steps = step_ms / sub_step_ms;
-            if(sub_steps < 1) sub_steps = 1;
-
-            bool in_game = true;
-
-            while(in_game && app_running){
-                for(uint32_t s = 0; s < sub_steps && in_game && app_running; s++){
-                    int32_t sp = pc_try_get_special();
-                    if(sp == KEYBOARD_SPECIAL_UP)         change_direction(0, -1);
-                    else if(sp == KEYBOARD_SPECIAL_DOWN)  change_direction(0, 1);
-                    else if(sp == KEYBOARD_SPECIAL_LEFT)  change_direction(-1, 0);
-                    else if(sp == KEYBOARD_SPECIAL_RIGHT) change_direction(1, 0);
-
-                    int32_t key;
-                    while((key = pc_try_getchar()) >= 0){
-                        if(key == 'q' || key == 'Q' || key == 27){
-                            current_state = STATE_MENU;
-                            in_game = false;
-                            break;
-                        } else if(key == 'm' || key == 'M'){
-                            current_state = STATE_MENU;
-                            in_game = false;
-                            break;
-                        } else if(key == 'p' || key == 'P' || key == ' '){
-                            current_state = STATE_PAUSED;
-                            in_game = false;
-                            break;
-                        } else if(key == 'w' || key == 'W' || key == 'k' || key == 'K'){
-                            change_direction(0, -1);
-                        } else if(key == 's' || key == 'S' || key == 'j' || key == 'J'){
-                            change_direction(0, 1);
-                        } else if(key == 'a' || key == 'A' || key == 'h' || key == 'H'){
-                            change_direction(-1, 0);
-                        } else if(key == 'd' || key == 'D' || key == 'l' || key == 'L'){
-                            change_direction(1, 0);
-                        }
-                    }
-
-                    pa_update();
-                    pc_sleep(sub_step_ms);
-                }
-
-                if(!in_game || !app_running) break;
-
-                if(sfx_cooldown_ticks > 0) sfx_cooldown_ticks--;
-
-                bool ate_food = false;
-                struct point old_tail;
-                if(!advance_game(&ate_food, &old_tail)){
-                    sfx_die_jingle();
-                    current_state = STATE_GAMEOVER;
-                    in_game = false;
-                    break;
-                }
-
-                if(ate_food){
-                    sfx_eat_chime();
-                }
-
-                draw_step(origin_x, origin_y, ate_food, old_tail);
-            }
-        }
-
-        if(current_state == STATE_PAUSED && app_running){
-            draw_overlay_box(origin_x, origin_y,
-                             "P A U S E D", COLOR_WARN,
-                             "Game is currently paused",
-                             "Press P or Space to Resume",
-                             "Press M for Menu | Q to Exit");
-
-            bool in_pause = true;
-            while(in_pause && app_running){
-                int32_t key = pc_try_getchar();
-                if(key >= 0){
-                    if(key == 'p' || key == 'P' || key == ' ' || key == '\n' || key == '\r'){
-                        current_state = STATE_PLAYING;
-                        in_pause = false;
-                    } else if(key == 'm' || key == 'M' || key == 27){
-                        current_state = STATE_MENU;
-                        in_pause = false;
-                    } else if(key == 'q' || key == 'Q'){
-                        app_running = false;
-                        in_pause = false;
-                    }
-                }
-                pa_update();
-                pc_sleep(30);
-            }
-        }
-
-        if(current_state == STATE_GAMEOVER && app_running){
-            char final_msg[64];
-            char s_sc[16], s_hi[16];
-            format_u32(score, s_sc, sizeof(s_sc));
-            format_u32(high_score, s_hi, sizeof(s_hi));
-
-            uint32_t p = 0;
-            const char *m1 = "Final Score: ";
-            while(*m1) final_msg[p++] = *m1++;
-            const char *m2 = s_sc;
-            while(*m2) final_msg[p++] = *m2++;
-            const char *m3 = "  (Best: ";
-            while(*m3) final_msg[p++] = *m3++;
-            const char *m4 = s_hi;
-            while(*m4) final_msg[p++] = *m4++;
-            final_msg[p++] = ')';
-            final_msg[p] = '\0';
-
-            draw_overlay_box(origin_x, origin_y,
-                             "G A M E   O V E R", COLOR_DANGER,
-                             final_msg,
-                             "Press R or Enter to Play Again",
-                             "Press M for Menu | Q to Exit");
-
-            bool in_gameover = true;
-            while(in_gameover && app_running){
-                int32_t key = pc_try_getchar();
-                if(key >= 0){
-                    if(key == 'r' || key == 'R' || key == '\n' || key == '\r' || key == ' '){
-                        reset_game();
-                        current_state = STATE_PLAYING;
-                        in_gameover = false;
-                    } else if(key == 'm' || key == 'M' || key == 27){
-                        current_state = STATE_MENU;
-                        in_gameover = false;
-                    } else if(key == 'q' || key == 'Q'){
-                        app_running = false;
-                        in_gameover = false;
-                    }
-                }
-                pa_update();
-                pc_sleep(30);
-            }
+    if (wrap_walls) {
+        if (next.x < 0) next.x = BOARD_COLS - 1;
+        else if (next.x >= BOARD_COLS) next.x = 0;
+        if (next.y < 0) next.y = BOARD_ROWS - 1;
+        else if (next.y >= BOARD_ROWS) next.y = 0;
+    } else {
+        if (next.x < 0 || next.x >= BOARD_COLS || next.y < 0 || next.y >= BOARD_ROWS) {
+            return false;
         }
     }
 
-    sfx_shutdown();
-    pc_display_clear(COLOR_BG);
+    bool ate = (next.x == food_pos.x && next.y == food_pos.y);
+    uint16_t check_len = ate ? snake_len : snake_len - 1;
+    for (uint16_t i = 0; i < check_len; i++) {
+        if (snake[i].x == next.x && snake[i].y == next.y) return false;
+    }
+
+    if (ate && snake_len < MAX_LENGTH) {
+        snake_len++;
+        score++;
+        if (score > high_score) high_score = score;
+        sfx_eat_sound();
+        spawn_food();
+    }
+
+    for (uint16_t i = snake_len - 1; i > 0; i--) {
+        snake[i] = snake[i - 1];
+    }
+    snake[0] = next;
+    return true;
+}
+
+static void handle_input(struct pg_window *window, struct pg_event *event) {
+    if (event->type == PG_EVENT_CLOSE) {
+        pg_window_close(window);
+        return;
+    }
+
+    if (event->type == PG_EVENT_KEY) {
+        int32_t k = event->key;
+        if (k == 'q' || k == 'Q') {
+            pg_window_close(window);
+            return;
+        }
+
+        if (mode == MODE_MENU) {
+            if (k == 'w' || k == 'W') {
+                if (menu_sel > 0) menu_sel--;
+                else menu_sel = ACT_COUNT - 1;
+                sfx_turn_blip();
+                redraw(window);
+            } else if (k == 's' || k == 'S') {
+                if (menu_sel + 1 < ACT_COUNT) menu_sel++;
+                else menu_sel = 0;
+                sfx_turn_blip();
+                redraw(window);
+            } else if (k == 'a' || k == 'A') {
+                if (menu_sel == ACT_DIFF) {
+                    if (diff_level > 0) diff_level--;
+                    else diff_level = 2;
+                } else if (menu_sel == ACT_WALLS) {
+                    wrap_walls = !wrap_walls;
+                }
+                sfx_turn_blip();
+                redraw(window);
+            } else if (k == 'd' || k == 'D') {
+                if (menu_sel == ACT_DIFF) {
+                    diff_level = (diff_level + 1) % 3;
+                } else if (menu_sel == ACT_WALLS) {
+                    wrap_walls = !wrap_walls;
+                }
+                sfx_turn_blip();
+                redraw(window);
+            } else if (k == '\n' || k == '\r' || k == ' ') {
+                if (menu_sel == ACT_PLAY) {
+                    reset_snake_game();
+                    mode = MODE_PLAYING;
+                    redraw(window);
+                } else if (menu_sel == ACT_DIFF) {
+                    diff_level = (diff_level + 1) % 3;
+                    redraw(window);
+                } else if (menu_sel == ACT_WALLS) {
+                    wrap_walls = !wrap_walls;
+                    redraw(window);
+                } else if (menu_sel == ACT_EXIT) {
+                    pg_window_close(window);
+                }
+            }
+            return;
+        }
+
+        if (mode == MODE_PAUSED) {
+            if (k == 'p' || k == 'P' || k == ' ') {
+                mode = MODE_PLAYING;
+                redraw(window);
+            } else if (k == 'm' || k == 'M') {
+                mode = MODE_MENU;
+                redraw(window);
+            }
+            return;
+        }
+
+        if (mode == MODE_GAMEOVER) {
+            if (k == 'r' || k == 'R' || k == ' ' || k == '\n') {
+                reset_snake_game();
+                mode = MODE_PLAYING;
+                redraw(window);
+            } else if (k == 'm' || k == 'M') {
+                mode = MODE_MENU;
+                redraw(window);
+            }
+            return;
+        }
+
+        if (mode == MODE_PLAYING) {
+            if (k == 'p' || k == 'P') {
+                mode = MODE_PAUSED;
+                redraw(window);
+            } else if (k == 'm' || k == 'M') {
+                mode = MODE_MENU;
+                redraw(window);
+            } else if (k == 'w' || k == 'W') set_dir(0, -1);
+            else if (k == 's' || k == 'S') set_dir(0, 1);
+            else if (k == 'a' || k == 'A') set_dir(-1, 0);
+            else if (k == 'd' || k == 'D') set_dir(1, 0);
+        }
+    } else if (event->type == PG_EVENT_SPECIAL_KEY) {
+        if (mode == MODE_MENU) {
+            if (event->key == KEYBOARD_SPECIAL_UP) {
+                if (menu_sel > 0) menu_sel--;
+                else menu_sel = ACT_COUNT - 1;
+                sfx_turn_blip();
+                redraw(window);
+            } else if (event->key == KEYBOARD_SPECIAL_DOWN) {
+                if (menu_sel + 1 < ACT_COUNT) menu_sel++;
+                else menu_sel = 0;
+                sfx_turn_blip();
+                redraw(window);
+            } else if (event->key == KEYBOARD_SPECIAL_LEFT) {
+                if (menu_sel == ACT_DIFF) {
+                    if (diff_level > 0) diff_level--;
+                    else diff_level = 2;
+                } else if (menu_sel == ACT_WALLS) {
+                    wrap_walls = !wrap_walls;
+                }
+                sfx_turn_blip();
+                redraw(window);
+            } else if (event->key == KEYBOARD_SPECIAL_RIGHT) {
+                if (menu_sel == ACT_DIFF) {
+                    diff_level = (diff_level + 1) % 3;
+                } else if (menu_sel == ACT_WALLS) {
+                    wrap_walls = !wrap_walls;
+                }
+                sfx_turn_blip();
+                redraw(window);
+            }
+        } else if (mode == MODE_PLAYING) {
+            if (event->key == KEYBOARD_SPECIAL_UP) set_dir(0, -1);
+            else if (event->key == KEYBOARD_SPECIAL_DOWN) set_dir(0, 1);
+            else if (event->key == KEYBOARD_SPECIAL_LEFT) set_dir(-1, 0);
+            else if (event->key == KEYBOARD_SPECIAL_RIGHT) set_dir(1, 0);
+        }
+    }
+}
+
+static int snake_app_main(void) {
+    compute_window_layout();
+
+    struct pg_window window;
+    if (!pg_window_center(&window, "Snake", g_win_w, g_win_h)) {
+        return 1;
+    }
+
+    sfx_init_all();
+    redraw(&window);
+
+    while (pg_window_is_open(&window)) {
+        struct pg_event event;
+        bool has = pg_window_poll_event(&window, &event);
+
+        if (has) {
+            if (event.type == PG_EVENT_REPAINT ||
+                event.type == PG_EVENT_MOVE    ||
+                event.type == PG_EVENT_FOCUS) {
+                redraw(&window);
+            } else {
+                handle_input(&window, &event);
+            }
+            if (!pg_window_is_open(&window)) break;
+        } else {
+            pc_sleep(16);
+        }
+
+        pa_update();
+        if (sfx_cool > 0) sfx_cool--;
+
+        if (pg_window_is_minimized(&window)) continue;
+        if (mode != MODE_PLAYING) continue;
+
+        step_timer_ms += 16;
+        if (step_timer_ms >= DIFF_SPEEDS[diff_level]) {
+            step_timer_ms = 0;
+            if (!advance_snake()) {
+                sfx_die_sound();
+                mode = MODE_GAMEOVER;
+            }
+            redraw(&window);
+        }
+    }
+
+    pa_sfx_stop();
+    pa_stop_tone();
+    pg_window_close(&window);
     return 0;
 }
 
-void _start(void){
-    pc_exit(snake_main());
+void _start(void) {
+    pc_exit(snake_app_main());
 }
