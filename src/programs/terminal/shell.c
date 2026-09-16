@@ -49,17 +49,6 @@ static void build_prompt(char *prompt, uint32_t capacity){
         pc_copy(prompt,"$ ",capacity);
 }
 
-static void show_help(void){
-    pc_write("Builtins: help clear pwd echo env set unset ping panic exit\n");
-    pc_write("  ping [-c count] <ip|host|url>\n");
-    pc_write("EXT2 debug: stat <path> | inode <num> | super | blocks <path> | fsinfo | dumpi <num>\n");
-    pc_write("System programs resolve through PATH=/bin/program:/bin:\n");
-    pc_write("  cd [directory] | ls [directory] | cat <file> | touch <file> | mkdir <directory>\n");
-    pc_write("  nano <file> | hexedit <file> | disks | usbscan | dmesg | savelog\n");
-    pc_write("  install | setup | update | mkfs.fat32\n");
-    pc_write("  uname | about | systeminfo | htop | font | snake | tetris | files | gui-demo\n");
-    pc_write("  mouse | debug | battery | reboot | poweroff | shutdown | halt\n");
-}
 
 static void write_ipv4(uint32_t address){
     pc_write_u64((address>>24)&255);
@@ -473,7 +462,6 @@ static bool execute_line(struct terminal_window *terminal, char *line){
     split_line(line,&command,&arguments);
     if(!command[0]) return true;
     if(pc_strcmp(command,"exit")==0) return false;
-    if(pc_strcmp(command,"help")==0) show_help();
     else if(pc_strcmp(command,"clear")==0) pc_console_clear();
     else if(pc_strcmp(command,"pwd")==0){
         char directory[SHELL_PATH_CAPACITY];

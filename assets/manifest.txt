@@ -30,6 +30,10 @@
 /bin/program/system /bin/program/system - 1 bin/programs/system
 /bin/program/cd /bin/program/cd - 1 bin/programs/cd
 /bin/cd /bin/cd - 1 bin/programs/cd
+/bin/program/help /bin/program/help - 1 bin/programs/help
+/bin/help /bin/help - 1 bin/programs/help
+/bin/program/ls /bin/program/ls - 1 bin/programs/ls
+/bin/ls /bin/ls - 1 bin/programs/ls
 /bin/program/files /bin/program/files - 1 bin/programs/files
 /bin/gui-demo /bin/gui-demo - 1 bin/programs/gui-demo
 
