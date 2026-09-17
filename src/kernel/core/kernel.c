@@ -15,6 +15,7 @@
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
 #include "../../net/core/net_service.h"
+#include "../devices/device_manager.h"
 extern struct limine_memmap_response *memmap_response_ptr;
 extern struct limine_smp_response *smp_response_ptr;
 extern uint64_t hhdm_offset_global;
@@ -73,6 +74,13 @@ void kernel_main(struct limine_framebuffer *fb) {
     klog(KLOG_INFO, "GOP test deferred to userspace");
 
     klog(KLOG_INFO, "Boot log complete");
-    klogf(KLOG_DEBUG, "Verbose mode: %s (debug visible)", klog_is_verbose() ? "on" : "off");
+    klogf(KLOG_INFO, "Verbose mode: %s (debug visible)", klog_is_verbose() ? "on" : "off");
+
+    klog(KLOG_INFO, "Initializing device manager...");
+    devman_init();
+    devman_enumerate();
+    devman_dump();
+    klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
+
     init_process_start(smp_response_ptr ? smp_response_ptr->cpu_count : 1);
 }

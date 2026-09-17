@@ -110,7 +110,8 @@ C_SOURCES := \
 	kernel/process/scheduler.c \
 	drivers/power/power.c \
 	drivers/audio/audio_hda.c \
-	drivers/audio/audio.c
+	drivers/audio/audio.c \
+	kernel/devices/device_manager.c
 CPP_SOURCES := userspace/apps/audio_panel.cpp
 ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \

@@ -3,7 +3,6 @@
 #include "../../acpi/include/acpi/acpi.h"
 #include "../diagnostics/klog.h"
 #include "../../lib/string.h"
-#include "../../lib/memory.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -31,7 +30,7 @@ static void device_set_name(struct device_info *dev, const char *name) {
     }
 }
 
-static const struct device_info *device_add(enum device_type type) {
+static struct device_info *device_add(enum device_type type) {
     if (g_device_count >= DEVICE_MANAGER_MAX_DEVICES)
         return NULL;
     struct device_info *dev = &g_devices[g_device_count];
@@ -74,9 +73,49 @@ static void pci_inspect_device(const struct pci_device_info *pci, void *ctx) {
     device_set_name(dev, "pci-device");
 }
 
+static bool acpi_visitor_noop(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_pci_bridge(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_sensor(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_network(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_storage(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_usb(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_display(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
+static bool acpi_visitor_audio(const char *sig, void *table, uint32_t len, void *ctx) {
+    (void)sig; (void)table; (void)len; (void)ctx;
+    return true;
+}
+
 static void acpi_isa_enumerate(void) {
     if (!acpi_is_ready()) return;
-    struct acpi_madam_info madt_info;
+    struct acpi_madt_info madt_info;
     if (!acpi_get_madt(&madt_info)) return;
     if (madt_info.ioapic_count == 0) return;
     for (uint32_t i = 0; i < 16 && g_device_count < DEVICE_MANAGER_MAX_DEVICES; i++) {
@@ -88,25 +127,9 @@ static void acpi_isa_enumerate(void) {
     }
 }
 
-static void acpi_enumerate_devices(void) {
-    if (!acpi_is_ready()) return;
-    acpi_for_each_table("PNP", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("ACP", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("HID", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-}
-
 static void acpi_madt_devices(void) {
     if (!acpi_is_ready()) return;
-    struct acpi_madam_info madt_info;
+    struct acpi_madt_info madt_info;
     if (!acpi_get_madt(&madt_info)) return;
     if (madt_info.lapic_base == 0) return;
     for (uint32_t i = 0; i < madt_info.total_cpus && g_device_count < DEVICE_MANAGER_MAX_DEVICES; i++) {
@@ -114,7 +137,7 @@ static void acpi_madt_devices(void) {
         if (!dev) break;
         dev->acpi.address = madt_info.lapic_base;
         dev->irq_count = 1;
-        dev->irq_lines[0] = (i == 0) ? 0 : i;
+        dev->irq_lines[0] = (i == 0) ? 0 : (int)i;
         device_set_name(dev, "lapic");
     }
 }
@@ -131,7 +154,6 @@ static void acpi_ec_devices(void) {
     }
     dev->acpi.hid[i] = '\0';
     dev->irq_count = 1;
-    dev->mmio_address = 0;
     device_set_name(dev, "EC");
     g_acpi_count++;
 }
@@ -189,14 +211,8 @@ static void acpi_uart_devices(void) {
 
 static void acpi_pci_bridge_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("PNP0A03", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("PNP0A05", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
+    acpi_for_each_table("PNP0A03", acpi_visitor_pci_bridge, NULL);
+    acpi_for_each_table("PNP0A05", acpi_visitor_pci_bridge, NULL);
 }
 
 static void acpi_power_devices(void) {
@@ -210,86 +226,38 @@ static void acpi_power_devices(void) {
 
 static void acpi_sensor_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("THDM", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("THDT", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
+    acpi_for_each_table("THDM", acpi_visitor_sensor, NULL);
+    acpi_for_each_table("THDT", acpi_visitor_sensor, NULL);
 }
 
 static void acpi_network_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("IBM", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
+    acpi_for_each_table("IBM", acpi_visitor_network, NULL);
 }
 
 static void acpi_storage_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("ATA6", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("ATAP", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
+    acpi_for_each_table("ATA6", acpi_visitor_storage, NULL);
+    acpi_for_each_table("ATAP", acpi_visitor_storage, NULL);
 }
 
 static void acpi_usb_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("USB", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("EHCI", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("XHCI", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
+    acpi_for_each_table("USB", acpi_visitor_usb, NULL);
+    acpi_for_each_table("EHCI", acpi_visitor_usb, NULL);
+    acpi_for_each_table("XHCI", acpi_visitor_usb, NULL);
 }
 
 static void acpi_display_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("PCIC", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("GFX0", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
+    acpi_for_each_table("PCIC", acpi_visitor_display, NULL);
+    acpi_for_each_table("GFX0", acpi_visitor_display, NULL);
 }
 
 static void acpi_audio_devices(void) {
     if (!acpi_is_ready()) return;
-    acpi_for_each_table("HDAS", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-    acpi_for_each_table("AZAL", [](const char *sig, void *table, uint32_t len, void *ctx) {
-        (void)sig; (void)table; (void)len; (void)ctx;
-        return true;
-    }, NULL);
-}
-
-void devman_init(void) {
-    memset(g_devices, 0, sizeof(g_devices));
-    g_device_count = 0;
-    g_pci_count = 0;
-    g_acpi_count = 0;
-    g_enumerated = false;
-    g_drivers = NULL;
-    for (uint32_t i = 0; i < DEVICE_MANAGER_MAX_DEVICES; i++)
-        device_zero(&g_devices[i]);
-    klog(KLOG_INFO, "devman: initialized");
+    acpi_for_each_table("HDAS", acpi_visitor_audio, NULL);
+    acpi_for_each_table("AZAL", acpi_visitor_audio, NULL);
 }
 
 static void devman_enumerate_devices(void) {
@@ -321,6 +289,18 @@ static void devman_enumerate_devices(void) {
     klogf(KLOG_OK, "devman: total devices=%u (pci=%u acpi=%u)",
           g_device_count, g_pci_count, g_acpi_count);
     g_enumerated = true;
+}
+
+void devman_init(void) {
+    memset(g_devices, 0, sizeof(g_devices));
+    g_device_count = 0;
+    g_pci_count = 0;
+    g_acpi_count = 0;
+    g_enumerated = false;
+    g_drivers = NULL;
+    for (uint32_t i = 0; i < DEVICE_MANAGER_MAX_DEVICES; i++)
+        device_zero(&g_devices[i]);
+    klog(KLOG_INFO, "devman: initialized");
 }
 
 void devman_enumerate(void) {
