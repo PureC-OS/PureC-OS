@@ -4,6 +4,8 @@
 #include "../display.h"
 #include "../personalization.h"
 #include "../window_manager.h"
+#include "../../kernel/process/process.h"
+#include "../syscall.h"
 #include "../../kernel/syscall/syscall.h"
 #include "../../lib/string.h"
 
