@@ -15,7 +15,15 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad userspace clean help
+.PHONY: all libraries programs kernel iso hexedit notepad userspace clean help test-cpu
+
+HOST_CC ?= cc
+
+test-cpu:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src \
+		tests/cpu_topology_test.c src/kernel/smp/cpu.c -o $(BIN_DIR)/tests/cpu_topology_test
+	$(BIN_DIR)/tests/cpu_topology_test
 
 all: iso
 
@@ -127,9 +135,9 @@ help:
 	@echo "  make notepad        build PureC Notepad"
 	@echo "  make userspace      build Userspace"
 	@echo "  make iso            assemble ISO image"
+	@echo "  make test-cpu       run host CPU discovery tests"
 	@echo "  make clean          remove build artefacts"
 	@echo ""
 	@echo "  NOTE: external repos must be fetched first:"
 	@echo "        ./purec.py setup"
 	@echo ""
-

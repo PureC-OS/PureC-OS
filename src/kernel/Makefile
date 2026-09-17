@@ -36,6 +36,7 @@ C_SOURCES := \
 	kernel/core/kernel.c \
 	kernel/core/init.c \
 	kernel/core/system_info.c \
+	kernel/smp/cpu.c \
 	kernel/process/process.c \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \

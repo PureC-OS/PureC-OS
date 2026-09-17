@@ -37,8 +37,8 @@
 
 1. Базовые вещи
 
-- [ ] 1. Добавить поддержку обнаружения количества ядер (через ACPI MADT / Limine)
-- [ ] 2. Поднять Application Processors (INIT → SIPI → SIPI)
+- [X] 1. Добавить поддержку обнаружения логических CPU через Limine: таблица CPU/APIC ID, BSP, отдельные detected/registered/online (пока online=1, до 16 записей)
+- [ ] 2. Поднять Application Processors через Limine goto_address (INIT → SIPI выполняет загрузчик)
 - [ ] 3. Сделать per-CPU структуры (как минимум current поток)
 
 2. Планировщик

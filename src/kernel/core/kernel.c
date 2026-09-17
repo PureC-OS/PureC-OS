@@ -16,6 +16,7 @@
 #include "../../mm/vmm.h"
 #include "../../net/core/net_service.h"
 #include "../devices/device_manager.h"
+#include "../smp/cpu.h"
 extern struct limine_memmap_response *memmap_response_ptr;
 extern struct limine_smp_response *smp_response_ptr;
 extern uint64_t hhdm_offset_global;
@@ -33,6 +34,7 @@ void kernel_main(struct limine_framebuffer *fb) {
     klog(KLOG_INFO, "Kernel: 64-bit long mode, GOP active");
 
     boot_diag_checkpoint(BOOT_STAGE_SYSTEM_INFO, "probing CPU and memory map");
+    cpu_topology_init(smp_response_ptr);
     system_info_init(memmap_response_ptr);
     if(system_info_usable_ram_bytes()==0)
         kernel_panic("memory map contains no usable RAM");
@@ -82,5 +84,5 @@ void kernel_main(struct limine_framebuffer *fb) {
     devman_dump();
     klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
 
-    init_process_start(smp_response_ptr ? smp_response_ptr->cpu_count : 1);
+    init_process_start();
 }

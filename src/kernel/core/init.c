@@ -4,6 +4,7 @@
 #include "../diagnostics/panic.h"
 #include "../process/scheduler.h"
 #include "../process/process.h"
+#include "../smp/cpu.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
@@ -19,13 +20,14 @@ static void boot_log_pause(void){
     (void)dummy;
 }
 
-void init_process_start(uint32_t detected_cpu_count){
+void init_process_start(void){
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT, "about to start init process");
     klog(KLOG_OK, "Booting init process...");
     boot_log_pause();
 
     scheduler_init();
     int core_count=scheduler_get_core_count();
+    uint32_t detected_cpu_count=cpu_detected_count();
     if(detected_cpu_count>1){
         klogf(KLOG_WARN,
               "sched: Limine detected %u CPUs; 1 CPU active until AP scheduler support is installed",
