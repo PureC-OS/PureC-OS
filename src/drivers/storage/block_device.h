@@ -5,7 +5,7 @@
 #include "storage_types.h"
 
 #define BLOCK_SECTOR_SIZE 512
-#define BLOCK_MULTI_MAX_SECTORS 128
+#define BLOCK_MULTI_MAX_SECTORS 32
 
 bool block_device_init(void);
 uint32_t block_device_rescan_usb(void);

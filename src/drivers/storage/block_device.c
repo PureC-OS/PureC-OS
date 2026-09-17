@@ -28,6 +28,40 @@ static void usb_rescan_lock(void){
 static void usb_rescan_unlock(void){
     __atomic_clear(&usb_rescan_busy,__ATOMIC_RELEASE);
 }
+static uint8_t usb_bounce[BLOCK_MULTI_MAX_SECTORS * BLOCK_SECTOR_SIZE]
+    __attribute__((aligned(65536)));
+
+static bool usb_write_run(bool ehci, uint32_t lba, const uint8_t *src,
+                          uint32_t count){
+    while(count){
+        uint32_t n=count>BLOCK_MULTI_MAX_SECTORS
+            ? BLOCK_MULTI_MAX_SECTORS : count;
+        memcpy(usb_bounce,src,(uint64_t)n*BLOCK_SECTOR_SIZE);
+        bool ok=ehci ? ehci_write_sectors(lba,usb_bounce,n)
+                     : xhci_write_sectors(lba,usb_bounce,n);
+        if(!ok) return false;
+        lba+=n;
+        src+=(uint64_t)n*BLOCK_SECTOR_SIZE;
+        count-=n;
+    }
+    return true;
+}
+
+static bool usb_read_run(bool ehci, uint32_t lba, uint8_t *dst,
+                         uint32_t count){
+    while(count){
+        uint32_t n=count>BLOCK_MULTI_MAX_SECTORS
+            ? BLOCK_MULTI_MAX_SECTORS : count;
+        bool ok=ehci ? ehci_read_sectors(lba,usb_bounce,n)
+                     : xhci_read_sectors(lba,usb_bounce,n);
+        if(!ok) return false;
+        memcpy(dst,usb_bounce,(uint64_t)n*BLOCK_SECTOR_SIZE);
+        lba+=n;
+        dst+=(uint64_t)n*BLOCK_SECTOR_SIZE;
+        count-=n;
+    }
+    return true;
+}
 
 void block_device_begin_exclusive_io(void){
     usb_rescan_lock();
@@ -274,15 +308,16 @@ bool block_device_select(uint32_t index){
 }
 
 bool block_device_read(uint32_t lba, void *buffer){
+    if(!buffer) return false;
     if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
         usb_rescan_lock();
-        bool result=ehci_read_sector(lba,buffer);
+        bool result=usb_read_run(true,lba,buffer,1);
         usb_rescan_unlock();
         return result;
     }
     if(active_transport==STORAGE_TRANSPORT_USB_MSC){
         usb_rescan_lock();
-        bool result=xhci_read_sector(lba,buffer);
+        bool result=usb_read_run(false,lba,buffer,1);
         usb_rescan_unlock();
         return result;
     }
@@ -292,15 +327,16 @@ bool block_device_read(uint32_t lba, void *buffer){
 }
 
 bool block_device_write(uint32_t lba, const void *buffer){
+    if(!buffer) return false;
     if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
         usb_rescan_lock();
-        bool result=ehci_write_sector(lba,buffer);
+        bool result=usb_write_run(true,lba,buffer,1);
         usb_rescan_unlock();
         return result;
     }
     if(active_transport==STORAGE_TRANSPORT_USB_MSC){
         usb_rescan_lock();
-        bool result=xhci_write_sector(lba,buffer);
+        bool result=usb_write_run(false,lba,buffer,1);
         usb_rescan_unlock();
         return result;
     }
@@ -314,29 +350,13 @@ bool block_device_read_sectors(uint32_t lba, void *buffer, uint32_t count){
     if(!buffer) return false;
     if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
         usb_rescan_lock();
-        bool ok=true;
-        for(uint32_t done=0;done<count;){
-            uint32_t n=count-done;
-            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
-            if(!ehci_read_sectors(lba+done,
-                                  (uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
-                                  n)){ ok=false; break; }
-            done+=n;
-        }
+        bool ok=usb_read_run(true,lba,buffer,count);
         usb_rescan_unlock();
         return ok;
     }
     if(active_transport==STORAGE_TRANSPORT_USB_MSC){
         usb_rescan_lock();
-        bool ok=true;
-        for(uint32_t done=0;done<count;){
-            uint32_t n=count-done;
-            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
-            if(!xhci_read_sectors(lba+done,
-                                  (uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
-                                  n)){ ok=false; break; }
-            done+=n;
-        }
+        bool ok=usb_read_run(false,lba,buffer,count);
         usb_rescan_unlock();
         return ok;
     }
@@ -362,29 +382,13 @@ bool block_device_write_sectors(uint32_t lba, const void *buffer,
     if(!buffer) return false;
     if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
         usb_rescan_lock();
-        bool ok=true;
-        for(uint32_t done=0;done<count;){
-            uint32_t n=count-done;
-            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
-            if(!ehci_write_sectors(lba+done,
-                                   (const uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
-                                   n)){ ok=false; break; }
-            done+=n;
-        }
+        bool ok=usb_write_run(true,lba,buffer,count);
         usb_rescan_unlock();
         return ok;
     }
     if(active_transport==STORAGE_TRANSPORT_USB_MSC){
         usb_rescan_lock();
-        bool ok=true;
-        for(uint32_t done=0;done<count;){
-            uint32_t n=count-done;
-            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
-            if(!xhci_write_sectors(lba+done,
-                                   (const uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
-                                   n)){ ok=false; break; }
-            done+=n;
-        }
+        bool ok=usb_write_run(false,lba,buffer,count);
         usb_rescan_unlock();
         return ok;
     }
