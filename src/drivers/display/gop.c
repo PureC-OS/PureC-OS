@@ -135,8 +135,44 @@ void gop_init_from_multiboot(void *mbi){
     gop.available=false;
 }
 
+bool gop_apply_live(void *address, uint32_t width, uint32_t height,
+                    uint32_t pitch_pixels, uint8_t bpp){
+    if(!address || !width || !height || !pitch_pixels) return false;
+    if(bpp!=16 && bpp!=24 && bpp!=32) return false;
+    uint64_t pixels=(uint64_t)width*(uint64_t)height;
+    if(!pixels || pixels>(64ULL*1024ULL*1024ULL)) return false;
+    gop.addr=(uint32_t*)address;
+    gop.width=width;
+    gop.height=height;
+    gop.pitch=pitch_pixels;
+    gop.bpp=bpp;
+    gop.framebuffer_bytes=(uint64_t)pitch_pixels
+        *((uint64_t)(bpp==24 ? 3 : (bpp==16 ? 2 : 4)))*height;
+    gop.protocol_name="VBE live mode";
+    gop.available=true;
+    cur_x=12; cur_y=12;
+    if(backbuffer){
+        pmm_free_contiguous(backbuffer_phys, backbuffer_pages);
+        backbuffer=0;
+        backbuffer_phys=0;
+        backbuffer_pages=0;
+        backbuffer_width=0;
+        backbuffer_height=0;
+    }
+    dirty_valid=false;
+    batch_depth=0;
+    compose_depth=0;
+    last_present_tick=0;
+    present_deferred=false;
+    user_console.active=false;
+    return true;
+}
+
 bool gop_is_available(void){
     return gop.available;
+}
+void *gop_get_address(void){
+    return gop.addr;
 }
 uint32_t gop_get_width(void){
     return gop.width;

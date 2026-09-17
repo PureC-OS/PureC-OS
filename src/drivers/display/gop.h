@@ -19,7 +19,10 @@ enum gop_font_face {
 
 void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type);
 void gop_init_from_multiboot(void *mbi);
+bool gop_apply_live(void *address, uint32_t width, uint32_t height,
+                    uint32_t pitch_pixels, uint8_t bpp);
 bool gop_is_available(void);
+void *gop_get_address(void);
 uint32_t gop_get_width(void);
 uint32_t gop_get_height(void);
 uint32_t gop_get_pitch(void);

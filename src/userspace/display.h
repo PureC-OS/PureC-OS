@@ -24,6 +24,7 @@ struct display_info {
 };
 
 bool display_get_info(struct display_info *info);
+void display_invalidate_cache(void);
 bool display_is_available(void);
 uint32_t display_get_width(void);
 uint32_t display_get_height(void);

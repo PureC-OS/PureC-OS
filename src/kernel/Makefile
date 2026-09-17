@@ -42,6 +42,7 @@ C_SOURCES := \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	drivers/display/vbe.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
 	lib/string.c \
@@ -81,6 +82,7 @@ C_SOURCES := \
 	fs/ext2/debug.c \
 	fs/vfs.c \
 	userspace/display.c \
+	userspace/display_mode.c \
 	userspace/fs.c \
 	userspace/personalization.c \
 	userspace/wallpaper.c \

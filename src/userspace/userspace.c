@@ -1,5 +1,6 @@
 #include "userspace.h"
 #include "personalization.h"
+#include "display_mode.h"
 #include "wallpaper.h"
 #include "apps/desktop_apps.h"
 #include "apps/desktop_entries.h"
@@ -506,6 +507,10 @@ void userspace_init(void){
     desktop_entries_init();
 
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
+                         "userspace: applying saved display mode");
+    display_mode_boot_apply();
+
+    boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
                          "userspace: drawing desktop");
     draw_desktop();
 
@@ -536,6 +541,7 @@ void userspace_input_thread(void *arg){
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
+        display_mode_poll();
         (void)service_desktop_redraw();
         flush_deferred_redraw();
         if(external_program_has_input_focus()){
@@ -640,6 +646,7 @@ void userspace_run(void){
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
+        display_mode_poll();
         (void)service_desktop_redraw();
         flush_deferred_redraw();
         if(external_program_has_input_focus()){

@@ -289,6 +289,10 @@ void pc_display_clear(uint32_t color){
     (void)pc_syscall(SYS_CLEAR,color,0,0);
 }
 
+int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp){
+    return (int32_t)pc_syscall(SYS_DISPLAY_SET_MODE,width,height,bpp);
+}
+
 void pc_desktop_redraw(void){
     (void)pc_syscall(SYS_DESKTOP_REDRAW,0,0,0);
 }
