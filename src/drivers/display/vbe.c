@@ -4,6 +4,7 @@
 #include "../../arch/x86_64/mmio.h"
 #include "../../mm/vmm.h"
 #include "../../kernel/diagnostics/klog.h"
+#include <stddef.h>
 
 #define VBE_INDEX_PORT 0x1CE
 #define VBE_VALUE_PORT 0x1CF

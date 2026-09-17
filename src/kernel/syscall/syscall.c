@@ -24,6 +24,7 @@
 #include "../../mm/pmm.h"
 #include "../../userspace/userspace.h"
 #include "../../userspace/window_manager.h"
+#include "../../userspace/display_mode.h"
 #include "../../net/api/ping.h"
 #include "../../net/wifi/wifi.h"
 #include "../../net/core/net_device.h"
@@ -193,6 +194,9 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_FB_END_UPDATE:
             mouse_end_framebuffer_update();
             return 0;
+        case SYS_DISPLAY_SET_MODE:
+            return display_mode_apply((uint32_t)a1, (uint32_t)a2,
+                                      (uint8_t)a3);
         case SYS_CONSOLE_CONFIGURE: {
             const struct framebuffer_console_request *request=
                 (const struct framebuffer_console_request*)(uintptr_t)a1;

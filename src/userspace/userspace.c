@@ -509,6 +509,11 @@ void userspace_init(void){
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
                          "userspace: applying saved display mode");
     display_mode_boot_apply();
+    /* TEMP-SELFTEST: live switch 1920x1080 -> 1280x800, removed after. */
+    if(display_mode_apply(1280,800,32)==0)
+        klog(KLOG_OK, "SELFTEST: live switch to 1280x800 OK");
+    else
+        klog(KLOG_ERROR, "SELFTEST: live switch to 1280x800 FAILED");
 
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
                          "userspace: drawing desktop");
