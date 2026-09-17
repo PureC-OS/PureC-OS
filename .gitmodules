@@ -1,0 +1,12 @@
+[submodule "acpi"]
+	path = acpi
+	url = https://github.com/PureC-OS/PureC-OS-ACPI.git
+[submodule "libxcrypt"]
+	path = libxcrypt
+	url = https://github.com/PureC-OS/libxcrypt.git
+[submodule "purec-notepad-os"]
+	path = purec-notepad-os
+	url = https://github.com/PureC-OS/PureC-notepad-OS.git
+[submodule "userspace"]
+	path = userspace
+	url = https://github.com/PureC-OS/PureC-OS-Userspace.git

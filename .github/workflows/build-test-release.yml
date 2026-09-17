@@ -1,0 +1,214 @@
+name: Build, Test and Release PureC OS
+
+on:
+  push:
+    branches:
+      - main
+      - Dev
+  pull_request:
+    branches:
+      - main
+      - Dev
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish a release after all tests pass
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CROSS_PREFIX: ${{ github.workspace }}/.cache/cross
+  RELEASE_SERIES: V1.2
+
+jobs:
+  host-tests:
+    name: Host unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run host unit tests
+        run: make test
+
+      - name: Validate scripts and whitespace
+        run: |
+          python3 -m py_compile tests/qemu_smoke.py
+          bash -n .github/scripts/build-cross-toolchain.sh
+          bash -n .github/scripts/install-limine.sh
+          git diff --check
+
+  build-iso:
+    name: Build bootable ISO
+    needs: host-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository and external components
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bison build-essential curl file flex libgmp-dev libmpc-dev \
+            libmpfr-dev mtools nasm python3 texinfo xorriso
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-none
+
+      - name: Cache x86_64-elf cross toolchain
+        id: cache-cross
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CROSS_PREFIX }}
+          key: ${{ runner.os }}-${{ runner.arch }}-x86_64-elf-gcc-14.1.0-binutils-2.42-${{ hashFiles('.github/scripts/build-cross-toolchain.sh') }}
+
+      - name: Build x86_64-elf cross toolchain
+        if: steps.cache-cross.outputs.cache-hit != 'true'
+        run: .github/scripts/build-cross-toolchain.sh
+
+      - name: Verify cross toolchain
+        run: |
+          echo "${CROSS_PREFIX}/bin" >> "${GITHUB_PATH}"
+          "${CROSS_PREFIX}/bin/x86_64-elf-gcc" --version
+          "${CROSS_PREFIX}/bin/x86_64-elf-ld" --version
+
+      - name: Cache Rust dependencies and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            userspace/target
+            lang/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('userspace/Cargo.lock', 'userspace/rust-toolchain.toml', 'lang/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Prepare Limine
+        run: .github/scripts/install-limine.sh
+
+      - name: Build PureC OS
+        run: make iso
+
+      - name: Validate and stage release artifacts
+        run: |
+          test -s bin/purec_limine.iso
+          test -s bin/kernel/kernel-limine.elf
+          file bin/purec_limine.iso bin/kernel/kernel-limine.elf
+          x86_64-elf-readelf -h bin/kernel/kernel-limine.elf
+          mkdir -p release_assets
+          cp bin/purec_limine.iso release_assets/PureC-OS.iso
+          cp bin/kernel/kernel-limine.elf release_assets/kernel-limine.elf
+          printf '%s\n' \
+            "version=${RELEASE_SERIES}.${GITHUB_RUN_NUMBER}" \
+            "commit=${GITHUB_SHA}" \
+            "workflow_run=${GITHUB_RUN_ID}" \
+            "toolchain=x86_64-elf-gcc-14.1.0 binutils-2.42" \
+            > release_assets/build-info.txt
+          cd release_assets
+          sha256sum PureC-OS.iso kernel-limine.elf build-info.txt > SHA256SUMS.txt
+
+      - name: Upload boot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: purec-os-build
+          path: release_assets/
+          if-no-files-found: error
+          retention-days: 14
+
+  qemu-smoke:
+    name: QEMU smoke test (${{ matrix.cpus }} CPU)
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        cpus: [1, 2, 4]
+    steps:
+      - name: Checkout test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86
+
+      - name: Boot and validate serial log
+        run: |
+          python3 tests/qemu_smoke.py \
+            --iso dist/PureC-OS.iso \
+            --cpus ${{ matrix.cpus }} \
+            --timeout 240 \
+            --log qemu-${{ matrix.cpus }}-cpu.log
+
+      - name: Upload QEMU logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-${{ matrix.cpus }}-cpu-logs
+          path: qemu-${{ matrix.cpus }}-cpu*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs:
+      - host-tests
+      - build-iso
+      - qemu-smoke
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Publish PureC OS release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_SERIES }}.${{ github.run_number }}
+          name: PureC OS ${{ env.RELEASE_SERIES }}.${{ github.run_number }}
+          body: |
+            Automated PureC OS release built from `${{ github.sha }}`.
+
+            The ISO passed host unit tests and QEMU boot tests with 1, 2 and 4 CPUs.
+            Verify downloaded files with `SHA256SUMS.txt`.
+          files: |
+            dist/PureC-OS.iso
+            dist/kernel-limine.elf
+            dist/build-info.txt
+            dist/SHA256SUMS.txt
+          draft: false
+          prerelease: false
+          make_latest: true
+          generate_release_notes: true
