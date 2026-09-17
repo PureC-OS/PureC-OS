@@ -36,9 +36,6 @@ static void register_cpu(const struct limine_smp_info *info, bool is_bsp){
 static bool discover_limine(const struct limine_smp_response *response){
     if(!response || !response->cpus || !response->cpu_count
        || response->cpu_count > UINT32_MAX) return false;
-
-    /* Find the BSP before applying our table limit: firmware order and APIC
-       IDs need not start at zero or be contiguous. */
     const struct limine_smp_info *bsp = NULL;
     for(uint64_t i = 0; i < response->cpu_count; i++){
         const struct limine_smp_info *info = response->cpus[i];
