@@ -50,8 +50,18 @@ void ext2_write_u32(uint8_t *p, uint32_t v) {
     p[3] = (uint8_t)(v >> 24);
 }
 
+static bool block_number_valid(uint32_t block){
+    if(!g_vol.mounted || !g_vol.total_blocks) return false;
+    if(block>=g_vol.total_blocks) return false;
+    uint64_t spb=g_vol.block_size/BLOCK_SECTOR_SIZE;
+    if(!spb) return false;
+    if((uint64_t)block*spb>(uint64_t)0xFFFFFFFFU-g_vol.partition_lba)
+        return false;
+    return true;
+}
+
 bool ext2_read_block(uint32_t block, void *out) {
-    if (!g_vol.mounted) {
+    if (!block_number_valid(block)) {
         return false;
     }
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
@@ -66,6 +76,12 @@ bool ext2_read_block(uint32_t block, void *out) {
 }
 
 bool ext2_write_block(uint32_t block, const void *in) {
+    if (!block_number_valid(block)) {
+        klogf(KLOG_ERROR,
+              "ext2: reject wild block write block=%u total=%u",block,
+              g_vol.total_blocks);
+        return false;
+    }
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
     uint32_t lba = g_vol.partition_lba + block * spb;
     const uint8_t *src = (const uint8_t *)in;
