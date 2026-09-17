@@ -2,8 +2,9 @@
 
 ## Status
 
-In progress. Stage 1 implements CPU discovery via Limine. The scheduler still
-runs only on the bootstrap processor (BSP). The previous version of this ADR
+In progress. Stage 1 implements CPU discovery via Limine. Stage 2 releases one
+application processor (AP) into an isolated idle loop. The scheduler still runs
+only on the bootstrap processor (BSP). The previous version of this ADR
 described a completed SMP scheduler that is not present in the current code.
 
 ## Stage 1: CPU inventory
@@ -15,9 +16,9 @@ described a completed SMP scheduler that is not present in the current code.
   (`online`) are separate counts. The table holds up to 16 entries, including
   the BSP; larger systems retain their reported detected count and log the
   registration limit. These are logical processors, including SMT threads.
-- Only the BSP is online. Discovery does not write `goto_address` or
-  `extra_argument`; APs remain parked by Limine. No bootloader pointers are
-  retained in the inventory.
+- Discovery does not write `goto_address` or `extra_argument`; APs remain
+  parked until the separate bring-up stage. No bootloader pointers are retained
+  in the inventory.
 - Missing or invalid CPU lists fall back to one BSP with unknown hardware IDs.
   Direct MADT discovery is a later fallback; this stage uses Limine only.
 - `SYS_CPU_INFO` gets its logical processor count from this inventory instead
@@ -27,18 +28,31 @@ described a completed SMP scheduler that is not present in the current code.
 The handoff uses the existing structures in `src/boot/limine.h`, following the
 [Limine multiprocessor protocol](https://github.com/limine-bootloader/limine/blob/v8.x/PROTOCOL.md#mp-multiprocessor-feature).
 
+## Stage 2: one isolated AP
+
+- After PMM, VMM and BSP FPU initialization, the BSP releases logical CPU 1 by
+  atomically setting its Limine `extra_argument` and `goto_address` fields.
+- The assembly entry immediately switches away from the temporary Limine stack
+  to a dedicated 32 KiB kernel stack. CPU 1 then installs the kernel CR3 and
+  NX state, a private GDT/TSS with private double-fault/NMI/machine-check IST
+  stacks, the shared read-only IDT, and its own FPU control state.
+- An `int3` round trip verifies that exceptions return on the AP. CPU 1 then
+  publishes the atomic `CPU_IDLE` state and halts with interrupts disabled.
+- Startup has a one-second timeout. Failure leaves the BSP boot path usable;
+  a late AP cannot overwrite the timeout state.
+- CPU 1 does not run drivers, kernel threads, userspace or the scheduler. It
+  does not touch shared logging, allocator or process state after its startup
+  self-test. On systems with more CPUs, CPU 2 and above remain parked.
+
 ## Next stages
 
-1. Prepare per-CPU execution state and stacks, GDT/TSS and interrupt handling;
-   release one AP via Limine and have it acknowledge startup and enter idle.
-   Limine already handles the initial processor bootstrap, so this path does
-   not need a second INIT/SIPI implementation in the kernel.
-2. Protect PCI CF8/CFC transactions and shared PMM, VMM, process, scheduler and
+1. Protect PCI CF8/CFC transactions and shared PMM, VMM, process, scheduler and
    VFS state before APs can execute general kernel work. Move `current` and
    idle state to per-CPU storage and make context switches safe across CPUs.
-3. Add LAPIC timers, scheduler affinity, migration, reschedule IPIs, real TLB
+2. Add LAPIC timers, scheduler affinity, migration, reschedule IPIs, real TLB
    shootdown and a way to stop other CPUs during panic. A page-fault retry is
    not sufficient TLB synchronization, especially for unmapping/reusing pages.
+3. Release the remaining registered APs once those shared paths are safe.
 4. Complete the remaining Ring-3 migration independently of CPU discovery.
 
 ## Validation
@@ -55,6 +69,7 @@ qemu-system-x86_64 -accel tcg -m 512M -smp 4 \
   -serial stdio -monitor none -no-reboot -net none
 ```
 
-Expect `smp: detected=4 registered=4 online=1 source=Limine`, one BSP and
-three parked APs, followed by `sched: active cores=1`. This verifies discovery
-and continued BSP boot; AP execution remains a separate milestone.
+With `-smp 4`, expect the initial inventory to report one online BSP and three
+parked APs, followed by `smp: cpu1 lapic_id=1 idle; online=2` and
+`sched: 2 of 4 CPUs online; scheduler remains BSP-only`. CPU 2 and CPU 3 stay
+parked. The BSP must still reach `[SCHED] start` without a panic.

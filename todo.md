@@ -38,7 +38,8 @@
 1. Базовые вещи
 
 - [X] 1. Добавить поддержку обнаружения логических CPU через Limine: таблица CPU/APIC ID, BSP, отдельные detected/registered/online (пока online=1, до 16 записей)
-- [ ] 2. Поднять Application Processors через Limine goto_address (INIT → SIPI выполняет загрузчик)
+- [X] 2.1 Поднять второй CPU через Limine goto_address на отдельном стеке и оставить в изолированном idle
+- [ ] 2.2 Поднять остальные Application Processors после подготовки общей SMP-синхронизации
 - [ ] 3. Сделать per-CPU структуры (как минимум current поток)
 
 2. Планировщик

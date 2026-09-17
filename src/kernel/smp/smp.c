@@ -99,7 +99,8 @@ bool smp_start_cpu(struct limine_smp_response *response,
                    uint32_t logical_id, uint32_t timeout_ms){
     const struct cpu_info *cpu = cpu_get_info(logical_id);
     struct limine_smp_info *limine_info = find_limine_cpu(response, cpu);
-    if(!cpu || cpu->is_bsp || !limine_info || limine_info->goto_address)
+    if(!cpu || cpu->is_bsp || !limine_info
+       || __atomic_load_n(&limine_info->goto_address, __ATOMIC_ACQUIRE))
         return false;
     if(!cpu_try_start(logical_id)) return false;
 
