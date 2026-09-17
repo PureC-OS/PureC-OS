@@ -23,5 +23,8 @@ bool ehci_get_device_info(uint32_t index, struct storage_device_info *info);
 bool ehci_select_device(uint32_t index);
 bool ehci_read_sector(uint32_t lba, void *buffer);
 bool ehci_write_sector(uint32_t lba, const void *buffer);
+bool ehci_read_sectors(uint32_t lba, void *buffer, uint32_t count);
+bool ehci_write_sectors(uint32_t lba, const void *buffer, uint32_t count);
+bool ehci_flush_cache(void);
 const char *ehci_device_name(void);
 void ehci_get_probe_stats(struct ehci_probe_stats *stats);

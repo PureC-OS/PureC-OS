@@ -309,9 +309,106 @@ bool block_device_write(uint32_t lba, const void *buffer){
     return false;
 }
 
+bool block_device_read_sectors(uint32_t lba, void *buffer, uint32_t count){
+    if(!count) return true;
+    if(!buffer) return false;
+    if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
+        usb_rescan_lock();
+        bool ok=true;
+        for(uint32_t done=0;done<count;){
+            uint32_t n=count-done;
+            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
+            if(!ehci_read_sectors(lba+done,
+                                  (uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
+                                  n)){ ok=false; break; }
+            done+=n;
+        }
+        usb_rescan_unlock();
+        return ok;
+    }
+    if(active_transport==STORAGE_TRANSPORT_USB_MSC){
+        usb_rescan_lock();
+        bool ok=true;
+        for(uint32_t done=0;done<count;){
+            uint32_t n=count-done;
+            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
+            if(!xhci_read_sectors(lba+done,
+                                  (uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
+                                  n)){ ok=false; break; }
+            done+=n;
+        }
+        usb_rescan_unlock();
+        return ok;
+    }
+    for(uint32_t done=0;done<count;done++){
+        if(active_transport==STORAGE_TRANSPORT_AHCI){
+            if(!ahci_read_sector(lba+done,
+                                 (uint8_t*)buffer+done*BLOCK_SECTOR_SIZE))
+                return false;
+        } else if(active_transport==STORAGE_TRANSPORT_ATA_PIO){
+            if(!ata_pio_read_sector(lba+done,
+                                    (uint8_t*)buffer+done*BLOCK_SECTOR_SIZE))
+                return false;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool block_device_write_sectors(uint32_t lba, const void *buffer,
+                                uint32_t count){
+    if(!count) return true;
+    if(!buffer) return false;
+    if(active_transport==STORAGE_TRANSPORT_USB_EHCI){
+        usb_rescan_lock();
+        bool ok=true;
+        for(uint32_t done=0;done<count;){
+            uint32_t n=count-done;
+            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
+            if(!ehci_write_sectors(lba+done,
+                                   (const uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
+                                   n)){ ok=false; break; }
+            done+=n;
+        }
+        usb_rescan_unlock();
+        return ok;
+    }
+    if(active_transport==STORAGE_TRANSPORT_USB_MSC){
+        usb_rescan_lock();
+        bool ok=true;
+        for(uint32_t done=0;done<count;){
+            uint32_t n=count-done;
+            if(n>BLOCK_MULTI_MAX_SECTORS) n=BLOCK_MULTI_MAX_SECTORS;
+            if(!xhci_write_sectors(lba+done,
+                                   (const uint8_t*)buffer+done*BLOCK_SECTOR_SIZE,
+                                   n)){ ok=false; break; }
+            done+=n;
+        }
+        usb_rescan_unlock();
+        return ok;
+    }
+    for(uint32_t done=0;done<count;done++){
+        if(active_transport==STORAGE_TRANSPORT_AHCI){
+            if(!ahci_write_sector(lba+done,
+                                  (const uint8_t*)buffer+done*BLOCK_SECTOR_SIZE))
+                return false;
+        } else if(active_transport==STORAGE_TRANSPORT_ATA_PIO){
+            if(!ata_pio_write_sector(lba+done,
+                                     (const uint8_t*)buffer+done*BLOCK_SECTOR_SIZE))
+                return false;
+        } else {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool block_device_flush(void){
     if(active_transport==STORAGE_TRANSPORT_AHCI) return ahci_flush();
     if(active_transport==STORAGE_TRANSPORT_ATA_PIO) return ata_pio_flush();
+    if(active_transport==STORAGE_TRANSPORT_USB_MSC) return xhci_flush_cache();
+    if(active_transport==STORAGE_TRANSPORT_USB_EHCI) return ehci_flush_cache();
     return true;
 }
 

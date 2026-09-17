@@ -102,6 +102,7 @@ static struct fat32_volume volume;
 static struct fat32_handle handles[FAT32_MAX_OPEN_FILES];
 static uint8_t sector_buffer[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
 static uint8_t second_sector_buffer[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
+static uint8_t bulk_chunk[32 * BLOCK_SECTOR_SIZE];
 
 static uint16_t read_u16(const uint8_t *data){
     return (uint16_t)data[0]|((uint16_t)data[1]<<8);
@@ -1594,10 +1595,16 @@ static bool sector_is_zero(const uint8_t *sector){
 static int32_t verify_blank_device(uint32_t total_sectors){
     uint32_t scan_count=total_sectors<FAT32_FORMAT_BLANK_SCAN
         ? total_sectors : FAT32_FORMAT_BLANK_SCAN;
-    for(uint32_t lba=0;lba<scan_count;lba++){
-        if((lba&0x3FU)==0) scheduler_yield();
-        if(!block_device_read(lba,sector_buffer)) return FS_ERROR_IO;
-        if(!sector_is_zero(sector_buffer)) return FS_ERROR_NOT_BLANK;
+    for(uint32_t done=0;done<scan_count;){
+        uint32_t n=scan_count-done;
+        if(n>32) n=32;
+        if((done&0x3FU)==0) scheduler_yield();
+        if(!block_device_read_sectors(done,bulk_chunk,n)) return FS_ERROR_IO;
+        for(uint32_t i=0;i<n;i++){
+            if(!sector_is_zero(bulk_chunk+i*BLOCK_SECTOR_SIZE))
+                return FS_ERROR_NOT_BLANK;
+        }
+        done+=n;
     }
     if(total_sectors>scan_count){
         if(!block_device_read(total_sectors-1,sector_buffer)) return FS_ERROR_IO;
@@ -1641,10 +1648,13 @@ static bool calculate_format_layout(uint32_t total_sectors,
 }
 
 static bool write_zero_range(uint32_t first_lba, uint32_t count){
-    memset(sector_buffer,0,BLOCK_SECTOR_SIZE);
-    for(uint32_t index=0;index<count;index++){
-        if((index&0x3FU)==0) scheduler_yield();
-        if(!block_device_write(first_lba+index,sector_buffer)) return false;
+    for(uint32_t done=0;done<count;){
+        uint32_t n=count-done;
+        if(n>32) n=32;
+        if((done&0x3FU)==0) scheduler_yield();
+        if(!block_device_write_sectors(first_lba+done,bulk_chunk,n))
+            return false;
+        done+=n;
     }
     return true;
 }
@@ -1657,20 +1667,23 @@ static bool write_zero_range_progress(
     uint32_t progress_end,
     const char *stage
 ){
-    memset(sector_buffer,0,BLOCK_SECTOR_SIZE);
     uint32_t last_progress=UINT32_MAX;
-    for(uint32_t index=0;index<count;index++){
-        if((index&0x3FU)==0) scheduler_yield();
+    for(uint32_t done=0;done<count;){
+        uint32_t n=count-done;
+        if(n>32) n=32;
+        if((done&0x3FU)==0) scheduler_yield();
         if(callback && count){
             uint32_t progress=progress_start
-                +(uint32_t)(((uint64_t)index
+                +(uint32_t)(((uint64_t)done
                              *(progress_end-progress_start))/count);
             if(progress!=last_progress){
                 callback(progress,stage);
                 last_progress=progress;
             }
         }
-        if(!block_device_write(first_lba+index,sector_buffer)) return false;
+        if(!block_device_write_sectors(first_lba+done,bulk_chunk,n))
+            return false;
+        done+=n;
     }
     if(callback) callback(progress_end,stage);
     return true;

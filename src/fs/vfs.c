@@ -366,8 +366,14 @@ int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
         if (raw >= 0) return (int32_t)count;
         return (int32_t)count;
     }
-    if (vfs_active_fs == VFS_FS_EXT2) return ext2_write_file(path, buffer, count);
-    return fat32_write_file(path, buffer, count);
+    if (vfs_active_fs == VFS_FS_EXT2) {
+        int32_t ext_result = ext2_write_file(path, buffer, count);
+        if (ext_result >= 0) block_device_flush();
+        return ext_result;
+    }
+    int32_t fat_result = fat32_write_file(path, buffer, count);
+    if (fat_result >= 0) block_device_flush();
+    return fat_result;
 }
 
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
@@ -380,8 +386,14 @@ int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
         if (raw >= 0) return (int32_t)count;
         return (int32_t)count;
     }
-    if (vfs_active_fs == VFS_FS_EXT2) return ext2_append_file(path, buffer, count);
-    return fat32_append_file(path, buffer, count);
+    if (vfs_active_fs == VFS_FS_EXT2) {
+        int32_t ext_result = ext2_append_file(path, buffer, count);
+        if (ext_result >= 0) block_device_flush();
+        return ext_result;
+    }
+    int32_t fat_append_result = fat32_append_file(path, buffer, count);
+    if (fat_append_result >= 0) block_device_flush();
+    return fat_append_result;
 }
 
 int32_t vfs_create_directory(const char *path) {
