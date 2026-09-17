@@ -63,6 +63,7 @@ struct display_mode display_mode_at(uint32_t index){
 }
 
 uint32_t display_mode_index_of(uint32_t width, uint32_t height){
+    uint32_t best=2;
     uint32_t best_score=UINT32_MAX;
     for(uint32_t i=0;i<display_mode_count();i++){
         uint32_t dw=modes[i].width>width ? modes[i].width-width
