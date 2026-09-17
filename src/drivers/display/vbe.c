@@ -93,7 +93,10 @@ bool vbe_framebuffer_phys(uint64_t *physical_out){
     return true;
 }
 
-bool vbe_set_mode(uint32_t width, uint32_t height, uint8_t bpp){
+bool vbe_set_mode(uint32_t width, uint32_t height, uint8_t bpp,
+                  uint32_t *actual_width_out, uint32_t *actual_height_out){
+    if(actual_width_out) *actual_width_out=0;
+    if(actual_height_out) *actual_height_out=0;
     if(!vbe_is_available()) return false;
     if(width < 640 || width > 7680 || height < 400 || height > 4320)
         return false;
@@ -112,9 +115,18 @@ bool vbe_set_mode(uint32_t width, uint32_t height, uint8_t bpp){
     vbe_write(VBE_IDX_XOFF, 0);
     vbe_write(VBE_IDX_YOFF, 0);
     vbe_write(VBE_IDX_ENABLE, VBE_ENABLE_ON | VBE_ENABLE_LFB);
-    if((uint32_t)vbe_read(VBE_IDX_XRES) != width
-       || (uint32_t)vbe_read(VBE_IDX_YRES) != height)
+    uint32_t actual_w = vbe_read(VBE_IDX_XRES);
+    uint32_t actual_h = vbe_read(VBE_IDX_YRES);
+    uint32_t actual_b = vbe_read(VBE_IDX_BPP);
+    if(!actual_w || !actual_h || actual_b != bpp) return false;
+    if(actual_w < 640 || actual_w > 7680
+       || actual_h < 400 || actual_h > 4320) return false;
+    uint64_t actual_need = (uint64_t)actual_w * (uint64_t)actual_h
+        * (bpp / 8U);
+    if(actual_need > total || actual_need > VBE_MAX_FRAMEBUFFER_BYTES)
         return false;
+    if(actual_width_out) *actual_width_out=actual_w;
+    if(actual_height_out) *actual_height_out=actual_h;
     return true;
 }
 

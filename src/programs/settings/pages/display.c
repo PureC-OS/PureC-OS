@@ -33,10 +33,15 @@ static void commit(struct display_settings *display){
     g_last_apply_rc=display_apply_live(display);
     g_have_apply_rc=true;
     if(g_last_apply_rc==0){
+        struct pc_display_info info;
+        if(pc_display_get_info(&info) && info.available){
+            display->width=info.width;
+            display->height=info.height;
+            display->bpp=info.bpp;
+        }
         int32_t saved=display_save(display);
         if(saved<0) g_last_apply_rc=saved;
     } else {
-        /* Revert the pending selection so the UI matches the screen. */
         (void)display_load(display);
     }
 }

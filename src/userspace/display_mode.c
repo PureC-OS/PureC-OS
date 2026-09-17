@@ -76,6 +76,35 @@ bool display_mode_load(uint32_t *width, uint32_t *height, uint8_t *bpp){
     return true;
 }
 
+static void write_back_ini(uint32_t width, uint32_t height, uint8_t bpp){
+    char buffer[64];
+    char *out=buffer;
+    const char *p="width=";
+    while(*p) *out++=*p++;
+    uint32_t v=width;
+    char rev[12];
+    uint32_t n=0;
+    do{ rev[n++]=(char)('0'+v%10U); v/=10U; }while(v && n<sizeof(rev));
+    while(n) *out++=rev[--n];
+    p="\nheight=";
+    while(*p) *out++=*p++;
+    v=height; n=0;
+    do{ rev[n++]=(char)('0'+v%10U); v/=10U; }while(v && n<sizeof(rev));
+    while(n) *out++=rev[--n];
+    p="\nbpp=";
+    while(*p) *out++=*p++;
+    v=bpp; n=0;
+    do{ rev[n++]=(char)('0'+v%10U); v/=10U; }while(v && n<sizeof(rev));
+    while(n) *out++=rev[--n];
+    *out++='\n';
+    *out='\0';
+    if(!vfs_is_root_mounted()) return;
+    filesystem_syscall_lock();
+    (void)vfs_write_file(DISPLAY_INI_PATH,buffer,
+                         (uint32_t)(out-buffer));
+    filesystem_syscall_unlock();
+}
+
 static int display_mode_apply_low(uint32_t width, uint32_t height,
                                   uint8_t bpp){
     uint32_t cur_w=0,cur_h=0;
@@ -86,29 +115,38 @@ static int display_mode_apply_low(uint32_t width, uint32_t height,
         klog(KLOG_WARN, "display: live mode switch unsupported (no VBE)");
         return -2;
     }
-    uint64_t need=(uint64_t)width*(uint64_t)height*(bpp/8U);
     uint64_t phys=0;
     if(!vbe_framebuffer_phys(&phys)){
         klog(KLOG_ERROR, "display: cannot locate video framebuffer");
         return -1;
     }
+    uint32_t actual_w=0,actual_h=0;
+    if(!vbe_set_mode(width,height,bpp,&actual_w,&actual_h)){
+        klogf(KLOG_ERROR,
+              "display: VBE rejected mode %ux%ux%u vram=%lluMiB",
+              width,height,bpp,
+              (unsigned long long)(vbe_video_memory_bytes()
+                                   /(1024ULL*1024ULL)));
+        return -1;
+    }
+    uint64_t need=(uint64_t)actual_w*(uint64_t)actual_h*(bpp/8U);
     volatile void *virt=vbe_map_framebuffer(phys,need);
     if(!virt){
         klog(KLOG_ERROR, "display: cannot map video framebuffer");
         return -1;
     }
-    if(!vbe_set_mode(width,height,bpp)){
-        klogf(KLOG_ERROR, "display: VBE rejected mode %ux%ux%u",
-              width,height,bpp);
-        return -1;
-    }
-    if(!gop_apply_live((void*)virt,width,height,width,bpp)){
+    if(!gop_apply_live((void*)virt,actual_w,actual_h,actual_w,bpp)){
         klog(KLOG_ERROR, "display: gop_apply_live failed");
         return -1;
     }
-    mouse_set_bounds((int32_t)width,(int32_t)height);
+    if(actual_w!=width || actual_h!=height){
+        klogf(KLOG_WARN, "display: card clamped %ux%u -> %ux%u",
+              width,height,actual_w,actual_h);
+        write_back_ini(actual_w,actual_h,bpp);
+    }
+    mouse_set_bounds((int32_t)actual_w,(int32_t)actual_h);
     display_invalidate_cache();
-    klogf(KLOG_OK, "display: live mode %ux%ux%u",width,height,bpp);
+    klogf(KLOG_OK, "display: live mode %ux%ux%u",actual_w,actual_h,bpp);
     return 0;
 }
 
