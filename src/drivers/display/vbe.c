@@ -15,11 +15,11 @@
 #define VBE_IDX_BPP       0x03
 #define VBE_IDX_ENABLE    0x04
 #define VBE_IDX_BANK      0x05
-#define VBE_IDX_VIDEOMEM  0x06
-#define VBE_IDX_VIRTW     0x07
-#define VBE_IDX_VIRTH     0x08
-#define VBE_IDX_XOFF      0x09
-#define VBE_IDX_YOFF      0x0A
+#define VBE_IDX_VIRTW     0x06
+#define VBE_IDX_VIRTH     0x07
+#define VBE_IDX_XOFF      0x08
+#define VBE_IDX_YOFF      0x09
+#define VBE_IDX_VIDEOMEM  0x0A
 
 #define VBE_ID0 0xB0C0
 #define VBE_ID5 0xB0C5
