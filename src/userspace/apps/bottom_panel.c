@@ -173,6 +173,36 @@ static void draw_clock(uint32_t sw, uint32_t sh,
     display_draw_text_at(tx + 14, ty + 10, clock, th->text, th->window);
 }
 
+static void draw_battery(uint32_t sw, uint32_t sh,
+                         const struct personalization_colors *th) {
+    struct battery_info binfo;
+    int32_t rc = (int32_t)do_syscall(SYS_BATTERY_INFO, (uint64_t)&binfo, 0, 0, 0, 0, 0);
+    if (rc < 0 || !binfo.present) {
+        uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
+        uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
+        display_draw_rect(tx + 14, ty + 3, 30, 20, th->window);
+        display_draw_text_at(tx + 14, ty + 10, "--%", th->muted_text, th->window);
+        return;
+    }
+    char bat_str[8];
+    uint32_t p = binfo.percent;
+    if (p == BATTERY_PERCENT_UNKNOWN) {
+        strncpy(bat_str, "???", sizeof(bat_str));
+    } else {
+        bat_str[0] = (char)('0' + (p / 10));
+        bat_str[1] = (char)('0' + (p % 10));
+        bat_str[2] = '\0';
+    }
+    uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
+    uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
+    display_draw_rect(tx + 44, ty + 3, 24, 20, th->window);
+    display_draw_text_at(tx + 44, ty + 10, bat_str, th->text, th->window);
+    display_draw_text_at(tx + 68, ty + 10, "%", th->text, th->window);
+    if (binfo.charging) {
+        display_draw_text_at(tx + 74, ty + 10, "^", th->accent, th->window);
+    }
+}
+
 static void draw_menu(uint32_t sw, uint32_t sh,
                       const struct personalization_colors *th) {
     if (!menu_open) return;
@@ -268,6 +298,7 @@ void bottom_panel_draw(uint32_t screen_width, uint32_t screen_height) {
     }
 
     draw_clock(screen_width, screen_height, &th);
+    draw_battery(screen_width, screen_height, &th);
     draw_menu(screen_width, screen_height, &th);
 }
 
