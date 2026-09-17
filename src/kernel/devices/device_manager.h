@@ -5,7 +5,7 @@
 
 #define DEVICE_MANAGER_MAX_DEVICES 64
 #define DEVICE_NAME_MAX_LEN 64
-#define ACPI_HID_MAX_LEN 9
+#define ACPI_HID_MAX_LEN 32
 
 enum device_type {
     DEVICE_TYPE_UNKNOWN = 0,

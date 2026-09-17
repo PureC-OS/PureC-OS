@@ -11,7 +11,7 @@ CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
 CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
-ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/src/uacpi_glue.c acpi/src/uacpi_heap.c acpi/src/acpi_ec.c acpi/src/acpi_battery.c \
+ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/src/uacpi_glue.c acpi/src/uacpi_heap.c acpi/src/acpi_ec.c acpi/src/acpi_battery.c acpi/src/acpi_sensors.c \
 	acpi/AML/uACPI/source/tables.c acpi/AML/uACPI/source/types.c \
 	acpi/AML/uACPI/source/utilities.c acpi/AML/uACPI/source/stdlib.c \
 	acpi/AML/uACPI/source/shareable.c acpi/AML/uACPI/source/uacpi.c \

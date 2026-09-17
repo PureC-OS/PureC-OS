@@ -17,6 +17,7 @@
 #define SYS_FB_BEGIN_UPDATE 109
 #define SYS_FB_END_UPDATE 110
 #define SYS_DISPLAY_SET_MODE 281
+#define SYS_THERMAL_INFO 282
 #define SYS_FILE_OPEN   200
 #define SYS_FILE_READ   201
 #define SYS_FILE_DELETE 202
@@ -304,6 +305,18 @@ struct battery_info {
     uint32_t current_ma;
     char name[32];
     char status_text[32];
+};
+
+/* ACPI firmware telemetry. temperature_deci_c is tenths of a Celsius degree.
+ * A value of INT32_MIN means that no _TMP method could be evaluated. */
+struct thermal_info {
+    uint32_t available;
+    uint32_t thermal_zone_count;
+    uint32_t fan_count;
+    int32_t temperature_deci_c;
+    uint32_t fan_rpm;
+    char thermal_zone[32];
+    char fan[32];
 };
 
 #define BATTERY_PERCENT_UNKNOWN 0xFFFFFFFFu

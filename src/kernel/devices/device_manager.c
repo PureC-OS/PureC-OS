@@ -69,8 +69,54 @@ static void pci_inspect_device(const struct pci_device_info *pci, void *ctx) {
     dev->irq_count = 0;
     dev->mmio_base = dev->pci.base_addresses[0];
     dev->mmio_size = 0;
+    switch (pci->class_code) {
+        case 0x01: dev->device_class = CLASS_MASS_STORAGE; break;
+        case 0x02: dev->device_class = CLASS_NETWORK; break;
+        case 0x03: dev->device_class = CLASS_DISPLAY; break;
+        case 0x04: dev->device_class = CLASS_AUDIO; break;
+        case 0x06: dev->device_class = CLASS_BRIDGE; break;
+        case 0x0C: dev->device_class = CLASS_USB; break;
+        default: break;
+    }
     g_pci_count++;
     device_set_name(dev, "pci-device");
+}
+
+static void acpi_copy(char *dst, uint32_t cap, const char *src) {
+    uint32_t i = 0;
+    if (!dst || !cap) return;
+    if (src) while (src[i] && i + 1 < cap) { dst[i] = src[i]; i++; }
+    dst[i] = '\0';
+}
+
+static enum device_class acpi_class(const struct acpi_namespace_device *src) {
+    if (src->type == ACPI_NAMESPACE_THERMAL_ZONE ||
+        strcmp(src->hid, "PNP0C0B") == 0) return CLASS_SENSOR;
+    if (strcmp(src->hid, "PNP0C0A") == 0 ||
+        strcmp(src->hid, "ACPI0003") == 0) return CLASS_POWER;
+    if (strcmp(src->hid, "PNP0A03") == 0 ||
+        strcmp(src->hid, "PNP0A08") == 0) return CLASS_BRIDGE;
+    if (strcmp(src->hid, "PNP0501") == 0) return CLASS_SERIAL;
+    return CLASS_NONE;
+}
+
+static bool acpi_namespace_add(const struct acpi_namespace_device *src,
+                               void *ctx) {
+    (void)ctx;
+    struct device_info *dev = device_add(DEVICE_TYPE_ACPI);
+    if (!dev) return false;
+    dev->device_class = acpi_class(src);
+    dev->enabled = src->enabled;
+    dev->acpi.address = src->address;
+    dev->acpi.irq = 0;
+    dev->acpi.has_ec = strcmp(src->hid, "PNP0C09") == 0;
+    acpi_copy(dev->acpi.hid, sizeof(dev->acpi.hid), src->hid);
+    acpi_copy(dev->acpi.uid, sizeof(dev->acpi.uid), src->uid);
+    if (src->hid[0]) device_set_name(dev, src->hid);
+    else if (src->name[0]) device_set_name(dev, src->name);
+    else device_set_name(dev, "acpi-device");
+    g_acpi_count++;
+    return true;
 }
 
 static void acpi_visitor_noop(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
@@ -237,24 +283,10 @@ static void devman_enumerate_devices(void) {
 
     if (acpi_is_ready()) {
         klog(KLOG_INFO, "devman: enumerating ACPI devices...");
-        acpi_madt_devices();
-        acpi_ec_devices();
-        acpi_battery_device();
-        acpi_uart_devices();
-        acpi_gpe_devices();
-        acpi_pci_bridge_devices();
-        acpi_power_devices();
-        acpi_sensor_devices();
-        acpi_network_devices();
-        acpi_storage_devices();
-        acpi_usb_devices();
-        acpi_display_devices();
-        acpi_audio_devices();
+        if (!acpi_for_each_namespace_device(acpi_namespace_add, NULL))
+            klog(KLOG_WARN, "devman: ACPI AML namespace unavailable");
         klogf(KLOG_OK, "devman: found %u ACPI devices", g_acpi_count);
     }
-
-    klog(KLOG_INFO, "devman: scanning ISA/legacy devices...");
-    acpi_isa_enumerate();
 
     klogf(KLOG_OK, "devman: total devices=%u (pci=%u acpi=%u)",
           g_device_count, g_pci_count, g_acpi_count);
