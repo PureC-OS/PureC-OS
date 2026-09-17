@@ -274,6 +274,18 @@ void gop_end_compose(void){
     }
 }
 
+void gop_end_batch_keep(void){
+    if(batch_depth) batch_depth--;
+}
+
+void gop_end_compose_keep(void){
+    if(compose_depth) compose_depth--;
+}
+
+bool gop_dirty_pending(void){
+    return dirty_valid;
+}
+
 void gop_cancel_compose(void){
     compose_depth=0;
     batch_depth=0;
@@ -281,7 +293,16 @@ void gop_cancel_compose(void){
 
 bool gop_has_backbuffer(void){ return backbuffer!=0; }
 
+static void gop_present_nolock(void);
+
 void gop_present(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    gop_present_nolock();
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+static void gop_present_nolock(void){
     if(!gop.available || !gop.addr || !backbuffer) return;
     if(!dirty_valid) return;
     if(dirty_x0>=gop.width || dirty_y0>=gop.height){

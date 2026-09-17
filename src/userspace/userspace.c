@@ -57,6 +57,9 @@ static uint32_t desktop_redraw_requested;
 static uint32_t desktop_redraw_completed;
 static uint32_t desktop_redraw_requester;
 static bool     desktop_redraw_busy;
+static bool     desktop_redraw_deferred;
+static uint64_t desktop_redraw_deferred_tick;
+#define DESKTOP_DEFERRED_FLUSH_TICKS 50
 static int32_t  detached_programs[WINDOW_MANAGER_CAPACITY];
 static uint8_t  previous_mouse_buttons;
 static bool     power_menu_visible;
@@ -273,8 +276,36 @@ static void redraw_managed_scene(uint32_t excluded_pid){
     redraw_scene();
     window_manager_request_repaint(excluded_pid);
     wait_for_managed_repaint();
+    if(excluded_pid != 0){
+        /* Atomic move: the requesting client draws itself right after its
+           SYS_DESKTOP_REDRAW returns, so keep the composed scene in the
+           backbuffer instead of presenting it. The client's pg_window_end()
+           then presents background + other windows + moved window together
+           in a single frame, with no intermediate half-drawn state. */
+        gop_end_compose_keep();
+        mouse_end_framebuffer_update_keep();
+        desktop_redraw_deferred = true;
+        desktop_redraw_deferred_tick = timer_ticks();
+        return;
+    }
+    desktop_redraw_deferred = false;
     gop_end_compose();
     mouse_end_framebuffer_update();
+}
+
+static void flush_deferred_redraw(void){
+    if(!desktop_redraw_deferred) return;
+    if(!gop_dirty_pending()){
+        /* The mover has presented the combined frame already. */
+        desktop_redraw_deferred = false;
+        return;
+    }
+    if(timer_ticks() - desktop_redraw_deferred_tick
+        < DESKTOP_DEFERRED_FLUSH_TICKS) return;
+    /* The mover never drew (crashed or closed): present the scene so the
+       screen does not freeze, and redraw the cursor on top. */
+    desktop_redraw_deferred = false;
+    mouse_redraw();
 }
 
 static bool service_desktop_redraw(void){
@@ -527,6 +558,7 @@ void userspace_input_thread(void *arg){
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
         (void)service_desktop_redraw();
+        flush_deferred_redraw();
         if(external_program_has_input_focus()){
             scheduler_sleep(10);
             continue;
@@ -630,6 +662,7 @@ void userspace_run(void){
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
         (void)service_desktop_redraw();
+        flush_deferred_redraw();
         if(external_program_has_input_focus()){
             scheduler_yield();
             continue;

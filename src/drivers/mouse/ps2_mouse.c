@@ -193,11 +193,20 @@ void mouse_end_framebuffer_update(void){
         framebuffer_update_depth--;
         if(framebuffer_update_depth==0) outermost=true;
     }
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
 
     gop_end_batch();
     if(outermost)
         draw_cursor(state.x,state.y);
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void mouse_end_framebuffer_update_keep(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    if(framebuffer_update_depth)
+        framebuffer_update_depth--;
+    gop_end_batch_keep();
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
 
 static inline bool cursor_inside(int dx, int dy){
@@ -304,8 +313,8 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy){
     state.y+=dy;
     if(state.x<0) state.x=0;
     if(state.y<0) state.y=0;
-    if(state.x>=bound_w-CURS_W) state.x=bound_w-CURS_W-1;
-    if(state.y>=bound_h-CURS_H) state.y=bound_h-CURS_H-1;
+    if(state.x>=bound_w) state.x=bound_w-1;
+    if(state.y>=bound_h) state.y=bound_h-1;
     state.buttons=buttons&0x07;
     state.has_data=true;
     refresh_mouse_ui();
