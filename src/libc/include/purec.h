@@ -69,6 +69,7 @@ bool pc_display_get_info(struct pc_display_info *info);
 void pc_display_begin_update(void);
 void pc_display_end_update(void);
 void pc_display_clear(uint32_t color);
+int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp);
 void pc_desktop_redraw(void);
 bool pc_gui_window_register(const struct gui_window_request *request);
 bool pc_gui_window_update(const struct gui_window_request *request);

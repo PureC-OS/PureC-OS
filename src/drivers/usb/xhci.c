@@ -1427,17 +1427,30 @@ static bool scsi_sector_command(uint8_t operation, uint32_t lba, void *buffer,
     return bulk_only_command(selected_device,command,10,buffer,512,data_in);
 }
 
-bool xhci_read_sector(uint32_t lba, void *buffer){
-    return scsi_sector_command(SCSI_READ10,lba,buffer,true);
+static bool scsi_blocks_command(uint8_t operation, uint32_t lba,
+                                void *buffer, uint32_t count, bool data_in){
+    if(selected_device>=slot_count
+       || devices[selected_device].kind!=XHCI_DEVICE_STORAGE || !buffer)
+        return false;
+    if(!count || count>0xFFFFU) return false;
+    struct xhci_device *device=&devices[selected_device];
+    uint64_t last=(uint64_t)lba+(uint64_t)count;
+    if(last>device->info.sector_count) return false;
+    uint64_t bytes=(uint64_t)count*512ULL;
+    if(!bytes || bytes>0xFFFFFFFFULL) return false;
+    uint8_t command[16];
+    memset(command,0,sizeof(command));
+    command[0]=operation;
+    write_be32(&command[2],lba);
+    command[7]=(uint8_t)(count>>8);
+    command[8]=(uint8_t)count;
+    return bulk_only_command(selected_device,command,10,buffer,
+                             (uint32_t)bytes,data_in);
 }
 
-bool xhci_write_sector(uint32_t lba, const void *buffer){
+static bool xhci_sync_cache(void){
     if(selected_device>=slot_count
-       || devices[selected_device].kind!=XHCI_DEVICE_STORAGE
-       || !devices[selected_device].info.writable){
-        return false;
-    }
-    if(!scsi_sector_command(SCSI_WRITE10,lba,(void*)buffer,false)) return false;
+       || devices[selected_device].kind!=XHCI_DEVICE_STORAGE) return false;
     struct xhci_device *device=&devices[selected_device];
     if(!device->sync_cache_supported) return true;
     uint8_t command[16];
@@ -1448,6 +1461,36 @@ bool xhci_write_sector(uint32_t lba, const void *buffer){
     klogf(KLOG_WARN,"xhci%u: dev %s rejected SYNCHRONIZE CACHE; WRITE(10) succeeded",
           controller_number,device->info.name);
     return true;
+}
+
+bool xhci_read_sector(uint32_t lba, void *buffer){
+    return scsi_sector_command(SCSI_READ10,lba,buffer,true);
+}
+
+bool xhci_read_sectors(uint32_t lba, void *buffer, uint32_t count){
+    return scsi_blocks_command(SCSI_READ10,lba,buffer,count,true);
+}
+
+bool xhci_write_sector(uint32_t lba, const void *buffer){
+    if(selected_device>=slot_count
+       || devices[selected_device].kind!=XHCI_DEVICE_STORAGE
+       || !devices[selected_device].info.writable){
+        return false;
+    }
+    return scsi_sector_command(SCSI_WRITE10,lba,(void*)buffer,false);
+}
+
+bool xhci_write_sectors(uint32_t lba, const void *buffer, uint32_t count){
+    if(selected_device>=slot_count
+       || devices[selected_device].kind!=XHCI_DEVICE_STORAGE
+       || !devices[selected_device].info.writable){
+        return false;
+    }
+    return scsi_blocks_command(SCSI_WRITE10,lba,(void*)buffer,count,false);
+}
+
+bool xhci_flush_cache(void){
+    return xhci_sync_cache();
 }
 
 const char *xhci_device_name(void){

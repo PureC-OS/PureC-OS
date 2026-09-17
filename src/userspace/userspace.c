@@ -1,5 +1,6 @@
 #include "userspace.h"
 #include "personalization.h"
+#include "display_mode.h"
 #include "wallpaper.h"
 #include "apps/desktop_apps.h"
 #include "apps/desktop_entries.h"
@@ -273,8 +274,18 @@ static void redraw_managed_scene(uint32_t excluded_pid){
     redraw_scene();
     window_manager_request_repaint(excluded_pid);
     wait_for_managed_repaint();
+    if(excluded_pid != 0){
+        gop_end_compose_keep();
+        mouse_end_framebuffer_update_keep();
+        gop_defer_present();
+        return;
+    }
     gop_end_compose();
     mouse_end_framebuffer_update();
+}
+
+static void flush_deferred_redraw(void){
+    if(gop_flush_needed()) mouse_redraw();
 }
 
 static bool service_desktop_redraw(void){
@@ -496,6 +507,10 @@ void userspace_init(void){
     desktop_entries_init();
 
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
+                         "userspace: applying saved display mode");
+    display_mode_boot_apply();
+
+    boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
                          "userspace: drawing desktop");
     draw_desktop();
 
@@ -526,7 +541,9 @@ void userspace_input_thread(void *arg){
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
+        display_mode_poll();
         (void)service_desktop_redraw();
+        flush_deferred_redraw();
         if(external_program_has_input_focus()){
             scheduler_sleep(10);
             continue;
@@ -629,7 +646,9 @@ void userspace_run(void){
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
+        display_mode_poll();
         (void)service_desktop_redraw();
+        flush_deferred_redraw();
         if(external_program_has_input_focus()){
             scheduler_yield();
             continue;

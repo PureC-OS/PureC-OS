@@ -54,6 +54,51 @@ static inline void pic_eoi(uint8_t irq){
     if(irq>=8) __asm__ volatile("outb %0,%1"::"a"((uint8_t)0x20),"Nd"((uint16_t)0xA0));
     __asm__ volatile("outb %0,%1"::"a"((uint8_t)0x20),"Nd"((uint16_t)0x20));
 }
+
+static inline uint8_t pic_imr_read(uint16_t port){
+    uint8_t v;
+    __asm__ volatile("inb %1,%0":"=a"(v):"Nd"(port));
+    return v;
+}
+
+static inline void pic_imr_write(uint16_t port, uint8_t v){
+    __asm__ volatile("outb %0,%1"::"a"(v),"Nd"(port));
+}
+
+static void *irq_handler_fn[16] = {0};
+static void *irq_handler_ctx[16] = {0};
+
+void idt_set_irq_handler(uint8_t irq, void *fn, void *ctx){
+    if(irq>=16) return;
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    irq_handler_fn[irq]=fn;
+    irq_handler_ctx[irq]=ctx;
+    if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void idt_clear_irq_handler(uint8_t irq){
+    if(irq>=16) return;
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    irq_handler_fn[irq]=0;
+    irq_handler_ctx[irq]=0;
+    if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void idt_unmask_irq(uint8_t irq){
+    if(irq>=16) return;
+    uint16_t port = irq<8 ? 0x21 : 0xA1;
+    uint8_t bit = (uint8_t)(1u << (irq & 7));
+    pic_imr_write(port, (uint8_t)(pic_imr_read(port) & ~bit));
+}
+
+void idt_mask_irq(uint8_t irq){
+    if(irq>=16) return;
+    uint16_t port = irq<8 ? 0x21 : 0xA1;
+    uint8_t bit = (uint8_t)(1u << (irq & 7));
+    pic_imr_write(port, (uint8_t)(pic_imr_read(port) | bit));
+}
 extern void ps2_mouse_handler(void);
 
 void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint64_t rflags, struct isr_regs *regs) {
@@ -75,7 +120,12 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         return;
     }
     if (vector >= 32 && vector < 48) { // другие IRQ
-        pic_eoi(vector-32);
+        uint8_t irq = (uint8_t)(vector-32);
+        if (irq < 16 && irq_handler_fn[irq]) {
+            int (*fn)(void*) = (int(*)(void*))irq_handler_fn[irq];
+            fn(irq_handler_ctx[irq]);
+        }
+        pic_eoi(irq);
         return;
     }
     if (vector == 3) {

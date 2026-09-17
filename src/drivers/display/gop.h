@@ -19,7 +19,10 @@ enum gop_font_face {
 
 void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type);
 void gop_init_from_multiboot(void *mbi);
+bool gop_apply_live(void *address, uint32_t width, uint32_t height,
+                    uint32_t pitch_pixels, uint8_t bpp);
 bool gop_is_available(void);
+void *gop_get_address(void);
 uint32_t gop_get_width(void);
 uint32_t gop_get_height(void);
 uint32_t gop_get_pitch(void);
@@ -50,8 +53,14 @@ void gop_begin_batch(void);
 void gop_end_batch(void);
 void gop_begin_compose(void);
 void gop_end_compose(void);
+void gop_end_batch_keep(void);
+void gop_end_compose_keep(void);
+bool gop_dirty_pending(void);
 void gop_cancel_compose(void);
 void gop_present(void);
+void gop_present_forced(void);
+void gop_defer_present(void);
+bool gop_flush_needed(void);
 bool gop_has_backbuffer(void);
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color);

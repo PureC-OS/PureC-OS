@@ -22,4 +22,5 @@ int32_t display_save(const struct display_settings *s);
 uint32_t display_mode_count(void);
 struct display_mode display_mode_at(uint32_t index);
 uint32_t display_mode_index_of(uint32_t width, uint32_t height);
-int32_t display_apply_to_boot(const struct display_settings *s);
+/* Live apply without reboot: 0=ok, -1=failed, -2=unsupported hardware. */
+int32_t display_apply_live(const struct display_settings *s);

@@ -45,6 +45,9 @@ bool ext2_super_read(uint32_t partition_lba) {
     if (blocks_per_group == 0 || inodes_per_group == 0) {
         return false;
     }
+    if (total_blocks == 0) {
+        return false;
+    }
     vol->partition_lba = partition_lba;
     vol->block_size = block_size;
     vol->blocks_per_group = blocks_per_group;

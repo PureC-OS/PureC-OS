@@ -23,6 +23,10 @@ static int64_t display_syscall5(uint64_t number, uint64_t argument1,
     return result;
 }
 
+void display_invalidate_cache(void){
+    cached_info_valid=false;
+}
+
 bool display_get_info(struct display_info *info){
     if(!info) return false;
     if(!cached_info_valid){

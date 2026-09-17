@@ -2,6 +2,7 @@
 #include "settings/audio_page.h"
 #include "settings/wifi_page.h"
 #include "settings/appearance_page.h"
+#include "settings/display_page.h"
 #include "../../../libgui/include/pguiw.h"
 #include "../../../libc/include/purec.h"
 
@@ -26,17 +27,20 @@ void settings_app_init(struct settings_app *app){
     (void)settings_model_apply(&app->model);
     appearance_defaults(&app->appearance);
     (void)appearance_load(&app->appearance);
+    display_defaults(&app->display);
+    (void)display_load(&app->display);
     app->tab=0;
 }
 
 static void draw_sidebar(struct settings_app *app,struct pg_window *window,
                          const struct pg_event *event){
-    const char *labels[4]={"Sound","Storage","Network","Appearance"};
+    const char *labels[5]={"Sound","Storage","Network","Appearance",
+                            "Display"};
     uint32_t content_height=window->client.height-HEADER_HEIGHT-FOOTER_HEIGHT;
     pg_window_rect(window,(struct pg_rect){0,HEADER_HEIGHT,SIDEBAR_WIDTH,
                                           content_height},0x202131);
     pg_window_text(window,18,HEADER_HEIGHT+18,"SYSTEM",0x7F849C);
-    for(uint32_t index=0;index<4;index++){
+    for(uint32_t index=0;index<5;index++){
         struct pg_rect item={10,HEADER_HEIGHT+42+index*42,
                              SIDEBAR_WIDTH-20,36};
         pg_window_rect(window,item,app->tab==(int)index
@@ -84,7 +88,8 @@ void settings_app_draw(struct settings_app *app,struct pg_window *window,
     if(app->tab==0) audio_page_draw(window,&app->model,event);
     else if(app->tab==1) draw_storage_page(window,event);
     else if(app->tab==2) wifi_page_draw(window,event);
-    else appearance_page_draw(window,&app->appearance,event);
+    else if(app->tab==3) appearance_page_draw(window,&app->appearance,event);
+    else display_page_draw(window,&app->display,event);
     uint32_t footer_y=window->client.height-FOOTER_HEIGHT;
     pg_window_rect(window,(struct pg_rect){0,footer_y,window->client.width,
                                            FOOTER_HEIGHT},0x292A3D);
@@ -92,7 +97,8 @@ void settings_app_draw(struct settings_app *app,struct pg_window *window,
         ? "Sound changes are applied and saved immediately"
         : app->tab==1 ? "Destructive disk actions require confirmation"
         : app->tab==2 ? "Wired + Wi-Fi status, DHCP/DNS, ping test"
-                      : "Appearance saves to /config/appear.ini, desktop picks it up";
+        : app->tab==3 ? "Appearance saves to /config/appear.ini, desktop picks it up"
+                      : "Display saves to /config/display.ini, applied without reboot";
     pg_window_text(window,18,footer_y+13,footer,0xBAC2DE);
     pg_window_end(window);
 }

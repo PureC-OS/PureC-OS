@@ -11,9 +11,19 @@ CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
 CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
-ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c
+ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/src/uacpi_glue.c acpi/src/uacpi_heap.c acpi/src/acpi_ec.c acpi/src/acpi_battery.c \
+	acpi/AML/uACPI/source/tables.c acpi/AML/uACPI/source/types.c \
+	acpi/AML/uACPI/source/utilities.c acpi/AML/uACPI/source/stdlib.c \
+	acpi/AML/uACPI/source/shareable.c acpi/AML/uACPI/source/uacpi.c \
+	acpi/AML/uACPI/source/namespace.c acpi/AML/uACPI/source/interpreter.c \
+	acpi/AML/uACPI/source/opcodes.c acpi/AML/uACPI/source/opregion.c \
+	acpi/AML/uACPI/source/registers.c acpi/AML/uACPI/source/resources.c \
+	acpi/AML/uACPI/source/event.c acpi/AML/uACPI/source/mutex.c \
+	acpi/AML/uACPI/source/notify.c acpi/AML/uACPI/source/osi.c \
+	acpi/AML/uACPI/source/sleep.c acpi/AML/uACPI/source/io.c \
+	acpi/AML/uACPI/source/default_handlers.c
 ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
-CPPFLAGS += -I$(ACPI_DIR)/include
+CPPFLAGS += -I$(ACPI_DIR)/include -I$(ACPI_DIR)/AML/uACPI/include
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
 E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
@@ -42,6 +52,7 @@ C_SOURCES := \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	drivers/display/vbe.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
 	lib/string.c \
@@ -81,6 +92,7 @@ C_SOURCES := \
 	fs/ext2/debug.c \
 	fs/vfs.c \
 	userspace/display.c \
+	userspace/display_mode.c \
 	userspace/fs.c \
 	userspace/personalization.c \
 	userspace/wallpaper.c \

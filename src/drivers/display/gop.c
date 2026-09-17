@@ -3,6 +3,7 @@
 #include "../../gfx/text.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
+#include "../../drivers/interrupts/timer.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -19,6 +20,11 @@ static bool dirty_valid = false;
 static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 static uint32_t cur_x=12, cur_y=12;
 static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
+#define GOP_PRESENT_MIN_INTERVAL_TICKS 16
+#define GOP_DEFERRED_FLUSH_TICKS 50
+static uint64_t last_present_tick = 0;
+static bool present_deferred = false;
+static uint64_t deferred_tick = 0;
 
 static enum gop_font_face console_face=GOP_FONT_CLEAN;
 
@@ -129,8 +135,44 @@ void gop_init_from_multiboot(void *mbi){
     gop.available=false;
 }
 
+bool gop_apply_live(void *address, uint32_t width, uint32_t height,
+                    uint32_t pitch_pixels, uint8_t bpp){
+    if(!address || !width || !height || !pitch_pixels) return false;
+    if(bpp!=16 && bpp!=24 && bpp!=32) return false;
+    uint64_t pixels=(uint64_t)width*(uint64_t)height;
+    if(!pixels || pixels>(64ULL*1024ULL*1024ULL)) return false;
+    gop.addr=(uint32_t*)address;
+    gop.width=width;
+    gop.height=height;
+    gop.pitch=pitch_pixels;
+    gop.bpp=bpp;
+    gop.framebuffer_bytes=(uint64_t)pitch_pixels
+        *((uint64_t)(bpp==24 ? 3 : (bpp==16 ? 2 : 4)))*height;
+    gop.protocol_name="VBE live mode";
+    gop.available=true;
+    cur_x=12; cur_y=12;
+    if(backbuffer){
+        pmm_free_contiguous(backbuffer_phys, backbuffer_pages);
+        backbuffer=0;
+        backbuffer_phys=0;
+        backbuffer_pages=0;
+        backbuffer_width=0;
+        backbuffer_height=0;
+    }
+    dirty_valid=false;
+    batch_depth=0;
+    compose_depth=0;
+    last_present_tick=0;
+    present_deferred=false;
+    user_console.active=false;
+    return true;
+}
+
 bool gop_is_available(void){
     return gop.available;
+}
+void *gop_get_address(void){
+    return gop.addr;
 }
 uint32_t gop_get_width(void){
     return gop.width;
@@ -259,7 +301,7 @@ void gop_begin_batch(void){
 void gop_end_batch(void){
     if(batch_depth){
         batch_depth--;
-        if(batch_depth==0 && compose_depth==0) gop_present();
+        if(batch_depth==0 && compose_depth==0) gop_present_forced();
     }
 }
 
@@ -274,6 +316,18 @@ void gop_end_compose(void){
     }
 }
 
+void gop_end_batch_keep(void){
+    if(batch_depth) batch_depth--;
+}
+
+void gop_end_compose_keep(void){
+    if(compose_depth) compose_depth--;
+}
+
+bool gop_dirty_pending(void){
+    return dirty_valid;
+}
+
 void gop_cancel_compose(void){
     compose_depth=0;
     batch_depth=0;
@@ -281,7 +335,50 @@ void gop_cancel_compose(void){
 
 bool gop_has_backbuffer(void){ return backbuffer!=0; }
 
+static void gop_present_nolock(void);
+
 void gop_present(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    if(!present_deferred){
+        uint64_t now = timer_ticks();
+        if(last_present_tick==0 || now-last_present_tick
+            >= GOP_PRESENT_MIN_INTERVAL_TICKS){
+            gop_present_nolock();
+            last_present_tick = now ? now : 1;
+        }
+    }
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void gop_present_forced(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    gop_present_nolock();
+    uint64_t now = timer_ticks();
+    last_present_tick = now ? now : 1;
+    present_deferred = false;
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void gop_defer_present(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    present_deferred = true;
+    deferred_tick = timer_ticks();
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+bool gop_flush_needed(void){
+    if(!dirty_valid) return false;
+    uint64_t now = timer_ticks();
+    if(present_deferred)
+        return now-deferred_tick >= GOP_DEFERRED_FLUSH_TICKS;
+    return last_present_tick==0
+        || now-last_present_tick >= GOP_PRESENT_MIN_INTERVAL_TICKS;
+}
+
+static void gop_present_nolock(void){
     if(!gop.available || !gop.addr || !backbuffer) return;
     if(!dirty_valid) return;
     if(dirty_x0>=gop.width || dirty_y0>=gop.height){

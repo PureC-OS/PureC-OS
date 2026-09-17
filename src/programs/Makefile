@@ -41,10 +41,12 @@ GENERAL_SOURCES := \
   	settings/main.c \
   	settings/core/model.c \
   	settings/core/personalization.c \
+  	settings/core/display.c \
   	settings/core/app.c \
   	settings/pages/audio.c \
   	settings/pages/wifi.c \
   	settings/pages/appearance.c \
+  	settings/pages/display.c \
 	login/main.c \
  	monitor/main.c \
 	disks/main.c \
@@ -180,7 +182,7 @@ $(PROGRAM_DIR)/files: $(OBJ_DIR)/files/main.o $(OBJ_DIR)/files/app.o $(OBJ_DIR)/
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/settings: $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/model.o $(OBJ_DIR)/settings/core/personalization.o $(OBJ_DIR)/settings/core/app.o $(OBJ_DIR)/settings/pages/audio.o $(OBJ_DIR)/settings/pages/wifi.o $(OBJ_DIR)/settings/pages/appearance.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/settings: $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/model.o $(OBJ_DIR)/settings/core/personalization.o $(OBJ_DIR)/settings/core/display.o $(OBJ_DIR)/settings/core/app.o $(OBJ_DIR)/settings/pages/audio.o $(OBJ_DIR)/settings/pages/wifi.o $(OBJ_DIR)/settings/pages/appearance.o $(OBJ_DIR)/settings/pages/display.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

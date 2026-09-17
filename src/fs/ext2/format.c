@@ -7,6 +7,17 @@
 
 int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors);
 
+static uint8_t zero_chunk[32 * 512];
+
+static bool write_zero_sectors(uint32_t lba, uint32_t count){
+    while(count){
+        uint32_t n=count>32 ? 32 : count;
+        if(!block_device_write_sectors(lba,zero_chunk,n)) return false;
+        lba+=n;
+        count-=n;
+    }
+    return true;
+}
 int32_t ext2_format_device_impl(const char *device_name, const char *serial_confirmation, const char *erase_confirmation) {
     if (!device_name || !serial_confirmation || !erase_confirmation) {
         return -3;
@@ -90,14 +101,10 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     ext2_write_u16(sb + 88, 128);
     ext2_write_u32(sb + 92, 1);
 
-    uint8_t *sec = ext2_scratch_sector();
     uint8_t *blk = ext2_scratch_block();
 
     uint32_t sb_lba = part_lba + 2;
-    memcpy(sec, sb, 512);
-    if (!block_device_write(sb_lba, sec)) return -1;
-    memcpy(sec, sb + 512, 512);
-    if (!block_device_write(sb_lba + 1, sec)) return -1;
+    if(!block_device_write_sectors(sb_lba,sb,2)) return -1;
 
     uint32_t current_g = 0;
     for (uint32_t b = 0; b < gd_blocks; b++) {
@@ -132,45 +139,34 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
             if (current_g == 0) ext2_write_u16(entry + 16, 2);
         }
         uint32_t gd_lba = part_lba + 4 + b * 2;
-        memcpy(sec, blk, 512);
-        if (!block_device_write(gd_lba, sec)) return -1;
-        memcpy(sec, blk + 512, 512);
-        if (!block_device_write(gd_lba + 1, sec)) return -1;
+        if(!block_device_write_sectors(gd_lba,blk,2)) return -1;
     }
     memset(blk, 0, 1024);
     for (uint32_t bit = 0; bit < meta_g0_alloc; bit++) {
         blk[bit / 8] |= (uint8_t)(1 << (bit % 8));
     }
     uint32_t bm0_lba = part_lba + bmb0 * 2;
-    memcpy(sec, blk, 512);
-    if (!block_device_write(bm0_lba, sec)) return -1;
-    memcpy(sec, blk + 512, 512);
-    if (!block_device_write(bm0_lba + 1, sec)) return -1;
+    if(!block_device_write_sectors(bm0_lba,blk,2)) return -1;
     memset(blk, 0, 1024);
     for (int i = 0; i < 11; i++) {
         blk[i / 8] |= (uint8_t)(1 << (i % 8));
     }
     uint32_t ibm0_lba = part_lba + imb0 * 2;
-    memcpy(sec, blk, 512);
-    if (!block_device_write(ibm0_lba, sec)) return -1;
-    memcpy(sec, blk + 512, 512);
-    if (!block_device_write(ibm0_lba + 1, sec)) return -1;
+    if(!block_device_write_sectors(ibm0_lba,blk,2)) return -1;
     for (uint32_t b = 0; b < 128; b++) {
-        memset(blk, 0, 1024);
-        if (b == 0) {
+        if(b==0){
+            memset(blk, 0, 1024);
             uint8_t *ino2 = blk + 128;
             ext2_write_u16(ino2 + 0, 0x41ED);
             ext2_write_u32(ino2 + 4, 1024);
             ext2_write_u32(ino2 + 28, 1);
             ext2_write_u32(ino2 + 40, root_data_block);
             ext2_write_u16(ino2 + 24, 1);
+            uint32_t lba = part_lba + (itb0 + b) * 2;
+            if(!block_device_write_sectors(lba,blk,2)) return -1;
         }
-        uint32_t lba = part_lba + (itb0 + b) * 2;
-        memcpy(sec, blk, 512);
-        if (!block_device_write(lba, sec)) return -1;
-        memcpy(sec, blk + 512, 512);
-        if (!block_device_write(lba + 1, sec)) return -1;
     }
+    if(!write_zero_sectors(part_lba + (itb0 + 1) * 2, 127 * 2)) return -1;
 
     memset(blk, 0, 1024);
     ext2_write_u32(blk + 0, 2);
@@ -185,10 +181,7 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
     blk[20] = '.';
     blk[21] = '.';
     uint32_t root_lba = part_lba + root_data_block * 2;
-    memcpy(sec, blk, 512);
-    if (!block_device_write(root_lba, sec)) return -1;
-    memcpy(sec, blk + 512, 512);
-    if (!block_device_write(root_lba + 1, sec)) return -1;
+    if(!block_device_write_sectors(root_lba,blk,2)) return -1;
 
     for (uint32_t g = 1; g < groups; g++) {
         uint32_t bmb = g * blocks_per_group;
@@ -197,19 +190,9 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors) {
 
         memset(blk, 0, 1024);
         for (uint32_t b = 0; b < meta_blocks_other; b++) blk[b / 8] |= (uint8_t)(1 << (b % 8));
-        memcpy(sec, blk, 512);
-        if (!block_device_write(part_lba + bmb * 2, sec)) return -1;
-        memcpy(sec, blk + 512, 512);
-        if (!block_device_write(part_lba + bmb * 2 + 1, sec)) return -1;
+        if(!block_device_write_sectors(part_lba + bmb * 2,blk,2)) return -1;
 
-        memset(blk, 0, 1024);
-        memcpy(sec, blk, 512);
-        if (!block_device_write(part_lba + imb * 2, sec)) return -1;
-        memcpy(sec, blk + 512, 512);
-        if (!block_device_write(part_lba + imb * 2 + 1, sec)) return -1;
-
-        if (!block_device_write(part_lba + itb * 2, sec)) return -1;
-        if (!block_device_write(part_lba + itb * 2 + 1, sec)) return -1;
+        if(!write_zero_sectors(part_lba + imb * 2, 4)) return -1;
     }
 
     if (!block_device_flush()) {
