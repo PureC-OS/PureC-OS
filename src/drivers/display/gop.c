@@ -3,6 +3,7 @@
 #include "../../gfx/text.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
+#include "../../drivers/interrupts/timer.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -19,6 +20,11 @@ static bool dirty_valid = false;
 static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 static uint32_t cur_x=12, cur_y=12;
 static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
+#define GOP_PRESENT_MIN_INTERVAL_TICKS 16
+#define GOP_DEFERRED_FLUSH_TICKS 50
+static uint64_t last_present_tick = 0;
+static bool present_deferred = false;
+static uint64_t deferred_tick = 0;
 
 static enum gop_font_face console_face=GOP_FONT_CLEAN;
 
@@ -259,7 +265,7 @@ void gop_begin_batch(void){
 void gop_end_batch(void){
     if(batch_depth){
         batch_depth--;
-        if(batch_depth==0 && compose_depth==0) gop_present();
+        if(batch_depth==0 && compose_depth==0) gop_present_forced();
     }
 }
 
@@ -298,8 +304,42 @@ static void gop_present_nolock(void);
 void gop_present(void){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    gop_present_nolock();
+    if(!present_deferred){
+        uint64_t now = timer_ticks();
+        if(last_present_tick==0 || now-last_present_tick
+            >= GOP_PRESENT_MIN_INTERVAL_TICKS){
+            gop_present_nolock();
+            last_present_tick = now ? now : 1;
+        }
+    }
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void gop_present_forced(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    gop_present_nolock();
+    uint64_t now = timer_ticks();
+    last_present_tick = now ? now : 1;
+    present_deferred = false;
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+void gop_defer_present(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    present_deferred = true;
+    deferred_tick = timer_ticks();
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
+
+bool gop_flush_needed(void){
+    if(!dirty_valid) return false;
+    uint64_t now = timer_ticks();
+    if(present_deferred)
+        return now-deferred_tick >= GOP_DEFERRED_FLUSH_TICKS;
+    return last_present_tick==0
+        || now-last_present_tick >= GOP_PRESENT_MIN_INTERVAL_TICKS;
 }
 
 static void gop_present_nolock(void){

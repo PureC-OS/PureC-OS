@@ -29,6 +29,7 @@ static const char *exception_name(uint64_t vec) {
 }
 
 static __attribute__((noreturn)) void panic_halt(void) {
+    gop_present_forced();
     for (;;) __asm__ volatile("cli; hlt");
 }
 
