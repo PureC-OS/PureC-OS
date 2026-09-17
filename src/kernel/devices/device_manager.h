@@ -56,6 +56,12 @@ struct device_acpi_info {
     bool has_ec;
 };
 
+struct device_i2c_info {
+    uint16_t address;
+    uint32_t speed_hz;
+    char controller[ACPI_HID_MAX_LEN];
+};
+
 struct device_info {
     uint32_t id;
     enum device_type type;
@@ -65,6 +71,7 @@ struct device_info {
     bool driver_bound;
     struct device_pci_info pci;
     struct device_acpi_info acpi;
+    struct device_i2c_info i2c;
     uint32_t irq_count;
     uint32_t irq_lines[4];
     uint64_t mmio_base;

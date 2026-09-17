@@ -90,6 +90,7 @@ static void acpi_copy(char *dst, uint32_t cap, const char *src) {
 }
 
 static enum device_class acpi_class(const struct acpi_namespace_device *src) {
+    if (src->has_i2c && strcmp(src->hid, "PNP0C50") == 0) return CLASS_INPUT;
     if (src->type == ACPI_NAMESPACE_THERMAL_ZONE ||
         strcmp(src->hid, "PNP0C0B") == 0) return CLASS_SENSOR;
     if (strcmp(src->hid, "PNP0C0A") == 0 ||
@@ -103,7 +104,8 @@ static enum device_class acpi_class(const struct acpi_namespace_device *src) {
 static bool acpi_namespace_add(const struct acpi_namespace_device *src,
                                void *ctx) {
     (void)ctx;
-    struct device_info *dev = device_add(DEVICE_TYPE_ACPI);
+    bool is_i2c_hid = src->has_i2c && strcmp(src->hid, "PNP0C50") == 0;
+    struct device_info *dev = device_add(is_i2c_hid ? DEVICE_TYPE_I2C : DEVICE_TYPE_ACPI);
     if (!dev) return false;
     dev->device_class = acpi_class(src);
     dev->enabled = src->enabled;
@@ -112,7 +114,16 @@ static bool acpi_namespace_add(const struct acpi_namespace_device *src,
     dev->acpi.has_ec = strcmp(src->hid, "PNP0C09") == 0;
     acpi_copy(dev->acpi.hid, sizeof(dev->acpi.hid), src->hid);
     acpi_copy(dev->acpi.uid, sizeof(dev->acpi.uid), src->uid);
-    if (src->hid[0]) device_set_name(dev, src->hid);
+    if (src->has_i2c) {
+        dev->i2c.address = src->i2c_address;
+        dev->i2c.speed_hz = src->i2c_speed_hz;
+        acpi_copy(dev->i2c.controller, sizeof(dev->i2c.controller),
+                  src->i2c_controller);
+        dev->irq_count = src->irq ? 1 : 0;
+        if (dev->irq_count) dev->irq_lines[0] = src->irq;
+    }
+    if (is_i2c_hid) device_set_name(dev, "i2c-hid-touchpad");
+    else if (src->hid[0]) device_set_name(dev, src->hid);
     else if (src->name[0]) device_set_name(dev, src->name);
     else device_set_name(dev, "acpi-device");
     g_acpi_count++;
@@ -440,8 +451,12 @@ void devman_dump(void) {
                   d->pci.function, d->pci.class_code, d->pci.subclass,
                   d->pci.programming_interface, d->pci.revision);
         }
-        if (d->type == DEVICE_TYPE_ACPI && d->acpi.hid[0]) {
+        if ((d->type == DEVICE_TYPE_ACPI || d->type == DEVICE_TYPE_I2C) && d->acpi.hid[0]) {
             klogf(KLOG_DEBUG, "  ACPI: HID='%s'", d->acpi.hid);
+        }
+        if (d->type == DEVICE_TYPE_I2C) {
+            klogf(KLOG_DEBUG, "  I2C: addr=0x%x speed=%u controller='%s'",
+                  d->i2c.address, d->i2c.speed_hz, d->i2c.controller);
         }
         if (d->irq_count > 0) {
             klogf(KLOG_DEBUG, "  IRQ: count=%u lines=", d->irq_count);
