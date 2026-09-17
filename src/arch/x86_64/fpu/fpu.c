@@ -39,15 +39,21 @@ static void write_cr4(uint64_t value) {
     __asm__ volatile("mov %0, %%cr4" ::"r"(value) : "memory");
 }
 
-void fpu_init(void) {
-    if (fpu_ready) return;
+bool fpu_init_cpu(void) {
     uint32_t eax, ebx, ecx, edx;
     cpuid(1, &eax, &ebx, &ecx, &edx);
-    if (!(edx & (1U << 24))) kernel_panic("CPU lacks FXSR, cannot run SSE userspace");
-    if (!(edx & (1U << 25))) kernel_panic("CPU lacks SSE, cannot run SSE userspace");
+    if (!(edx & (1U << 24)) || !(edx & (1U << 25))) return false;
     write_cr0((read_cr0() & ~(FPU_CR0_EM | FPU_CR0_TS)) | FPU_CR0_NE);
     write_cr4(read_cr4() | FPU_CR4_OSFXSR | FPU_CR4_OSXMMEXCPT);
     __asm__ volatile("fninit");
+    const uint32_t mxcsr = 0x1F80;
+    __asm__ volatile("ldmxcsr %0" :: "m"(mxcsr));
+    return true;
+}
+
+void fpu_init(void) {
+    if (fpu_ready) return;
+    if (!fpu_init_cpu()) kernel_panic("CPU lacks FXSR/SSE, cannot run SSE userspace");
     __asm__ volatile("fxsave %0" : "=m"(fpu_template) :: "memory");
     fpu_ready = true;
     klog(KLOG_OK, "fpu: FXSR/SSE enabled, per-thread eager switching");
