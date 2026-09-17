@@ -63,10 +63,17 @@ struct display_mode display_mode_at(uint32_t index){
 }
 
 uint32_t display_mode_index_of(uint32_t width, uint32_t height){
+    uint32_t best_score=UINT32_MAX;
     for(uint32_t i=0;i<display_mode_count();i++){
-        if(modes[i].width==width && modes[i].height==height) return i;
+        uint32_t dw=modes[i].width>width ? modes[i].width-width
+                                         : width-modes[i].width;
+        uint32_t dh=modes[i].height>height ? modes[i].height-height
+                                           : height-modes[i].height;
+        uint32_t score=dw+dh;
+        if(score<best_score){ best_score=score; best=i; }
+        if(!score) break;
     }
-    return 2; /* 1280x800 default */
+    return best;
 }
 
 bool display_load(struct display_settings *s){
