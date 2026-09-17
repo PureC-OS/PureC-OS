@@ -37,6 +37,7 @@ C_SOURCES := \
 	kernel/core/init.c \
 	kernel/core/system_info.c \
 	kernel/smp/cpu.c \
+	kernel/smp/smp.c \
 	kernel/process/process.c \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \
@@ -117,6 +118,7 @@ CPP_SOURCES := userspace/apps/audio_panel.cpp
 ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
 	arch/x86_64/idt/asm/idt.asm \
+	arch/x86_64/smp.asm \
 	arch/x86_64/scheduler.asm \
 	arch/x86_64/user.asm
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)

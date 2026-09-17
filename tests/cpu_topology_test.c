@@ -22,7 +22,9 @@ static void assert_fallback(void){
     assert(cpu_registered_count() == 1);
     assert(cpu_online_count() == 1);
     const struct cpu_info *bsp = cpu_get_info(0);
-    assert(bsp && bsp->is_bsp && bsp->online && !bsp->ids_valid);
+    assert(bsp && bsp->is_bsp && !bsp->ids_valid);
+    assert(cpu_is_online(0));
+    assert(cpu_get_state(0) == CPU_ONLINE);
     assert(cpu_get_info(1) == NULL);
     assert(cpu_get_info(UINT32_MAX) == NULL);
 }
@@ -63,13 +65,14 @@ static void test_cpu_counts_and_limit(void){
         assert(cpu_registered_count() == registered);
         assert(cpu_online_count() == 1);
         const struct cpu_info *bsp = cpu_get_info(0);
-        assert(bsp->logical_id == 0 && bsp->is_bsp && bsp->online);
+        assert(bsp->logical_id == 0 && bsp->is_bsp && cpu_is_online(0));
         assert(bsp->ids_valid && bsp->lapic_id == response.bsp_lapic_id);
         assert(bsp->processor_id == records[count - 1].processor_id);
         for(uint32_t i = 1; i < registered; i++){
             const struct cpu_info *ap = cpu_get_info(i);
             assert(ap && ap->logical_id == i && ap->ids_valid);
-            assert(!ap->is_bsp && !ap->online);
+            assert(!ap->is_bsp && !cpu_is_online(i));
+            assert(cpu_get_state(i) == CPU_PARKED);
             assert(ap->lapic_id == records[i - 1].lapic_id);
             assert(ap->processor_id == records[i - 1].processor_id);
         }
@@ -82,6 +85,36 @@ static void test_cpu_counts_and_limit(void){
     /* Malformed or absent data must discard a previous successful inventory. */
     cpu_topology_init(NULL);
     assert_fallback();
+}
+
+static void test_ap_state_machine(void){
+    struct limine_smp_info records[] = {
+        {.processor_id = 10, .lapic_id = 20},
+        {.processor_id = 11, .lapic_id = 21}
+    };
+    struct limine_smp_info *pointers[] = {&records[0], &records[1]};
+    struct limine_smp_response response = {
+        .bsp_lapic_id = 20, .cpu_count = 2, .cpus = pointers
+    };
+
+    cpu_topology_init(&response);
+    assert(cpu_try_start(1));
+    assert(!cpu_try_start(1));
+    assert(cpu_get_state(1) == CPU_STARTING);
+    assert(cpu_publish_idle(1));
+    assert(cpu_get_state(1) == CPU_IDLE);
+    assert(cpu_is_online(1));
+    assert(cpu_online_count() == 2);
+    cpu_fail(1);
+    assert(cpu_get_state(1) == CPU_FAILED);
+    assert(cpu_online_count() == 1);
+
+    cpu_topology_init(&response);
+    assert(cpu_try_start(1));
+    assert(cpu_timeout_start(1));
+    assert(cpu_get_state(1) == CPU_TIMED_OUT);
+    assert(!cpu_publish_idle(1));
+    assert(!cpu_timeout_start(1));
 }
 
 static void test_malformed_lists(void){
@@ -128,6 +161,7 @@ int main(void){
     test_cpu_counts_and_limit();
     test_malformed_lists();
     test_ids_are_copied();
+    test_ap_state_machine();
     puts("CPU topology tests passed");
     return 0;
 }
