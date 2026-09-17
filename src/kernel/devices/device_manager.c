@@ -73,45 +73,15 @@ static void pci_inspect_device(const struct pci_device_info *pci, void *ctx) {
     device_set_name(dev, "pci-device");
 }
 
-static bool acpi_visitor_noop(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
+static void acpi_visitor_noop(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
+static void acpi_visitor_pci_bridge(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
+static void acpi_visitor_sensor(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
+static void acpi_visitor_network(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
 
-static bool acpi_visitor_pci_bridge(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
-
-static bool acpi_visitor_sensor(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
-
-static bool acpi_visitor_network(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
-
-static bool acpi_visitor_storage(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
-
-static bool acpi_visitor_usb(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
-
-static bool acpi_visitor_display(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
-
-static bool acpi_visitor_audio(const char *sig, void *table, uint32_t len, void *ctx) {
-    (void)sig; (void)table; (void)len; (void)ctx;
-    return true;
-}
+static void acpi_visitor_storage(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
+static void acpi_visitor_usb(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
+static void acpi_visitor_display(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
+static void acpi_visitor_audio(const char *sig, void *table, uint32_t len, void *ctx) { (void)sig; (void)table; (void)len; (void)ctx; }
 
 static void acpi_isa_enumerate(void) {
     if (!acpi_is_ready()) return;
