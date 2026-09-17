@@ -66,6 +66,8 @@ struct devmgr_state {
     bool usb_ok;
     struct battery_info battery;
     bool battery_ok;
+    struct thermal_info thermal;
+    bool thermal_ok;
     char root_device[32];
     bool root_ok;
     char fs_type[16];
@@ -170,6 +172,8 @@ static void refresh_all(struct devmgr_state *st, bool rescan_usb) {
         }
     }
     st->battery_ok = pc_syscall(220, (uint64_t)(uintptr_t)&st->battery, 0, 0) >= 0;
+    st->thermal_ok = pc_syscall(SYS_THERMAL_INFO,
+                                (uint64_t)(uintptr_t)&st->thermal, 0, 0) >= 0;
     st->root_ok = pc_get_root_device(st->root_device, sizeof(st->root_device)) >= 0;
     st->fs_ok = pc_get_fs_type(st->fs_type, sizeof(st->fs_type)) >= 0;
     if (!rescan_usb) {
@@ -264,6 +268,20 @@ static void draw_details(struct pg_window *win, struct devmgr_state *st) {
         y = draw_line(win, tx, y, "Frequency:", b1);
         b1[0] = '\0'; o = append_u64(b1, st->cpu.uptime_ms / 1000ULL); o = append_text(o, " s uptime");
         y = draw_line(win, tx, y, "Uptime:", b1);
+        if (st->thermal_ok && st->thermal.thermal_zone_count) {
+            b1[0] = '\0';
+            if (st->thermal.temperature_deci_c == (int32_t)0x80000000)
+                o = append_text(b1, "unavailable (_TMP)");
+            else {
+                o = append_i32(b1, st->thermal.temperature_deci_c / 10);
+                o = append_text(o, ".");
+                int32_t tenth = st->thermal.temperature_deci_c;
+                if (tenth < 0) tenth = -tenth;
+                *o++ = (char)('0' + (tenth % 10)); *o = '\0';
+                o = append_text(o, " C");
+            }
+            y = draw_line(win, tx, y, "ACPI temperature:", b1);
+        }
         pg_window_text(win, tx, y + 8, "Status: This device is working properly.",
                        0xA6E3A1);
         break;
@@ -441,6 +459,26 @@ static void draw_details(struct pg_window *win, struct devmgr_state *st) {
         break;
     }
     case DEV_POWER: {
+        char *o;
+        if (st->thermal_ok && (st->thermal.thermal_zone_count || st->thermal.fan_count)) {
+            if (st->thermal.thermal_zone_count) {
+                b1[0] = '\0';
+                if (st->thermal.temperature_deci_c == (int32_t)0x80000000)
+                    o = append_text(b1, "unavailable (_TMP)");
+                else {
+                    o = append_i32(b1, st->thermal.temperature_deci_c / 10);
+                    o = append_text(o, " C");
+                }
+                y = draw_line(win, tx, y, "Temperature:", b1);
+            }
+            if (st->thermal.fan_count) {
+                b1[0] = '\0';
+                if (st->thermal.fan_rpm) { o = append_u64(b1, st->thermal.fan_rpm); o = append_text(o, " RPM"); }
+                else o = append_text(b1, "unavailable (_FST)");
+                y = draw_line(win, tx, y, "Fan speed:", b1);
+            }
+            y += 8;
+        }
         if (!st->battery_ok) {
             pg_window_text(win, tx, y, "No battery (desktop / ACPI unavailable)",
                            win->theme.muted_text);

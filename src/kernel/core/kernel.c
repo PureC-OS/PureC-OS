@@ -15,6 +15,9 @@
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
 #include "../../net/core/net_service.h"
+#include "../devices/device_manager.h"
+#include "../smp/cpu.h"
+#include "../smp/smp.h"
 extern struct limine_memmap_response *memmap_response_ptr;
 extern struct limine_smp_response *smp_response_ptr;
 extern uint64_t hhdm_offset_global;
@@ -32,6 +35,7 @@ void kernel_main(struct limine_framebuffer *fb) {
     klog(KLOG_INFO, "Kernel: 64-bit long mode, GOP active");
 
     boot_diag_checkpoint(BOOT_STAGE_SYSTEM_INFO, "probing CPU and memory map");
+    cpu_topology_init(smp_response_ptr);
     system_info_init(memmap_response_ptr);
     if(system_info_usable_ram_bytes()==0)
         kernel_panic("memory map contains no usable RAM");
@@ -44,6 +48,17 @@ void kernel_main(struct limine_framebuffer *fb) {
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
     vmm_init();
     fpu_init();
+    if(cpu_registered_count()>1){
+        klog(KLOG_INFO, "smp: releasing cpu1 into isolated idle");
+        if(smp_start_cpu(smp_response_ptr,1,1000)){
+            const struct cpu_info *ap=cpu_get_info(1);
+            klogf(KLOG_OK,"smp: cpu1 lapic_id=%u idle; online=%u",
+                  ap ? ap->lapic_id : 0,cpu_online_count());
+        } else {
+            klogf(KLOG_WARN,"smp: cpu1 failed to reach idle (state=%u); continuing on BSP",
+                  (uint32_t)cpu_get_state(1));
+        }
+    }
     power_init(); // ACPI tables + _S5/ResetReg discovery (needs only HHDM+RSDP)
     process_init();
 
@@ -73,6 +88,13 @@ void kernel_main(struct limine_framebuffer *fb) {
     klog(KLOG_INFO, "GOP test deferred to userspace");
 
     klog(KLOG_INFO, "Boot log complete");
-    klogf(KLOG_DEBUG, "Verbose mode: %s (debug visible)", klog_is_verbose() ? "on" : "off");
-    init_process_start(smp_response_ptr ? smp_response_ptr->cpu_count : 1);
+    klogf(KLOG_INFO, "Verbose mode: %s (debug visible)", klog_is_verbose() ? "on" : "off");
+
+    klog(KLOG_INFO, "Initializing device manager...");
+    devman_init();
+    devman_enumerate();
+    devman_dump();
+    klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
+
+    init_process_start();
 }

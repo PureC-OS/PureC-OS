@@ -9,19 +9,19 @@
 static uint64_t kernel_address_space;
 static bool nx_enabled;
 
-static void enable_nx(void){
+static bool enable_nx_cpu(void){
     uint32_t maximum,eax,ebx,ecx,edx;
     __asm__ volatile("cpuid":"=a"(maximum),"=b"(ebx),"=c"(ecx),"=d"(edx)
                      :"a"(0x80000000U),"c"(0));
-    if(maximum<0x80000001U) return;
+    if(maximum<0x80000001U) return false;
     __asm__ volatile("cpuid":"=a"(eax),"=b"(ebx),"=c"(ecx),"=d"(edx)
                      :"a"(0x80000001U),"c"(0));
-    if(!(edx&(1U<<20))) return;
+    if(!(edx&(1U<<20))) return false;
     uint32_t low,high;
     __asm__ volatile("rdmsr":"=a"(low),"=d"(high):"c"(0xC0000080U));
     low|=1U<<11;
     __asm__ volatile("wrmsr"::"a"(low),"d"(high),"c"(0xC0000080U));
-    nx_enabled=true;
+    return true;
 }
 
 static uint64_t read_cr3(void){
@@ -47,9 +47,16 @@ static uint64_t *next_table(uint64_t *table, uint16_t index, bool create,
 
 void vmm_init(void){
     kernel_address_space=read_cr3();
-    enable_nx();
+    nx_enabled=enable_nx_cpu();
     klogf(KLOG_OK,"vmm: kernel cr3=0x%llx nx=%s",kernel_address_space,
           nx_enabled ? "on" : "unsupported");
+}
+
+bool vmm_init_cpu(void){
+    if(!kernel_address_space) return false;
+    if(nx_enabled && !enable_nx_cpu()) return false;
+    vmm_switch_address_space(kernel_address_space);
+    return true;
 }
 
 uint64_t vmm_kernel_address_space(void){ return kernel_address_space; }

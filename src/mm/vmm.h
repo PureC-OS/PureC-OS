@@ -9,6 +9,7 @@
 #define VMM_PAGE_NX       (1ULL<<63)
 
 void vmm_init(void);
+bool vmm_init_cpu(void);
 uint64_t vmm_kernel_address_space(void);
 uint64_t vmm_create_address_space(void);
 void vmm_destroy_address_space(uint64_t address_space);

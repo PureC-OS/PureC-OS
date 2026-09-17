@@ -12,6 +12,8 @@
 #define FPU_STATE_SIZE 512
 
 void fpu_init(void);
+/* Initializes only this CPU; does not change the shared thread template. */
+bool fpu_init_cpu(void);
 bool fpu_available(void);
 // area must be 16-byte aligned, FPU_STATE_SIZE bytes.
 void fpu_thread_init(void *area);

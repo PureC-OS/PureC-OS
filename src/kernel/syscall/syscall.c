@@ -590,6 +590,11 @@ int64_t syscall_handler(struct syscall_regs *r){
             if(!writable(out,sizeof(*out))) return -1;
             return power_battery_get(out) ? 0 : -1;
         }
+        case SYS_THERMAL_INFO: {
+            struct thermal_info *out=(struct thermal_info*)(uintptr_t)a1;
+            if(!writable(out,sizeof(*out))) return -1;
+            return power_thermal_get(out) ? 0 : -1;
+        }
         case SYS_AUDIO_GET_STATUS: {
             struct audio_status *out=(struct audio_status*)(uintptr_t)a1;
             if(!writable(out,sizeof(*out))) return -1;

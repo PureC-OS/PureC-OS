@@ -104,3 +104,19 @@ bool power_battery_get(struct battery_info *out) {
         strncpy(out->status_text, "Unknown (eval failed)", sizeof(out->status_text) - 1);
     return true;
 }
+
+bool power_thermal_get(struct thermal_info *out) {
+    if (!out) return false;
+    memset(out, 0, sizeof(*out));
+    out->temperature_deci_c = (int32_t)0x80000000;
+    struct acpi_thermal_info live;
+    if (!acpi_thermal_get(&live)) return false;
+    out->available = live.available ? 1 : 0;
+    out->thermal_zone_count = live.zone_count;
+    out->fan_count = live.fan_count;
+    out->temperature_deci_c = live.temperature_deci_c;
+    out->fan_rpm = live.fan_rpm;
+    strncpy(out->thermal_zone, live.zone_name, sizeof(out->thermal_zone) - 1);
+    strncpy(out->fan, live.fan_name, sizeof(out->fan) - 1);
+    return true;
+}

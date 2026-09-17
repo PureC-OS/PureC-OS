@@ -15,7 +15,40 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad userspace clean help
+.PHONY: all libraries programs kernel iso hexedit notepad userspace clean help \
+	test test-cpu test-string test-program-alias test-path
+
+HOST_CC ?= cc
+HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
+
+test: test-cpu test-string test-program-alias test-path
+	@echo "All host tests passed"
+
+test-cpu:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/cpu_topology_test.c src/kernel/smp/cpu.c -o $(BIN_DIR)/tests/cpu_topology_test
+	$(BIN_DIR)/tests/cpu_topology_test
+
+test-string:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -fno-builtin \
+		tests/kernel_string_test.c src/lib/string.c -o $(BIN_DIR)/tests/kernel_string_test
+	$(BIN_DIR)/tests/kernel_string_test
+
+test-program-alias:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -fno-builtin \
+		tests/program_alias_test.c src/kernel/process/program_alias.c src/lib/string.c \
+		-o $(BIN_DIR)/tests/program_alias_test
+	$(BIN_DIR)/tests/program_alias_test
+
+test-path:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/path_test.c src/programs/terminal/path.c src/programs/files/path.c \
+		-o $(BIN_DIR)/tests/path_test
+	$(BIN_DIR)/tests/path_test
 
 all: iso
 
@@ -127,9 +160,10 @@ help:
 	@echo "  make notepad        build PureC Notepad"
 	@echo "  make userspace      build Userspace"
 	@echo "  make iso            assemble ISO image"
+	@echo "  make test           run all host tests"
+	@echo "  make test-cpu       run host CPU discovery tests"
 	@echo "  make clean          remove build artefacts"
 	@echo ""
 	@echo "  NOTE: external repos must be fetched first:"
 	@echo "        ./purec.py setup"
 	@echo ""
-

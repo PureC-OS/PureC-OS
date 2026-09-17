@@ -160,3 +160,7 @@ void idt_init(void) {
     idtp.base  = (uint64_t)&idt;
     idt_load((uint64_t)&idtp);
 }
+
+void idt_init_cpu(void) {
+    idt_load((uint64_t)&idtp);
+}
