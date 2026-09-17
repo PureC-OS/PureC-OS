@@ -5,6 +5,7 @@
 #include "../personalization.h"
 #include "../window_manager.h"
 #include "../../kernel/process/process.h"
+#include "../../syscall.h"
 #include "../../kernel/syscall/syscall.h"
 #include "../../lib/string.h"
 
@@ -176,7 +177,7 @@ static void draw_clock(uint32_t sw, uint32_t sh,
 static void draw_battery(uint32_t sw, uint32_t sh,
                          const struct personalization_colors *th) {
     struct battery_info binfo;
-    int32_t rc = (int32_t)do_syscall(SYS_BATTERY_INFO, (uint64_t)&binfo, 0, 0, 0, 0, 0);
+    int32_t rc = (int32_t)userspace_syscall(SYS_BATTERY_INFO, (uint64_t)&binfo, 0, 0);
     if (rc < 0 || !binfo.present) {
         uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
         uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
