@@ -204,22 +204,23 @@ static struct thread *alloc_thread(void){
     return fresh;
 }
 
-void scheduler_free_thread(struct thread *t){
-    if(!t || t->idle) return;
+void scheduler_free_thread_by_id(int tid){
+    if(tid<0) return;
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     struct thread **link=&thread_list;
-    while(*link && *link!=t) link=&(*link)->next;
-    if(*link){
-        *link=t->next;
+    while(*link && ((*link)->id!=(uint32_t)tid
+           || (*link)->state!=THREAD_TERMINATED
+           || (*link)->running_cpu!=-1 || (*link)->idle))
+        link=&(*link)->next;
+    struct thread *victim=*link;
+    if(victim){
+        *link=victim->next;
         thread_live_count--;
         for(unsigned i=0;i<CPU_MAX_COUNT;i++)
-            if(cpu_schedulers[i].cursor==t) cpu_schedulers[i].cursor=NULL;
-    } else {
-        spin_unlock_irqrestore(&runqueue_lock,flags);
-        return;
+            if(cpu_schedulers[i].cursor==victim) cpu_schedulers[i].cursor=NULL;
     }
     spin_unlock_irqrestore(&runqueue_lock,flags);
-    thread_node_free(t);
+    if(victim) thread_node_free(victim);
 }
 
 static int create_thread(void (*entry)(void*), void *arg, const char *name,
