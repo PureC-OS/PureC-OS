@@ -1,4 +1,7 @@
 #include "mmio.h"
+#include "../../kernel/sync/spinlock.h"
+#include "../../kernel/smp/smp.h"
+static spinlock_t mmio_lock=SPINLOCK_INIT;
 #include <stddef.h>
 
 #define PAGE_SIZE                 4096ULL
@@ -138,7 +141,7 @@ bool mmio_is_ready(void){
     return ready;
 }
 
-volatile void *mmio_map(uint64_t physical_address, uint64_t size){
+static volatile void *mmio_map_locked(uint64_t physical_address, uint64_t size){
     if(!ready || !physical_address || !size) return NULL;
     if(physical_address+size<physical_address) return NULL;
 
@@ -174,4 +177,12 @@ volatile void *mmio_map(uint64_t physical_address, uint64_t size){
     regions[region_count].size=mapping_size;
     region_count++;
     return (volatile void*)(uintptr_t)(virtual_base+page_offset);
+}
+
+volatile void *mmio_map(uint64_t physical_address,uint64_t size){
+    uint64_t flags=spin_lock_irqsave(&mmio_lock);
+    volatile void *result=mmio_map_locked(physical_address,size);
+    smp_tlb_shootdown();
+    spin_unlock_irqrestore(&mmio_lock,flags);
+    return result;
 }

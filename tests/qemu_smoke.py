@@ -15,6 +15,9 @@ from pathlib import Path
 FAILURE_MARKERS = (
     "[EARLY PANIC]",
     "KERNEL PANIC",
+    "Kernel Panic",
+    "smp selftest",
+    "=FAIL",
     "Triple fault",
 )
 
@@ -22,7 +25,7 @@ FAILURE_MARKERS = (
 def arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--iso", required=True, type=Path)
-    parser.add_argument("--cpus", type=int, choices=(1, 2, 4), default=1)
+    parser.add_argument("--cpus", type=int, choices=(1, 2, 4, 6, 8, 16), default=1)
     parser.add_argument("--timeout", type=int, default=240)
     parser.add_argument("--log", type=Path)
     return parser.parse_args()
@@ -38,23 +41,13 @@ def required_patterns(cpus: int) -> list[tuple[str, re.Pattern[str]]]:
         ),
         ("scheduler start", re.compile(r"\[SCHED\] start")),
     ]
-    if cpus == 1:
-        patterns.append(("single-core scheduler", re.compile(r"sched: active cores=1")))
-    else:
-        patterns.extend(
-            (
-                (
-                    "application processor online",
-                    re.compile(r"smp: cpu1 lapic_id=\d+ idle; online=2"),
-                ),
-                (
-                    "BSP-only scheduler guard",
-                    re.compile(
-                        rf"sched: 2 of {cpus} CPUs online; scheduler remains BSP-only"
-                    ),
-                ),
-            )
-        )
+    patterns.append(("parallel scheduler", re.compile(
+        rf"sched: {cpus} CPUs online; enabling parallel scheduling")))
+    patterns.append(("SMP stress test", re.compile(
+        rf"smp-test: PASS participants=0x{(1 << cpus)-1:x} allocations={cpus*8}\b")))
+    for cpu in range(1, cpus):
+        patterns.append((f"CPU {cpu} ready", re.compile(
+            rf"smp: cpu{cpu} lapic=\d+ ready \(HLT\)")))
     return patterns
 
 

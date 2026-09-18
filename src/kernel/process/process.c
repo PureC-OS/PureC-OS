@@ -1,6 +1,9 @@
+#include "../sync/mutex.h"
+static mutex_t process_mutex;
 #include "process.h"
 #include "elf.h"
 #include "scheduler.h"
+#include "../../drivers/interrupts/timer.h"
 #include "../syscall/syscall.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
@@ -86,6 +89,7 @@ static struct process *allocate_process(void){
         if(processes[index].state==PROCESS_FREE){
             struct process *process=&processes[index];
             memset(process,0,sizeof(*process));
+            process->state=PROCESS_LOADING;
             process->waiter_thread_id=-1;
             for(uint32_t fd=0;fd<PROCESS_FD_COUNT;fd++) process->descriptors[fd]=-1;
             process->descriptors[0]=VFS_FD_STDIN;
@@ -99,7 +103,10 @@ static struct process *allocate_process(void){
 
 static void user_process_entry(void *argument){
     struct process *process=(struct process*)argument;
+    mutex_lock(&process_mutex);
     process->state=PROCESS_RUNNING;
+    mutex_unlock(&process_mutex);
+    scheduler_leave_kernel();
     arch_enter_user(process->entry,process->user_stack_top);
 }
 
@@ -111,11 +118,12 @@ void process_init(void){
 
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line){
+    MUTEX_SCOPE(&process_mutex);
     struct process *parent=process_current();
     struct process *process=allocate_process();
     if(!process) return -1;
     process->address_space=vmm_create_address_space();
-    if(!process->address_space) return -1;
+    if(!process->address_space){ process->state=PROCESS_FREE; return -1; }
     struct elf_load_result loaded;
     if(!elf_load_user_image(image,image_size,process->address_space,&loaded)){
         vmm_destroy_address_space(process->address_space);
@@ -174,6 +182,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
 }
 
 int32_t process_spawn_module(const char *path, const char *command_line){
+    MUTEX_SCOPE(&process_mutex);
     const void *image=NULL;
     uint64_t size=0;
     const char *module_path=path;
@@ -220,33 +229,33 @@ int32_t process_spawn_module(const char *path, const char *command_line){
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
     if(!pid) return -1;
     for(;;){
-        struct process *target=0;
-        for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
-            if(processes[index].state!=PROCESS_FREE
-               && processes[index].pid==pid){
-                target=&processes[index];
-                break;
+        bool exiting=false;
+        {
+            MUTEX_SCOPE(&process_mutex);
+            struct process *target=NULL;
+            for(unsigned index=0;index<PROCESS_MAX_COUNT;index++){
+                if(processes[index].state!=PROCESS_FREE && processes[index].pid==pid){
+                    target=&processes[index]; break;
+                }
             }
+            if(!target) return -1;
+            int32_t caller=process_current_pid();
+            if(caller>0 && target->parent_pid!=(uint32_t)caller) return -1;
+            if(target->state==PROCESS_EXITED && scheduler_thread_stopped(target->thread_id)){
+                if(status) *status=target->exit_code;
+                vmm_destroy_address_space(target->address_space);
+                target->address_space=0;
+                target->state=PROCESS_FREE;
+                return (int32_t)pid;
+            }
+            if(nohang) return 0;
+            int32_t waiter=scheduler_current_tid();
+            if(waiter<0 || (target->waiter_thread_id>=0 && target->waiter_thread_id!=waiter)) return -1;
+            target->waiter_thread_id=waiter;
+            exiting=target->state==PROCESS_EXITED;
         }
-        if(!target) return -1;
-        int32_t caller=process_current_pid();
-        if(caller>0 && target->parent_pid!=(uint32_t)caller) return -1;
-        if(target->state==PROCESS_EXITED){
-            if(status) *status=target->exit_code;
-            vmm_destroy_address_space(target->address_space);
-            target->address_space=0;
-            target->state=PROCESS_FREE;
-            return (int32_t)pid;
-        }
-        if(nohang) return 0;
-        int32_t waiter_thread_id=scheduler_current_tid();
-        if(waiter_thread_id<0) return -1;
-        if(target->waiter_thread_id>=0
-           && target->waiter_thread_id!=waiter_thread_id) return -1;
-        target->waiter_thread_id=waiter_thread_id;
-        /* Waiting must remove the caller from the ready queue. A yielding
-           high-priority parent otherwise starves its lower-priority child. */
-        scheduler_block();
+        if(exiting) scheduler_sleep(1);
+        else scheduler_block(); /* Wake tokens close the unlock/block race. */
     }
 }
 
@@ -276,6 +285,7 @@ uint64_t process_current_address_space(void){
 }
 
 uint64_t process_heap_grow(uint64_t size){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process || !process_current_is_user()) return 0;
     if(!size) return process->heap_break;
@@ -297,6 +307,7 @@ uint64_t process_heap_grow(uint64_t size){
 }
 
 void process_exit_current(int32_t status){
+    mutex_lock(&process_mutex);
     struct process *process=process_current();
     if(process){
         if(process->pid==1) kernel_panic("PID 1 exited");
@@ -315,13 +326,15 @@ void process_exit_current(int32_t status){
         if(process->waiter_thread_id>=0)
             scheduler_unblock(process->waiter_thread_id);
     }
+    mutex_unlock(&process_mutex);
     scheduler_exit();
     __builtin_unreachable();
 }
 
 int32_t process_monitor_list(struct process_monitor_info *entries,
                              uint32_t capacity){
-    uint64_t now=scheduler_total_ticks();
+    MUTEX_SCOPE(&process_mutex);
+    uint64_t now=timer_ticks();
     uint64_t elapsed=now-process_sample_tick;
     uint32_t count=0;
     for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
@@ -354,6 +367,7 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
 }
 
 int32_t process_fd_install(int32_t kernel_descriptor){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process) return kernel_descriptor;
     for(int32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
@@ -366,6 +380,7 @@ int32_t process_fd_install(int32_t kernel_descriptor){
 }
 
 int32_t process_fd_resolve(int32_t descriptor){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process) return descriptor;
     if(descriptor<0 || descriptor>=PROCESS_FD_COUNT) return -1;
@@ -373,6 +388,7 @@ int32_t process_fd_resolve(int32_t descriptor){
 }
 
 int32_t process_fd_close(int32_t descriptor){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process) return vfs_close(descriptor);
     if(descriptor<3 || descriptor>=PROCESS_FD_COUNT
@@ -419,6 +435,7 @@ int32_t process_name(char *buffer, uint32_t capacity){
 
 int32_t process_environment_get(const char *name, char *buffer,
                                 uint32_t capacity){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process || !environment_name_valid(name) || !buffer || !capacity)
         return -1;
@@ -431,6 +448,7 @@ int32_t process_environment_get(const char *name, char *buffer,
 }
 
 int32_t process_environment_set(const char *name, const char *value){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process || !environment_name_valid(name) || !value
        || strlen(value)>=PROCESS_ENVIRONMENT_VALUE_CAPACITY) return -1;
@@ -449,6 +467,7 @@ int32_t process_environment_set(const char *name, const char *value){
 }
 
 int32_t process_environment_unset(const char *name){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process || !environment_name_valid(name)) return -1;
     int32_t slot=environment_find(process,name);
@@ -459,6 +478,7 @@ int32_t process_environment_unset(const char *name){
 
 int32_t process_environment_list(struct process_environment_entry *entries,
                                  uint32_t capacity){
+    MUTEX_SCOPE(&process_mutex);
     struct process *process=process_current();
     if(!process || (!entries && capacity)) return -1;
     uint32_t count=0;
@@ -468,4 +488,15 @@ int32_t process_environment_list(struct process_environment_entry *entries,
         count++;
     }
     return (int32_t)count;
+}
+
+bool process_set_affinity(uint32_t pid, int16_t core){
+    MUTEX_SCOPE(&process_mutex);
+    for(unsigned i=0;i<PROCESS_MAX_COUNT;i++){
+        if(processes[i].pid==pid && (processes[i].state==PROCESS_READY || processes[i].state==PROCESS_RUNNING)){
+            scheduler_set_affinity(processes[i].thread_id,core);
+            return true;
+        }
+    }
+    return false;
 }

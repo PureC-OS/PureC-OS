@@ -537,6 +537,7 @@ void userspace_input_thread(void *arg){
         ps2_mouse_poll();
         block_device_poll_usb_hotplug();
         usb_mouse_poll();
+        mouse_flush_pending();
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();
@@ -607,7 +608,7 @@ void userspace_log_thread(void *arg){
         uint64_t now = timer_ticks();
         if(pending == 0 || (pending < sizeof(persistent_log_buffer)
                             && now - last_flush_tick < 1000)){
-            scheduler_yield();
+            scheduler_sleep(20);
             continue;
         }
         uint64_t remaining = PERSISTENT_LOG_MAX_BYTES - file_size;
@@ -633,7 +634,7 @@ void userspace_log_thread(void *arg){
         file_size += (uint32_t)result;
         pending   = 0;
         last_flush_tick = now;
-        scheduler_yield();
+        scheduler_sleep(20);
     }
 }
 
@@ -642,6 +643,7 @@ void userspace_run(void){
         ps2_mouse_poll();
         block_device_poll_usb_hotplug();
         usb_mouse_poll();
+        mouse_flush_pending();
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();

@@ -5,37 +5,20 @@
 #include "../process/scheduler.h"
 #include "../process/process.h"
 #include "../smp/cpu.h"
+#include "../smp/smp.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
 #include "../../userspace/userspace.h"
 #include "../../net/core/net_service.h"
 
-static void boot_log_pause(void){
-    volatile uint64_t dummy=0;
-    for(uint64_t i=0;i<30000000ULL;i++){
-        __asm__ volatile("pause");
-        dummy+=i;
-    }
-    (void)dummy;
-}
-
 void init_process_start(void){
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT, "about to start init process");
     klog(KLOG_OK, "Booting init process...");
-    boot_log_pause();
 
     scheduler_init();
-    int core_count=scheduler_get_core_count();
-    uint32_t detected_cpu_count=cpu_detected_count();
-    uint32_t online_cpu_count=cpu_online_count();
-    if(online_cpu_count>1){
-        klogf(KLOG_WARN,
-              "sched: %u of %u CPUs online; scheduler remains BSP-only",
-              online_cpu_count,detected_cpu_count);
-    }
-    klogf(KLOG_INFO, "sched: active cores=%d, creating init threads",
-          core_count);
+    klogf(KLOG_INFO,"sched: %u CPUs online; enabling parallel scheduling",
+          cpu_online_count());
 
     int32_t init_pid=process_spawn_module("/bin/init","");
     if(init_pid!=1) kernel_panic("cannot start /bin/init as PID 1");
@@ -52,12 +35,9 @@ void init_process_start(void){
     if(scheduler_create_thread(net_service_thread,0,"net-rx",2,0)<0)
         klog(KLOG_WARN,"net: failed to create polling thread");
     klog(KLOG_OK, "sched: init threads created, starting scheduler");
+    smp_selftest_start();
     serial_write_string("[SCHED] start\n");
     scheduler_start();
 
-    for(;;){
-        ps2_mouse_poll();
-        usb_mouse_poll();
-        scheduler_yield();
-    }
+    scheduler_idle_loop();
 }

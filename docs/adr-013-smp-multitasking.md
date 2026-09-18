@@ -44,11 +44,28 @@ The handoff uses the existing structures in `src/boot/limine.h`, following the
   does not touch shared logging, allocator or process state after its startup
   self-test. On systems with more CPUs, CPU 2 and above remain parked.
 
+## Stage 3a: CPU-local scheduler state
+
+- Each CPU owns its current/idle pointers, initialization/start flags,
+  reschedule flag and tick counters in a cache-line-aligned scheduler slot.
+  Only the BSP initializes the shared thread table; AP slots remain inactive.
+- The current logical CPU is identified through its private kernel GDTR.
+  This works across Ring-3 transitions without introducing GS/swapgs handling.
+  It requires the kernel GDT to be installed before scheduler access.
+- Kernel stack updates now target the executing CPU's TSS. AP startup checks
+  its CPU identity and verifies that it has no current scheduler thread.
+- Selection returns the local idle pointer without prematurely changing its
+  state. The shared runnable table and affinity remain BSP-only.
+- CPU pointers saved in suspended scheduler frames assume no migration.
+  Migration must revisit these frames before threads can move between CPUs.
+- Tick counter accessors describe the executing CPU; all current callers run
+  on the BSP. System-wide aggregation is deferred to AP scheduling.
+
 ## Next stages
 
 1. Protect PCI CF8/CFC transactions and shared PMM, VMM, process, scheduler and
-   VFS state before APs can execute general kernel work. Move `current` and
-   idle state to per-CPU storage and make context switches safe across CPUs.
+   VFS state before APs can execute general kernel work. Make context switches
+   and shared runnable-thread selection safe across CPUs.
 2. Add LAPIC timers, scheduler affinity, migration, reschedule IPIs, real TLB
    shootdown and a way to stop other CPUs during panic. A page-fault retry is
    not sufficient TLB synchronization, especially for unmapping/reusing pages.
@@ -60,6 +77,9 @@ The handoff uses the existing structures in `src/boot/limine.h`, following the
 `make test-cpu` exercises discovery on the host, including absent/malformed
 responses, 1/2/4 CPUs, noncontiguous 32-bit APIC IDs, a BSP beyond the table
 limit, and confirmation that discovery leaves AP handoff fields untouched.
+
+`make test-scheduler-cpu` checks CPU-local current pointers, flags, counters,
+round-robin selection, and local idle fallback using a mocked CPU identity.
 
 After `make iso`, boot QEMU with `-smp 1`, `-smp 2`, and `-smp 4`. For example:
 
@@ -73,3 +93,9 @@ With `-smp 4`, expect the initial inventory to report one online BSP and three
 parked APs, followed by `smp: cpu1 lapic_id=1 idle; online=2` and
 `sched: 2 of 4 CPUs online; scheduler remains BSP-only`. CPU 2 and CPU 3 stay
 parked. The BSP must still reach `[SCHED] start` without a panic.
+
+Stage 3a smoke validation: QEMU TCG with 1, 2 and 4 CPUs reached
+`[SCHED] start` and started init/login/input/keyboard/log/network threads without
+logged panics. The test ISO used the built kernel and a 640x480 Limine mode to
+reduce framebuffer logging overhead. CPU 1 reached isolated idle in the 2/4-CPU
+runs; this validates bring-up and BSP scheduling, not concurrent AP scheduling.

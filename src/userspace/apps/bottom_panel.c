@@ -13,7 +13,9 @@
 #define QUICK_W 32
 #define TASK_W 128
 #define TASK_GAP 4
-#define TRAY_W 76
+#define TRAY_W 124
+#define TRAY_CLOCK_X 8
+#define TRAY_BAT_X 60
 #define MENU_W 248
 #define MENU_ROW_H 26
 #define MENU_FOOTER_ROWS 2
@@ -171,36 +173,57 @@ static void draw_clock(uint32_t sw, uint32_t sh,
     uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
     uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
     display_draw_rect(tx, ty + 3, TRAY_W, 24, th->window);
-    display_draw_text_at(tx + 14, ty + 10, clock, th->text, th->window);
+    display_draw_text_at(tx + TRAY_CLOCK_X, ty + 10, clock, th->text, th->window);
+}
+
+static void format_bat_number(uint32_t p, char *out, uint32_t cap) {
+    if (cap < 4) {
+        if (cap) out[0] = '\0';
+        return;
+    }
+    if (p == BATTERY_PERCENT_UNKNOWN || p > 100) {
+        if (p > 100 && p != BATTERY_PERCENT_UNKNOWN) p = 100;
+        if (p == BATTERY_PERCENT_UNKNOWN) {
+            out[0] = '?'; out[1] = '?'; out[2] = '?'; out[3] = '\0';
+            return;
+        }
+    }
+    if (p >= 100) {
+        out[0] = '1'; out[1] = '0'; out[2] = '0'; out[3] = '\0';
+    } else if (p >= 10) {
+        out[0] = (char)('0' + (p / 10));
+        out[1] = (char)('0' + (p % 10));
+        out[2] = '\0';
+    } else {
+        out[0] = (char)('0' + p);
+        out[1] = '\0';
+    }
 }
 
 static void draw_battery(uint32_t sw, uint32_t sh,
                          const struct personalization_colors *th) {
+    uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
+    uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
+    uint32_t bx = tx + TRAY_BAT_X;
+    uint32_t bw = (TRAY_W > TRAY_BAT_X + 6) ? (TRAY_W - TRAY_BAT_X - 6) : 24;
+    // Clear only battery field so clock digits are never overwritten.
+    display_draw_rect(bx, ty + 3, bw, 20, th->window);
     struct battery_info binfo;
     int32_t rc = (int32_t)userspace_syscall(SYS_BATTERY_INFO, (uint64_t)&binfo, 0, 0);
     if (rc < 0 || !binfo.present) {
-        uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
-        uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
-        display_draw_rect(tx + 14, ty + 3, 30, 20, th->window);
-        display_draw_text_at(tx + 14, ty + 10, "--%", th->muted_text, th->window);
+        display_draw_text_at(bx + 4, ty + 10, "--%", th->muted_text, th->window);
         return;
     }
-    char bat_str[8];
-    uint32_t p = binfo.percent;
-    if (p == BATTERY_PERCENT_UNKNOWN) {
-        strncpy(bat_str, "???", sizeof(bat_str));
-    } else {
-        bat_str[0] = (char)('0' + (p / 10));
-        bat_str[1] = (char)('0' + (p % 10));
-        bat_str[2] = '\0';
-    }
-    uint32_t tx = sw > TRAY_W + 8 ? sw - TRAY_W - 4 : 4;
-    uint32_t ty = sh > BOTTOM_PANEL_HEIGHT ? sh - BOTTOM_PANEL_HEIGHT : 0;
-    display_draw_rect(tx + 44, ty + 3, 24, 20, th->window);
-    display_draw_text_at(tx + 44, ty + 10, bat_str, th->text, th->window);
-    display_draw_text_at(tx + 68, ty + 10, "%", th->text, th->window);
+    char bat_num[5];
+    format_bat_number(binfo.percent, bat_num, sizeof(bat_num));
+    uint32_t num_len = (uint32_t)strlen(bat_num);
+    uint32_t x = bx + 4;
+    display_draw_text_at(x, ty + 10, bat_num, th->text, th->window);
+    x += num_len * 8;
+    display_draw_text_at(x, ty + 10, "%", th->text, th->window);
+    x += 8;
     if (binfo.charging) {
-        display_draw_text_at(tx + 74, ty + 10, "^", th->accent, th->window);
+        display_draw_text_at(x + 2, ty + 10, "^", th->accent, th->window);
     }
 }
 

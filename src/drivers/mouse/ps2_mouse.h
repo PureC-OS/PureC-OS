@@ -26,6 +26,7 @@ void ps2_mouse_init(void);
 void ps2_mouse_handler(void);
 void ps2_mouse_poll(void);
 void mouse_redraw(void);
+void mouse_flush_pending(void);
 void mouse_begin_framebuffer_update(void);
 void mouse_end_framebuffer_update(void);
 void mouse_end_framebuffer_update_keep(void);

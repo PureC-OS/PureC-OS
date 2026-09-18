@@ -219,8 +219,10 @@ int64_t syscall_handler(struct syscall_regs *r){
             const struct gui_window_request *request=
                 (const struct gui_window_request*)(uintptr_t)a1;
             if(!readable(request,sizeof(*request))) return -1;
-            return window_manager_register((uint32_t)process_current_pid(),
-                                            request) ? 0 : -1;
+            if(!window_manager_register((uint32_t)process_current_pid(),
+                                        request)) return -1;
+            scheduler_set_affinity(scheduler_current_tid(),0);
+            return 0;
         }
         case SYS_GUI_WINDOW_UPDATE: {
             const struct gui_window_request *request=
@@ -681,7 +683,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             install_job.state=1;
             install_progress(1,"Starting installer worker");
             if(scheduler_create_thread(install_worker,0,"installer-io",
-                                       INSTALL_WORKER_PRIORITY,-1)<0){
+                                       INSTALL_WORKER_PRIORITY,0)<0){
                 install_job.state=3;
                 install_job.result=-1;
                 install_progress(100,"Cannot start installer worker");
@@ -700,7 +702,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             install_fs_type = req->fs_type <= FS_TYPE_EXT2 ? req->fs_type : FS_TYPE_FAT32;
             install_job.state=1;
             install_progress(1,"Starting installer worker");
-            if(scheduler_create_thread(install_worker,0,"installer-io",INSTALL_WORKER_PRIORITY,-1)<0){
+            if(scheduler_create_thread(install_worker,0,"installer-io",INSTALL_WORKER_PRIORITY,0)<0){
                 install_job.state=3; install_job.result=-1;
                 install_progress(100,"Cannot start installer worker");
                 return -1;

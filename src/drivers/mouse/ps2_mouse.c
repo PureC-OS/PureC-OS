@@ -71,6 +71,7 @@ static bool first_draw=true;
 static bool packet_seen=false;
 static volatile uint32_t framebuffer_update_depth;
 static volatile struct mouse_debug_state debug_state;
+static volatile bool mouse_ui_pending;
 
 #define CURS_W 32
 #define CURS_H 32
@@ -145,7 +146,11 @@ void mouse_set_bounds(int32_t w,int32_t h){
 }
 
 struct mouse_state mouse_get_state(void){
-    return state;
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    struct mouse_state snapshot=state;
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    return snapshot;
 }
 struct mouse_debug_state mouse_get_debug_state(void){
     return *(const struct mouse_debug_state *)&debug_state;
@@ -168,6 +173,15 @@ void mouse_redraw(void){
     mouse_begin_framebuffer_update();
     if(debug_overlay_enabled) draw_debug_overlay();
     mouse_end_framebuffer_update();
+}
+
+void mouse_flush_pending(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    bool pending=mouse_ui_pending;
+    mouse_ui_pending=false;
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    if(pending) refresh_mouse_ui();
 }
 
 void mouse_begin_framebuffer_update(void){
@@ -317,7 +331,7 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy){
     if(state.y>=bound_h) state.y=bound_h-1;
     state.buttons=buttons&0x07;
     state.has_data=true;
-    refresh_mouse_ui();
+    mouse_ui_pending=true;
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
 

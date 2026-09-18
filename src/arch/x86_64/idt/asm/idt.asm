@@ -65,10 +65,13 @@ isr_common:
     mov rcx, [rsp + 18*8]      ; cs
     mov r8,  [rsp + 19*8]      ; rflags
     mov r9, rsp                 ; regs pointer (r15 at top)
-    ; align stack
-    sub rsp, 8
+    ; Interrupted RSP is arbitrary. Preserve the register-frame pointer in a
+    ; callee-saved register, then align the C call for the SysV ABI.
+    mov rbx, rsp
+    and rsp, -16
+    cld
     call isr_handler
-    add rsp, 8
+    mov rsp, rbx
     pop r15
     pop r14
     pop r13

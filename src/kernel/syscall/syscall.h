@@ -307,8 +307,6 @@ struct battery_info {
     char status_text[32];
 };
 
-/* ACPI firmware telemetry. temperature_deci_c is tenths of a Celsius degree.
- * A value of INT32_MIN means that no _TMP method could be evaluated. */
 struct thermal_info {
     uint32_t available;
     uint32_t thermal_zone_count;

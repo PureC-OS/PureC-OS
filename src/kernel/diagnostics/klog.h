@@ -44,3 +44,5 @@ uint64_t klog_total_bytes(void);
 #define KLOG_ERROR_FG  0xF38BA8
 #define KLOG_DEBUG_FG  0x6C7086
 #define KLOG_TIME_FG   0x9399B2
+
+void klog_panic_mode(void);

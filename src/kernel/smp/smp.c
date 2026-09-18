@@ -1,5 +1,11 @@
 #include "smp.h"
 #include "cpu.h"
+#include "lapic.h"
+#include "../sync/spinlock.h"
+#include "../diagnostics/klog.h"
+#include "../diagnostics/panic.h"
+#include "../../drivers/interrupts/timer.h"
+#include "../process/scheduler.h"
 #include "../../boot/limine.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../arch/x86_64/idt/include/idt.h"
@@ -24,6 +30,14 @@ _Static_assert(offsetof(struct ap_boot_context, stack_top) == 0,
                "AP entry stack offset changed");
 _Static_assert(offsetof(struct limine_smp_info, extra_argument) == 24,
                "Limine SMP ABI changed");
+
+static bool scheduler_released;
+static uint32_t stop_mask;
+static uint32_t stopped_mask;
+static uint64_t tlb_request[CPU_MAX_COUNT];
+static uint64_t tlb_ack[CPU_MAX_COUNT];
+static spinlock_t tlb_lock = SPINLOCK_INIT;
+static uint64_t tlb_generation;
 
 extern void smp_ap_entry(struct limine_smp_info *info);
 
@@ -81,18 +95,30 @@ void smp_ap_main(struct ap_boot_context *context,
         cpu_fail(id);
         for(;;) __asm__ volatile("cli; hlt");
     }
+    if(gdt_current_cpu_id() != id || scheduler_current_thread() != NULL){
+        cpu_fail(id);
+        for(;;) __asm__ volatile("cli; hlt");
+    }
     idt_init_cpu();
     if(!fpu_init_cpu()){
         cpu_fail(id);
         for(;;) __asm__ volatile("cli; hlt");
     }
 
-    __asm__ volatile("int3");
+    if(!lapic_init_cpu()){
+        cpu_fail(id);
+        for(;;) __asm__ volatile("cli; hlt");
+    }
+    scheduler_init_cpu();
     if(!cpu_publish_idle(id)){
         for(;;) __asm__ volatile("cli; hlt");
     }
 
-    for(;;) __asm__ volatile("cli; hlt");
+    while(!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE))
+        __asm__ volatile("sti; hlt; cli" ::: "memory");
+    lapic_start_timer();
+    scheduler_start();
+    scheduler_idle_loop();
 }
 
 bool smp_start_cpu(struct limine_smp_response *response,
@@ -127,4 +153,89 @@ bool smp_start_cpu(struct limine_smp_response *response,
     if(!cpu_timeout_start(logical_id))
         return cpu_get_state(logical_id) == CPU_IDLE;
     return false;
+}
+
+
+void smp_start_all(struct limine_smp_response *response){
+    if(!lapic_init()){
+        klog(KLOG_WARN, "smp: LAPIC unavailable; BSP scheduling only");
+        return;
+    }
+    for(uint32_t id=1; id<cpu_registered_count(); id++){
+        bool ok=smp_start_cpu(response,id,1000);
+        klogf(ok ? KLOG_OK : KLOG_WARN,
+              "smp: cpu%u lapic=%u %s state=%u",id,cpu_get_info(id)->lapic_id,
+              ok ? "ready (HLT)" : "startup failed",(uint32_t)cpu_get_state(id));
+    }
+}
+void smp_release_scheduler(void){
+    __atomic_store_n(&scheduler_released,true,__ATOMIC_RELEASE);
+    for(uint32_t id=1;id<cpu_registered_count();id++)
+        if(cpu_is_online(id)) (void)lapic_send(id,SMP_RESCHEDULE_VECTOR);
+}
+void smp_reschedule_cpu(uint32_t id){
+    if(id!=gdt_current_cpu_id() && (scheduler_active_mask()&(1U<<id)))
+        (void)lapic_send(id,SMP_RESCHEDULE_VECTOR);
+}
+void smp_reschedule_all(void){
+    for(uint32_t id=0;id<cpu_registered_count();id++) smp_reschedule_cpu(id);
+}
+
+static void flush_local_tlb(void){
+    /* Include global translations, and work independently of current CR3.
+       This kernel does not enable PCID. No allocation or locks in NMI. */
+    uint64_t cr4,cr3;
+    __asm__ volatile("mov %%cr4,%0; mov %%cr3,%1":"=r"(cr4),"=r"(cr3));
+    if(cr4&(1ULL<<7)){
+        __asm__ volatile("mov %0,%%cr4; mov %1,%%cr4"::"r"(cr4&~(1ULL<<7)),"r"(cr4):"memory");
+    } else __asm__ volatile("mov %0,%%cr3"::"r"(cr3):"memory");
+}
+bool smp_handle_nmi(void){
+    uint32_t id=gdt_current_cpu_id();
+    if(id>=CPU_MAX_COUNT) return false;
+    if(__atomic_load_n(&stop_mask,__ATOMIC_ACQUIRE)&(1U<<id)){
+        __atomic_fetch_or(&stopped_mask,1U<<id,__ATOMIC_RELEASE);
+        for(;;) __asm__ volatile("cli; hlt");
+    }
+    uint64_t request=__atomic_load_n(&tlb_request[id],__ATOMIC_ACQUIRE);
+    if(request!=__atomic_load_n(&tlb_ack[id],__ATOMIC_RELAXED)){
+        flush_local_tlb();
+        __atomic_store_n(&tlb_ack[id],request,__ATOMIC_RELEASE);
+    }
+    /* A delayed/coalesced shootdown NMI is harmless. */
+    return request!=0;
+}
+void smp_tlb_shootdown(void){
+    uint64_t flags=spin_lock_irqsave(&tlb_lock);
+    uint64_t generation=++tlb_generation;
+    uint32_t self=gdt_current_cpu_id(), targets=0;
+    flush_local_tlb();
+    for(uint32_t id=0;id<cpu_registered_count();id++){
+        if(id==self || !cpu_is_online(id)) continue;
+        targets|=1U<<id;
+        __atomic_store_n(&tlb_request[id],generation,__ATOMIC_RELEASE);
+        if(!lapic_send(id,4U<<8)) kernel_panic("smp: TLB IPI send failed");
+    }
+    uint64_t start=timer_ticks();
+    for(uint32_t id=0;id<cpu_registered_count();id++){
+        if(!(targets&(1U<<id))) continue;
+        while(__atomic_load_n(&tlb_ack[id],__ATOMIC_ACQUIRE)!=generation){
+            if(timer_ticks()-start>1000) kernel_panic("smp: TLB acknowledgement timeout");
+            __asm__ volatile("pause");
+        }
+    }
+    spin_unlock_irqrestore(&tlb_lock,flags);
+}
+void smp_stop_others(void){
+    uint32_t self=gdt_current_cpu_id(), mask=0;
+    for(uint32_t id=0;id<cpu_registered_count();id++)
+        if(id!=self && cpu_is_online(id)) mask|=1U<<id;
+    __atomic_fetch_or(&stop_mask,mask,__ATOMIC_RELEASE);
+    for(uint32_t id=0;id<cpu_registered_count();id++)
+        if(mask&(1U<<id)) (void)lapic_send(id,4U<<8);
+    uint64_t start=timer_ticks();
+    while((__atomic_load_n(&stopped_mask,__ATOMIC_ACQUIRE)&mask)!=mask){
+        if(timer_ticks()-start>100) break;
+        __asm__ volatile("pause");
+    }
 }

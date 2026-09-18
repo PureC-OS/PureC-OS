@@ -1,4 +1,6 @@
 #include "klog.h"
+#include "../sync/spinlock.h"
+#include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/vga.h"
 #include "../../drivers/serial/serial.h"
@@ -7,13 +9,28 @@
 #include <stdbool.h>
 #include <stdarg.h>
 
+static spinlock_t log_lock = SPINLOCK_INIT;
+static bool panic_output;
+struct log_guard { uint64_t flags; bool locked; };
+static struct log_guard log_enter(void){
+    struct log_guard guard={irq_save(),!__atomic_load_n(&panic_output,__ATOMIC_ACQUIRE)};
+    if(guard.locked) spin_lock(&log_lock);
+    return guard;
+}
+static void log_leave(struct log_guard *guard){
+    if(guard->locked) spin_unlock(&log_lock);
+    irq_restore(guard->flags);
+}
+#define LOG_SCOPE struct log_guard guard __attribute__((cleanup(log_leave))) = log_enter()
+void klog_panic_mode(void){ __atomic_store_n(&panic_output,true,__ATOMIC_RELEASE); }
+
 #define KLOG_RING_SIZE (8 * 1024 * 1024)
 
 static char klog_ring[KLOG_RING_SIZE];
 static volatile uint64_t klog_ring_pos = 0;
 static bool klog_ring_wrapped = false;
 static bool klog_verbose = true;
-static bool klog_screen_enabled = true; // если false, логи идут только в serial+ring, не на экран (для userspace)
+static bool klog_screen_enabled = true;
 static bool klog_inited = false;
 static uint64_t klog_boot_tsc = 0;
 
@@ -136,6 +153,11 @@ static void klog_print_level(enum klog_level lvl){
 static void klog_emit_prefix(enum klog_level lvl){
     klog_print_timestamp();
     klog_print_level(lvl);
+    klog_puts_raw("[cpu");
+    uint32_t id=gdt_current_cpu_id();
+    if(id==UINT32_MAX) klog_putc_raw('?');
+    else klog_put_dec_unsigned(id);
+    klog_puts_raw("] ");
 }
 
 void klog_init(void){
@@ -184,12 +206,14 @@ void klog_clear(void){
 }
 
 void klog_raw(const char *s){
+    LOG_SCOPE;
     if(!s) return;
     if(gop_is_available()) gop_set_color(KLOG_FG, KLOG_BG);
     while(*s) klog_putc_raw(*s++);
 }
 
 void klog(enum klog_level lvl, const char *msg){
+    LOG_SCOPE;
     if(!msg) return;
     if(lvl==KLOG_DEBUG && !klog_verbose) return;
     size_t mlen = strlen(msg);
@@ -296,6 +320,7 @@ static void klog_vprintf_internal(const char *fmt, va_list ap){
 }
 
 void klogf(enum klog_level lvl, const char *fmt, ...){
+    LOG_SCOPE;
     if(lvl==KLOG_DEBUG && !klog_verbose) return;
     klog_emit_prefix(lvl);
     va_list ap;
@@ -312,6 +337,7 @@ void klogf(enum klog_level lvl, const char *fmt, ...){
 }
 
 void klog_vf(enum klog_level lvl, const char *fmt, va_list ap){
+    LOG_SCOPE;
     if(lvl==KLOG_DEBUG && !klog_verbose) return;
     klog_emit_prefix(lvl);
     klog_vprintf_internal(fmt, ap);
@@ -324,6 +350,7 @@ void klog_vf(enum klog_level lvl, const char *fmt, va_list ap){
 }
 
 void kprintf(const char *fmt, ...){
+    LOG_SCOPE;
     va_list ap;
     va_start(ap, fmt);
     klog_vprintf_internal(fmt, ap);
@@ -331,6 +358,7 @@ void kprintf(const char *fmt, ...){
 }
 
 void kvprintf(const char *fmt, va_list ap){
+    LOG_SCOPE;
     klog_vprintf_internal(fmt, ap);
 }
 
@@ -387,6 +415,7 @@ void klog_dump_with(void (*cb)(char c)){
 
 uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
                          bool *data_lost){
+    LOG_SCOPE;
     if(data_lost) *data_lost=false;
     if(!cursor || !buffer || capacity==0) return 0;
     uint64_t snapshot_pos=klog_ring_pos;
@@ -407,5 +436,6 @@ uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
 }
 
 uint64_t klog_total_bytes(void){
+    LOG_SCOPE;
     return klog_ring_pos;
 }

@@ -4,6 +4,7 @@
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
 #include "../../drivers/interrupts/timer.h"
+#include "../../kernel/process/scheduler.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -340,24 +341,38 @@ static void gop_present_nolock(void);
 void gop_present(void){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    bool preempt_guard=scheduler_preempt_disable();
+    struct thread *thread=scheduler_current_thread();
+    bool service_irqs=(flags&(1ULL<<9))
+        || (preempt_guard && thread && thread->user_mode);
     if(!present_deferred){
         uint64_t now = timer_ticks();
         if(last_present_tick==0 || now-last_present_tick
             >= GOP_PRESENT_MIN_INTERVAL_TICKS){
+            if(service_irqs) __asm__ volatile("sti":::"memory");
             gop_present_nolock();
+            if(service_irqs) __asm__ volatile("cli":::"memory");
             last_present_tick = now ? now : 1;
         }
     }
+    if(preempt_guard) scheduler_preempt_enable();
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
 
 void gop_present_forced(void){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    bool preempt_guard=scheduler_preempt_disable();
+    struct thread *thread=scheduler_current_thread();
+    bool service_irqs=(flags&(1ULL<<9))
+        || (preempt_guard && thread && thread->user_mode);
+    if(service_irqs) __asm__ volatile("sti":::"memory");
     gop_present_nolock();
+    if(service_irqs) __asm__ volatile("cli":::"memory");
     uint64_t now = timer_ticks();
     last_present_tick = now ? now : 1;
     present_deferred = false;
+    if(preempt_guard) scheduler_preempt_enable();
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
 
