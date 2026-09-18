@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PROCESS_MAX_COUNT 16
+#define PROCESS_MAX_COUNT 64
 #define PROCESS_FD_COUNT 32
 #define PROCESS_COMMAND_LINE_CAPACITY 256
 #define PROCESS_ENVIRONMENT_COUNT 16

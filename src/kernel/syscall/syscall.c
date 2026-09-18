@@ -571,7 +571,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             return 0;
         }
         case SYS_PROCESS_LIST: {
-            if(a2>PROCESS_MAX_COUNT) return -1;
+            if(a2>1024) return -1;
             struct process_monitor_info *entries=
                 (struct process_monitor_info*)(uintptr_t)a1;
             if(a2 && !writable(entries,a2*sizeof(*entries))) return -1;
