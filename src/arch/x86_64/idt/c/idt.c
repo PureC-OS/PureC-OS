@@ -8,6 +8,10 @@
 #include "../../../../kernel/process/process.h"
 #include "../../../../kernel/diagnostics/klog.h"
 #include <stdint.h>
+#include "../../../../kernel/smp/smp.h"
+#include "../../../../kernel/smp/lapic.h"
+#include "../../../../kernel/smp/cpu.h"
+#include "../../gdt/include/gdt.h"
 
 struct idt_entry {
     uint16_t offset_low;
@@ -26,6 +30,8 @@ struct idt_ptr {
 
 static struct idt_entry idt[256];
 static struct idt_ptr idtp;
+static struct idt_entry ap_idt[CPU_MAX_COUNT][256] __attribute__((aligned(16)));
+static struct idt_ptr ap_idtp[CPU_MAX_COUNT];
 
 extern void *isr_stub_table[256];
 extern void idt_load(uint64_t);
@@ -102,9 +108,19 @@ void idt_mask_irq(uint8_t irq){
 extern void ps2_mouse_handler(void);
 
 void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint64_t rflags, struct isr_regs *regs) {
+    if(vector==2 && smp_handle_nmi()) return;
+    if(vector==SMP_SPURIOUS_VECTOR) return;
+    if(vector==SMP_RESCHEDULE_VECTOR || vector==SMP_TIMER_VECTOR){
+        lapic_eoi();
+        if(vector==SMP_TIMER_VECTOR) scheduler_on_timer_interrupt();
+        else scheduler_on_reschedule_interrupt();
+        return;
+    }
     if (vector == 0x80) {
+        scheduler_enter_kernel();
         int64_t ret = syscall_handler((struct syscall_regs*)regs);
         regs->rax = (uint64_t)ret;
+        scheduler_leave_kernel();
         return;
     }
     if (vector == 44) { // IRQ12 mouse
@@ -135,6 +151,7 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     uint64_t cr2 = 0;
     if(vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
     if((cs&3)==3 && process_current_is_user()){
+        scheduler_enter_kernel();
         klogf(KLOG_ERROR,
               "process: pid=%d exception=%u rip=0x%llx cr2=0x%llx",
               process_current_pid(),(uint32_t)vector,rip,cr2);
@@ -162,5 +179,10 @@ void idt_init(void) {
 }
 
 void idt_init_cpu(void) {
-    idt_load((uint64_t)&idtp);
+    uint32_t id=gdt_current_cpu_id();
+    if(id==0 || id>=CPU_MAX_COUNT){ idt_load((uint64_t)&idtp); return; }
+    for(unsigned n=0;n<256;n++) ap_idt[id][n]=idt[n];
+    ap_idtp[id].limit=sizeof(ap_idt[id])-1;
+    ap_idtp[id].base=(uint64_t)ap_idt[id];
+    idt_load((uint64_t)&ap_idtp[id]);
 }

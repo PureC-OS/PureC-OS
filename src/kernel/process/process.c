@@ -1,6 +1,7 @@
 #include "process.h"
 #include "elf.h"
 #include "scheduler.h"
+#include "../../drivers/interrupts/timer.h"
 #include "../syscall/syscall.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
@@ -100,6 +101,7 @@ static struct process *allocate_process(void){
 static void user_process_entry(void *argument){
     struct process *process=(struct process*)argument;
     process->state=PROCESS_RUNNING;
+    scheduler_leave_kernel();
     arch_enter_user(process->entry,process->user_stack_top);
 }
 
@@ -231,7 +233,7 @@ int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
         if(!target) return -1;
         int32_t caller=process_current_pid();
         if(caller>0 && target->parent_pid!=(uint32_t)caller) return -1;
-        if(target->state==PROCESS_EXITED){
+        if(target->state==PROCESS_EXITED && scheduler_thread_stopped(target->thread_id)){
             if(status) *status=target->exit_code;
             vmm_destroy_address_space(target->address_space);
             target->address_space=0;
@@ -321,7 +323,7 @@ void process_exit_current(int32_t status){
 
 int32_t process_monitor_list(struct process_monitor_info *entries,
                              uint32_t capacity){
-    uint64_t now=scheduler_total_ticks();
+    uint64_t now=timer_ticks();
     uint64_t elapsed=now-process_sample_tick;
     uint32_t count=0;
     for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){

@@ -13,7 +13,7 @@ static char klog_ring[KLOG_RING_SIZE];
 static volatile uint64_t klog_ring_pos = 0;
 static bool klog_ring_wrapped = false;
 static bool klog_verbose = true;
-static bool klog_screen_enabled = true; // если false, логи идут только в serial+ring, не на экран (для userspace)
+static bool klog_screen_enabled = true;
 static bool klog_inited = false;
 static uint64_t klog_boot_tsc = 0;
 

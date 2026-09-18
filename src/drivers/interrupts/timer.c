@@ -1,4 +1,5 @@
 #include "timer.h"
+#include "../../kernel/process/scheduler.h"
 
 #include "../../kernel/diagnostics/klog.h"
 
@@ -80,19 +81,24 @@ void timer_tick(void){ tick_count++; }
 
 void timer_sleep(uint32_t milliseconds){
     if(!milliseconds) return;
-    uint64_t start=tsc_milliseconds();
-    uint64_t deadline=start+milliseconds;
-    if(deadline<start) deadline=UINT64_MAX;
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0":"=r"(flags));
-    while(tsc_milliseconds()<deadline){
-        uint64_t before=read_tsc();
-        __asm__ volatile("sti; pause":::"memory");
-        idle_tsc+=read_tsc()-before;
+    struct thread *thread=scheduler_current_thread();
+    if((flags&(1ULL<<9)) && scheduler_is_running() && thread && !thread->idle){
+        scheduler_sleep(milliseconds);
+        return;
     }
-    if(!(flags&(1ULL<<9))) __asm__ volatile("cli":::"memory");
+    uint64_t start=tsc_milliseconds();
+    while(tsc_milliseconds()-start<milliseconds){
+        uint64_t before=read_tsc();
+        /* Never enable IRQs inside a caller's critical section. Before the
+           scheduler starts, the configured PIT still wakes interruptible HLT. */
+        if(flags&(1ULL<<9)) __asm__ volatile("hlt":::"memory");
+        else __asm__ volatile("pause":::"memory");
+        __atomic_fetch_add(&idle_tsc,read_tsc()-before,__ATOMIC_RELAXED);
+    }
 }
 
 uint64_t timer_ticks(void){ return tsc_milliseconds(); }
 
-uint64_t timer_idle_tsc(void){ return idle_tsc; }
+uint64_t timer_idle_tsc(void){ return __atomic_load_n(&idle_tsc,__ATOMIC_RELAXED); }

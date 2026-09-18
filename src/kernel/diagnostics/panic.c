@@ -1,4 +1,5 @@
 #include "panic.h"
+#include "../smp/smp.h"
 #include "boot_diag.h"
 #include "klog.h"
 #include "../../drivers/display/gop.h"
@@ -37,6 +38,7 @@ static void panic_header(const char *title) {
     __asm__ volatile("cli");
     if (panic_active) panic_halt();
     panic_active = true;
+    smp_stop_others();
     gop_cancel_compose();
     klog_set_screen_enabled(true);
     klog_clear();

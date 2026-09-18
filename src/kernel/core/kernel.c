@@ -48,17 +48,6 @@ void kernel_main(struct limine_framebuffer *fb) {
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
     vmm_init();
     fpu_init();
-    if(cpu_registered_count()>1){
-        klog(KLOG_INFO, "smp: releasing cpu1 into isolated idle");
-        if(smp_start_cpu(smp_response_ptr,1,1000)){
-            const struct cpu_info *ap=cpu_get_info(1);
-            klogf(KLOG_OK,"smp: cpu1 lapic_id=%u idle; online=%u",
-                  ap ? ap->lapic_id : 0,cpu_online_count());
-        } else {
-            klogf(KLOG_WARN,"smp: cpu1 failed to reach idle (state=%u); continuing on BSP",
-                  (uint32_t)cpu_get_state(1));
-        }
-    }
     power_init(); // ACPI tables + _S5/ResetReg discovery (needs only HHDM+RSDP)
     process_init();
 
@@ -75,6 +64,7 @@ void kernel_main(struct limine_framebuffer *fb) {
     } else {
         klog(KLOG_WARN, "PCI MMIO mapper unavailable; AHCI/xHCI/EHCI disabled");
     }
+    smp_start_all(smp_response_ptr);
     syscall_init();
     klog(KLOG_OK, "Syscall int 0x80 ready");
     (void)net_service_init();

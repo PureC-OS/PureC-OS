@@ -1,4 +1,12 @@
 #include "pmm.h"
+#include "../kernel/sync/spinlock.h"
+static spinlock_t pmm_lock = SPINLOCK_INIT;
+static uint64_t pmm_allocate_page_locked(void);
+static uint64_t pmm_allocate_contiguous_locked(uint64_t page_count);
+static void pmm_free_contiguous_locked(uint64_t physical_address, uint64_t page_count);
+static void pmm_free_page_locked(uint64_t physical_address);
+static uint64_t pmm_free_bytes_locked(void);
+#include "pmm.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"
 
@@ -60,7 +68,7 @@ void pmm_init(const struct limine_memmap_response *memory_map,
           (free_frames*PMM_PAGE_SIZE)/(1024*1024),(uint32_t)PMM_PAGE_SIZE);
 }
 
-uint64_t pmm_allocate_page(void){
+static uint64_t pmm_allocate_page_locked(void){
     if(!ready || !free_frames) return 0;
     for(uint64_t pass=0;pass<2;pass++){
         uint64_t end=pass==0 ? frame_limit : allocation_cursor;
@@ -78,9 +86,9 @@ uint64_t pmm_allocate_page(void){
     return 0;
 }
 
-uint64_t pmm_allocate_contiguous(uint64_t page_count){
+static uint64_t pmm_allocate_contiguous_locked(uint64_t page_count){
     if(!ready || !free_frames || !page_count) return 0;
-    if(page_count==1) return pmm_allocate_page();
+    if(page_count==1) return pmm_allocate_page_locked();
     if(page_count>free_frames) return 0;
     for(uint64_t pass=0;pass<2;pass++){
         uint64_t end=pass==0 ? frame_limit : allocation_cursor;
@@ -105,10 +113,10 @@ uint64_t pmm_allocate_contiguous(uint64_t page_count){
     return 0;
 }
 
-void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count){
+static void pmm_free_contiguous_locked(uint64_t physical_address, uint64_t page_count){
     if((physical_address&(PMM_PAGE_SIZE-1))!=0 || !page_count) return;
     uint64_t start_frame=physical_address/PMM_PAGE_SIZE;
-    if(start_frame==0 || start_frame+page_count>frame_limit) return;
+    if(start_frame==0 || start_frame>=frame_limit || page_count>frame_limit-start_frame) return;
     for(uint64_t off=0;off<page_count;off++){
         uint64_t frame=start_frame+off;
         if(!frame_is_used(frame)) continue;
@@ -118,7 +126,7 @@ void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count){
     }
 }
 
-void pmm_free_page(uint64_t physical_address){
+static void pmm_free_page_locked(uint64_t physical_address){
     if((physical_address&(PMM_PAGE_SIZE-1))!=0) return;
     uint64_t frame=physical_address/PMM_PAGE_SIZE;
     if(frame==0 || frame>=frame_limit || !frame_is_used(frame)) return;
@@ -132,5 +140,38 @@ void *pmm_physical_to_virtual(uint64_t physical_address){
 }
 
 uint64_t pmm_total_bytes(void){ return frame_limit*PMM_PAGE_SIZE; }
-uint64_t pmm_free_bytes(void){ return free_frames*PMM_PAGE_SIZE; }
+static uint64_t pmm_free_bytes_locked(void){ return free_frames*PMM_PAGE_SIZE; }
 bool pmm_is_ready(void){ return ready; }
+
+uint64_t pmm_allocate_page(void){
+    uint64_t irq_flags=spin_lock_irqsave(&pmm_lock);
+    uint64_t result=pmm_allocate_page_locked();
+    spin_unlock_irqrestore(&pmm_lock,irq_flags);
+    return result;
+}
+
+uint64_t pmm_allocate_contiguous(uint64_t page_count){
+    uint64_t irq_flags=spin_lock_irqsave(&pmm_lock);
+    uint64_t result=pmm_allocate_contiguous_locked(page_count);
+    spin_unlock_irqrestore(&pmm_lock,irq_flags);
+    return result;
+}
+
+void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count){
+    uint64_t irq_flags=spin_lock_irqsave(&pmm_lock);
+    pmm_free_contiguous_locked(physical_address,page_count);
+    spin_unlock_irqrestore(&pmm_lock,irq_flags);
+}
+
+void pmm_free_page(uint64_t physical_address){
+    uint64_t irq_flags=spin_lock_irqsave(&pmm_lock);
+    pmm_free_page_locked(physical_address);
+    spin_unlock_irqrestore(&pmm_lock,irq_flags);
+}
+
+uint64_t pmm_free_bytes(void){
+    uint64_t irq_flags=spin_lock_irqsave(&pmm_lock);
+    uint64_t result=pmm_free_bytes_locked();
+    spin_unlock_irqrestore(&pmm_lock,irq_flags);
+    return result;
+}
