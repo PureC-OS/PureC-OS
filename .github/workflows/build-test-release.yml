@@ -243,7 +243,8 @@ jobs:
           body: |
             Automated PureC OS release built from `${{ github.sha }}`.
 
-            The ISO passed host unit tests and QEMU boot tests with 1, 2 and 4 CPUs.
+            The ISO passed host unit tests, QEMU boot tests with 1, 2 and 4 CPUs,
+            and isolated e1000, 8254xGC and PCnet network tests for DHCP, ICMP and DNS.
             Verify downloaded files with `SHA256SUMS.txt`.
           files: |
             dist/PureC-OS.iso
