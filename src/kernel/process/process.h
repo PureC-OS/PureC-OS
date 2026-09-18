@@ -1,7 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint>
+#include <stdint.h>
 
 #define PROCESS_FD_COUNT 32
 #define PROCESS_COMMAND_LINE_CAPACITY 256
