@@ -23,7 +23,7 @@ struct scheduler_cpu {
     struct thread *previous;
     bool initialized;
     bool started;
-    uint32_t cursor;
+    struct thread *cursor;
     uint64_t last_tick;
     uint64_t total_ticks;
     uint64_t idle_ticks;
@@ -53,10 +53,13 @@ static bool thread_stack_valid(const struct thread *thread){
     if(thread->rsp & 0x7ULL) return false;
     // Low addresses (0x0, 0x8000, NULL) are always corruption.
     if(thread->rsp < 0xffff800000000000ULL) return false;
-    uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
+    // Idle threads run on the boot stack before the first switch and keep
+    // that saved RSP (they own no kstack pages at all).
+    if(thread->idle) return true;
+    if(!thread->kstack) return false;
+    uint64_t stack_base=(uint64_t)(uintptr_t)thread->kstack;
     uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
     if(thread->rsp >= stack_base+64 && thread->rsp < stack_top) return true;
-    if(thread->idle) return true;
     return false;
 }
 
