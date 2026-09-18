@@ -283,6 +283,12 @@ uint64_t scheduler_idle_ticks(void){
     for(unsigned i=0;i<CPU_MAX_COUNT;i++) total+=__atomic_load_n(&cpu_schedulers[i].idle_ticks,__ATOMIC_RELAXED);
     return total;
 }
+bool scheduler_cpu_ticks(uint32_t id, uint64_t *total, uint64_t *idle){
+    if(id>=CPU_MAX_COUNT) return false;
+    if(total) *total=__atomic_load_n(&cpu_schedulers[id].total_ticks,__ATOMIC_RELAXED);
+    if(idle) *idle=__atomic_load_n(&cpu_schedulers[id].idle_ticks,__ATOMIC_RELAXED);
+    return true;
+}
 
 void scheduler_set_affinity(int tid, int16_t core){
     if(core < -1 || core >= (int16_t)cpu_registered_count()) return;

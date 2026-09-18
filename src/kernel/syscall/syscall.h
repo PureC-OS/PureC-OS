@@ -18,6 +18,7 @@
 #define SYS_FB_END_UPDATE 110
 #define SYS_DISPLAY_SET_MODE 281
 #define SYS_THERMAL_INFO 282
+#define SYS_CPU_CORE_INFO 283
 #define SYS_FILE_OPEN   200
 #define SYS_FILE_READ   201
 #define SYS_FILE_DELETE 202
@@ -198,6 +199,21 @@ struct memory_monitor_info {
     uint64_t used_bytes;
     uint64_t available_bytes;
     uint64_t framebuffer_bytes;
+};
+
+#define CPU_CORE_MAX_COUNT 16
+
+struct cpu_core_entry {
+    uint32_t id;
+    uint32_t online;
+    uint64_t total_ticks;
+    uint64_t idle_ticks;
+};
+
+struct cpu_core_info {
+    uint32_t count;
+    uint32_t reserved;
+    struct cpu_core_entry cores[CPU_CORE_MAX_COUNT];
 };
 
 #define PROCESS_MONITOR_NAME_CAPACITY 32

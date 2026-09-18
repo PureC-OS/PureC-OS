@@ -62,6 +62,7 @@ uint32_t scheduler_thread_count(void);
 uint64_t scheduler_thread_runtime_ticks(int tid);
 uint64_t scheduler_total_ticks(void);
 uint64_t scheduler_idle_ticks(void);
+bool scheduler_cpu_ticks(uint32_t id, uint64_t *total, uint64_t *idle);
 void scheduler_set_affinity(int tid, int16_t core);
 int scheduler_get_core_count(void);
 

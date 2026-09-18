@@ -171,6 +171,11 @@ bool pc_memory_info(struct memory_monitor_info *info){
         && pc_syscall(SYS_MEMORY_INFO,(uint64_t)(uintptr_t)info,0,0)>=0;
 }
 
+int32_t pc_cpu_core_info(struct cpu_core_info *info){
+    if(!info) return -1;
+    return (int32_t)pc_syscall(SYS_CPU_CORE_INFO,(uint64_t)(uintptr_t)info,0,0);
+}
+
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result){
     if(!target || !result) return -1;
