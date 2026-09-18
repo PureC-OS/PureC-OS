@@ -219,8 +219,10 @@ int64_t syscall_handler(struct syscall_regs *r){
             const struct gui_window_request *request=
                 (const struct gui_window_request*)(uintptr_t)a1;
             if(!readable(request,sizeof(*request))) return -1;
-            return window_manager_register((uint32_t)process_current_pid(),
-                                            request) ? 0 : -1;
+            if(!window_manager_register((uint32_t)process_current_pid(),
+                                        request)) return -1;
+            scheduler_set_affinity(scheduler_current_tid(),0);
+            return 0;
         }
         case SYS_GUI_WINDOW_UPDATE: {
             const struct gui_window_request *request=

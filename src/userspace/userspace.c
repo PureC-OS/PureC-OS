@@ -537,6 +537,7 @@ void userspace_input_thread(void *arg){
         ps2_mouse_poll();
         block_device_poll_usb_hotplug();
         usb_mouse_poll();
+        mouse_flush_pending();
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();
@@ -642,6 +643,7 @@ void userspace_run(void){
         ps2_mouse_poll();
         block_device_poll_usb_hotplug();
         usb_mouse_poll();
+        mouse_flush_pending();
         keyboard_poll();
         userspace_audio_update();
         reap_detached_programs();

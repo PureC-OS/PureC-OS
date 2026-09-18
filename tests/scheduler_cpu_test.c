@@ -7,9 +7,19 @@
 #include <stdio.h>
 
 static _Thread_local uint32_t executing_cpu;
-uint64_t timer_ticks(void){ return 100; }
+static uint64_t mock_ticks=100;
+uint64_t timer_ticks(void){ return mock_ticks; }
 uint32_t gdt_current_cpu_id(void){ return executing_cpu; }
 void kernel_panic(const char *reason){ (void)reason; abort(); }
+void fpu_save(void *area){ (void)area; }
+void fpu_restore(const void *area){ (void)area; }
+void gdt_set_kernel_stack(uint64_t stack_top){ (void)stack_top; }
+void vmm_switch_address_space(uint64_t address_space){ (void)address_space; }
+void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp){
+    (void)old_rsp;
+    (void)new_rsp;
+    abort();
+}
 
 static void reset(void){
     memset(threads,0,sizeof(threads));
@@ -80,9 +90,39 @@ static void test_concurrent_claims(void){
     for(unsigned i=0;i<CPU_MAX_COUNT;i++) assert(!pthread_join(workers[i],NULL));
     for(unsigned i=0;i<SCHEDULER_MAX_THREADS;i++) assert(claims[i]==1);
 }
+static void test_preemption_guard(void){
+    reset();
+    executing_cpu=0;
+    struct scheduler_cpu *cpu=&cpu_schedulers[0];
+    cpu->initialized=true;
+    cpu->started=true;
+    cpu->last_tick=100;
+    cpu->current=&threads[0];
+    threads[0].state=THREAD_RUNNING;
+    threads[0].ticks_remaining=1;
+
+    assert(scheduler_preempt_disable());
+    assert(scheduler_preempt_disable());
+    mock_ticks=101;
+    scheduler_on_timer_interrupt();
+    assert(cpu->current==&threads[0]);
+    assert(cpu->preempt_depth==2);
+    assert(cpu->reschedule_pending);
+
+    scheduler_preempt_enable();
+    assert(cpu->preempt_depth==1);
+    assert(cpu->reschedule_pending);
+    scheduler_preempt_enable();
+    assert(cpu->preempt_depth==0);
+    assert(!cpu->reschedule_pending);
+    assert(cpu->current==&threads[0]);
+    assert(threads[0].ticks_remaining==SCHEDULER_TIME_SLICE_MS);
+    mock_ticks=100;
+}
 int main(void){
     test_selection();
     test_concurrent_claims();
+    test_preemption_guard();
     puts("Scheduler affinity, ownership, wakeup and concurrent selection tests passed");
     return 0;
 }

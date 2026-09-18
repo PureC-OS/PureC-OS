@@ -123,19 +123,18 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         scheduler_leave_kernel();
         return;
     }
-    if (vector == 44) { // IRQ12 mouse
+    if (vector == 44) {
         ps2_mouse_handler();
         pic_eoi(12);
         return;
     }
-    if (vector == 32) { // IRQ0 timer
+    if (vector == 32) {
         timer_tick();
-        // Acknowledge the PIC before a context switch can suspend this frame.
         pic_eoi(0);
         scheduler_on_timer_interrupt();
         return;
     }
-    if (vector >= 32 && vector < 48) { // другие IRQ
+    if (vector >= 32 && vector < 48) {
         uint8_t irq = (uint8_t)(vector-32);
         if (irq < 16 && irq_handler_fn[irq]) {
             int (*fn)(void*) = (int(*)(void*))irq_handler_fn[irq];
@@ -166,13 +165,11 @@ void idt_init(void) {
         idt[i].offset_low=0; idt[i].selector=0; idt[i].ist=0;
         idt[i].type_attr=0; idt[i].offset_mid=0; idt[i].offset_high=0; idt[i].zero=0;
     }
-    // Every vector has its own stub, otherwise exceptions are reported with a
-    // false vector and CPU-pushed error codes corrupt the return frame.
     for(int i=0;i<256;i++) idt_set_gate(i, (uint64_t)isr_stub_table[i], 0x8E);
-    idt_set_ist(2,2);  // NMI emergency stack
-    idt_set_ist(8,1);  // double-fault emergency stack
-    idt_set_ist(18,3); // machine-check emergency stack
-    idt_set_gate(0x80, (uint64_t)isr_stub_table[0x80], 0xEE); // DPL3 для syscalls
+    idt_set_ist(2,2);
+    idt_set_ist(8,1);
+    idt_set_ist(18,3);
+    idt_set_gate(0x80, (uint64_t)isr_stub_table[0x80], 0xEE);
     idtp.limit = sizeof(idt)-1;
     idtp.base  = (uint64_t)&idt;
     idt_load((uint64_t)&idtp);

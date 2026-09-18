@@ -33,13 +33,12 @@ struct thread {
     struct process *process;
     bool user_mode;
     bool idle;
-    bool kernel_only; /* Legacy kernel services execute on BSP. */
+    bool kernel_only;
     bool wake_pending;
     int16_t running_cpu;
     uint32_t cpu_mask;
     uint64_t migrations;
     uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
-    // Eager-switched FPU/SSE state (fxsave area, 16-byte aligned).
     uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
 
@@ -50,6 +49,8 @@ int scheduler_create_user_thread(void (*entry)(void *arg), void *arg,
                                  int16_t affinity, uint64_t address_space,
                                  struct process *process);
 void scheduler_yield(void);
+bool scheduler_preempt_disable(void);
+void scheduler_preempt_enable(void);
 void scheduler_sleep(uint32_t milliseconds);
 void scheduler_block(void);
 void scheduler_unblock(int tid);

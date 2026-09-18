@@ -22,6 +22,8 @@ struct scheduler_cpu {
     uint64_t last_tick;
     uint64_t total_ticks;
     uint64_t idle_ticks;
+    uint32_t preempt_depth;
+    bool reschedule_pending;
 } __attribute__((aligned(64)));
 static struct scheduler_cpu cpu_schedulers[CPU_MAX_COUNT];
 static spinlock_t runqueue_lock = SPINLOCK_INIT;
@@ -119,9 +121,6 @@ static void validate_switch_target(const struct thread *prev,
 }
 
 
-/* The runqueue lock is handed across the stack switch. No other CPU can run
-   or recycle previous until RSP/FPU/CR3 have been saved and this CPU has left
-   its stack. Re-fetch CPU-local state: this continuation may have migrated. */
 static void finish_switch(void){
     struct scheduler_cpu *cpu = local_scheduler();
     struct thread *previous = cpu->previous;
@@ -360,9 +359,39 @@ static void schedule_locked(void){
 
 void scheduler_yield(void){
     if(!local_scheduler()->initialized) return;
+    struct scheduler_cpu *cpu=local_scheduler();
+    if(cpu->preempt_depth){
+        cpu->reschedule_pending=true;
+        return;
+    }
     uint64_t flags=spin_lock_irqsave(&runqueue_lock);
     schedule_locked();
     irq_restore(flags);
+}
+bool scheduler_preempt_disable(void){
+    uint32_t id=gdt_current_cpu_id();
+    if(id>=CPU_MAX_COUNT) return false;
+    struct scheduler_cpu *cpu=&cpu_schedulers[id];
+    if(!cpu->initialized || !cpu->started) return false;
+    uint64_t flags=irq_save();
+    cpu->preempt_depth++;
+    irq_restore(flags);
+    return true;
+}
+void scheduler_preempt_enable(void){
+    struct scheduler_cpu *cpu=local_scheduler();
+    if(!cpu->initialized) return;
+    uint64_t flags=irq_save();
+    if(!cpu->preempt_depth){
+        irq_restore(flags);
+        kernel_panic("sched: unbalanced preempt enable");
+    }
+    cpu->preempt_depth--;
+    bool schedule=cpu->preempt_depth==0 && cpu->reschedule_pending
+        && cpu->started;
+    if(schedule) cpu->reschedule_pending=false;
+    irq_restore(flags);
+    if(schedule) scheduler_yield();
 }
 void scheduler_sleep(uint32_t milliseconds){
     if(!milliseconds){ scheduler_yield(); return; }
@@ -423,7 +452,11 @@ void scheduler_on_timer_interrupt(void){
     struct thread *t=cpu->current;
     t->runtime_ticks+=elapsed;
     if(t->idle) __atomic_fetch_add(&cpu->idle_ticks,elapsed,__ATOMIC_RELAXED);
-    if(elapsed>=t->ticks_remaining || t->idle){
+    if((elapsed>=t->ticks_remaining || t->idle) && cpu->preempt_depth){
+        cpu->reschedule_pending=true;
+        spin_unlock(&runqueue_lock);
+    } else if(elapsed>=t->ticks_remaining || t->idle){
+        cpu->reschedule_pending=false;
         schedule_locked();
     } else {
         t->ticks_remaining-=(uint32_t)elapsed;
@@ -432,7 +465,13 @@ void scheduler_on_timer_interrupt(void){
     irq_restore(flags);
 }
 void scheduler_on_reschedule_interrupt(void){
-    if(scheduler_is_running()) scheduler_yield();
+    if(!scheduler_is_running()) return;
+    struct scheduler_cpu *cpu=local_scheduler();
+    if(cpu->preempt_depth){
+        cpu->reschedule_pending=true;
+        return;
+    }
+    scheduler_yield();
 }
 void scheduler_start(void){
     uint64_t flags=spin_lock_irqsave(&runqueue_lock);
