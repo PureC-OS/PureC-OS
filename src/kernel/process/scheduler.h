@@ -37,7 +37,10 @@ struct thread {
     int16_t running_cpu;
     uint32_t cpu_mask;
     uint64_t migrations;
-    uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
+    struct thread *next;
+    uint64_t node_phys;
+    uint64_t kstack_phys;
+    uint8_t *kstack;
     uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
 
