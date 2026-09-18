@@ -489,3 +489,14 @@ int32_t process_environment_list(struct process_environment_entry *entries,
     }
     return (int32_t)count;
 }
+
+bool process_set_affinity(uint32_t pid, int16_t core){
+    MUTEX_SCOPE(&process_mutex);
+    for(unsigned i=0;i<PROCESS_MAX_COUNT;i++){
+        if(processes[i].pid==pid && (processes[i].state==PROCESS_READY || processes[i].state==PROCESS_RUNNING)){
+            scheduler_set_affinity(processes[i].thread_id,core);
+            return true;
+        }
+    }
+    return false;
+}

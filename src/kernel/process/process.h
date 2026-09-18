@@ -78,3 +78,5 @@ int32_t process_environment_list(struct process_environment_entry *entries,
 struct process_monitor_info;
 int32_t process_monitor_list(struct process_monitor_info *entries,
                              uint32_t capacity);
+
+bool process_set_affinity(uint32_t pid, int16_t core);
