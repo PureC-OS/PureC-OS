@@ -108,10 +108,22 @@ static void test_dynamic_growth(void){
     for(int i=0;i<N;i++)
         for(int j=i+1;j<N;j++) assert(ids[i]!=ids[j]);
     assert(scheduler_thread_count()==N);
+    /* Reap contract: only TERMINATED + switched-out nodes are releasable. */
+    for(int i=0;i<N;i++){
+        struct thread *t=scheduler_host_lookup(ids[i]);
+        assert(t!=NULL);
+        t->state=THREAD_TERMINATED;
+        t->running_cpu=-1;
+    }
     for(int i=0;i<N;i++) scheduler_free_thread_by_id(ids[i]);
     assert(scheduler_thread_count()==0);
+    /* Allocator must work again after a full drain (no static slot leak). */
     int id=make_thread(-1);
     assert(scheduler_thread_count()==1);
+    struct thread *last=scheduler_host_lookup(id);
+    assert(last!=NULL);
+    last->state=THREAD_TERMINATED;
+    last->running_cpu=-1;
     scheduler_free_thread_by_id(id);
     assert(scheduler_thread_count()==0);
     scheduler_free_thread_by_id(id);
