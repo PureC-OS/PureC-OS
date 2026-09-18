@@ -1,5 +1,6 @@
 #include "smp.h"
 #include "cpu.h"
+#include "../process/scheduler.h"
 #include "../../boot/limine.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../arch/x86_64/idt/include/idt.h"
@@ -78,6 +79,10 @@ void smp_ap_main(struct ap_boot_context *context,
     uint32_t id = context->logical_id;
     if(!vmm_init_cpu()
        || !gdt_init_cpu(id, context->stack_top)){
+        cpu_fail(id);
+        for(;;) __asm__ volatile("cli; hlt");
+    }
+    if(gdt_current_cpu_id() != id || scheduler_current_thread() != NULL){
         cpu_fail(id);
         for(;;) __asm__ volatile("cli; hlt");
     }

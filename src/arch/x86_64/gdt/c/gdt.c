@@ -99,6 +99,19 @@ bool gdt_init_cpu(uint32_t cpu_id, uint64_t stack_top) {
 void gdt_init(void) {
     (void)gdt_init_cpu(0, 0);
 }
+uint32_t gdt_current_cpu_id(void){
+    /* GDTR is CPU-local and unchanged by ring transitions. This avoids a GS
+       dependency until all user/interrupt entry paths support swapgs. */
+    struct gdt_ptr gp;
+    __asm__ volatile("sgdt %0" : "=m"(gp));
+    for(uint32_t id = 0; id < CPU_MAX_COUNT; id++){
+        if(gp.base == (uint64_t)(uintptr_t)&cpu_tables[id].gdt)
+            return id;
+    }
+    return UINT32_MAX;
+}
+
 void gdt_set_kernel_stack(uint64_t stack_top){
-    cpu_tables[0].tss.rsp0=stack_top;
+    uint32_t id = gdt_current_cpu_id();
+    if(id < CPU_MAX_COUNT) cpu_tables[id].tss.rsp0=stack_top;
 }

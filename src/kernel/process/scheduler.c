@@ -1,4 +1,5 @@
 #include "scheduler.h"
+#include "../smp/cpu.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
@@ -8,14 +9,28 @@
 #include "../../lib/string.h"
 
 static struct thread threads[SCHEDULER_MAX_THREADS];
-static struct thread *current = NULL;
+/* Owned by the executing CPU. AP slots stay inactive until runqueue and
+   memory synchronization support general scheduling on APs. */
+/* A saved CPU pointer remains valid across switches only while migration is
+   disabled. Revisit suspended scheduler frames when adding migration. */
+struct scheduler_cpu {
+    struct thread *current;
+    struct thread *idle;
+    bool initialized;
+    bool started;
+    volatile bool need_resched;
+    volatile uint64_t total_ticks;
+    volatile uint64_t idle_ticks;
+} __attribute__((aligned(64)));
+static struct scheduler_cpu cpu_schedulers[CPU_MAX_COUNT];
+
+static struct scheduler_cpu *local_scheduler(void){
+    uint32_t id = gdt_current_cpu_id();
+    if(id >= CPU_MAX_COUNT) kernel_panic("sched: CPU has no kernel GDT");
+    return &cpu_schedulers[id];
+}
 static uint32_t next_id = 1;
-static bool initialized = false;
-static bool started = false;
-static volatile bool need_resched = false;
 static uint32_t core_count = 1;
-static volatile uint64_t total_ticks;
-static volatile uint64_t idle_ticks;
 static void thread_trampoline(void);
 static struct thread *pick_next(void);
 static uint64_t create_initial_stack(struct thread *thread);
@@ -116,10 +131,11 @@ static void idle_thread_func(void *arg){
 }
 
 static void thread_trampoline(void){
+    struct scheduler_cpu *cpu = local_scheduler();
     // This runs as new thread's first execution after ret.
-    struct thread *self = current;
+    struct thread *self = cpu->current;
     if(self && self->entry){
-        klogf(KLOG_DEBUG, "sched: thread %u (%s) started on core %u", self->id, self->name, 0);
+        klogf(KLOG_DEBUG, "sched: thread %u (%s) started on core %u", self->id, self->name, gdt_current_cpu_id());
         /* User threads enter ring 3 via arch_enter_user(), which starts with
            cli and does not return. Enabling interrupts here races the timer
            against the first context switch and can corrupt saved RSP values. */
@@ -134,10 +150,12 @@ static void thread_trampoline(void){
 }
 
 void scheduler_init(void){
-    if(initialized) return;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(gdt_current_cpu_id() != 0) return;
+    if(cpu->initialized) return;
     memset(threads, 0, sizeof(threads));
     /* The Limine response describes detected CPUs, not CPUs currently running
-       this scheduler. AP startup and per-CPU scheduler state are not installed
+       this scheduler. AP scheduling and shared-state synchronization are not installed
        yet, so advertising those CPUs makes affinity silently target cores that
        never execute kernel threads. */
     core_count = 1;
@@ -152,8 +170,9 @@ void scheduler_init(void){
     idle->address_space=vmm_kernel_address_space();
     idle->rsp=create_initial_stack(idle);
     fpu_thread_init(idle->fpu_state);
-    current = idle;
-    initialized = true;
+    cpu->idle = idle;
+    cpu->current = idle;
+    cpu->initialized = true;
     klogf(KLOG_OK, "sched: initialized, cores=%u max_threads=%u stack=%u", core_count, SCHEDULER_MAX_THREADS, SCHEDULER_STACK_SIZE);
 }
 
@@ -185,7 +204,8 @@ static int create_thread(void (*entry)(void *arg), void *arg, const char *name,
                          uint8_t priority, int16_t affinity,
                          uint64_t address_space, struct process *process,
                          bool user_mode){
-    if(!initialized) return -1;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->initialized) return -1;
     if(!entry) return -1;
     if(priority>7) priority=7;
     struct thread *t = alloc_thread();
@@ -233,8 +253,15 @@ int scheduler_create_user_thread(void (*entry)(void *arg), void *arg,
                          process,true);
 }
 
-struct thread *scheduler_current_thread(void){ return current; }
-int scheduler_current_tid(void){ return current ? (int)current->id : -1; }
+struct thread *scheduler_current_thread(void){
+    /* Panic diagnostics can ask before the kernel GDT is installed. */
+    uint32_t id = gdt_current_cpu_id();
+    return id < CPU_MAX_COUNT ? cpu_schedulers[id].current : NULL;
+}
+int scheduler_current_tid(void){
+    struct thread *thread = scheduler_current_thread();
+    return thread ? (int)thread->id : -1;
+}
 uint32_t scheduler_thread_count(void){
     uint32_t cnt=0;
     for(int i=0;i<SCHEDULER_MAX_THREADS;i++){
@@ -249,8 +276,10 @@ uint64_t scheduler_thread_runtime_ticks(int tid){
            && threads[i].state!=THREAD_FREE) return threads[i].runtime_ticks;
     return 0;
 }
-uint64_t scheduler_total_ticks(void){ return total_ticks; }
-uint64_t scheduler_idle_ticks(void){ return idle_ticks; }
+uint64_t scheduler_total_ticks(void){
+    return local_scheduler()->total_ticks;
+}
+uint64_t scheduler_idle_ticks(void){ return local_scheduler()->idle_ticks; }
 void scheduler_set_affinity(int tid, int16_t core){
     for(int i=0;i<SCHEDULER_MAX_THREADS;i++) if(threads[i].id==(uint32_t)tid){
         if(core>=0 && (uint32_t)core>=core_count) return;
@@ -273,10 +302,11 @@ static void wake_sleeping_threads(void){
 }
 
 static struct thread *pick_next(void){
-    if(!current) return NULL;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->current) return NULL;
     wake_sleeping_threads();
     int start = -1;
-    for(int i=0;i<SCHEDULER_MAX_THREADS;i++) if(&threads[i]==current) { start=i; break; }
+    for(int i=0;i<SCHEDULER_MAX_THREADS;i++) if(&threads[i]==cpu->current) { start=i; break; }
     if(start<0) start=0;
     /* Strict priority selection starved lower-priority work whenever a
        CPU-bound higher-priority task stayed runnable. */
@@ -284,10 +314,8 @@ static struct thread *pick_next(void){
         int idx = (start+iter)%SCHEDULER_MAX_THREADS;
         if(idx != 0 && threads[idx].state==THREAD_READY) return &threads[idx];
     }
-    if(current && current->id != 0 && current->state==THREAD_RUNNING) return current;
-    threads[0].state = THREAD_RUNNING;
-    return &threads[0];
-    return NULL;
+    if(cpu->current && cpu->current->id != 0 && cpu->current->state==THREAD_RUNNING) return cpu->current;
+    return cpu->idle;
 }
 
 static void activate_thread(struct thread *thread){
@@ -297,10 +325,11 @@ static void activate_thread(struct thread *thread){
 }
 
 void scheduler_yield(void){
-    if(!initialized) return;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->initialized) return;
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    struct thread *prev = current;
+    struct thread *prev = cpu->current;
     struct thread *next = pick_next();
     if(!next || next==prev){
         if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
@@ -308,7 +337,7 @@ void scheduler_yield(void){
     }
     if(prev->state==THREAD_RUNNING) prev->state=THREAD_READY;
     next->state=THREAD_RUNNING;
-    current=next;
+    cpu->current=next;
     prev->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     next->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     activate_thread(next);
@@ -322,22 +351,24 @@ void scheduler_yield(void){
 }
 
 void scheduler_sleep(uint32_t milliseconds){
-    if(!initialized || !current || milliseconds==0){
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->initialized || !cpu->current || milliseconds==0){
         scheduler_yield();
         return;
     }
     uint64_t now=timer_ticks();
     uint64_t wake=now+milliseconds;
-    current->wake_tick=wake<now ? UINT64_MAX : wake;
+    cpu->current->wake_tick=wake<now ? UINT64_MAX : wake;
     scheduler_block();
 }
 
 void scheduler_block(void){
-    if(!current) return;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->current) return;
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    current->state = THREAD_BLOCKED;
-    struct thread *prev = current;
+    cpu->current->state = THREAD_BLOCKED;
+    struct thread *prev = cpu->current;
     struct thread *next = pick_next();
     if(!next){
         klog(KLOG_ERROR, "sched: no thread to schedule after block!");
@@ -353,7 +384,7 @@ void scheduler_block(void){
         return;
     }
     next->state = THREAD_RUNNING;
-    current = next;
+    cpu->current = next;
     activate_thread(next);
     validate_switch_target(prev, next);
     // Eager FPU switch while preemption is off; the kernel itself never
@@ -379,19 +410,20 @@ void scheduler_unblock(int tid){
 }
 
 void scheduler_exit(void){
-    if(!current) for(;;) __asm__ volatile("cli; hlt");
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->current) for(;;) __asm__ volatile("cli; hlt");
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    klogf(KLOG_INFO, "sched: thread %u (%s) exiting", current->id, current->name);
-    current->state = THREAD_TERMINATED;
-    struct thread *prev = current;
+    klogf(KLOG_INFO, "sched: thread %u (%s) exiting", cpu->current->id, cpu->current->name);
+    cpu->current->state = THREAD_TERMINATED;
+    struct thread *prev = cpu->current;
     struct thread *next = pick_next();
     if(!next || next==prev){
         klog(KLOG_WARN, "sched: last thread exiting, halting");
         for(;;) __asm__ volatile("cli; hlt");
     }
     next->state = THREAD_RUNNING;
-    current = next;
+    cpu->current = next;
     activate_thread(next);
     validate_switch_target(prev, next);
     // Eager FPU switch while preemption is off; the kernel itself never
@@ -405,32 +437,36 @@ void scheduler_exit(void){
 }
 
 static void scheduler_tick(void){
-    if(!initialized || !current) return;
-    total_ticks++;
-    current->runtime_ticks++;
-    if(current->id==0) idle_ticks++;
-    if(current->ticks_remaining>0) current->ticks_remaining--;
-    if(current->ticks_remaining==0){
-        need_resched = true;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->initialized || !cpu->current) return;
+    cpu->total_ticks++;
+    cpu->current->runtime_ticks++;
+    if(cpu->current->id==0) cpu->idle_ticks++;
+    if(cpu->current->ticks_remaining>0) cpu->current->ticks_remaining--;
+    if(cpu->current->ticks_remaining==0){
+        cpu->need_resched = true;
     }
     wake_sleeping_threads();
 }
 
 static void scheduler_schedule(void){
-    if(!need_resched) return;
-    need_resched=false;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->need_resched) return;
+    cpu->need_resched=false;
     scheduler_yield();
 }
 
 void scheduler_on_timer_interrupt(void){
-    if(!started) return;
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->started) return;
     scheduler_tick();
     scheduler_schedule();
 }
 
 void scheduler_start(void){
-    if(!initialized) for(;;) __asm__ volatile("cli; hlt");
+    struct scheduler_cpu *cpu = local_scheduler();
+    if(!cpu->initialized) for(;;) __asm__ volatile("cli; hlt");
     klogf(KLOG_INFO, "sched: starting with %u threads", scheduler_thread_count());
-    started=true;
+    cpu->started=true;
     scheduler_yield();
 }
