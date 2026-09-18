@@ -7,6 +7,7 @@
 #define DOT11_SSID_MAX 32
 #define DOT11_MGMT_MAX 512
 #define DOT11_ADDR_LEN 6
+#define DOT11_RATES_MAX 32
 
 #define DOT11_FTYPE_MGMT 0x00
 #define DOT11_FTYPE_CTRL 0x01
@@ -26,6 +27,7 @@
     ((uint16_t)(((uint16_t)(type) << 2) | ((uint16_t)(stype) << 4)))
 #define DOT11_FC_TYPE(fc) (((fc) >> 2) & 0x3)
 #define DOT11_FC_STYPE(fc) (((fc) >> 4) & 0xF)
+#define DOT11_FC_VERSION_MASK 0x0003
 
 #define DOT11_AUTH_ALG_OPEN 0x0000
 #define DOT11_AUTH_SEQ_REQ 0x0001
@@ -37,6 +39,7 @@
 
 #define DOT11_CAP_ESS 0x0001
 #define DOT11_CAP_IBSS 0x0002
+#define DOT11_CAP_PRIVACY 0x0010
 #define DOT11_CAP_SHORT_PREAMBLE 0x0020
 #define DOT11_CAP_SHORT_SLOT 0x0400
 
@@ -45,7 +48,10 @@
 #define DOT11_IE_SSID 0
 #define DOT11_IE_RATES 1
 #define DOT11_IE_DS_PARAM 3
+#define DOT11_IE_RSN 48
 #define DOT11_IE_EXT_RATES 50
+
+#define DOT11_REASON_LEAVING 3
 
 #define DOT11_MLME_IDLE 0
 #define DOT11_MLME_AUTH_SENT 1
@@ -59,6 +65,10 @@
 #define DOT11_FAIL_REJECTED 2
 #define DOT11_FAIL_DEAUTH 3
 #define DOT11_FAIL_NO_BSSID 4
+#define DOT11_FAIL_TX 5
+#define DOT11_FAIL_INVALID_RESPONSE 6
+#define DOT11_FAIL_UNSUPPORTED_SECURITY 7
+#define DOT11_FAIL_UNSUPPORTED_RATES 8
 
 #ifndef DOT11_RETRY_MAX
 #define DOT11_RETRY_MAX 5
@@ -78,6 +88,18 @@ struct dot11_mgmt_hdr {
 
 struct dot11_mlme;
 
+struct dot11_bss {
+    uint8_t bssid[DOT11_ADDR_LEN];
+    char ssid[DOT11_SSID_MAX + 1];
+    uint8_t ssid_len;
+    uint8_t channel;
+    uint16_t capability;
+    uint16_t beacon_interval;
+    uint8_t rates[DOT11_RATES_MAX];
+    uint8_t rate_count;
+    bool has_rsn;
+};
+
 typedef bool (*dot11_tx_fn)(void *ctx, const uint8_t *frame, uint16_t len);
 typedef void (*dot11_event_fn)(void *ctx);
 
@@ -96,6 +118,11 @@ struct dot11_mlme {
     uint16_t aid;
     uint16_t capability;
     uint16_t listen_interval;
+    uint16_t ap_capability;
+    uint8_t rates[DOT11_RATES_MAX];
+    uint8_t rate_count;
+    bool bss_profile_valid;
+    bool last_tx_failed;
     dot11_tx_fn tx;
     void *tx_ctx;
     dot11_event_fn on_associated;
@@ -124,6 +151,8 @@ uint16_t dot11_build_auth_req(const uint8_t sa[DOT11_ADDR_LEN],
                               const uint8_t bssid[DOT11_ADDR_LEN],
                               uint16_t seq_num, uint8_t *out, uint16_t out_cap);
 uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_cap);
+uint16_t dot11_build_disassoc(struct dot11_mlme *m, uint16_t reason,
+                              uint8_t *out, uint16_t out_cap);
 bool dot11_parse_auth_resp(const uint8_t *frame, uint16_t len,
                            const uint8_t self[DOT11_ADDR_LEN],
                            uint16_t *status_out);
@@ -135,6 +164,7 @@ bool dot11_parse_beacon(const uint8_t *frame, uint16_t len,
                         uint8_t bssid_out[DOT11_ADDR_LEN],
                         char ssid_out[DOT11_SSID_MAX + 1],
                         uint8_t *channel_out);
+bool dot11_parse_bss(const uint8_t *frame, uint16_t len, struct dot11_bss *bss_out);
 
 bool dot11_addr_is_zero(const uint8_t a[DOT11_ADDR_LEN]);
 bool dot11_addr_eq(const uint8_t a[DOT11_ADDR_LEN], const uint8_t b[DOT11_ADDR_LEN]);

@@ -347,6 +347,8 @@ static void ar_mlme_associated(void *ctx) {
     if (!dev)
         dev = &adapter;
 
+    if (dev->mlme.channel)
+        dev->target_channel = dev->mlme.channel;
     ar_program_bssid(dev->target_bssid, dev->mlme.aid);
     klogf(KLOG_OK, "ar9285: associated '%s' aid=%u bssid=%02x:%02x:%02x:%02x:%02x:%02x",
           dev->target_ssid, dev->mlme.aid, dev->target_bssid[0],
