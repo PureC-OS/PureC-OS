@@ -5,7 +5,6 @@ static uint32_t pci_read_config32_locked(uint8_t bus, uint8_t slot, uint8_t func
 static void pci_write_config32_locked(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint32_t value);
 static bool pci_update_command_locked(const struct pci_device_info *device, uint16_t set_bits, uint16_t clear_bits);
 static uint64_t pci_read_bar_locked(uint8_t bus, uint8_t slot, uint8_t function, uint8_t bar_index);
-#include "pci.h"
 
 #define PCI_CONFIG_ADDRESS 0xCF8
 #define PCI_CONFIG_DATA    0xCFC
@@ -143,4 +142,23 @@ uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t function,
     uint64_t result=pci_read_bar_locked(bus,slot,function,bar_index);
     spin_unlock_irqrestore(&pci_lock,irq_flags);
     return result;
+}
+
+/* Narrow writes avoid read/modify/write races and preserve W1C status bits. */
+void pci_write_config8(uint8_t bus,uint8_t slot,uint8_t function,uint8_t offset,uint8_t value){
+    uint64_t flags=spin_lock_irqsave(&pci_lock);
+    uint32_t address=0x80000000U|((uint32_t)bus<<16)|((uint32_t)slot<<11)
+        |((uint32_t)function<<8)|(offset&0xFC);
+    outl(PCI_CONFIG_ADDRESS,address);
+    __asm__ volatile("outb %0,%1"::"a"(value),"Nd"((uint16_t)(PCI_CONFIG_DATA+(offset&3))));
+    spin_unlock_irqrestore(&pci_lock,flags);
+}
+void pci_write_config16(uint8_t bus,uint8_t slot,uint8_t function,uint8_t offset,uint16_t value){
+    if(offset&1) return;
+    uint64_t flags=spin_lock_irqsave(&pci_lock);
+    uint32_t address=0x80000000U|((uint32_t)bus<<16)|((uint32_t)slot<<11)
+        |((uint32_t)function<<8)|(offset&0xFC);
+    outl(PCI_CONFIG_ADDRESS,address);
+    outw((uint16_t)(PCI_CONFIG_DATA+(offset&2)),value);
+    spin_unlock_irqrestore(&pci_lock,flags);
 }

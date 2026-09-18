@@ -15,12 +15,12 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad clean help \
-	test test-cpu test-scheduler-cpu test-string test-program-alias test-path
+	test test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-string test-program-alias test-path
+test: test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path
 	@echo "All host tests passed"
 
 test-cpu:
@@ -31,9 +31,15 @@ test-cpu:
 
 test-scheduler-cpu:
 	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) $(HOST_TEST_FLAGS) -ffunction-sections -fdata-sections \
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST -pthread -ffunction-sections -fdata-sections \
 		tests/scheduler_cpu_test.c -Wl,--gc-sections -o $(BIN_DIR)/tests/scheduler_cpu_test
 	$(BIN_DIR)/tests/scheduler_cpu_test
+
+test-pmm-smp:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST -pthread \
+		tests/pmm_smp_test.c src/mm/pmm.c -o $(BIN_DIR)/tests/pmm_smp_test
+	$(BIN_DIR)/tests/pmm_smp_test
 
 test-string:
 	@mkdir -p $(BIN_DIR)/tests

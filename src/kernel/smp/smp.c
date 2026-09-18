@@ -33,6 +33,7 @@ _Static_assert(offsetof(struct limine_smp_info, extra_argument) == 24,
 
 static bool scheduler_released;
 static uint32_t stop_mask;
+static uint32_t stopped_mask;
 static uint64_t tlb_request[CPU_MAX_COUNT];
 static uint64_t tlb_ack[CPU_MAX_COUNT];
 static spinlock_t tlb_lock = SPINLOCK_INIT;
@@ -193,6 +194,7 @@ bool smp_handle_nmi(void){
     uint32_t id=gdt_current_cpu_id();
     if(id>=CPU_MAX_COUNT) return false;
     if(__atomic_load_n(&stop_mask,__ATOMIC_ACQUIRE)&(1U<<id)){
+        __atomic_fetch_or(&stopped_mask,1U<<id,__ATOMIC_RELEASE);
         for(;;) __asm__ volatile("cli; hlt");
     }
     uint64_t request=__atomic_load_n(&tlb_request[id],__ATOMIC_ACQUIRE);
@@ -231,4 +233,9 @@ void smp_stop_others(void){
     __atomic_fetch_or(&stop_mask,mask,__ATOMIC_RELEASE);
     for(uint32_t id=0;id<cpu_registered_count();id++)
         if(mask&(1U<<id)) (void)lapic_send(id,4U<<8);
+    uint64_t start=timer_ticks();
+    while((__atomic_load_n(&stopped_mask,__ATOMIC_ACQUIRE)&mask)!=mask){
+        if(timer_ticks()-start>100) break;
+        __asm__ volatile("pause");
+    }
 }

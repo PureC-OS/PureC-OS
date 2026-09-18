@@ -12,7 +12,6 @@ static uint64_t vmm_translate_locked(uint64_t address_space, uint64_t virtual_ad
 static bool vmm_user_range_accessible_locked(uint64_t address_space, uint64_t address,
                                uint64_t size, bool writable);
 static uint64_t vmm_user_page_count_locked(uint64_t address_space);
-#include "vmm.h"
 #include "pmm.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"

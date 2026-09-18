@@ -30,3 +30,6 @@ bool pci_update_command(const struct pci_device_info *device,
 uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t function,
                       uint8_t bar_index);
 void pci_enumerate(pci_device_visitor visitor, void *context);
+
+void pci_write_config8(uint8_t bus,uint8_t slot,uint8_t function,uint8_t offset,uint8_t value);
+void pci_write_config16(uint8_t bus,uint8_t slot,uint8_t function,uint8_t offset,uint16_t value);

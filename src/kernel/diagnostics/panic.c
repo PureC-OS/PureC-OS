@@ -39,6 +39,7 @@ static void panic_header(const char *title) {
     if (panic_active) panic_halt();
     panic_active = true;
     smp_stop_others();
+    klog_panic_mode();
     gop_cancel_compose();
     klog_set_screen_enabled(true);
     klog_clear();

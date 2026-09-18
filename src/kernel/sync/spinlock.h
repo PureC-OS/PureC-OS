@@ -6,12 +6,20 @@ typedef struct { unsigned value; } spinlock_t;
 #define SPINLOCK_INIT {0}
 
 static inline uint64_t irq_save(void){
+#ifdef PUREC_HOST_TEST
+    return 0;
+#else
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags) :: "memory");
     return flags;
+#endif
 }
 static inline void irq_restore(uint64_t flags){
+#ifdef PUREC_HOST_TEST
+    (void)flags;
+#else
     if(flags & (1ULL << 9)) __asm__ volatile("sti" ::: "memory");
+#endif
 }
 static inline void spin_lock(spinlock_t *lock){
     for(;;){

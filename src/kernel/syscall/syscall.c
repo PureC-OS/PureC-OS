@@ -681,7 +681,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             install_job.state=1;
             install_progress(1,"Starting installer worker");
             if(scheduler_create_thread(install_worker,0,"installer-io",
-                                       INSTALL_WORKER_PRIORITY,-1)<0){
+                                       INSTALL_WORKER_PRIORITY,0)<0){
                 install_job.state=3;
                 install_job.result=-1;
                 install_progress(100,"Cannot start installer worker");
@@ -700,7 +700,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             install_fs_type = req->fs_type <= FS_TYPE_EXT2 ? req->fs_type : FS_TYPE_FAT32;
             install_job.state=1;
             install_progress(1,"Starting installer worker");
-            if(scheduler_create_thread(install_worker,0,"installer-io",INSTALL_WORKER_PRIORITY,-1)<0){
+            if(scheduler_create_thread(install_worker,0,"installer-io",INSTALL_WORKER_PRIORITY,0)<0){
                 install_job.state=3; install_job.result=-1;
                 install_progress(100,"Cannot start installer worker");
                 return -1;

@@ -6,7 +6,6 @@ static uint64_t pmm_allocate_contiguous_locked(uint64_t page_count);
 static void pmm_free_contiguous_locked(uint64_t physical_address, uint64_t page_count);
 static void pmm_free_page_locked(uint64_t physical_address);
 static uint64_t pmm_free_bytes_locked(void);
-#include "pmm.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"
 
