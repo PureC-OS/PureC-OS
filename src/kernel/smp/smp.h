@@ -13,3 +13,5 @@ void smp_reschedule_all(void);
 void smp_tlb_shootdown(void);
 bool smp_handle_nmi(void);
 void smp_stop_others(void);
+
+void smp_selftest_start(void);

@@ -5,6 +5,7 @@
 #include "../process/scheduler.h"
 #include "../process/process.h"
 #include "../smp/cpu.h"
+#include "../smp/smp.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
@@ -34,6 +35,7 @@ void init_process_start(void){
     if(scheduler_create_thread(net_service_thread,0,"net-rx",2,0)<0)
         klog(KLOG_WARN,"net: failed to create polling thread");
     klog(KLOG_OK, "sched: init threads created, starting scheduler");
+    smp_selftest_start();
     serial_write_string("[SCHED] start\n");
     scheduler_start();
 

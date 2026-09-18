@@ -39,6 +39,8 @@ C_SOURCES := \
 	kernel/smp/cpu.c \
 	kernel/smp/smp.c \
 	kernel/smp/lapic.c \
+	kernel/smp/selftest.c \
+	kernel/sync/mutex.c \
 	kernel/process/process.c \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \

@@ -21,7 +21,8 @@ enum process_state {
     PROCESS_FREE=0,
     PROCESS_READY,
     PROCESS_RUNNING,
-    PROCESS_EXITED
+    PROCESS_EXITED,
+    PROCESS_LOADING
 };
 
 struct process {
@@ -36,6 +37,8 @@ struct process {
     uint64_t heap_break;
     uint64_t heap_mapped_end;
     uint64_t heap_limit;
+    /* One schedulable thread per process for this ABI; CPU migration does
+       not create another thread. Shared-address-space threads need a new API. */
     int32_t thread_id;
     int32_t waiter_thread_id;
     uint64_t runtime_ticks;

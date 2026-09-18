@@ -1,3 +1,5 @@
+#include "../kernel/sync/mutex.h"
+static mutex_t vfs_mutex;
 #include "vfs.h"
 #include "./fat/include/fat32.h"
 #include "./ext2/include/ext2.h"
@@ -81,23 +83,28 @@ static struct vfs_handle *get_handle(int32_t descriptor) {
 }
 
 const char *vfs_fs_type_name(uint8_t fs_type) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (fs_type == VFS_FS_EXT2) return "ext2";
     return "fat32";
 }
 
 uint8_t vfs_root_fs_type(void) {
+    MUTEX_SCOPE(&vfs_mutex);
     return vfs_active_fs;
 }
 
 void vfs_set_active_fs(uint8_t fs_type) {
+    MUTEX_SCOPE(&vfs_mutex);
     vfs_active_fs = fs_type;
 }
 
 bool vfs_mount_root(void) {
+    MUTEX_SCOPE(&vfs_mutex);
     return vfs_mount_root_with_fs(VFS_FS_AUTO);
 }
 
 bool vfs_mount_root_with_fs(uint8_t fs_type) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (fs_type == VFS_FS_FAT32) {
         if (fat32_init()) { vfs_active_fs = VFS_FS_FAT32; return true; }
         return false;
@@ -112,11 +119,13 @@ bool vfs_mount_root_with_fs(uint8_t fs_type) {
 }
 
 bool vfs_is_root_mounted(void) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_is_mounted();
     return fat32_is_mounted();
 }
 
 const char *vfs_root_device_name(void) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_device_name();
     return fat32_device_name();
 }
@@ -126,6 +135,7 @@ static bool is_klog_path(const char *path) {
 }
 
 int32_t vfs_open(const char *path) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!path || !path[0]) return FS_ERROR_INVALID;
     const struct kernel_file *kf = find_kernel_file(path);
     int32_t idx = allocate_handle();
@@ -159,6 +169,7 @@ int32_t vfs_open(const char *path) {
 }
 
 int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!buffer && count) return FS_ERROR_INVALID;
     struct vfs_handle *h = get_handle(descriptor);
     if (!h) return FS_ERROR_INVALID;
@@ -178,6 +189,7 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
 }
 
 int32_t vfs_close(int32_t descriptor) {
+    MUTEX_SCOPE(&vfs_mutex);
     struct vfs_handle *h = get_handle(descriptor);
     if (!h) return FS_ERROR_INVALID;
     int32_t r = 0;
@@ -188,6 +200,7 @@ int32_t vfs_close(int32_t descriptor) {
 }
 
 int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END)
         return FS_ERROR_INVALID;
     struct vfs_handle *h = get_handle(descriptor);
@@ -218,6 +231,7 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
 }
 
 int32_t vfs_stat(const char *path, struct file_stat_info *out) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!path || !path[0] || !out) return FS_ERROR_INVALID;
     const struct kernel_file *kf = find_kernel_file(path);
     if (kf) {
@@ -260,24 +274,28 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
 }
 
 int32_t vfs_delete(const char *path) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (find_kernel_file(path) || path_equals(path, "/kernel")) return FS_ERROR_READ_ONLY;
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_delete(path);
     return fat32_delete(path);
 }
 
 int32_t vfs_rename(const char *path, const char *new_name) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (find_kernel_file(path) || path_equals(path, "/kernel")) return FS_ERROR_READ_ONLY;
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_rename(path, new_name);
     return fat32_rename(path, new_name);
 }
 
 int32_t vfs_move(const char *path, const char *dest) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (find_kernel_file(path) || path_equals(path, "/kernel")) return FS_ERROR_READ_ONLY;
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_move(path, dest);
     return fat32_move(path, dest);
 }
 
 int32_t vfs_list(const char *path, struct fs_directory_entry *entries, uint32_t capacity) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!path || !entries || capacity == 0) return FS_ERROR_INVALID;
     if (path_equals(path, "/")) {
         int32_t be = 0;
@@ -315,6 +333,7 @@ static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY], const char *
 }
 
 int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries, uint32_t capacity) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!path || !entries || capacity == 0) return FS_ERROR_INVALID;
     if (path_equals(path, "/")) {
         int32_t be = 0;
@@ -343,6 +362,7 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
 }
 
 int32_t vfs_create_file(const char *path) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!path || path_equals(path, "/kernel")) return FS_ERROR_INVALID;
     if (find_kernel_file(path)) return FS_ERROR_READ_ONLY;
     if (is_klog_path(path)) return 0;
@@ -357,6 +377,7 @@ static int32_t raw_log_write(const void *buffer, uint32_t count);
 static int32_t raw_log_truncate(void);
 
 int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (find_kernel_file(path) || path_equals(path, "/kernel")) return FS_ERROR_READ_ONLY;
     if (is_klog_path(path)) {
         if (count == 0) raw_log_truncate();
@@ -377,6 +398,7 @@ int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
 }
 
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (find_kernel_file(path) || path_equals(path, "/kernel")) return FS_ERROR_READ_ONLY;
     if (is_klog_path(path)) {
         int32_t r = (vfs_active_fs == VFS_FS_EXT2) ? ext2_append_file(path, buffer, count) : fat32_append_file(path, buffer, count);
@@ -397,6 +419,7 @@ int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
 }
 
 int32_t vfs_create_directory(const char *path) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!path || path_equals(path, "/kernel")) return FS_ERROR_INVALID;
     if (find_kernel_file(path)) return FS_ERROR_READ_ONLY;
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_create_directory(path);
@@ -404,24 +427,29 @@ int32_t vfs_create_directory(const char *path) {
 }
 
 int32_t vfs_format_device(const char *device_name, const char *serial_confirmation, const char *erase_confirmation) {
+    MUTEX_SCOPE(&vfs_mutex);
     return vfs_format_device_ex(device_name, serial_confirmation, erase_confirmation, VFS_FS_FAT32);
 }
 
 int32_t vfs_format_device_force(const char *device_name, const char *serial_confirmation) {
+    MUTEX_SCOPE(&vfs_mutex);
     return vfs_format_device_ex(device_name, serial_confirmation, "ERASE", VFS_FS_FAT32);
 }
 
 int32_t vfs_format_device_ex(const char *device_name, const char *serial_confirmation, const char *erase_confirmation, uint8_t fs_type) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!device_name || !device_name[0]) return FS_ERROR_INVALID;
     if (fs_type == VFS_FS_EXT2) return ext2_format_device(device_name, serial_confirmation, erase_confirmation);
     return fat32_format_device(device_name, serial_confirmation, erase_confirmation);
 }
 
 int32_t vfs_format_uefi_device(const char *device_name, const char *serial_confirmation) {
+    MUTEX_SCOPE(&vfs_mutex);
     return fat32_format_uefi_device(device_name, serial_confirmation);
 }
 
 int32_t vfs_format_uefi_device_progress(const char *device_name, const char *serial_confirmation, fat32_progress_callback callback) {
+    MUTEX_SCOPE(&vfs_mutex);
     return fat32_format_uefi_device_progress(device_name, serial_confirmation, callback);
 }
 
@@ -485,6 +513,7 @@ static int32_t raw_log_write(const void *buffer, uint32_t count) {
 }
 
 int32_t vfs_save_klog_to_device(const char *device, const char *path) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (!device || !device[0] || !path || !path[0]) return FS_ERROR_INVALID;
     int32_t dev_idx = block_device_find(device);
     if (dev_idx < 0) return FS_ERROR_NOT_FOUND;
@@ -543,22 +572,27 @@ int32_t vfs_save_klog_to_device(const char *device, const char *path) {
 }
 
 int32_t vfs_ext2_stat(const char *path, struct ext2_stat_info *out) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs != VFS_FS_EXT2) return FS_ERROR_UNSUPPORTED;
     return ext2_stat_path(path, out);
 }
 int32_t vfs_ext2_inode(uint32_t ino, struct ext2_stat_info *out) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs != VFS_FS_EXT2) return FS_ERROR_UNSUPPORTED;
     return ext2_stat_ino(ino, out);
 }
 int32_t vfs_ext2_super(struct ext2_super_info *out) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs != VFS_FS_EXT2) return FS_ERROR_UNSUPPORTED;
     return ext2_super_info(out);
 }
 int32_t vfs_ext2_blocks(const char *path, struct ext2_blocks_info *out) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs != VFS_FS_EXT2) return FS_ERROR_UNSUPPORTED;
     return ext2_file_blocks(path, out);
 }
 int32_t vfs_ext2_inode_blocks(uint32_t ino, struct ext2_blocks_info *out) {
+    MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs != VFS_FS_EXT2) return FS_ERROR_UNSUPPORTED;
     return ext2_inode_blocks(ino, out);
 }
