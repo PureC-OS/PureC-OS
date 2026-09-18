@@ -8,9 +8,14 @@
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../mm/vmm.h"
+#include "../../mm/pmm.h"
 #include "../../lib/string.h"
 
-static struct thread threads[SCHEDULER_MAX_THREADS];
+_Static_assert(sizeof(struct thread)<=4096,
+    "thread node must fit in a single PMM page");
+
+static struct thread *thread_list;
+static uint32_t thread_live_count;
 static struct thread idle_threads[CPU_MAX_COUNT];
 struct scheduler_cpu {
     struct thread *current;
@@ -51,11 +56,6 @@ static bool thread_stack_valid(const struct thread *thread){
     uint64_t stack_base=(uint64_t)(uintptr_t)thread->stack;
     uint64_t stack_top=stack_base+SCHEDULER_STACK_SIZE;
     if(thread->rsp >= stack_base+64 && thread->rsp < stack_top) return true;
-    // Idle runs on the boot stack before the first scheduler_start() switch
-    // and keeps that saved boot-stack RSP afterwards (0xffffffff80xxxxxx).
-    // That address is outside threads[0].stack but is a legitimate kernel
-    // stack, so allow it for id==0 only. All other threads must stay inside
-    // their own stack.
     if(thread->idle) return true;
     return false;
 }

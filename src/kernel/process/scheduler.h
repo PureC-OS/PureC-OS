@@ -2,9 +2,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-
-#define SCHEDULER_MAX_THREADS 64
-#define SCHEDULER_STACK_SIZE 16384
+#define SCHEDULER_STACK_PAGES 4
+#define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES*4096u)
 #define SCHEDULER_TIME_SLICE_MS 5
 
 struct process;
