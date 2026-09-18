@@ -40,7 +40,7 @@ jobs:
 
       - name: Validate scripts and whitespace
         run: |
-          python3 -m py_compile tests/qemu_smoke.py
+          python3 -m py_compile tests/qemu_smoke.py tests/qemu_network.py
           bash -n .github/scripts/build-cross-toolchain.sh
           bash -n .github/scripts/install-limine.sh
           git diff --check
@@ -171,12 +171,54 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  qemu-network:
+    name: QEMU network test (${{ matrix.driver }})
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: [e1000, 8254xgc, pcnet]
+    steps:
+      - name: Checkout network test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86
+
+      - name: Test wired driver, DHCP, ping and DNS
+        run: |
+          python3 tests/qemu_network.py \
+            --iso dist/PureC-OS.iso \
+            --driver "${{ matrix.driver }}" \
+            --timeout 180 \
+            --log "qemu-network-${{ matrix.driver }}.log"
+
+      - name: Upload QEMU network logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-network-${{ matrix.driver }}-logs
+          path: qemu-network-${{ matrix.driver }}*.log
+          if-no-files-found: warn
+          retention-days: 14
+
   release:
     name: Publish release
     needs:
       - host-tests
       - build-iso
       - qemu-smoke
+      - qemu-network
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.publish_release)

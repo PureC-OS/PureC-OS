@@ -79,6 +79,7 @@ C_SOURCES := \
 	net/config/dhcp.c \
 	net/diagnostics/icmp.c \
 	net/api/ping.c \
+	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
 	drivers/storage/ata_pio.c \
 	drivers/storage/ahci.c \
