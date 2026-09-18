@@ -45,6 +45,7 @@ def arguments() -> argparse.Namespace:
     parser.add_argument("--driver", required=True, choices=tuple(DRIVERS))
     parser.add_argument("--timeout", type=int, default=180)
     parser.add_argument("--log", type=Path)
+    parser.add_argument("--pcap", type=Path)
     return parser.parse_args()
 
 
@@ -153,6 +154,15 @@ def main() -> int:
         "pci-testdev",
         "-no-reboot",
     ]
+    if args.pcap:
+        args.pcap.parent.mkdir(parents=True, exist_ok=True)
+        args.pcap.unlink(missing_ok=True)
+        command.extend(
+            [
+                "-object",
+                f"filter-dump,id=netdump,netdev=net0,file={args.pcap.resolve()}",
+            ]
+        )
     print(f"Testing {args.driver} ({driver.qemu_model}) with {args.iso}")
     patterns = required_patterns(driver)
     deadline = time.monotonic() + args.timeout
