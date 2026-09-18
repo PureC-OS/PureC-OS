@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-PING_TARGETS = ("10.0.2.2", "8.8.8.8", "1.1.1.1")
+GATEWAY_TARGET = "10.0.2.2"
+PUBLIC_PING_TARGETS = ("8.8.8.8", "1.1.1.1")
 DNS_TARGETS = ("google.com", "cloudflare.com", "example.com")
 FAILURE_MARKERS = (
     "[EARLY PANIC]",
@@ -55,12 +56,19 @@ def required_patterns(driver: Driver) -> list[tuple[str, re.Pattern[str]]]:
         ("test device", re.compile(r"\[NETTEST\] DEVICE PASS interface=eth0")),
         ("DHCP lease", re.compile(r"\[NETTEST\] DHCP PASS interface=eth0")),
     ]
+    patterns.append((
+        f"ping {GATEWAY_TARGET}",
+        re.compile(rf"\[NETTEST\] PING PASS target={re.escape(GATEWAY_TARGET)}\b"),
+    ))
     patterns.extend(
         (
-            f"ping {target}",
-            re.compile(rf"\[NETTEST\] PING PASS target={re.escape(target)}\b"),
+            f"public ping probe {target}",
+            re.compile(
+                rf"\[NETTEST\] PING (?:PASS|UNAVAILABLE) "
+                rf"target={re.escape(target)}\b"
+            ),
         )
-        for target in PING_TARGETS
+        for target in PUBLIC_PING_TARGETS
     )
     patterns.extend(
         (
@@ -89,10 +97,11 @@ def stop(process: subprocess.Popen[bytes]) -> None:
 
 
 def print_egress_hint(serial: str) -> None:
-    gateway_ok = "[NETTEST] PING PASS target=10.0.2.2" in serial
+    gateway_ok = f"[NETTEST] PING PASS target={GATEWAY_TARGET}" in serial
     public_missing = any(
         f"[NETTEST] PING PASS target={target}" not in serial
-        for target in PING_TARGETS[1:]
+        and f"[NETTEST] PING UNAVAILABLE target={target}" not in serial
+        for target in PUBLIC_PING_TARGETS
     )
     if gateway_ok and public_missing:
         print(
