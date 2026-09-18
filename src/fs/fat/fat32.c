@@ -2573,8 +2573,9 @@ static int32_t install_uefi_payload(void){
         klogf(KLOG_ERROR,"install: write fallback %d",status);
         return status;
     }
-    status=payload_write_file("/boot/initramfs.cpio",initramfs_image,
-                              (uint32_t)initramfs_image_size);
+    status=write_lfn_file("/boot","initramfs.cpio",
+                          "/boot/initra~1.cpi","INITRA~1.CPI",
+                          initramfs_image,(uint32_t)initramfs_image_size);
     if(status<0){
         klogf(KLOG_ERROR,"install: write initramfs %d",status);
         return status;

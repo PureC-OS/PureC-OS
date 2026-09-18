@@ -111,6 +111,7 @@ def main():
     modules_path = os.path.join(args.staged, "limine.modules")
     with open(modules_path, "w", encoding="utf-8") as handle:
         handle.write("    module_path: boot():/boot/initramfs.cpio\n")
+        handle.write("    kernel_path: boot():/boot/initra~1.cpi\n")
 
     template_path = os.path.join(args.root, "src", "boot", "limine.conf.in")
     with open(template_path, "r", encoding="utf-8") as handle:
