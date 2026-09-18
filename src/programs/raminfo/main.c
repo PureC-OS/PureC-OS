@@ -92,7 +92,6 @@ static void draw_ui(struct ram_state *st){
     (void)append_text(p,"%");
     pg_window_text(w,18,36,line,w->theme.text);
 
-    /* usage bar */
     {
         uint32_t bar_x=560;
         uint32_t bar_w=w->client.width>bar_x+20 ? w->client.width-bar_x-18 : 60;
@@ -135,7 +134,6 @@ static void draw_ui(struct ram_state *st){
         char row[160];
         char *o=row;
         o=append_u64(o,pr->pid);
-        /* pad PID column roughly */
         {
             uint64_t tmp=pr->pid;
             int digits=1;
