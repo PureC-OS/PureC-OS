@@ -3,7 +3,8 @@
 
 #define MONITOR_WIDTH 720
 #define MONITOR_HEIGHT 600
-#define MONITOR_MAX_PROCESSES 12
+#define MONITOR_MAX_PROCESSES 64
+#define MONITOR_PROCESS_QUERY 16
 #define MONITOR_MAX_CORES 16
 #define MIB (1024ULL*1024ULL)
 
@@ -134,7 +135,7 @@ static void redraw(struct pg_window *window){
     struct memory_monitor_info memory={0};
     struct cpu_core_info cores={0};
     struct process_monitor_info processes[MONITOR_MAX_PROCESSES];
-    int32_t count=pc_process_list(processes,MONITOR_MAX_PROCESSES);
+    int32_t count=pc_process_list(processes,MONITOR_PROCESS_QUERY);
     bool available=pc_cpu_info(&cpu) && pc_memory_info(&memory) && count>=0;
     bool cores_ok=pc_cpu_core_info(&cores)>=0;
     pg_window_begin(window);
