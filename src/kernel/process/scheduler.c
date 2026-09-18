@@ -185,6 +185,41 @@ static void thread_node_free(struct thread *t){
     if(t->node_phys) pmm_free_page(t->node_phys);
 }
 
+#ifdef PUREC_HOST_TEST
+/* Host-test hooks: drain the runqueue and look nodes up by id. */
+void scheduler_host_reset(void){
+    uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+    struct thread *t=thread_list;
+    thread_list=NULL;
+    thread_live_count=0;
+    next_id=1;
+    memset(cpu_schedulers,0,sizeof(cpu_schedulers));
+    memset(idle_threads,0,sizeof(idle_threads));
+    spin_unlock_irqrestore(&runqueue_lock,flags);
+    while(t){
+        struct thread *n=t->next;
+        thread_node_free(t);
+        t=n;
+    }
+}
+
+struct thread *scheduler_host_lookup(int tid){
+    if(tid<0) return NULL;
+    uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+    struct thread *found=NULL;
+    for(struct thread *t=thread_list;t;t=t->next){
+        if(t->id==(uint32_t)tid){ found=t; break; }
+    }
+    spin_unlock_irqrestore(&runqueue_lock,flags);
+    return found;
+}
+
+struct thread *scheduler_host_idle(uint32_t id){
+    if(id>=CPU_MAX_COUNT) return NULL;
+    return &idle_threads[id];
+}
+#endif
+
 static bool thread_in_list(struct thread *t){
     for(struct thread *cursor=thread_list;cursor;cursor=cursor->next)
         if(cursor==t) return true;
