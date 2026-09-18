@@ -150,8 +150,6 @@ static void draw_ui(struct ram_state *st){
         }
         o=append_u64(o,b);
         *o='\0';
-        /* second line part built with fixed positions is hard without
-           printf, so draw columns as separate text calls */
         pg_window_text(w,18,row_y+(uint32_t)r*row_h,row,w->theme.text);
         char col2[96];
         char *c=append_u64(col2,b/KIB);
@@ -165,7 +163,6 @@ static void draw_ui(struct ram_state *st){
         pg_window_text(w,460,row_y+(uint32_t)r*row_h,col2,w->theme.muted_text);
     }
 
-    /* scrollbar */
     if(st->count>visible_rows && visible_rows>0){
         int32_t bar_h=(int32_t)((visible_rows*(w->client.height-120))/st->count);
         if(bar_h<20) bar_h=20;
@@ -190,7 +187,6 @@ static void draw_ui(struct ram_state *st){
 static int ramview_main(void){
     struct pc_display_info di;
     if(!pc_display_get_info(&di) || !di.available){
-        /* console fallback when no display */
         struct memory_monitor_info m={0};
         if(!pc_memory_info(&m)) return 1;
         pc_write("RAM total: ");
