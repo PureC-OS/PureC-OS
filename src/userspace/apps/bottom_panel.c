@@ -58,12 +58,12 @@ static void copy_trunc(char *dst, uint32_t cap, const char *src) {
 }
 
 static void task_name_for_pid(uint32_t pid, char *out, uint32_t cap) {
-    struct process_monitor_info list[PROCESS_MAX_COUNT];
-    int32_t n = process_monitor_list(list, PROCESS_MAX_COUNT);
+    #define TASKBAR_LOOKUP_CAP 64
+    struct process_monitor_info list[TASKBAR_LOOKUP_CAP];
+    int32_t n = process_monitor_list(list, TASKBAR_LOOKUP_CAP);
     if (n > 0) {
         for (int32_t i = 0; i < n; i++) {
             if (list[i].pid == pid && list[i].name[0]) {
-                // Strip path: show basename.
                 const char *name = list[i].name;
                 const char *slash = name;
                 for (const char *p = name; *p; p++)
@@ -73,7 +73,6 @@ static void task_name_for_pid(uint32_t pid, char *out, uint32_t cap) {
             }
         }
     }
-    // Fallback: "PID N"
     char tmp[16];
     uint32_t len = 0;
     tmp[len++] = 'P'; tmp[len++] = 'I'; tmp[len++] = 'D'; tmp[len++] = ' ';

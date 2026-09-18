@@ -63,8 +63,11 @@ GENERAL_SOURCES := \
 	mkfs/mkfs.c \
 	pwd/pwd.c \
 	clear/clear.c \
-	echo/echo.c \
-	battery/battery.c \
+ 	echo/echo.c \
+ 	battery/battery.c \
+ 	cpuinfo/main.c \
+ 	raminfo/main.c \
+ 	hddcheck/main.c \
 	reboot/reboot.c \
 	poweroff/poweroff.c \
 	shutdown/shutdown.c \
@@ -111,8 +114,11 @@ TARGETS := \
 	$(PROGRAM_DIR)/mkfs \
 	$(PROGRAM_DIR)/pwd \
 	$(PROGRAM_DIR)/clear \
-	$(PROGRAM_DIR)/echo \
-	$(PROGRAM_DIR)/battery \
+ 	$(PROGRAM_DIR)/echo \
+ 	$(PROGRAM_DIR)/battery \
+ 	$(PROGRAM_DIR)/cpuinfo \
+ 	$(PROGRAM_DIR)/raminfo \
+ 	$(PROGRAM_DIR)/hddcheck \
 	$(PROGRAM_DIR)/reboot \
 	$(PROGRAM_DIR)/poweroff \
 	$(PROGRAM_DIR)/shutdown \
@@ -273,6 +279,18 @@ $(PROGRAM_DIR)/echo: $(OBJ_DIR)/echo/echo.o $(LIBPUREC) $(LINKER_SCRIPT)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/battery: $(OBJ_DIR)/battery/battery.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/cpuinfo: $(OBJ_DIR)/cpuinfo/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/raminfo: $(OBJ_DIR)/raminfo/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/hddcheck: $(OBJ_DIR)/hddcheck/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

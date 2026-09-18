@@ -11,7 +11,7 @@ int help_main(void){
     pc_write("  nano <file> | hexedit <file> | disks | usbscan | dmesg | savelog\n");
     pc_write("  install | setup | update | mkfs.fat32\n");
     pc_write("  uname | about | systeminfo | htop | font | snake | tetris | files | gui-demo\n");
-    pc_write("  mouse | debug | battery | reboot | poweroff | shutdown | halt\n");
+    pc_write("  mouse | debug | battery | cpuinfo | raminfo | hddcheck | reboot | poweroff | shutdown | halt\n");
     pc_write("  devmgr\n");
     return 0;
 }

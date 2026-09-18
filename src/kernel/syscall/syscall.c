@@ -21,6 +21,7 @@
 #include "../../drivers/input/keyboard.h"
 #include "../process/scheduler.h"
 #include "../process/process.h"
+#include "../smp/cpu.h"
 #include "../../mm/pmm.h"
 #include "../../userspace/userspace.h"
 #include "../../userspace/window_manager.h"
@@ -552,8 +553,25 @@ int64_t syscall_handler(struct syscall_regs *r){
             info->framebuffer_bytes=gop_get_framebuffer_size_bytes();
             return 0;
         }
+        case SYS_CPU_CORE_INFO: {
+            struct cpu_core_info *info=(struct cpu_core_info*)(uintptr_t)a1;
+            if(!writable(info,sizeof(*info))) return -1;
+            memset(info,0,sizeof(*info));
+            uint32_t registered=cpu_registered_count();
+            if(registered>CPU_CORE_MAX_COUNT) registered=CPU_CORE_MAX_COUNT;
+            info->count=registered;
+            for(uint32_t i=0;i<registered;i++){
+                info->cores[i].id=i;
+                info->cores[i].online=cpu_is_online(i) ? 1u : 0u;
+                uint64_t total=0,idle=0;
+                (void)scheduler_cpu_ticks(i,&total,&idle);
+                info->cores[i].total_ticks=total;
+                info->cores[i].idle_ticks=idle;
+            }
+            return 0;
+        }
         case SYS_PROCESS_LIST: {
-            if(a2>PROCESS_MAX_COUNT) return -1;
+            if(a2>1024) return -1;
             struct process_monitor_info *entries=
                 (struct process_monitor_info*)(uintptr_t)a1;
             if(a2 && !writable(entries,a2*sizeof(*entries))) return -1;

@@ -107,6 +107,7 @@
 | **214** | `SYS_FAT32_FORMAT_UEFI` | `pc_syscall(SYS_FAT32_FORMAT_UEFI, ...)` | Форматирование с созданием UEFI ESP раздела |
 | **215** | `SYS_CPU_INFO` | `pc_cpu_info()` | Информация о процессоре, загрузке и аптайме |
 | **216** | `SYS_MEMORY_INFO` | `pc_memory_info()` | Статистика RAM (всего, занято, свободно) |
+| **283** | `SYS_CPU_CORE_INFO` | `pc_cpu_core_info()` | Per-core счётчики total/idle ticks для realtime-мониторинга |
 | **217** | `SYS_DISK_STATS` | `pc_syscall(SYS_DISK_STATS, ...)` | Суммарная статистика подключенных дисков |
 | **218** | `SYS_REBOOT` | `pc_reboot()` | Перезагрузка компьютера |
 | **219** | `SYS_SHUTDOWN` | `pc_shutdown()` | Выключение питания (ACPI / QEMU) |
@@ -2015,6 +2016,54 @@ void show_ram_stats(void) {
         pc_write(" MB / Всего ");
         pc_write_u64(mem.total_bytes / (1024 * 1024));
         pc_write(" MB\n");
+    }
+}
+```
+
+---
+
+#### `SYS_CPU_CORE_INFO` (283)
+- **Регистры**: `rax = 283`, `rbx = (uintptr_t)info`
+- **Обертка stdlib**: `int32_t pc_cpu_core_info(struct cpu_core_info *info)`
+- **Структура**:
+```c
+#define CPU_CORE_MAX_COUNT 16
+struct cpu_core_entry {
+    uint32_t id;
+    uint32_t online;      // 1 = online/idle, 0 = parked/offline
+    uint64_t total_ticks; // scheduler ticks на ядре
+    uint64_t idle_ticks;  // из них idle
+};
+struct cpu_core_info {
+    uint32_t count;
+    uint32_t reserved;
+    struct cpu_core_entry cores[CPU_CORE_MAX_COUNT];
+};
+```
+- **Описание**: Возвращает сырые счётчики для realtime-расчёта: `usage = 100 - idle_delta*100/total_delta` между двумя вызовами (в `monitor` интервал 500мс, в `cpuinfo/htop` 200мс).
+- **Пример**:
+```c
+#include <purec.h>
+
+static uint32_t core_pct(uint64_t ta, uint64_t ia, uint64_t tb, uint64_t ib){
+    uint64_t e = tb > ta ? tb - ta : 0;
+    uint64_t ie = ib > ia ? ib - ia : 0;
+    if(!e) return 0;
+    if(ie > e) ie = e;
+    return 100 - (uint32_t)((ie*100)/e);
+}
+
+void show_cores(void){
+    struct cpu_core_info a={0}, b={0};
+    if(pc_cpu_core_info(&a) < 0) return;
+    pc_sleep(200);
+    if(pc_cpu_core_info(&b) < 0) return;
+    for(uint32_t i=0;i<b.count;i++){
+        uint32_t u = core_pct(a.cores[i].total_ticks, a.cores[i].idle_ticks,
+                              b.cores[i].total_ticks, b.cores[i].idle_ticks);
+        pc_write("cpu"); pc_write_u64(b.cores[i].id);
+        pc_write(b.cores[i].online ? ": " : " offline\n");
+        if(b.cores[i].online){ pc_write_u64(u); pc_write("%\n"); }
     }
 }
 ```

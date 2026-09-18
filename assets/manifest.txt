@@ -39,6 +39,9 @@
 /bin/program/system/clear /bin/program/system/clear - 1 bin/programs/clear
 /bin/program/system/echo /bin/program/system/echo - 1 bin/programs/echo
 /bin/program/system/battery /bin/program/system/battery - 1 bin/programs/battery
+/bin/program/system/cpuinfo /bin/program/system/cpuinfo - 1 bin/programs/cpuinfo
+/bin/program/raminfo /bin/program/raminfo - 0 bin/programs/raminfo
+/bin/program/system/hddcheck /bin/program/system/hddcheck - 1 bin/programs/hddcheck
 /bin/program/system/reboot /bin/program/system/reboot - 1 bin/programs/reboot
 /bin/program/system/poweroff /bin/program/system/poweroff - 1 bin/programs/poweroff
 /bin/program/system/shutdown /bin/program/system/shutdown - 1 bin/programs/shutdown
@@ -54,6 +57,8 @@
 /bin/clear /bin/clear - 1 bin/programs/clear
 /bin/echo /bin/echo - 1 bin/programs/echo
 /bin/battery /bin/battery - 1 bin/programs/battery
+/bin/cpuinfo /bin/cpuinfo - 1 bin/programs/cpuinfo
+/bin/hddcheck /bin/hddcheck - 1 bin/programs/hddcheck
 /bin/reboot /bin/reboot - 1 bin/programs/reboot
 /bin/poweroff /bin/poweroff - 1 bin/programs/poweroff
 /bin/shutdown /bin/shutdown - 1 bin/programs/shutdown

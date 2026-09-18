@@ -23,9 +23,36 @@ static mutex_t process_mutex;
 extern void arch_enter_user(uint64_t instruction_pointer,
                             uint64_t stack_pointer) __attribute__((noreturn));
 
-static struct process processes[PROCESS_MAX_COUNT];
+static struct process *process_list;
 static uint32_t next_pid=1;
 static uint64_t process_sample_tick;
+
+_Static_assert(sizeof(struct process)<=4096,
+    "process node must fit in a single PMM page");
+
+static struct process *process_node_alloc(void){
+    uint64_t phys=pmm_allocate_page();
+    if(!phys) return NULL;
+    struct process *process=(struct process*)pmm_physical_to_virtual(phys);
+    memset(process,0,sizeof(*process));
+    process->node_phys=phys;
+    return process;
+}
+
+static void process_node_free(struct process *process){
+    if(!process) return;
+    uint64_t phys=process->node_phys;
+    struct process **link=&process_list;
+    while(*link && *link!=process) link=&(*link)->next;
+    if(*link) *link=process->next;
+    if(phys) pmm_free_page(phys);
+}
+
+static struct process *process_find_by_pid(uint32_t pid){
+    for(struct process *p=process_list;p;p=p->next)
+        if(p->state!=PROCESS_FREE && p->pid==pid) return p;
+    return NULL;
+}
 
 static bool environment_name_valid(const char *name){
     if(!name || !name[0]) return false;
@@ -85,20 +112,22 @@ static void environment_initialize(struct process *process,
 }
 
 static struct process *allocate_process(void){
-    for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
-        if(processes[index].state==PROCESS_FREE){
-            struct process *process=&processes[index];
-            memset(process,0,sizeof(*process));
-            process->state=PROCESS_LOADING;
-            process->waiter_thread_id=-1;
-            for(uint32_t fd=0;fd<PROCESS_FD_COUNT;fd++) process->descriptors[fd]=-1;
-            process->descriptors[0]=VFS_FD_STDIN;
-            process->descriptors[1]=VFS_FD_STDOUT;
-            process->descriptors[2]=VFS_FD_STDERR;
-            return process;
-        }
+    struct process *process=process_node_alloc();
+    if(!process) return 0;
+    process->state=PROCESS_LOADING;
+    process->waiter_thread_id=-1;
+    for(uint32_t fd=0;fd<PROCESS_FD_COUNT;fd++) process->descriptors[fd]=-1;
+    process->descriptors[0]=VFS_FD_STDIN;
+    process->descriptors[1]=VFS_FD_STDOUT;
+    process->descriptors[2]=VFS_FD_STDERR;
+    process->next=NULL;
+    if(!process_list) process_list=process;
+    else {
+        struct process *tail=process_list;
+        while(tail->next) tail=tail->next;
+        tail->next=process;
     }
-    return 0;
+    return process;
 }
 
 static void user_process_entry(void *argument){
@@ -111,9 +140,9 @@ static void user_process_entry(void *argument){
 }
 
 void process_init(void){
-    memset(processes,0,sizeof(processes));
+    process_list=NULL;
     next_pid=1;
-    klog(KLOG_OK,"process: table initialized");
+    klog(KLOG_OK,"process: dynamic table ready (limit=RAM)");
 }
 
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
@@ -123,12 +152,12 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     struct process *process=allocate_process();
     if(!process) return -1;
     process->address_space=vmm_create_address_space();
-    if(!process->address_space){ process->state=PROCESS_FREE; return -1; }
+    if(!process->address_space){ process_node_free(process); return -1; }
     struct elf_load_result loaded;
     if(!elf_load_user_image(image,image_size,process->address_space,&loaded)){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     uint64_t stack_base=USER_STACK_TOP-USER_STACK_PAGES*PMM_PAGE_SIZE;
@@ -138,17 +167,27 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     if(heap_base>=heap_limit){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     if(!vmm_map_new_pages(process->address_space,stack_base,USER_STACK_PAGES,
                           VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     process->pid=next_pid++;
+    if(process->pid==0) process->pid=next_pid++;
+    for(;;){
+        bool clash=false;
+        for(struct process *o=process_list;o;o=o->next){
+            if(o!=process && o->pid==process->pid){ clash=true; break; }
+        }
+        if(!clash) break;
+        process->pid=next_pid++;
+        if(process->pid==0) process->pid=next_pid++;
+    }
     process->parent_pid=(uint32_t)(process_current_pid()>0
         ? process_current_pid() : 0);
     process->state=PROCESS_READY;
@@ -173,7 +212,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     if(process->thread_id<0){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     klogf(KLOG_OK,"process: pid=%u name=%s entry=0x%llx cr3=0x%llx",
@@ -201,13 +240,12 @@ int32_t process_spawn_module(const char *path, const char *command_line){
         return process_spawn_elf(image,size,name,command_line);
     }
 
-    // Fallback: load executable binary from VFS
     int32_t fd=vfs_open(path);
     if(fd<0 && module_path && module_path!=path){
         fd=vfs_open(module_path);
     }
     if(fd>=0){
-        uint64_t pages=2048; // 8MB buffer
+        uint64_t pages=2048;
         uint64_t phys=pmm_allocate_contiguous(pages);
         if(phys){
             void *vbuf=pmm_physical_to_virtual(phys);
@@ -232,20 +270,17 @@ int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
         bool exiting=false;
         {
             MUTEX_SCOPE(&process_mutex);
-            struct process *target=NULL;
-            for(unsigned index=0;index<PROCESS_MAX_COUNT;index++){
-                if(processes[index].state!=PROCESS_FREE && processes[index].pid==pid){
-                    target=&processes[index]; break;
-                }
-            }
+            struct process *target=process_find_by_pid(pid);
             if(!target) return -1;
             int32_t caller=process_current_pid();
             if(caller>0 && target->parent_pid!=(uint32_t)caller) return -1;
             if(target->state==PROCESS_EXITED && scheduler_thread_stopped(target->thread_id)){
                 if(status) *status=target->exit_code;
+                int exiting_tid=target->thread_id;
                 vmm_destroy_address_space(target->address_space);
                 target->address_space=0;
-                target->state=PROCESS_FREE;
+                scheduler_free_thread_by_id(exiting_tid);
+                process_node_free(target);
                 return (int32_t)pid;
             }
             if(nohang) return 0;
@@ -255,7 +290,7 @@ int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
             exiting=target->state==PROCESS_EXITED;
         }
         if(exiting) scheduler_sleep(1);
-        else scheduler_block(); /* Wake tokens close the unlock/block race. */
+        else scheduler_block();
     }
 }
 
@@ -315,6 +350,12 @@ void process_exit_current(int32_t status){
         process->runtime_ticks=scheduler_thread_runtime_ticks(
             process->thread_id);
         process->state=PROCESS_EXITED;
+        for(struct process *child=process_list;child;child=child->next){
+            if(child->state!=PROCESS_FREE && child->parent_pid==process->pid){
+                child->parent_pid=1;
+                child->waiter_thread_id=-1;
+            }
+        }
         window_manager_unregister(process->pid);
         for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
             if(process->descriptors[fd]>=VFS_FD_BASE){
@@ -337,8 +378,7 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
     uint64_t now=timer_ticks();
     uint64_t elapsed=now-process_sample_tick;
     uint32_t count=0;
-    for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
-        struct process *process=&processes[index];
+    for(struct process *process=process_list;process;process=process->next){
         if(process->state==PROCESS_FREE) continue;
         uint64_t runtime=process->state==PROCESS_EXITED
             ? process->runtime_ticks
@@ -492,9 +532,9 @@ int32_t process_environment_list(struct process_environment_entry *entries,
 
 bool process_set_affinity(uint32_t pid, int16_t core){
     MUTEX_SCOPE(&process_mutex);
-    for(unsigned i=0;i<PROCESS_MAX_COUNT;i++){
-        if(processes[i].pid==pid && (processes[i].state==PROCESS_READY || processes[i].state==PROCESS_RUNNING)){
-            scheduler_set_affinity(processes[i].thread_id,core);
+    for(struct process *p=process_list;p;p=p->next){
+        if(p->pid==pid && (p->state==PROCESS_READY || p->state==PROCESS_RUNNING)){
+            scheduler_set_affinity(p->thread_id,core);
             return true;
         }
     }

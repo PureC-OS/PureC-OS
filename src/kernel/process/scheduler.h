@@ -2,9 +2,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
-
-#define SCHEDULER_MAX_THREADS 64
-#define SCHEDULER_STACK_SIZE 16384
+#define SCHEDULER_STACK_PAGES 4
+#define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES*4096u)
 #define SCHEDULER_TIME_SLICE_MS 5
 
 struct process;
@@ -38,7 +37,10 @@ struct thread {
     int16_t running_cpu;
     uint32_t cpu_mask;
     uint64_t migrations;
-    uint8_t stack[SCHEDULER_STACK_SIZE] __attribute__((aligned(16)));
+    struct thread *next;
+    uint64_t node_phys;
+    uint64_t kstack_phys;
+    uint8_t *kstack;
     uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
 
@@ -55,6 +57,7 @@ void scheduler_sleep(uint32_t milliseconds);
 void scheduler_block(void);
 void scheduler_unblock(int tid);
 void scheduler_exit(void);
+void scheduler_free_thread_by_id(int tid);
 void scheduler_start(void);
 struct thread *scheduler_current_thread(void);
 int scheduler_current_tid(void);
@@ -62,6 +65,7 @@ uint32_t scheduler_thread_count(void);
 uint64_t scheduler_thread_runtime_ticks(int tid);
 uint64_t scheduler_total_ticks(void);
 uint64_t scheduler_idle_ticks(void);
+bool scheduler_cpu_ticks(uint32_t id, uint64_t *total, uint64_t *idle);
 void scheduler_set_affinity(int tid, int16_t core);
 int scheduler_get_core_count(void);
 
