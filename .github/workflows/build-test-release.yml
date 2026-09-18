@@ -202,14 +202,15 @@ jobs:
             --iso dist/PureC-OS.iso \
             --driver "${{ matrix.driver }}" \
             --timeout 180 \
-            --log "qemu-network-${{ matrix.driver }}.log"
+            --log "qemu-network-${{ matrix.driver }}.log" \
+            --pcap "qemu-network-${{ matrix.driver }}.pcap"
 
       - name: Upload QEMU network logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: qemu-network-${{ matrix.driver }}-logs
-          path: qemu-network-${{ matrix.driver }}*.log
+          path: qemu-network-${{ matrix.driver }}*
           if-no-files-found: warn
           retention-days: 14
 

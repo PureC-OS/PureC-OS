@@ -48,10 +48,10 @@ bool qemu_network_test_requested(void) {
     return probe.present;
 }
 
-static void log_ipv4(const char *kind, const char *name, uint32_t address) {
+static void log_dns(const char *hostname, uint32_t address) {
     klogf(KLOG_OK,
-          "[NETTEST] %s PASS %s=%s address=%u.%u.%u.%u",
-          kind, kind[0] == 'D' ? "host" : "target", name,
+          "[NETTEST] DNS PASS host=%s address=%u.%u.%u.%u",
+          hostname,
           (address >> 24) & 255, (address >> 16) & 255,
           (address >> 8) & 255, address & 255);
 }
@@ -90,7 +90,7 @@ static bool resolve_once(struct net_device *device, const char *hostname) {
         enum dns_result result = dns_resolve_ipv4(
             device, hostname, QEMU_TEST_QUERY_TIMEOUT_MS, &address);
         if (result == DNS_RESULT_OK) {
-            log_ipv4("DNS", hostname, address);
+            log_dns(hostname, address);
             return true;
         }
         if (attempt + 1 == QEMU_TEST_QUERY_ATTEMPTS) {

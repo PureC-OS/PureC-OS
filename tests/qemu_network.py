@@ -88,6 +88,18 @@ def stop(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=5)
 
 
+def print_egress_hint(serial: str) -> None:
+    gateway_ok = "[NETTEST] PING PASS target=10.0.2.2" in serial
+    public_missing = any(
+        f"[NETTEST] PING PASS target={target}" not in serial
+        for target in PING_TARGETS[1:]
+    )
+    if gateway_ok and public_missing:
+        print(
+            "The guest reached the QEMU gateway, but public ICMP did not return. "
+            "Check host egress and net.ipv4.ping_group_range.",
+            file=sys.stderr,
+        )
 def qemu_supports(qemu: str, model: str) -> bool:
     result = subprocess.run(
         [qemu, "-device", "help"],
@@ -183,6 +195,7 @@ def main() -> int:
                         file=sys.stderr,
                     )
                     print(tail(serial), file=sys.stderr)
+                    print_egress_hint(serial)
                     return 1
 
                 missing = [name for name, pattern in patterns if not pattern.search(serial)]
@@ -207,6 +220,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             print(tail(serial), file=sys.stderr)
+            print_egress_hint(serial)
             return 1
         finally:
             stop(process)
