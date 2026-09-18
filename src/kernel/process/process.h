@@ -1,9 +1,8 @@
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h>
+#include <stdint>
 
-#define PROCESS_MAX_COUNT 64
 #define PROCESS_FD_COUNT 32
 #define PROCESS_COMMAND_LINE_CAPACITY 256
 #define PROCESS_ENVIRONMENT_COUNT 16
@@ -37,8 +36,6 @@ struct process {
     uint64_t heap_break;
     uint64_t heap_mapped_end;
     uint64_t heap_limit;
-    /* One schedulable thread per process for this ABI; CPU migration does
-       not create another thread. Shared-address-space threads need a new API. */
     int32_t thread_id;
     int32_t waiter_thread_id;
     uint64_t runtime_ticks;
@@ -48,6 +45,8 @@ struct process {
     char command_line[PROCESS_COMMAND_LINE_CAPACITY];
     struct process_environment_entry environment[PROCESS_ENVIRONMENT_COUNT];
     char name[32];
+    struct process *next;
+    uint64_t node_phys;
 };
 
 void process_init(void);

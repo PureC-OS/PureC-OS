@@ -43,18 +43,13 @@ static struct scheduler_cpu *local_scheduler(void){
 static void thread_trampoline(void);
 static uint64_t create_initial_stack(struct thread *thread);
 static bool kernel_text_address_valid(uint64_t address){
-    // Kernel linked at 0xffffffff80000000 (higher half).
-    // Trampoline / thread entry must live there; 0x8000 etc. = corruption.
     return address >= 0xffffffff80000000ULL;
 }
 
 static bool thread_stack_valid(const struct thread *thread){
     if(!thread) return false;
     if(thread->rsp & 0x7ULL) return false;
-    // Low addresses (0x0, 0x8000, NULL) are always corruption.
     if(thread->rsp < 0xffff800000000000ULL) return false;
-    // Idle threads run on the boot stack before the first switch and keep
-    // that saved RSP (they own no kstack pages at all).
     if(thread->idle) return true;
     if(!thread->kstack) return false;
     uint64_t stack_base=(uint64_t)(uintptr_t)thread->kstack;
@@ -65,12 +60,8 @@ static bool thread_stack_valid(const struct thread *thread){
 
 static bool thread_stack_return_valid(uint64_t rsp){
     if(!rsp) return false;
-    // RSP must be readable kernel memory; probe via canonical high-half check
-    // done by caller with thread_stack_valid(). Here only check return slot.
     uint64_t *slot=(uint64_t*)rsp;
     uint64_t return_address=slot[6];
-    // Zero = never initialized; low address like 0x8000 = stack corruption
-    // (e.g. interrupt frame popped from wrong stack after bad switch).
     if(!kernel_text_address_valid(return_address)) return false;
     return true;
 }
@@ -82,9 +73,6 @@ static void write_hex_digits(char *out, uint64_t value, int digits){
     }
 }
 
-// panic_begin() clears the screen, so klogf() before kernel_panic() is
-// wiped. Format all target details INTO the reason string instead.
-/* Called with the runqueue lock held. */
 static char sched_panic_reason[224];
 
 static void validate_switch_target(const struct thread *prev,
@@ -93,7 +81,6 @@ static void validate_switch_target(const struct thread *prev,
         kernel_panic("scheduler: null next thread");
     }
     if(!thread_stack_valid(next)){
-        // "sched bad RSP tgt=<id> rsp=<rsp> base=<base> prev=<id>"
         char *p=sched_panic_reason;
         const char *prefix="sched: bad RSP tgt=0x";
         for(int i=0;prefix[i];i++) *p++=prefix[i];
@@ -101,7 +88,7 @@ static void validate_switch_target(const struct thread *prev,
         const char *mid=" rsp=0x"; for(int i=0;mid[i];i++) *p++=mid[i];
         write_hex_digits(p, next->rsp, 16); p+=16;
         const char *mid2=" base=0x"; for(int i=0;mid2[i];i++) *p++=mid2[i];
-        write_hex_digits(p, (uint64_t)(uintptr_t)next->stack, 16); p+=16;
+        write_hex_digits(p, (uint64_t)(uintptr_t)next->kstack, 16); p+=16;
         const char *mid3=" prev=0x"; for(int i=0;mid3[i];i++) *p++=mid3[i];
         write_hex_digits(p, prev ? prev->id : 0xFFFFFFFFu, 8); p+=8;
         *p='\0';
@@ -142,7 +129,7 @@ static void thread_trampoline(void){
 }
 
 static uint64_t create_initial_stack(struct thread *thread){
-    uint64_t *sp = (uint64_t*)(thread->stack + SCHEDULER_STACK_SIZE);
+    uint64_t *sp = (uint64_t*)(thread->kstack + SCHEDULER_STACK_SIZE);
     *--sp = 0;
     *--sp = (uint64_t)thread_trampoline;
     for(unsigned i=0; i<6; i++) *--sp = 0;
@@ -165,25 +152,74 @@ void scheduler_init_cpu(void){
     fpu_thread_init(idle->fpu_state);
     cpu->idle = idle;
     cpu->current = idle;
-    cpu->cursor = id % SCHEDULER_MAX_THREADS;
+    cpu->cursor = NULL;
     cpu->last_tick = timer_ticks();
     cpu->initialized = true;
 }
 
 void scheduler_init(void){
     if(gdt_current_cpu_id() != 0 || local_scheduler()->initialized) return;
-    memset(threads, 0, sizeof(threads));
-    for(unsigned i=0; i<SCHEDULER_MAX_THREADS; i++) threads[i].running_cpu = -1;
+    thread_list = NULL;
+    thread_live_count = 0;
     scheduler_init_cpu();
-    klogf(KLOG_OK, "sched: shared locked runqueue, max_threads=%u", SCHEDULER_MAX_THREADS);
+    klogf(KLOG_OK, "sched: dynamic runqueue, limit=RAM");
+}
+
+static struct thread *thread_node_alloc(void){
+    uint64_t node_phys=pmm_allocate_page();
+    if(!node_phys) return NULL;
+    uint64_t stack_phys=pmm_allocate_contiguous(SCHEDULER_STACK_PAGES);
+    if(!stack_phys){ pmm_free_page(node_phys); return NULL; }
+    struct thread *t=(struct thread*)pmm_physical_to_virtual(node_phys);
+    memset(t,0,sizeof(*t));
+    t->node_phys=node_phys;
+    t->kstack_phys=stack_phys;
+    t->kstack=(uint8_t*)pmm_physical_to_virtual(stack_phys);
+    memset(t->kstack,0,SCHEDULER_STACK_SIZE);
+    return t;
+}
+
+static void thread_node_free(struct thread *t){
+    if(!t) return;
+    if(t->kstack_phys) pmm_free_contiguous(t->kstack_phys,SCHEDULER_STACK_PAGES);
+    if(t->node_phys) pmm_free_page(t->node_phys);
+}
+
+static bool thread_in_list(struct thread *t){
+    for(struct thread *cursor=thread_list;cursor;cursor=cursor->next)
+        if(cursor==t) return true;
+    return false;
 }
 
 static struct thread *alloc_thread(void){
-    for(unsigned i=0; i<SCHEDULER_MAX_THREADS; i++){
-        if((threads[i].state==THREAD_FREE || threads[i].state==THREAD_TERMINATED)
-           && threads[i].running_cpu == -1) return &threads[i];
+    for(struct thread *t=thread_list;t;t=t->next){
+        if((t->state==THREAD_FREE || t->state==THREAD_TERMINATED)
+           && t->running_cpu == -1) return t;
     }
-    return NULL;
+    struct thread *fresh=thread_node_alloc();
+    if(!fresh) return NULL;
+    fresh->next=thread_list;
+    thread_list=fresh;
+    thread_live_count++;
+    return fresh;
+}
+
+void scheduler_free_thread(struct thread *t){
+    if(!t || t->idle) return;
+    uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+    struct thread **link=&thread_list;
+    while(*link && *link!=t) link=&(*link)->next;
+    if(*link){
+        *link=t->next;
+        thread_live_count--;
+        for(unsigned i=0;i<CPU_MAX_COUNT;i++)
+            if(cpu_schedulers[i].cursor==t) cpu_schedulers[i].cursor=NULL;
+    } else {
+        spin_unlock_irqrestore(&runqueue_lock,flags);
+        return;
+    }
+    spin_unlock_irqrestore(&runqueue_lock,flags);
+    thread_node_free(t);
 }
 
 static int create_thread(void (*entry)(void*), void *arg, const char *name,
@@ -195,14 +231,32 @@ static int create_thread(void (*entry)(void*), void *arg, const char *name,
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     struct thread *t = alloc_thread();
     if(!t){ spin_unlock_irqrestore(&runqueue_lock, flags); return -1; }
+    uint8_t *kstack=t->kstack;
+    uint64_t kstack_phys=t->kstack_phys;
+    uint64_t node_phys=t->node_phys;
+    struct thread *next=t->next;
     memset(t, 0, sizeof(*t));
+    t->kstack=kstack;
+    t->kstack_phys=kstack_phys;
+    t->node_phys=node_phys;
+    t->next=next;
     t->id = next_id++;
+    if(t->id==0) t->id=next_id++;
+    for(;;){
+        bool clash=false;
+        for(struct thread *o=thread_list;o;o=o->next){
+            if(o!=t && o->id==t->id){ clash=true; break; }
+        }
+        if(!clash) break;
+        if(++next_id==0) next_id=1;
+        t->id=next_id++;
+    }
     t->entry = entry;
     t->arg = arg;
     t->priority = priority > 7 ? 7 : priority;
     t->affinity = affinity;
     t->running_cpu = -1;
-    t->kernel_only = user_mode; /* User entry setup is a BSP kernel service. */
+    t->kernel_only = user_mode;
     t->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
     t->address_space = address_space ? address_space : vmm_kernel_address_space();
     t->process = process;
@@ -210,7 +264,7 @@ static int create_thread(void (*entry)(void*), void *arg, const char *name,
     strncpy(t->name, name ? name : "thread", sizeof(t->name)-1);
     t->rsp = create_initial_stack(t);
     fpu_thread_init(t->fpu_state);
-    t->state = THREAD_READY; /* Publish only after the complete context exists. */
+    t->state = THREAD_READY;
     int id = (int)t->id;
     spin_unlock_irqrestore(&runqueue_lock, flags);
     smp_reschedule_all();
@@ -251,31 +305,31 @@ int scheduler_get_core_count(void){
 uint32_t scheduler_thread_count(void){
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     uint32_t count = 0;
-    for(unsigned i=0; i<SCHEDULER_MAX_THREADS; i++)
-        if(threads[i].state!=THREAD_FREE && threads[i].state!=THREAD_TERMINATED) count++;
+    for(struct thread *t=thread_list;t;t=t->next)
+        if(t->state!=THREAD_FREE && t->state!=THREAD_TERMINATED) count++;
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return count;
 }
 uint64_t scheduler_thread_runtime_ticks(int tid){
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     uint64_t result = 0;
-    for(unsigned i=0; i<SCHEDULER_MAX_THREADS; i++)
-        if(threads[i].id==(uint32_t)tid && threads[i].state!=THREAD_FREE){ result=threads[i].runtime_ticks; break; }
+    for(struct thread *t=thread_list;t;t=t->next)
+        if(t->id==(uint32_t)tid && t->state!=THREAD_FREE){ result=t->runtime_ticks; break; }
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return result;
 }
 bool scheduler_thread_stopped(int tid){
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     bool stopped = true;
-    for(unsigned i=0; i<SCHEDULER_MAX_THREADS; i++)
-        if(threads[i].id==(uint32_t)tid){
-            stopped = threads[i].state==THREAD_TERMINATED && threads[i].running_cpu==-1;
+    for(struct thread *t=thread_list;t;t=t->next)
+        if(t->id==(uint32_t)tid){
+            stopped = t->state==THREAD_TERMINATED && t->running_cpu==-1;
             break;
         }
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return stopped;
 }
-/* Aggregate CPU milliseconds; process percentages use a wall-clock denominator. */
+
 uint64_t scheduler_total_ticks(void){
     uint64_t total=0;
     for(unsigned i=0;i<CPU_MAX_COUNT;i++) total+=__atomic_load_n(&cpu_schedulers[i].total_ticks,__ATOMIC_RELAXED);
@@ -297,22 +351,19 @@ void scheduler_set_affinity(int tid, int16_t core){
     if(core < -1 || core >= (int16_t)cpu_registered_count()) return;
     if(core >= 0 && !cpu_is_online((uint32_t)core)) return;
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
-    for(unsigned i=0;i<SCHEDULER_MAX_THREADS;i++)
-        if(threads[i].id==(uint32_t)tid && threads[i].state!=THREAD_FREE){ threads[i].affinity=core; break; }
+    for(struct thread *t=thread_list;t;t=t->next)
+        if(t->id==(uint32_t)tid && t->state!=THREAD_FREE){ t->affinity=core; break; }
     spin_unlock_irqrestore(&runqueue_lock, flags);
     smp_reschedule_all();
 }
 
 static bool eligible(const struct thread *t, uint32_t id){
-    /* Kernel-only is a temporary service placement constraint. The original
-       userspace affinity is preserved and restored on return to ring 3. */
     if(t->kernel_only) return id == 0;
     return t->affinity < 0 || t->affinity == (int16_t)id;
 }
 static void wake_sleeping_threads(void){
     uint64_t now=timer_ticks();
-    for(unsigned i=0;i<SCHEDULER_MAX_THREADS;i++){
-        struct thread *t=&threads[i];
+    for(struct thread *t=thread_list;t;t=t->next){
         if(t->state==THREAD_BLOCKED && t->wake_tick && now>=t->wake_tick){
             t->state=THREAD_READY;
             t->wake_tick=0;
@@ -323,21 +374,25 @@ static struct thread *pick_next(void){
     uint32_t id = gdt_current_cpu_id();
     struct scheduler_cpu *cpu = local_scheduler();
     wake_sleeping_threads();
-    for(unsigned n=1; n<=SCHEDULER_MAX_THREADS; n++){
-        unsigned index=(cpu->cursor+n)%SCHEDULER_MAX_THREADS;
-        struct thread *t=&threads[index];
-        if(t->state==THREAD_READY && t->running_cpu==-1 && eligible(t,id)){
-            cpu->cursor=index;
-            return t;
-        }
+    struct thread *cursor=(cpu->cursor && thread_in_list(cpu->cursor))
+        ? cpu->cursor : NULL;
+    struct thread *t=cursor ? cursor->next : thread_list;
+    if(!t) t=thread_list;
+    if(t){
+        struct thread *stop=t;
+        do {
+            if(t->state==THREAD_READY && t->running_cpu==-1 && eligible(t,id)){
+                cpu->cursor=t;
+                return t;
+            }
+            t=t->next ? t->next : thread_list;
+        } while(t!=stop);
     }
     if(!cpu->current->idle && cpu->current->state==THREAD_RUNNING && eligible(cpu->current,id))
         return cpu->current;
     return cpu->idle;
 }
 
-/* Enter with runqueue_lock held and interrupts disabled; always return with
-   the lock released, potentially on another CPU. */
 static void schedule_locked(void){
     struct scheduler_cpu *cpu=local_scheduler();
     struct thread *prev=cpu->current;
@@ -359,7 +414,7 @@ static void schedule_locked(void){
     cpu->current=next;
     validate_switch_target(prev,next);
     fpu_save(prev->fpu_state);
-    gdt_set_kernel_stack((uint64_t)(uintptr_t)(next->stack+SCHEDULER_STACK_SIZE));
+    gdt_set_kernel_stack((uint64_t)(uintptr_t)(next->kstack+SCHEDULER_STACK_SIZE));
     vmm_switch_address_space(next->address_space);
     fpu_restore(next->fpu_state);
     scheduler_asm_switch(&prev->rsp,&next->rsp);
@@ -431,8 +486,7 @@ void scheduler_block(void){
 }
 void scheduler_unblock(int tid){
     uint64_t flags=spin_lock_irqsave(&runqueue_lock);
-    for(unsigned i=0;i<SCHEDULER_MAX_THREADS;i++){
-        struct thread *t=&threads[i];
+    for(struct thread *t=thread_list;t;t=t->next){
         if(t->id!=(uint32_t)tid) continue;
         if(t->state==THREAD_BLOCKED){ t->wake_tick=0; t->state=THREAD_READY; }
         else if(t->state==THREAD_RUNNING || t->state==THREAD_READY) t->wake_pending=true;
@@ -495,8 +549,6 @@ void scheduler_start(void){
 
 void scheduler_idle_loop(void){
     for(;;){
-        /* IPI or timer arriving after selection stays pending through STI;HLT.
-           Idle threads do not poll devices or remain in the runnable table. */
         __asm__ volatile("cli" ::: "memory");
         scheduler_yield();
         __asm__ volatile("sti; hlt" ::: "memory");

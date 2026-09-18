@@ -23,9 +23,36 @@ static mutex_t process_mutex;
 extern void arch_enter_user(uint64_t instruction_pointer,
                             uint64_t stack_pointer) __attribute__((noreturn));
 
-static struct process processes[PROCESS_MAX_COUNT];
+static struct process *process_list;
 static uint32_t next_pid=1;
 static uint64_t process_sample_tick;
+
+_Static_assert(sizeof(struct process)<=4096,
+    "process node must fit in a single PMM page");
+
+static struct process *process_node_alloc(void){
+    uint64_t phys=pmm_allocate_page();
+    if(!phys) return NULL;
+    struct process *process=(struct process*)pmm_physical_to_virtual(phys);
+    memset(process,0,sizeof(*process));
+    process->node_phys=phys;
+    return process;
+}
+
+static void process_node_free(struct process *process){
+    if(!process) return;
+    uint64_t phys=process->node_phys;
+    struct process **link=&process_list;
+    while(*link && *link!=process) link=&(*link)->next;
+    if(*link) *link=process->next;
+    if(phys) pmm_free_page(phys);
+}
+
+static struct process *process_find_by_pid(uint32_t pid){
+    for(struct process *p=process_list;p;p=p->next)
+        if(p->state!=PROCESS_FREE && p->pid==pid) return p;
+    return NULL;
+}
 
 static bool environment_name_valid(const char *name){
     if(!name || !name[0]) return false;
@@ -85,20 +112,22 @@ static void environment_initialize(struct process *process,
 }
 
 static struct process *allocate_process(void){
-    for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
-        if(processes[index].state==PROCESS_FREE){
-            struct process *process=&processes[index];
-            memset(process,0,sizeof(*process));
-            process->state=PROCESS_LOADING;
-            process->waiter_thread_id=-1;
-            for(uint32_t fd=0;fd<PROCESS_FD_COUNT;fd++) process->descriptors[fd]=-1;
-            process->descriptors[0]=VFS_FD_STDIN;
-            process->descriptors[1]=VFS_FD_STDOUT;
-            process->descriptors[2]=VFS_FD_STDERR;
-            return process;
-        }
+    struct process *process=process_node_alloc();
+    if(!process) return 0;
+    process->state=PROCESS_LOADING;
+    process->waiter_thread_id=-1;
+    for(uint32_t fd=0;fd<PROCESS_FD_COUNT;fd++) process->descriptors[fd]=-1;
+    process->descriptors[0]=VFS_FD_STDIN;
+    process->descriptors[1]=VFS_FD_STDOUT;
+    process->descriptors[2]=VFS_FD_STDERR;
+    process->next=NULL;
+    if(!process_list) process_list=process;
+    else {
+        struct process *tail=process_list;
+        while(tail->next) tail=tail->next;
+        tail->next=process;
     }
-    return 0;
+    return process;
 }
 
 static void user_process_entry(void *argument){
@@ -111,9 +140,9 @@ static void user_process_entry(void *argument){
 }
 
 void process_init(void){
-    memset(processes,0,sizeof(processes));
+    process_list=NULL;
     next_pid=1;
-    klog(KLOG_OK,"process: table initialized");
+    klog(KLOG_OK,"process: dynamic table ready (limit=RAM)");
 }
 
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
