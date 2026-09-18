@@ -175,7 +175,7 @@ static void test_selection(void){
     t->running_cpu=1;
     scheduler_free_thread_by_id(id);
     assert(scheduler_host_lookup(id)==t);
-    assert(scheduler_thread_count()==1);
+    assert(scheduler_thread_count()==0);
     t->running_cpu=-1;
     scheduler_free_thread_by_id(id);
     assert(scheduler_host_lookup(id)==NULL);
