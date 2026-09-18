@@ -1,5 +1,3 @@
-/* Hardware context switching is covered by the QEMU boot self-test. Here the
-   real selection/allocation logic runs concurrently with a mocked CPU ID. */
 #include "kernel/process/scheduler.c"
 #include <assert.h>
 #include <pthread.h>
