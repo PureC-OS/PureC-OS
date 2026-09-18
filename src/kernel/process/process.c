@@ -315,6 +315,13 @@ void process_exit_current(int32_t status){
         process->runtime_ticks=scheduler_thread_runtime_ticks(
             process->thread_id);
         process->state=PROCESS_EXITED;
+        for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
+            struct process *child=&processes[index];
+            if(child->state!=PROCESS_FREE && child->parent_pid==process->pid){
+                child->parent_pid=1;
+                child->waiter_thread_id=-1;
+            }
+        }
         window_manager_unregister(process->pid);
         for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
             if(process->descriptors[fd]>=VFS_FD_BASE){
