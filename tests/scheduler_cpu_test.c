@@ -15,6 +15,8 @@ void klogf(enum klog_level lvl, const char *fmt, ...){ (void)lvl; (void)fmt; }
 void fpu_save(void *area){ (void)area; }
 void fpu_restore(const void *area){ (void)area; }
 void gdt_set_kernel_stack(uint64_t stack_top){ (void)stack_top; }
+uint64_t vmm_kernel_address_space(void){ return 0x1000; }
+void fpu_thread_init(void *area){ (void)area; }
 void vmm_switch_address_space(uint64_t address_space){ (void)address_space; }
 void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp){
     (void)old_rsp;
