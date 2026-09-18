@@ -98,6 +98,7 @@ struct fat32_format_layout {
 };
 
 static uint8_t lfn_checksum(const uint8_t short_name[11]);
+static void fat32_handles_reset(void);
 
 static struct fat32_volume volume;
 static struct fat32_handle *handles;
@@ -895,7 +896,7 @@ static bool mount_boot_sector(uint32_t partition_lba){
     volume.sectors_per_cluster=sectors_per_cluster;
     volume.fat_count=fat_count;
     volume.mounted=true;
-    memset(handles,0,sizeof(handles));
+    fat32_handles_reset();
     return true;
 }
 
@@ -1845,7 +1846,7 @@ int32_t fat32_format_device(const char *device_name,
     }
 
     memset(&volume,0,sizeof(volume));
-    memset(handles,0,sizeof(handles));
+    fat32_handles_reset();
     bool mounted=fat32_init();
     klogf(mounted?KLOG_OK:KLOG_ERROR,"fat32_format: %s dev='%s' mount=%u",mounted?"formatted and mounted":"mount after format failed",device_name,mounted);
     return mounted ? 0 : FS_ERROR_IO;
@@ -1868,7 +1869,7 @@ int32_t fat32_format_device_force(const char *device_name, const char *serial_co
     klogf(KLOG_WARN,"fat32_format_force: skipping blank check dev='%s' sectors=%u",device_name,layout.total_sectors);
     if(!write_format_metadata(&layout)) return FS_ERROR_IO;
     memset(&volume,0,sizeof(volume));
-    memset(handles,0,sizeof(handles));
+    fat32_handles_reset();
     return fat32_init()?0:FS_ERROR_IO;
 }
 
@@ -2674,7 +2675,7 @@ int32_t fat32_format_uefi_device_progress_ex(
         return FS_ERROR_IO;
     }
     memset(&volume,0,sizeof(volume));
-    memset(handles,0,sizeof(handles));
+    fat32_handles_reset();
     if(!mount_boot_sector(FAT32_ESP_START_LBA)){
         klogf(KLOG_ERROR,"fat32_uefi: ESP mount failed");
         return FS_ERROR_IO;
@@ -2888,7 +2889,7 @@ int32_t fat32_format_custom_device(const char *device, uint32_t partition_count,
     }
     // пробуем смонтировать первый раздел как root
     memset(&volume,0,sizeof(volume));
-    memset(handles,0,sizeof(handles));
+    fat32_handles_reset();
     // выберем устройство снова и попробуем смонтировать первый раздел
     block_device_select((uint32_t)idx);
     if(!mount_boot_sector(part_starts[0])){
