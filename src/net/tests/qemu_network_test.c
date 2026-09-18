@@ -18,8 +18,7 @@
 #define QEMU_TEST_QUERY_TIMEOUT_MS 3000U
 #define QEMU_TEST_QUERY_ATTEMPTS 2U
 
-static const char *const ping_targets[] = {
-    "10.0.2.2",
+static const char *const public_ping_targets[] = {
     "8.8.8.8",
     "1.1.1.1",
 };
@@ -60,28 +59,24 @@ static void fail(const char *stage, int32_t status) {
     klogf(KLOG_ERROR, "[NETTEST] RESULT FAIL stage=%s status=%d", stage, status);
 }
 
-static bool ping_once(const char *target, uint16_t sequence) {
+static enum net_ping_status ping_target(const char *target, uint16_t sequence) {
+    enum net_ping_status last_status = NET_PING_TIMEOUT;
     for (uint32_t attempt = 0; attempt < QEMU_TEST_QUERY_ATTEMPTS; attempt++) {
         struct net_ping_reply reply = {0};
-        enum net_ping_status status = net_ping_target(
+        last_status = net_ping_target(
             target, (uint16_t)(sequence + attempt), QEMU_TEST_QUERY_TIMEOUT_MS,
             &reply);
-        if (status == NET_PING_OK) {
+        if (last_status == NET_PING_OK) {
             klogf(KLOG_OK,
                   "[NETTEST] PING PASS target=%s address=%u.%u.%u.%u rtt_ms=%u ttl=%u",
                   target, (reply.address >> 24) & 255,
                   (reply.address >> 16) & 255, (reply.address >> 8) & 255,
                   reply.address & 255, reply.round_trip_ms, reply.ttl);
-            return true;
+            return NET_PING_OK;
         }
-        if (attempt + 1 == QEMU_TEST_QUERY_ATTEMPTS) {
-            klogf(KLOG_ERROR, "[NETTEST] PING FAIL target=%s status=%d",
-                  target, status);
-            return false;
-        }
-        scheduler_sleep(100);
+        if (attempt + 1 < QEMU_TEST_QUERY_ATTEMPTS) scheduler_sleep(100);
     }
-    return false;
+    return last_status;
 }
 
 static bool resolve_once(struct net_device *device, const char *hostname) {
@@ -142,14 +137,40 @@ void qemu_network_test_thread(void *argument) {
           dns_server & 255);
 
     uint32_t failed_checks = 0;
-    for (uint32_t index = 0;
-         index < sizeof(ping_targets) / sizeof(ping_targets[0]); index++) {
-        if (!ping_once(ping_targets[index], (uint16_t)(index * 10 + 1)))
-            failed_checks++;
+    enum net_ping_status gateway_status = ping_target("10.0.2.2", 1);
+    bool gateway_ok = gateway_status == NET_PING_OK;
+    if (!gateway_ok) {
+        klogf(KLOG_ERROR,
+              "[NETTEST] PING FAIL target=10.0.2.2 status=%d",
+              gateway_status);
+        failed_checks++;
     }
+
+    bool dns_ok = true;
     for (uint32_t index = 0;
          index < sizeof(dns_targets) / sizeof(dns_targets[0]); index++) {
-        if (!resolve_once(device, dns_targets[index])) failed_checks++;
+        if (!resolve_once(device, dns_targets[index])) {
+            dns_ok = false;
+            failed_checks++;
+        }
+    }
+
+    for (uint32_t index = 0;
+         index < sizeof(public_ping_targets) / sizeof(public_ping_targets[0]);
+         index++) {
+        const char *target = public_ping_targets[index];
+        enum net_ping_status status = ping_target(
+            target, (uint16_t)(index * 10 + 11));
+        if (status == NET_PING_OK) continue;
+        if (gateway_ok && dns_ok) {
+            klogf(KLOG_WARN,
+                  "[NETTEST] PING UNAVAILABLE target=%s status=%d reason=host-icmp-egress",
+                  target, status);
+        } else {
+            klogf(KLOG_ERROR, "[NETTEST] PING FAIL target=%s status=%d",
+                  target, status);
+            failed_checks++;
+        }
     }
 
     if (failed_checks)
