@@ -194,6 +194,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends qemu-system-x86
+          sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
 
       - name: Test wired driver, DHCP, ping and DNS
         run: |

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-PING_TARGETS = ("8.8.8.8", "1.1.1.1")
+PING_TARGETS = ("10.0.2.2", "8.8.8.8", "1.1.1.1")
 DNS_TARGETS = ("google.com", "cloudflare.com", "example.com")
 FAILURE_MARKERS = (
     "[EARLY PANIC]",

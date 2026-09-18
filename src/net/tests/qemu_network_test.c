@@ -19,6 +19,7 @@
 #define QEMU_TEST_QUERY_ATTEMPTS 2U
 
 static const char *const ping_targets[] = {
+    "10.0.2.2",
     "8.8.8.8",
     "1.1.1.1",
 };
@@ -140,20 +141,19 @@ void qemu_network_test_thread(void *argument) {
           (dns_server >> 16) & 255, (dns_server >> 8) & 255,
           dns_server & 255);
 
+    uint32_t failed_checks = 0;
     for (uint32_t index = 0;
          index < sizeof(ping_targets) / sizeof(ping_targets[0]); index++) {
-        if (!ping_once(ping_targets[index], (uint16_t)(index * 10 + 1))) {
-            fail("ping", (int32_t)index);
-            return;
-        }
+        if (!ping_once(ping_targets[index], (uint16_t)(index * 10 + 1)))
+            failed_checks++;
     }
     for (uint32_t index = 0;
          index < sizeof(dns_targets) / sizeof(dns_targets[0]); index++) {
-        if (!resolve_once(device, dns_targets[index])) {
-            fail("dns", (int32_t)index);
-            return;
-        }
+        if (!resolve_once(device, dns_targets[index])) failed_checks++;
     }
 
-    klog(KLOG_OK, "[NETTEST] RESULT PASS");
+    if (failed_checks)
+        fail("checks", (int32_t)failed_checks);
+    else
+        klog(KLOG_OK, "[NETTEST] RESULT PASS");
 }
