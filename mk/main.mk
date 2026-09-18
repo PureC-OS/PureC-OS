@@ -8,14 +8,13 @@ LIMINE_CONFIG       := $(BIN_DIR)/staged/limine.conf
 
 CRYPT_DIR           := $(ROOT_DIR)/libxcrypt
 TCC_DIR             := $(ROOT_DIR)/tcc
-USERSPACE_DIR       := $(ROOT_DIR)/userspace
 ACPI_DIR            := $(ROOT_DIR)/acpi
 NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad userspace clean help \
+.PHONY: all libraries programs kernel iso hexedit notepad clean help \
 	test test-cpu test-string test-program-alias test-path
 
 HOST_CC ?= cc
@@ -60,7 +59,6 @@ libraries:
 
 programs: libraries notepad
 	$(MAKE) -C src/programs
-	$(MAKE) -C $(USERSPACE_DIR)
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 notepad:
@@ -73,10 +71,6 @@ notepad:
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
 
-userspace:
-	@test -d "$(USERSPACE_DIR)" || \
-	  { echo "ERROR: userspace/ not found. Run: ./purec.py setup"; exit 1; }
-	$(MAKE) -C $(USERSPACE_DIR)
 
 kernel:
 	@test -f "$(CRYPT_DIR)/src/sha512.c" || \
@@ -158,7 +152,6 @@ help:
 	@echo "  make programs       build Ring-3 programs"
 	@echo "  make hexedit        build HexEdit"
 	@echo "  make notepad        build PureC Notepad"
-	@echo "  make userspace      build Userspace"
 	@echo "  make iso            assemble ISO image"
 	@echo "  make test           run all host tests"
 	@echo "  make test-cpu       run host CPU discovery tests"
