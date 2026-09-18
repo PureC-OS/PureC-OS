@@ -270,20 +270,17 @@ int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
         bool exiting=false;
         {
             MUTEX_SCOPE(&process_mutex);
-            struct process *target=NULL;
-            for(unsigned index=0;index<PROCESS_MAX_COUNT;index++){
-                if(processes[index].state!=PROCESS_FREE && processes[index].pid==pid){
-                    target=&processes[index]; break;
-                }
-            }
+            struct process *target=process_find_by_pid(pid);
             if(!target) return -1;
             int32_t caller=process_current_pid();
             if(caller>0 && target->parent_pid!=(uint32_t)caller) return -1;
             if(target->state==PROCESS_EXITED && scheduler_thread_stopped(target->thread_id)){
                 if(status) *status=target->exit_code;
+                int exiting_tid=target->thread_id;
                 vmm_destroy_address_space(target->address_space);
                 target->address_space=0;
-                target->state=PROCESS_FREE;
+                scheduler_free_thread_by_id(exiting_tid);
+                process_node_free(target);
                 return (int32_t)pid;
             }
             if(nohang) return 0;
@@ -353,8 +350,7 @@ void process_exit_current(int32_t status){
         process->runtime_ticks=scheduler_thread_runtime_ticks(
             process->thread_id);
         process->state=PROCESS_EXITED;
-        for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
-            struct process *child=&processes[index];
+        for(struct process *child=process_list;child;child=child->next){
             if(child->state!=PROCESS_FREE && child->parent_pid==process->pid){
                 child->parent_pid=1;
                 child->waiter_thread_id=-1;
@@ -382,8 +378,7 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
     uint64_t now=timer_ticks();
     uint64_t elapsed=now-process_sample_tick;
     uint32_t count=0;
-    for(uint32_t index=0;index<PROCESS_MAX_COUNT;index++){
-        struct process *process=&processes[index];
+    for(struct process *process=process_list;process;process=process->next){
         if(process->state==PROCESS_FREE) continue;
         uint64_t runtime=process->state==PROCESS_EXITED
             ? process->runtime_ticks
