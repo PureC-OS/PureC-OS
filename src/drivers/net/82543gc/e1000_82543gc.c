@@ -12,6 +12,7 @@
 #define E1000_GC_VENDOR_INTEL 0x8086
 #define E1000_GC_DEVICE_82543GC_COPPER 0x1004
 #define E1000_GC_DEVICE_82543GC_FIBER 0x1001
+#define E1000_GC_DEVICE_82544GC_COPPER 0x100C
 #define E1000_GC_MAX_ADAPTERS 4
 #define E1000_GC_MMIO_SIZE 0x20000U
 #define E1000_GC_RING_COUNT 16U
@@ -525,7 +526,8 @@ static void gc_find_adapters(const struct pci_device_info *device,
               device->bus,device->slot,device->function);
         return;
     }
-    if(device->device_id!=E1000_GC_DEVICE_82543GC_COPPER) return;
+    if(device->device_id!=E1000_GC_DEVICE_82543GC_COPPER
+       && device->device_id!=E1000_GC_DEVICE_82544GC_COPPER) return;
     found->pci[found->count]=*device;
     found->count++;
 }
@@ -599,7 +601,7 @@ static bool gc_init_one(struct e1000_gc_device *device,
         return false;
     }
     klogf(KLOG_OK,
-          "e1000: %s 82543GC %02x:%02x:%02x:%02x:%02x:%02x %u/%s link=%s polling",
+          "e1000: %s 8254xGC %02x:%02x:%02x:%02x:%02x:%02x %u/%s link=%s polling",
           device->net.name,
           device->net.mac[0],device->net.mac[1],device->net.mac[2],
           device->net.mac[3],device->net.mac[4],device->net.mac[5],

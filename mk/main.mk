@@ -16,7 +16,8 @@ export ROOT_DIR BIN_DIR
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad clean help \
 	test test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path \
-	test-dot11
+	test-dot11 test-qemu-network test-qemu-network-e1000 \
+	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
@@ -67,6 +68,21 @@ test-dot11:
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
 		tests/dot11_assoc_test.c src/net/802.11/assoc.c -o $(BIN_DIR)/tests/dot11_assoc_test
 	$(BIN_DIR)/tests/dot11_assoc_test
+
+test-qemu-network: test-qemu-network-e1000 test-qemu-network-8254xgc test-qemu-network-pcnet
+	@echo "All QEMU wired-network tests passed"
+
+test-qemu-network-e1000:
+	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
+	python3 tests/qemu_network.py --iso "$(ISO_IMAGE)" --driver e1000
+
+test-qemu-network-8254xgc:
+	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
+	python3 tests/qemu_network.py --iso "$(ISO_IMAGE)" --driver 8254xgc
+
+test-qemu-network-pcnet:
+	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
+	python3 tests/qemu_network.py --iso "$(ISO_IMAGE)" --driver pcnet
 
 all: iso
 
@@ -175,6 +191,7 @@ help:
 	@echo "  make test           run all host tests"
 	@echo "  make test-cpu       run host CPU discovery tests"
 	@echo "  make test-dot11     run 802.11 association tests"
+	@echo "  make test-qemu-network  test each wired NIC in a separate QEMU VM"
 	@echo "  make clean          remove build artefacts"
 	@echo ""
 	@echo "  NOTE: external repos must be fetched first:"
