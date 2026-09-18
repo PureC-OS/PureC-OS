@@ -14,9 +14,11 @@
 
 #define VFS_FS_FAT32 0
 #define VFS_FS_EXT2 1
+#define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
 
 bool vfs_mount_root(void);
+bool vfs_mount_initramfs(void);
 bool vfs_mount_root_with_fs(uint8_t fs_type);
 bool vfs_is_root_mounted(void);
 const char *vfs_root_device_name(void);

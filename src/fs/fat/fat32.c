@@ -2153,55 +2153,13 @@ static const char uefi_limine_config[]=
     "    kernel_path: boot():/boot/kernel.elf\n"
     "    module_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/bin/init\n"
-    "    module_path: boot():/bin/installer\n"
-    "    module_path: boot():/bin/snake\n"
-    "    module_path: boot():/bin/tetris\n"
-    "    module_path: boot():/bin/program/terminal\n"
-    "    module_path: boot():/bin/program/nano\n"
-    "    module_path: boot():/bin/program/system\n"
-    "    module_path: boot():/bin/program/files\n"
-    "    module_path: boot():/bin/program/settings\n"
-    "    module_path: boot():/bin/program/monitor\n"
-    "    module_path: boot():/bin/program/disks\n"
-    "    module_path: boot():/bin/program/logview\n"
-    "    module_path: boot():/bin/program/hexedit\n"
-    "    module_path: boot():/bin/program/tetris\n"
-    "    module_path: boot():/bin/gui-demo\n"
-    "    module_path: boot():/lib/libpurec.a\n"
-    "    module_path: boot():/lib/libpuregui.a\n"
-    "    module_path: boot():/lib/libpguiw.a\n"
-    "    module_path: boot():/lib/libpurefs.a\n"
-    "    module_path: boot():/include/puregui.h\n"
-    "    module_path: boot():/include/pguiw.h\n"
-    "    module_path: boot():/include/purefs.h\n"
+    "    module_path: boot():/boot/initramfs.cpio\n"
     "/PureC OS (UEFI fallback previous image)\n"
     "    protocol: limine\n"
     "    resolution: 1280x800x32\n"
     "    kernel_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/bin/init\n"
-    "    module_path: boot():/bin/installer\n"
-    "    module_path: boot():/bin/snake\n"
-    "    module_path: boot():/bin/tetris\n"
-    "    module_path: boot():/bin/program/terminal\n"
-    "    module_path: boot():/bin/program/nano\n"
-    "    module_path: boot():/bin/program/system\n"
-    "    module_path: boot():/bin/program/files\n"
-    "    module_path: boot():/bin/program/settings\n"
-    "    module_path: boot():/bin/program/monitor\n"
-    "    module_path: boot():/bin/program/disks\n"
-    "    module_path: boot():/bin/program/logview\n"
-    "    module_path: boot():/bin/program/hexedit\n"
-    "    module_path: boot():/bin/program/tetris\n"
-    "    module_path: boot():/bin/gui-demo\n"
-    "    module_path: boot():/lib/libpurec.a\n"
-    "    module_path: boot():/lib/libpuregui.a\n"
-    "    module_path: boot():/lib/libpguiw.a\n"
-    "    module_path: boot():/lib/libpurefs.a\n"
-    "    module_path: boot():/include/puregui.h\n"
-    "    module_path: boot():/include/pguiw.h\n"
-    "    module_path: boot():/include/purefs.h\n";
+    "    module_path: boot():/boot/initramfs.cpio\n";
 
 static int32_t write_uefi_config(const char *directory,
                                  const char *alias_path){
@@ -2560,9 +2518,11 @@ static int32_t install_uefi_payload(void){
 
     const void *kernel_image;
     const void *fallback_kernel_image;
+    const void *initramfs_image;
     const void *efi_loader;
     uint32_t kernel_image_size;
     uint64_t fallback_kernel_image_size;
+    uint64_t initramfs_image_size;
     uint32_t efi_loader_size;
     if(!boot_get_kernel_image(&kernel_image,&kernel_image_size)){
         klog(KLOG_ERROR,"install: missing kernel.elf");
@@ -2585,6 +2545,12 @@ static int32_t install_uefi_payload(void){
         klog(KLOG_ERROR,"install: missing BOOTX64.EFI");
         return FS_ERROR_NOT_FOUND;
     }
+    if(!boot_get_module("/boot/initramfs.cpio",&initramfs_image,
+                        &initramfs_image_size) || !initramfs_image ||
+       !initramfs_image_size || initramfs_image_size>UINT32_MAX){
+        klog(KLOG_ERROR,"install: missing initramfs.cpio");
+        return FS_ERROR_NOT_FOUND;
+    }
     if(((const uint8_t*)efi_loader)[0]!=0x4D || ((const uint8_t*)efi_loader)[1]!=0x5A){
         klog(KLOG_ERROR,"install: BOOTX64.EFI bad MZ");
         return FS_ERROR_NOT_FOUND;
@@ -2604,6 +2570,12 @@ static int32_t install_uefi_payload(void){
                             (uint32_t)fallback_kernel_image_size);
     if(status<0){
         klogf(KLOG_ERROR,"install: write fallback %d",status);
+        return status;
+    }
+    status=payload_write_file("/boot/initramfs.cpio",initramfs_image,
+                              (uint32_t)initramfs_image_size);
+    if(status<0){
+        klogf(KLOG_ERROR,"install: write initramfs %d",status);
         return status;
     }
     status=install_program_payload();
@@ -2637,6 +2609,9 @@ static int32_t install_uefi_payload(void){
     if(status<0) return status;
     status=verify_installed_file("/boot/kernel2.elf",
                                  (uint32_t)fallback_kernel_image_size);
+    if(status<0) return status;
+    status=verify_installed_file("/boot/initramfs.cpio",
+                                 (uint32_t)initramfs_image_size);
     if(status<0) return status;
     for(uint8_t index=0;index<sizeof(config_locations)/sizeof(config_locations[0]);index++){
         status=verify_installed_file(config_locations[index].alias_path,

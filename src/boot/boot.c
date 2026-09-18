@@ -21,6 +21,7 @@
 #include "../kernel/diagnostics/panic.h"
 #include "../lib/string.h"
 #include "install_source.h"
+#include "../fs/initramfs.h"
 
 __attribute__((used, section(".requests_start_marker")))
 static volatile LIMINE_REQUESTS_START_MARKER;
@@ -135,16 +136,19 @@ static bool module_path_matches(const char *actual, const char *expected){
 }
 
 bool boot_get_module(const char *path, const void **address, uint64_t *size){
-    if(!path || !address || !size || !module_request.response
-       || !module_request.response->modules) return false;
-    for(uint64_t index=0;index<module_request.response->module_count;index++){
-        struct limine_file *module=module_request.response->modules[index];
-        if(!module || !module->address || module->size<2
-           || !module_path_matches(module->path,path)) continue;
-        *address=module->address;
-        *size=module->size;
-        return true;
+    if(!path || !address || !size) return false;
+    if(module_request.response && module_request.response->modules) {
+        for(uint64_t index=0;index<module_request.response->module_count;index++){
+            struct limine_file *module=module_request.response->modules[index];
+            if(!module || !module->address || module->size<2
+               || !module_path_matches(module->path,path)) continue;
+            *address=module->address;
+            *size=module->size;
+            return true;
+        }
     }
+    uint32_t archive_size = 0;
+    if (initramfs_find(path, address, &archive_size)) { *size = archive_size; return true; }
     return false;
 }
 

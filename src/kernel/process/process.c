@@ -8,7 +8,6 @@ static mutex_t process_mutex;
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "program_alias.h"
-#include "../../boot/install_source.h"
 #include "../../fs/vfs.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
@@ -222,22 +221,12 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
 
 int32_t process_spawn_module(const char *path, const char *command_line){
     MUTEX_SCOPE(&process_mutex);
-    const void *image=NULL;
-    uint64_t size=0;
     const char *module_path=path;
     if(!path) return -1;
 
     const char *name=path;
     for(const char *cursor=path;*cursor;cursor++){
         if(*cursor=='/' && cursor[1]) name=cursor+1;
-    }
-
-    if(boot_get_module(module_path,&image,&size)){
-        return process_spawn_elf(image,size,name,command_line);
-    }
-    if(program_alias_resolve(path,&module_path)
-       && boot_get_module(module_path,&image,&size)){
-        return process_spawn_elf(image,size,name,command_line);
     }
 
     int32_t fd=vfs_open(path);

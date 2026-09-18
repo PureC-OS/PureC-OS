@@ -8,6 +8,7 @@ static mutex_t vfs_mutex;
 #include "./ext2/include/ext2_inode.h"
 #include "./ext2/include/ext2_block.h"
 #include "./ext2/include/ext2_types.h"
+#include "initramfs.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
 #include "../kernel/diagnostics/klog.h"
@@ -20,6 +21,7 @@ enum vfs_handle_type {
     VFS_HANDLE_NONE,
     VFS_HANDLE_FAT32,
     VFS_HANDLE_EXT2,
+    VFS_HANDLE_INITRAMFS,
     VFS_HANDLE_KERNEL_FILE,
     VFS_HANDLE_KLOG
 };
@@ -112,6 +114,7 @@ static struct vfs_handle *get_handle(int32_t descriptor) {
 const char *vfs_fs_type_name(uint8_t fs_type) {
     MUTEX_SCOPE(&vfs_mutex);
     if (fs_type == VFS_FS_EXT2) return "ext2";
+    if (fs_type == VFS_FS_INITRAMFS) return "initramfs";
     return "fat32";
 }
 
@@ -128,6 +131,13 @@ void vfs_set_active_fs(uint8_t fs_type) {
 bool vfs_mount_root(void) {
     MUTEX_SCOPE(&vfs_mutex);
     return vfs_mount_root_with_fs(VFS_FS_AUTO);
+}
+
+bool vfs_mount_initramfs(void) {
+    MUTEX_SCOPE(&vfs_mutex);
+    if (!initramfs_mount()) return false;
+    vfs_active_fs = VFS_FS_INITRAMFS;
+    return true;
 }
 
 bool vfs_mount_root_with_fs(uint8_t fs_type) {
@@ -148,12 +158,14 @@ bool vfs_mount_root_with_fs(uint8_t fs_type) {
 bool vfs_is_root_mounted(void) {
     MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_is_mounted();
+    if (vfs_active_fs == VFS_FS_INITRAMFS) return initramfs_is_mounted();
     return fat32_is_mounted();
 }
 
 const char *vfs_root_device_name(void) {
     MUTEX_SCOPE(&vfs_mutex);
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_device_name();
+    if (vfs_active_fs == VFS_FS_INITRAMFS) return "initramfs";
     return fat32_device_name();
 }
 
@@ -187,6 +199,15 @@ int32_t vfs_open(const char *path) {
         return VFS_FD_BASE + idx;
     }
     int32_t be = -1;
+    if (vfs_active_fs == VFS_FS_INITRAMFS) {
+        const void *data = 0;
+        uint32_t size = 0;
+        if (!initramfs_find(path, &data, &size)) { memset(h, 0, sizeof(*h)); return FS_ERROR_NOT_FOUND; }
+        h->type = VFS_HANDLE_INITRAMFS;
+        h->backend_descriptor = -1;
+        h->data = data; h->size = size; h->position = 0;
+        return VFS_FD_BASE + idx;
+    }
     if (vfs_active_fs == VFS_FS_EXT2) be = ext2_open(path); else be = fat32_open(path);
     if (be < 0) { memset(h, 0, sizeof(*h)); return be; }
     h->type = (vfs_active_fs == VFS_FS_EXT2) ? VFS_HANDLE_EXT2 : VFS_HANDLE_FAT32;
@@ -206,7 +227,7 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
         uint32_t a = klog_read_since(&h->klog_cursor, (char *)buffer, count, &h->klog_data_lost);
         return (int32_t)a;
     }
-    if (h->type != VFS_HANDLE_KERNEL_FILE) return FS_ERROR_INVALID;
+    if (h->type != VFS_HANDLE_KERNEL_FILE && h->type != VFS_HANDLE_INITRAMFS) return FS_ERROR_INVALID;
     if (h->position >= h->size) return 0;
     uint32_t rem = h->size - h->position;
     uint32_t amt = count < rem ? count : rem;
@@ -247,7 +268,7 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
         h->klog_cursor = (uint64_t)target;
         return target;
     }
-    if (h->type != VFS_HANDLE_KERNEL_FILE) return FS_ERROR_INVALID;
+    if (h->type != VFS_HANDLE_KERNEL_FILE && h->type != VFS_HANDLE_INITRAMFS) return FS_ERROR_INVALID;
     int64_t base = 0;
     if (whence == SEEK_CUR) base = (int64_t)h->position;
     else if (whence == SEEK_END) base = (int64_t)h->size;
@@ -277,6 +298,13 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
         out->size = klog_total_bytes();
         out->is_directory = 0;
         out->reserved = 0;
+        return 0;
+    }
+    if (vfs_active_fs == VFS_FS_INITRAMFS) {
+        const void *data = 0;
+        uint32_t size = 0;
+        if (!initramfs_find(path, &data, &size)) return FS_ERROR_NOT_FOUND;
+        out->size = size; out->is_directory = 0; out->reserved = 0;
         return 0;
     }
     if (vfs_active_fs == VFS_FS_EXT2) {
@@ -326,7 +354,8 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries, uint32_t 
     if (!path || !entries || capacity == 0) return FS_ERROR_INVALID;
     if (path_equals(path, "/")) {
         int32_t be = 0;
-        if (vfs_active_fs == VFS_FS_EXT2) be = ext2_list(path, entries, capacity);
+        if (vfs_active_fs == VFS_FS_INITRAMFS) be = initramfs_list(path, entries, capacity);
+        else if (vfs_active_fs == VFS_FS_EXT2) be = ext2_list(path, entries, capacity);
         else be = fat32_list(path, entries, capacity);
         uint32_t count = be > 0 ? (uint32_t)be : 0;
         if (count < capacity) { copy_name(entries[count].name, "kernel"); entries[count].size = 0; entries[count].attributes = FS_ATTRIBUTE_DIRECTORY; count++; }
@@ -346,6 +375,7 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries, uint32_t 
         for (uint32_t i = 0; i < count; i++) { copy_name(entries[i].name, kernel_files[i].name); entries[i].size = (uint32_t)strlen(kernel_files[i].content); entries[i].attributes = 0; }
         return (int32_t)count;
     }
+    if (vfs_active_fs == VFS_FS_INITRAMFS) return initramfs_list(path, entries, capacity);
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_list(path, entries, capacity);
     return fat32_list(path, entries, capacity);
 }
@@ -364,7 +394,8 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
     if (!path || !entries || capacity == 0) return FS_ERROR_INVALID;
     if (path_equals(path, "/")) {
         int32_t be = 0;
-        if (vfs_active_fs == VFS_FS_EXT2) be = ext2_list_long(path, entries, capacity);
+        if (vfs_active_fs == VFS_FS_INITRAMFS) be = initramfs_list_long(path, entries, capacity);
+        else if (vfs_active_fs == VFS_FS_EXT2) be = ext2_list_long(path, entries, capacity);
         else be = fat32_list_long(path, entries, capacity);
         uint32_t count = be > 0 ? (uint32_t)be : 0;
         if (count < capacity) { copy_name_long(entries[count].name, "kernel"); entries[count].size = 0; entries[count].attributes = FS_ATTRIBUTE_DIRECTORY; count++; }
@@ -384,6 +415,7 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
         for (uint32_t i = 0; i < count; i++) { copy_name_long(entries[i].name, kernel_files[i].name); entries[i].size = (uint32_t)strlen(kernel_files[i].content); entries[i].attributes = 0; }
         return (int32_t)count;
     }
+    if (vfs_active_fs == VFS_FS_INITRAMFS) return initramfs_list_long(path, entries, capacity);
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_list_long(path, entries, capacity);
     return fat32_list_long(path, entries, capacity);
 }
@@ -393,6 +425,7 @@ int32_t vfs_create_file(const char *path) {
     if (!path || path_equals(path, "/kernel")) return FS_ERROR_INVALID;
     if (find_kernel_file(path)) return FS_ERROR_READ_ONLY;
     if (is_klog_path(path)) return 0;
+    if (vfs_active_fs == VFS_FS_INITRAMFS) return FS_ERROR_READ_ONLY;
     if (vfs_active_fs == VFS_FS_EXT2) return ext2_create_file(path);
     return fat32_create_file(path);
 }
@@ -414,6 +447,7 @@ int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
         if (raw >= 0) return (int32_t)count;
         return (int32_t)count;
     }
+    if (vfs_active_fs == VFS_FS_INITRAMFS) return FS_ERROR_READ_ONLY;
     if (vfs_active_fs == VFS_FS_EXT2) {
         int32_t ext_result = ext2_write_file(path, buffer, count);
         if (ext_result >= 0) block_device_flush();

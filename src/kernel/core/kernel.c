@@ -15,6 +15,7 @@
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
 #include "../../net/core/net_service.h"
+#include "../../fs/vfs.h"
 #include "../devices/device_manager.h"
 #include "../smp/cpu.h"
 #include "../smp/smp.h"
@@ -47,11 +48,10 @@ void kernel_main(struct limine_framebuffer *fb) {
     pmm_init(memmap_response_ptr,hhdm_offset_global);
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
     vmm_init();
+    if (!vfs_mount_initramfs()) kernel_panic("cannot mount /boot/initramfs.cpio");
     fpu_init();
-    power_init(); // ACPI tables + _S5/ResetReg discovery (needs only HHDM+RSDP)
+    power_init();
     process_init();
-
-    // GDT/IDT уже настроены в boot.c, но проверяем инт3 как linux-like selftest
     klog(KLOG_INFO, "Testing IDT: int3 breakpoint...");
     __asm__ volatile("int3");
     klog(KLOG_OK, "int3 handled, IDT working");
@@ -68,13 +68,10 @@ void kernel_main(struct limine_framebuffer *fb) {
     syscall_init();
     klog(KLOG_OK, "Syscall int 0x80 ready");
     (void)net_service_init();
-
     const char *msg="Hello from syscall (Limine)!\n";
     klog(KLOG_INFO, "Testing syscall WRITE...");
     do_syscall(SYS_WRITE, (uint64_t)msg, strlen(msg), 1,0,0);
     klog(KLOG_OK, "syscall WRITE done");
-
-    // GOP тест откладываем в userspace чтобы не перекрывать boot log
     klog(KLOG_INFO, "GOP test deferred to userspace");
 
     klog(KLOG_INFO, "Boot log complete");

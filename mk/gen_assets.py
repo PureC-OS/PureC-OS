@@ -7,6 +7,28 @@ import sys
 MANIFEST_NAME = "manifest.txt"
 
 
+def cpio_newc_entry(name, data):
+    encoded_name = name.encode("utf-8") + b"\0"
+    header = ("070701" + "%08x" % 0 + "%08x" % 0o100644 +
+              "%08x" % 0 + "%08x" % 0 + "%08x" % 1 + "%08x" % 0 +
+              "%08x" % len(data) + "%08x" % 0 + "%08x" % 0 +
+              "%08x" % 0 + "%08x" % 0 + "%08x" % len(encoded_name) +
+              "%08x" % 0).encode("ascii")
+    result = header + encoded_name
+    result += b"\0" * ((-len(result)) % 4)
+    result += data
+    result += b"\0" * ((-len(result)) % 4)
+    return result
+
+
+def write_initramfs(path, files):
+    with open(path, "wb") as handle:
+        for name, source in files.items():
+            with open(source, "rb") as input_file:
+                handle.write(cpio_newc_entry(name.lstrip("/"), input_file.read()))
+        handle.write(cpio_newc_entry("TRAILER!!!", b""))
+
+
 def parse_manifest(path):
     entries = []
     seen = set()
@@ -57,6 +79,7 @@ def main():
 
     os.makedirs(args.staged, exist_ok=True)
     staged_modules = {}
+    initramfs_files = {}
     for entry in entries:
         module = entry["module"]
         if module in staged_modules:
@@ -71,16 +94,23 @@ def main():
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
         staged_modules[module] = True
+        initramfs_files[module] = src
     staged_manifest = os.path.join(args.staged, MANIFEST_NAME)
     shutil.copyfile(manifest_path, staged_manifest)
     iso_manifest = os.path.join(args.iso, MANIFEST_NAME)
     shutil.copyfile(manifest_path, iso_manifest)
     staged_modules["/" + MANIFEST_NAME] = True
+    initramfs_files["/" + MANIFEST_NAME] = staged_manifest
+
+    initramfs_path = os.path.join(args.staged, "initramfs.cpio")
+    write_initramfs(initramfs_path, initramfs_files)
+    iso_initramfs = os.path.join(args.iso, "boot", "initramfs.cpio")
+    os.makedirs(os.path.dirname(iso_initramfs), exist_ok=True)
+    shutil.copyfile(initramfs_path, iso_initramfs)
 
     modules_path = os.path.join(args.staged, "limine.modules")
     with open(modules_path, "w", encoding="utf-8") as handle:
-        for module in staged_modules:
-            handle.write("    module_path: boot():%s\n" % module)
+        handle.write("    module_path: boot():/boot/initramfs.cpio\n")
 
     template_path = os.path.join(args.root, "src", "boot", "limine.conf.in")
     with open(template_path, "r", encoding="utf-8") as handle:
@@ -93,8 +123,8 @@ def main():
     with open(final_conf, "w", encoding="utf-8") as handle:
         handle.write(template.replace("@MODULES@", block))
 
-    print("gen_assets: %d entries, %d modules staged"
-          % (len(entries), len(staged_modules)))
+    print("gen_assets: %d entries, %d files in initramfs (%d KiB)"
+          % (len(entries), len(initramfs_files), os.path.getsize(initramfs_path) // 1024))
 
 
 if __name__ == "__main__":
