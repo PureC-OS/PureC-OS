@@ -286,7 +286,7 @@ $(PROGRAM_DIR)/cpuinfo: $(OBJ_DIR)/cpuinfo/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/raminfo: $(OBJ_DIR)/raminfo/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/raminfo: $(OBJ_DIR)/raminfo/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
