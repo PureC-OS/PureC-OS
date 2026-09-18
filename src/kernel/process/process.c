@@ -9,6 +9,7 @@ static mutex_t process_mutex;
 #include "../diagnostics/panic.h"
 #include "program_alias.h"
 #include "../../fs/vfs.h"
+#include "../../fs/initramfs.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
 #include "../../lib/string.h"
@@ -25,6 +26,9 @@ extern void arch_enter_user(uint64_t instruction_pointer,
 static struct process *process_list;
 static uint32_t next_pid=1;
 static uint64_t process_sample_tick;
+static const char *last_spawn_error="unknown process load failure";
+
+const char *process_last_spawn_error(void){ return last_spawn_error; }
 
 _Static_assert(sizeof(struct process)<=4096,
     "process node must fit in a single PMM page");
@@ -149,11 +153,15 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     MUTEX_SCOPE(&process_mutex);
     struct process *parent=process_current();
     struct process *process=allocate_process();
-    if(!process) return -1;
+    if(!process){ last_spawn_error="cannot allocate process descriptor"; return -1; }
     process->address_space=vmm_create_address_space();
-    if(!process->address_space){ process_node_free(process); return -1; }
+    if(!process->address_space){
+        last_spawn_error="cannot create process address space";
+        process_node_free(process); return -1;
+    }
     struct elf_load_result loaded;
     if(!elf_load_user_image(image,image_size,process->address_space,&loaded)){
+        last_spawn_error="ELF image validation or mapping failed";
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
         process_node_free(process);
@@ -164,6 +172,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
         +USER_HEAP_GUARD_PAGES*PMM_PAGE_SIZE;
     uint64_t heap_limit=stack_base-USER_HEAP_GUARD_PAGES*PMM_PAGE_SIZE;
     if(heap_base>=heap_limit){
+        last_spawn_error="ELF address range collides with user stack";
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
         process_node_free(process);
@@ -171,6 +180,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     }
     if(!vmm_map_new_pages(process->address_space,stack_base,USER_STACK_PAGES,
                           VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
+        last_spawn_error="cannot allocate user stack pages";
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
         process_node_free(process);
@@ -209,6 +219,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
         user_process_entry,process,process->name,USER_PROCESS_PRIORITY,-1,
         process->address_space,process);
     if(process->thread_id<0){
+        last_spawn_error="cannot create initial process thread";
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
         process_node_free(process);
@@ -221,13 +232,28 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
 
 int32_t process_spawn_module(const char *path, const char *command_line){
     MUTEX_SCOPE(&process_mutex);
+    last_spawn_error="unknown process load failure";
     const char *module_path=path;
-    if(!path) return -1;
+    if(!path) {
+        last_spawn_error="process path is null";
+        klog(KLOG_ERROR,"process: spawn requested with no path"); return -1;
+    }
 
     const char *name=path;
     for(const char *cursor=path;*cursor;cursor++){
         if(*cursor=='/' && cursor[1]) name=cursor+1;
     }
+
+    /* Initramfs files already reside in kernel-readable memory. Loading the
+       ELF directly avoids allocating a VFS handle and a second contiguous
+       copy of the executable during the memory-constrained boot phase. */
+    const void *initramfs_image=0;
+    uint32_t initramfs_size=0;
+    if(initramfs_find(path,&initramfs_image,&initramfs_size))
+        return process_spawn_elf(initramfs_image,initramfs_size,name,command_line);
+    if(program_alias_resolve(path,&module_path)
+       && initramfs_find(module_path,&initramfs_image,&initramfs_size))
+        return process_spawn_elf(initramfs_image,initramfs_size,name,command_line);
 
     int32_t fd=vfs_open(path);
     const char *used_path=(fd>=0) ? path : 0;
@@ -235,11 +261,22 @@ int32_t process_spawn_module(const char *path, const char *command_line){
         fd=vfs_open(module_path);
         if(fd>=0) used_path=module_path;
     }
-    if(fd>=0){
+    if(fd<0){
+        last_spawn_error=fd==FS_ERROR_NO_SPACE
+            ? "VFS cannot allocate a file handle"
+            : "executable not found in initramfs or VFS";
+        klogf(KLOG_ERROR,"process: cannot open %s (vfs=%d, root=%s)",
+              path,fd,vfs_root_device_name());
+        return -1;
+    }
+    {
         struct file_stat_info st={0};
         uint64_t blob_size=0;
         if(used_path && vfs_stat(used_path,&st)>=0) blob_size=st.size;
         if(!blob_size || blob_size>64ULL*1024ULL*1024ULL){
+            last_spawn_error="invalid executable size in initramfs";
+            klogf(KLOG_ERROR,"process: invalid size for %s: %llu",used_path,
+                  (unsigned long long)blob_size);
             vfs_close(fd);
             return -1;
         }
@@ -253,18 +290,29 @@ int32_t process_spawn_module(const char *path, const char *command_line){
                 uint64_t left=blob_size-done;
                 uint32_t want=left>1048576 ? 1048576 : (uint32_t)left;
                 int32_t got=vfs_read(fd,vbuf+done,want);
-                if(got<=0){ failed=1; break; }
+                if(got<=0){
+                    last_spawn_error="short read from initramfs";
+                    klogf(KLOG_ERROR,"process: read %s failed at %llu/%llu (vfs=%d)",
+                          used_path,(unsigned long long)done,
+                          (unsigned long long)blob_size,got);
+                    failed=1; break;
+                }
                 done+=(uint64_t)got;
             }
             vfs_close(fd);
             if(!failed){
                 int32_t pid=process_spawn_elf(vbuf,done,name,command_line);
                 pmm_free_contiguous(phys,pages);
+                if(pid<0) klogf(KLOG_ERROR,"process: ELF load failed for %s (%llu bytes)",
+                                 used_path,(unsigned long long)done);
                 return pid;
             }
             pmm_free_contiguous(phys,pages);
             return -1;
         }
+        klogf(KLOG_ERROR,"process: cannot allocate %llu pages for %s",
+              (unsigned long long)pages,used_path);
+        last_spawn_error="cannot allocate executable read buffer";
         vfs_close(fd);
     }
     return -1;

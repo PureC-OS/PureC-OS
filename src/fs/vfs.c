@@ -199,14 +199,15 @@ int32_t vfs_open(const char *path) {
         return VFS_FD_BASE + idx;
     }
     int32_t be = -1;
-    if (vfs_active_fs == VFS_FS_INITRAMFS) {
+    {
         const void *data = 0;
         uint32_t size = 0;
-        if (!initramfs_find(path, &data, &size)) { memset(h, 0, sizeof(*h)); return FS_ERROR_NOT_FOUND; }
+        if (initramfs_find(path, &data, &size)) {
         h->type = VFS_HANDLE_INITRAMFS;
         h->backend_descriptor = -1;
         h->data = data; h->size = size; h->position = 0;
         return VFS_FD_BASE + idx;
+        }
     }
     if (vfs_active_fs == VFS_FS_EXT2) be = ext2_open(path); else be = fat32_open(path);
     if (be < 0) { memset(h, 0, sizeof(*h)); return be; }
@@ -300,12 +301,14 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
         out->reserved = 0;
         return 0;
     }
-    if (vfs_active_fs == VFS_FS_INITRAMFS) {
+    if (initramfs_is_mounted()) {
         const void *data = 0;
         uint32_t size = 0;
-        if (!initramfs_find(path, &data, &size)) return FS_ERROR_NOT_FOUND;
-        out->size = size; out->is_directory = 0; out->reserved = 0;
-        return 0;
+        if (initramfs_find(path, &data, &size)) {
+            out->size = size; out->is_directory = 0; out->reserved = 0;
+            return 0;
+        }
+        if (vfs_active_fs == VFS_FS_INITRAMFS) return FS_ERROR_NOT_FOUND;
     }
     if (vfs_active_fs == VFS_FS_EXT2) {
         uint32_t ino;

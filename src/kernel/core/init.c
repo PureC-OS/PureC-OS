@@ -22,7 +22,11 @@ void init_process_start(void){
           cpu_online_count());
 
     int32_t init_pid=process_spawn_module("/bin/init","");
-    if(init_pid!=1) kernel_panic("cannot start /bin/init as PID 1");
+    if(init_pid!=1){
+        klogf(KLOG_ERROR,"process: /bin/init returned pid=%d; expected 1",init_pid);
+        kernel_panic(init_pid<0 ? process_last_spawn_error()
+                               : "init started with an invalid PID");
+    }
     klog(KLOG_OK,"process: /bin/init started as PID 1");
 
     serial_write_string("[INIT] PID 1 registered, initializing desktop\n");
