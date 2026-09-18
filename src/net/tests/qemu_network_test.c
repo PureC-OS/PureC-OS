@@ -162,7 +162,7 @@ void qemu_network_test_thread(void *argument) {
         enum net_ping_status status = ping_target(
             target, (uint16_t)(index * 10 + 11));
         if (status == NET_PING_OK) continue;
-        if (gateway_ok && dns_ok) {
+        if (status == NET_PING_TIMEOUT && gateway_ok && dns_ok) {
             klogf(KLOG_WARN,
                   "[NETTEST] PING UNAVAILABLE target=%s status=%d reason=host-icmp-egress",
                   target, status);
