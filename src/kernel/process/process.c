@@ -152,12 +152,12 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     struct process *process=allocate_process();
     if(!process) return -1;
     process->address_space=vmm_create_address_space();
-    if(!process->address_space){ process->state=PROCESS_FREE; return -1; }
+    if(!process->address_space){ process_node_free(process); return -1; }
     struct elf_load_result loaded;
     if(!elf_load_user_image(image,image_size,process->address_space,&loaded)){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     uint64_t stack_base=USER_STACK_TOP-USER_STACK_PAGES*PMM_PAGE_SIZE;
@@ -167,17 +167,27 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     if(heap_base>=heap_limit){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     if(!vmm_map_new_pages(process->address_space,stack_base,USER_STACK_PAGES,
                           VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     process->pid=next_pid++;
+    if(process->pid==0) process->pid=next_pid++;
+    for(;;){
+        bool clash=false;
+        for(struct process *o=process_list;o;o=o->next){
+            if(o!=process && o->pid==process->pid){ clash=true; break; }
+        }
+        if(!clash) break;
+        process->pid=next_pid++;
+        if(process->pid==0) process->pid=next_pid++;
+    }
     process->parent_pid=(uint32_t)(process_current_pid()>0
         ? process_current_pid() : 0);
     process->state=PROCESS_READY;
@@ -202,7 +212,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     if(process->thread_id<0){
         vmm_destroy_address_space(process->address_space);
         process->address_space=0;
-        process->state=PROCESS_FREE;
+        process_node_free(process);
         return -1;
     }
     klogf(KLOG_OK,"process: pid=%u name=%s entry=0x%llx cr3=0x%llx",
@@ -230,13 +240,12 @@ int32_t process_spawn_module(const char *path, const char *command_line){
         return process_spawn_elf(image,size,name,command_line);
     }
 
-    // Fallback: load executable binary from VFS
     int32_t fd=vfs_open(path);
     if(fd<0 && module_path && module_path!=path){
         fd=vfs_open(module_path);
     }
     if(fd>=0){
-        uint64_t pages=2048; // 8MB buffer
+        uint64_t pages=2048;
         uint64_t phys=pmm_allocate_contiguous(pages);
         if(phys){
             void *vbuf=pmm_physical_to_virtual(phys);
@@ -284,7 +293,7 @@ int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
             exiting=target->state==PROCESS_EXITED;
         }
         if(exiting) scheduler_sleep(1);
-        else scheduler_block(); /* Wake tokens close the unlock/block race. */
+        else scheduler_block();
     }
 }
 
