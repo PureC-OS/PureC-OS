@@ -2154,13 +2154,13 @@ static const char uefi_limine_config[]=
     "    kernel_path: boot():/boot/kernel.elf\n"
     "    module_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/boot/initramfs.cpio\n"
+    "    module_path: boot():/boot/initra~1.cpi\n"
     "/PureC OS (UEFI fallback previous image)\n"
     "    protocol: limine\n"
     "    resolution: 1280x800x32\n"
     "    kernel_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/boot/initramfs.cpio\n";
+    "    module_path: boot():/boot/initra~1.cpi\n";
 
 static int32_t write_uefi_config(const char *directory,
                                  const char *alias_path){
