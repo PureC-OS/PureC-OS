@@ -241,18 +241,35 @@ int32_t process_spawn_module(const char *path, const char *command_line){
     }
 
     int32_t fd=vfs_open(path);
+    const char *used_path=(fd>=0) ? path : 0;
     if(fd<0 && module_path && module_path!=path){
         fd=vfs_open(module_path);
+        if(fd>=0) used_path=module_path;
     }
     if(fd>=0){
-        uint64_t pages=2048;
+        struct file_stat_info st={0};
+        uint64_t blob_size=0;
+        if(used_path && vfs_stat(used_path,&st)>=0) blob_size=st.size;
+        if(!blob_size || blob_size>64ULL*1024ULL*1024ULL){
+            vfs_close(fd);
+            return -1;
+        }
+        uint64_t pages=(blob_size+PMM_PAGE_SIZE-1)/PMM_PAGE_SIZE;
         uint64_t phys=pmm_allocate_contiguous(pages);
         if(phys){
-            void *vbuf=pmm_physical_to_virtual(phys);
-            int32_t read_bytes=vfs_read(fd,vbuf,8*1024*1024);
+            uint8_t *vbuf=(uint8_t*)pmm_physical_to_virtual(phys);
+            uint64_t done=0;
+            int32_t failed=0;
+            while(done<blob_size){
+                uint64_t left=blob_size-done;
+                uint32_t want=left>1048576 ? 1048576 : (uint32_t)left;
+                int32_t got=vfs_read(fd,vbuf+done,want);
+                if(got<=0){ failed=1; break; }
+                done+=(uint64_t)got;
+            }
             vfs_close(fd);
-            if(read_bytes>0){
-                int32_t pid=process_spawn_elf(vbuf,(uint64_t)read_bytes,name,command_line);
+            if(!failed){
+                int32_t pid=process_spawn_elf(vbuf,done,name,command_line);
                 pmm_free_contiguous(phys,pages);
                 return pid;
             }

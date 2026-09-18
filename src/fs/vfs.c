@@ -9,11 +9,12 @@ static mutex_t vfs_mutex;
 #include "./ext2/include/ext2_block.h"
 #include "./ext2/include/ext2_types.h"
 #include "../lib/string.h"
+#include "../mm/pmm.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../drivers/storage/block_device.h"
 #include "../kernel/syscall/syscall.h"
 
-#define VFS_MAX_OPEN_FILES 32
+#define VFS_HANDLE_INITIAL 32
 
 enum vfs_handle_type {
     VFS_HANDLE_NONE,
@@ -48,7 +49,7 @@ static const struct kernel_file kernel_files[] = {
     {"/kernel/abi", "abi", "syscall=int80 process=exec,args,env,wait,exit fd=per-process vfs=fat32,ext2\n"}
 };
 
-static struct vfs_handle handles[VFS_MAX_OPEN_FILES];
+static struct vfs_handle *handles;
 
 static bool path_equals(const char *left, const char *right) {
     return left && right && strcmp(left, right) == 0;
@@ -70,15 +71,41 @@ static const struct kernel_file *find_kernel_file(const char *path) {
     return 0;
 }
 
+static uint32_t handles_capacity;
+static uint64_t handles_phys;
+static uint64_t handles_pages;
+
+static bool handles_ensure(uint32_t want){
+    if(want<handles_capacity) return true;
+    uint32_t grown=handles_capacity ? handles_capacity*2 : VFS_HANDLE_INITIAL;
+    if(grown<want) grown=want;
+    if(grown>(1u<<20)) return false;
+    uint64_t pages=((uint64_t)grown*sizeof(struct vfs_handle)+4095)/4096;
+    uint64_t phys=pmm_allocate_contiguous(pages);
+    if(!phys) return false;
+    struct vfs_handle *tab=(struct vfs_handle*)pmm_physical_to_virtual(phys);
+    memset(tab,0,(size_t)(pages*4096));
+    if(handles && handles_capacity)
+        memcpy(tab,handles,(size_t)handles_capacity*sizeof(struct vfs_handle));
+    if(handles_phys) pmm_free_contiguous(handles_phys,handles_pages);
+    handles=tab;
+    handles_capacity=(uint32_t)((pages*4096)/sizeof(struct vfs_handle));
+    handles_phys=phys;
+    handles_pages=pages;
+    return true;
+}
+
 static int32_t allocate_handle(void) {
-    for (uint32_t i = 0; i < VFS_MAX_OPEN_FILES; i++) if (handles[i].type == VFS_HANDLE_NONE) return (int32_t)i;
-    return FS_ERROR_NO_SPACE;
+    for (uint32_t i = 0; i < handles_capacity; i++) if (handles[i].type == VFS_HANDLE_NONE) return (int32_t)i;
+    uint32_t at=handles_capacity;
+    if(!handles_ensure(at+1)) return FS_ERROR_NO_SPACE;
+    return (int32_t)at;
 }
 
 static struct vfs_handle *get_handle(int32_t descriptor) {
     int32_t idx = descriptor - VFS_FD_BASE;
-    if (idx < 0 || idx >= VFS_MAX_OPEN_FILES) return 0;
-    if (handles[idx].type == VFS_HANDLE_NONE) return 0;
+    if (idx < 0 || (uint32_t)idx >= handles_capacity) return 0;
+    if (!handles || handles[idx].type == VFS_HANDLE_NONE) return 0;
     return &handles[idx];
 }
 

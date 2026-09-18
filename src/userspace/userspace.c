@@ -23,6 +23,7 @@
 #include "../kernel/process/scheduler.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
+#include "../mm/pmm.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -58,7 +59,6 @@ static uint32_t desktop_redraw_requested;
 static uint32_t desktop_redraw_completed;
 static uint32_t desktop_redraw_requester;
 static bool     desktop_redraw_busy;
-static int32_t  detached_programs[WINDOW_MANAGER_CAPACITY];
 static uint8_t  previous_mouse_buttons;
 static bool     power_menu_visible;
 static bool     external_program_active;
@@ -71,6 +71,44 @@ static void redraw_scene(void);
 static void redraw_managed_scene(uint32_t excluded_pid);
 static int32_t userspace_run_detached(const char *path, const char *arguments);
 static int32_t userspace_run_program_with_args(const char *path,const char *arguments);
+
+struct detach_chunk {
+    struct detach_chunk *next;
+};
+
+#define DETACH_PER_PAGE (4096u/sizeof(int32_t))
+
+static struct detach_chunk *detach_chunks;
+
+static int32_t *detach_slot_at(uint32_t n){
+    for(struct detach_chunk *c=detach_chunks;c;c=c->next){
+        int32_t *slots=(int32_t*)(c+1);
+        if(n<DETACH_PER_PAGE) return &slots[n];
+        n-=DETACH_PER_PAGE;
+    }
+    return 0;
+}
+
+static uint32_t detach_slot_total(void){
+    uint32_t total=0;
+    for(struct detach_chunk *c=detach_chunks;c;c=c->next) total+=DETACH_PER_PAGE;
+    return total;
+}
+
+static int32_t *detach_alloc_slot(void){
+    uint32_t total=detach_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        int32_t *s=detach_slot_at(n);
+        if(s && *s<=0) return s;
+    }
+    uint64_t phys=pmm_allocate_page();
+    if(!phys) return 0;
+    struct detach_chunk *c=(struct detach_chunk*)pmm_physical_to_virtual(phys);
+    memset(c,0,4096);
+    c->next=detach_chunks;
+    detach_chunks=c;
+    return (int32_t*)(c+1);
+}
 
 
 static bool external_program_has_input_focus(void){
@@ -132,35 +170,30 @@ static bool installer_requires_restart(int32_t status){
 }
 
 
-static int32_t detached_program_slot(void){
-    for(uint32_t i = 0; i < WINDOW_MANAGER_CAPACITY; i++){
-        if(detached_programs[i] <= 0) return (int32_t)i;
-    }
-    return -1;
-}
-
 static int32_t userspace_run_detached(const char *path, const char *arguments){
-    int32_t slot = detached_program_slot();
-    if(slot < 0) return -1;
+    int32_t *slot = detach_alloc_slot();
+    if(!slot) return -1;
     int32_t pid = (int32_t)userspace_syscall(
         SYS_EXEC, (uint64_t)path, (uint64_t)arguments, 0);
-    if(pid >= 0) detached_programs[slot] = pid;
+    if(pid >= 0) *slot = pid;
     else klogf(KLOG_ERROR, "desktop: exec failed path='%s' rc=%d", path, pid);
     return pid;
 }
 
 static void reap_detached_programs(void){
-    for(uint32_t i = 0; i < WINDOW_MANAGER_CAPACITY; i++){
-        if(detached_programs[i] <= 0) continue;
+    uint32_t total=detach_slot_total();
+    for(uint32_t i = 0; i < total; i++){
+        int32_t *slot=detach_slot_at(i);
+        if(!slot || *slot <= 0) continue;
         int32_t status = 0;
         int64_t result = userspace_syscall(SYS_WAIT,
-            (uint64_t)detached_programs[i], (uint64_t)&status, 1);
+            (uint64_t)*slot, (uint64_t)&status, 1);
         if(result > 0){
             if(status != 0){
                 klogf(KLOG_ERROR, "desktop: detached pid=%d exited status=%d",
-                      detached_programs[i], status);
+                      *slot, status);
             }
-            detached_programs[i] = 0;
+            *slot = 0;
             desktop_entries_set_installer_visible(!installation_present());
         }
     }

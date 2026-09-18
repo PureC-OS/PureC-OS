@@ -12,6 +12,7 @@
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
 #include "../../lib/string.h"
+#include "../../mm/pmm.h"
 #include <stddef.h>
 #include "../../boot/install_source.h"
 
@@ -22,7 +23,7 @@
 #define FAT32_ATTRIBUTE_LFN       0x0F
 #define FAT32_DELETED_ENTRY       0xE5
 #define FAT32_END_OF_CHAIN        0x0FFFFFF8
-#define FAT32_MAX_OPEN_FILES      16
+#define FAT32_HANDLES_INITIAL   16
 #define FAT32_DESCRIPTOR_BASE     3
 #define FAT32_MAX_COMPONENT       255
 #define FAT32_FORMAT_RESERVED_SECTORS 32
@@ -99,7 +100,10 @@ struct fat32_format_layout {
 static uint8_t lfn_checksum(const uint8_t short_name[11]);
 
 static struct fat32_volume volume;
-static struct fat32_handle handles[FAT32_MAX_OPEN_FILES];
+static struct fat32_handle *handles;
+static uint32_t handles_capacity;
+static uint64_t handles_phys;
+static uint64_t handles_pages;
 static uint8_t sector_buffer[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
 static uint8_t second_sector_buffer[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
 static uint8_t bulk_chunk[32 * BLOCK_SECTOR_SIZE];
@@ -967,6 +971,31 @@ bool fat32_is_mounted(void){ return volume.mounted; }
 
 const char *fat32_device_name(void){ return block_device_name(); }
 
+static bool fat32_handles_ensure(uint32_t want){
+    if(want<handles_capacity) return true;
+    uint32_t grown=handles_capacity ? handles_capacity*2 : FAT32_HANDLES_INITIAL;
+    if(grown<want) grown=want;
+    if(grown>(1u<<20)) return false;
+    uint64_t pages=((uint64_t)grown*sizeof(struct fat32_handle)+4095)/4096;
+    uint64_t phys=pmm_allocate_contiguous(pages);
+    if(!phys) return false;
+    struct fat32_handle *tab=(struct fat32_handle*)pmm_physical_to_virtual(phys);
+    memset(tab,0,(size_t)(pages*4096));
+    if(handles && handles_capacity)
+        memcpy(tab,handles,(size_t)handles_capacity*sizeof(struct fat32_handle));
+    if(handles_phys) pmm_free_contiguous(handles_phys,handles_pages);
+    handles=tab;
+    handles_capacity=(uint32_t)((pages*4096)/sizeof(struct fat32_handle));
+    handles_phys=phys;
+    handles_pages=pages;
+    return true;
+}
+
+static void fat32_handles_reset(void){
+    if(handles && handles_capacity)
+        memset(handles,0,(size_t)handles_capacity*sizeof(struct fat32_handle));
+}
+
 int32_t fat32_open(const char *path){
     struct fat32_entry_ref entry;
     int32_t status=resolve_entry(path,&entry,0);
@@ -975,7 +1004,9 @@ int32_t fat32_open(const char *path){
         return FS_ERROR_NOT_FILE;
     }
 
-    for(uint8_t index=0;index<FAT32_MAX_OPEN_FILES;index++){
+    for(uint32_t index=0;;index++){
+        if(index>=handles_capacity && !fat32_handles_ensure(index+1))
+            return FS_ERROR_NO_SPACE;
         if(!handles[index].used){
             handles[index].used=true;
             handles[index].first_cluster=entry.first_cluster;
@@ -993,7 +1024,7 @@ int32_t fat32_read(int32_t descriptor, void *buffer, uint32_t count){
     if(!buffer && count) return FS_ERROR_INVALID;
     if(count>0x7FFFFFFF) return FS_ERROR_INVALID;
     int32_t index=descriptor-FAT32_DESCRIPTOR_BASE;
-    if(index<0 || index>=FAT32_MAX_OPEN_FILES || !handles[index].used){
+    if(index<0 || (uint32_t)index>=handles_capacity || !handles || !handles[index].used){
         return FS_ERROR_INVALID;
     }
     struct fat32_handle *handle=&handles[index];
@@ -1043,7 +1074,7 @@ int32_t fat32_read(int32_t descriptor, void *buffer, uint32_t count){
 
 int32_t fat32_close(int32_t descriptor){
     int32_t index=descriptor-FAT32_DESCRIPTOR_BASE;
-    if(index<0 || index>=FAT32_MAX_OPEN_FILES || !handles[index].used)
+    if(index<0 || (uint32_t)index>=handles_capacity || !handles || !handles[index].used)
         return FS_ERROR_INVALID;
     handles[index].used=false;
     return 0;
@@ -1051,7 +1082,7 @@ int32_t fat32_close(int32_t descriptor){
 
 int64_t fat32_seek(int32_t descriptor, int64_t offset, uint32_t whence){
     int32_t index=descriptor-FAT32_DESCRIPTOR_BASE;
-    if(index<0 || index>=FAT32_MAX_OPEN_FILES || !handles[index].used){
+    if(index<0 || (uint32_t)index>=handles_capacity || !handles || !handles[index].used){
         return FS_ERROR_INVALID;
     }
     if(whence!=SEEK_SET && whence!=SEEK_CUR && whence!=SEEK_END){
@@ -1093,7 +1124,7 @@ int32_t fat32_delete(const char *path){
         if(status<0) return status;
         if(status>0) return FS_ERROR_NOT_BLANK;
     } else {
-        for(uint8_t index=0;index<FAT32_MAX_OPEN_FILES;index++){
+        for(uint32_t index=0;index<handles_capacity;index++){
             if(entry.first_cluster!=0 && handles[index].used
                && handles[index].first_cluster==entry.first_cluster){
                 return FS_ERROR_BUSY;
@@ -1413,7 +1444,7 @@ static int32_t fat32_write_file_direct(const char *path, const void *buffer, uin
         return FS_ERROR_NOT_FILE;
     }
     if(entry.attributes&FAT32_ATTRIBUTE_READ_ONLY) return FS_ERROR_READ_ONLY;
-    for(uint8_t index=0;index<FAT32_MAX_OPEN_FILES;index++){
+    for(uint32_t index=0;index<handles_capacity;index++){
         if(entry.first_cluster && handles[index].used
            && handles[index].first_cluster==entry.first_cluster){
             return FS_ERROR_BUSY;
@@ -1471,7 +1502,7 @@ int32_t fat32_append_file(const char *path, const void *buffer, uint32_t count){
     if(entry.attributes&FAT32_ATTRIBUTE_READ_ONLY) return FS_ERROR_READ_ONLY;
     if(!count) return 0;
     if((uint64_t)entry.size+count>0xFFFFFFFFULL) return FS_ERROR_NO_SPACE;
-    for(uint8_t index=0;index<FAT32_MAX_OPEN_FILES;index++){
+    for(uint32_t index=0;index<handles_capacity;index++){
         if(entry.first_cluster && handles[index].used
            && handles[index].first_cluster==entry.first_cluster) return FS_ERROR_BUSY;
     }
@@ -2697,7 +2728,7 @@ int32_t fat32_format_uefi_device_progress_ex(
             return FS_ERROR_IO;
         }
         memset(&volume,0,sizeof(volume));
-        memset(handles,0,sizeof(handles));
+        fat32_handles_reset();
         extern struct ext2_volume *ext2_volume(void);
         struct ext2_volume *ev = ext2_volume();
         ev->mounted=false;
@@ -2715,7 +2746,7 @@ int32_t fat32_format_uefi_device_progress_ex(
         if(!block_device_flush()) return FS_ERROR_IO;
         klogf(KLOG_OK,"fat32_uefi: ext2 system payload installed");
         memset(&volume,0,sizeof(volume));
-        memset(handles,0,sizeof(handles));
+        fat32_handles_reset();
         // leave ext2 mounted
     } else {
         if(!write_format_metadata_at(
@@ -2726,7 +2757,7 @@ int32_t fat32_format_uefi_device_progress_ex(
             return FS_ERROR_IO;
         }
         memset(&volume,0,sizeof(volume));
-        memset(handles,0,sizeof(handles));
+        fat32_handles_reset();
         if(!mount_boot_sector(data_start)){
             klogf(KLOG_ERROR,"fat32_uefi: system partition mount failed");
             return FS_ERROR_IO;
@@ -2807,7 +2838,7 @@ int32_t fat32_format_custom_device(const char *device, uint32_t partition_count,
         if(!calculate_format_layout(total_sectors,&layout)) return FS_ERROR_TOO_SMALL;
         if(!write_format_metadata(&layout)) return FS_ERROR_IO;
         memset(&volume,0,sizeof(volume));
-        memset(handles,0,sizeof(handles));
+        fat32_handles_reset();
         return fat32_init()?0:FS_ERROR_IO;
     }
     // для N>1 - GPT с N разделами
