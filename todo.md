@@ -47,7 +47,8 @@
 
 - [x] Добавить поддержку touchpad (через ACPI) aspi только чтение устройства | priority:normal
 - [ ] Написать драйвер touchpad Через i2c | priority:normal
-- [ ] Провести тестирование драйвера touchpad на BareMetal | priority:normal
+- [ ] Провести тестирование драйвера touchpad на BareMetal | priority:high
+  Частично было проверено и тачпад не работает
 
 ## Scheduler
 
@@ -110,3 +111,9 @@
 - [ ] Планировщик: уйти от O(n)-скана всей таблицы при каждом переключении | priority:normal
   (runqueue), PID-хэш вместо линейного поиска.
 - [ ] Листинг процессов постранично (count + offset), юзерспейс на heap. | priority:normal
+
+## Process
+
+- [ ] Добавить name space для процессов | priority:normal
+  - [ ] Разделить каждый процесс на свои потоки | priority:normal
+  - [ ] Убрать window manager из ринг 0 | priority:normal
