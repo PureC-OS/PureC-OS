@@ -138,6 +138,3 @@
 - [ ] Листинг процессов постранично (count + offset), юзерспейс на heap. | priority:normal
 
 ## Process
-
-- [x] Тест | priority:normal
-- [x] test | priority:normal
