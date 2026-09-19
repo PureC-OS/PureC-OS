@@ -1,14 +1,18 @@
 #include "../../libc/include/purec.h"
 #include "../../userspace/apps/desktop_entries.h"
+#include "../../userspace/personalization.h"
+#include "../../userspace/wallpaper.h"
 
-#define DESKTOP_BG 0x181825U
-#define WINDOW_BG  0x1E1E2EU
-#define BAR_BG     0x313244U
-#define BORDER     0x45475AU
-#define TEXT_FG    0xCDD6F4U
-#define MUTED_FG   0x9399B2U
-#define ACCENT     0x89B4FAU
-#define DANGER     0xF38BA8U
+static struct personalization_colors theme;
+
+#define DESKTOP_BG (theme.desktop)
+#define WINDOW_BG  (theme.window)
+#define BAR_BG     (theme.titlebar)
+#define BORDER     (theme.border)
+#define TEXT_FG    (theme.text)
+#define MUTED_FG   (theme.muted_text)
+#define ACCENT     (theme.accent)
+#define DANGER     (theme.danger)
 #define TOP_H      28U
 #define BOTTOM_H   30U
 #define ICON_W     58U
@@ -206,7 +210,7 @@ static void draw_bottom(uint32_t width,uint32_t height){
 
 static void draw_desktop(const struct pc_display_info *display){
     pc_display_begin_update();
-    pc_display_clear(DESKTOP_BG);
+    if(!wallpaper_draw()) pc_display_clear(DESKTOP_BG);
     pc_draw_rect(0,0,display->width,TOP_H,BAR_BG);
     pc_draw_text(12,8,"PureC OS",ACCENT,BAR_BG);
     for(uint32_t i=0;i<desktop_entries_count();i++){
@@ -330,9 +334,9 @@ void _start(void){
     }
     desktop_entries_init();
     desktop_entries_set_installer_visible(!pc_file_exists("/purec/install.cfg"));
+    personalization_current_colors(&theme);
     pc_console_disable();
     draw_desktop(&display);
-    pc_write("window-manager: ring-3 desktop started\n");
 
     uint32_t reap_tick=0;
     for(;;){
@@ -399,6 +403,10 @@ void _start(void){
             launch_pending();
         }
         (void)pc_syscall(SYS_AUDIO_UPDATE,0,0,0);
+        if(personalization_poll()){
+            personalization_current_colors(&theme);
+            redraw(&display,0);
+        }
         if(++reap_tick>=250){ reap_tick=0; reap_children(); }
         pc_sleep(2);
     }

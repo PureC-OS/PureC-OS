@@ -294,6 +294,10 @@ void pc_display_clear(uint32_t color){
     (void)pc_syscall(SYS_CLEAR,color,0,0);
 }
 
+bool pc_display_blit(const uint32_t *pixels,uint32_t width,uint32_t height){
+    return pc_syscall(SYS_FB_BLIT,(uint64_t)(uintptr_t)pixels,width,height)>=0;
+}
+
 int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp){
     return (int32_t)pc_syscall(SYS_DISPLAY_SET_MODE,width,height,bpp);
 }

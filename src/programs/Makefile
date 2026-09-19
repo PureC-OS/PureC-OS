@@ -84,7 +84,9 @@ GENERAL_CPP_SOURCES := \
 PLAIN_OBJECTS := $(PLAIN_SOURCES:%.c=$(OBJ_DIR)/%.o)
 WINDOW_MANAGER_OBJECTS := \
 	$(OBJ_DIR)/window_manager/main.o \
-	$(OBJ_DIR)/window_manager/desktop_entries.o
+	$(OBJ_DIR)/window_manager/desktop_entries.o \
+	$(OBJ_DIR)/window_manager/personalization.o \
+	$(OBJ_DIR)/window_manager/wallpaper.o
 GENERAL_OBJECTS := $(GENERAL_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 TARGETS := \
@@ -160,6 +162,14 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.c
 $(OBJ_DIR)/window_manager/desktop_entries.o: $(ROOT_DIR)/src/userspace/apps/desktop_entries.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/window_manager/personalization.o: $(ROOT_DIR)/src/userspace/personalization.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -DPERSONALIZATION_USERSPACE -c $< -o $@
+
+$(OBJ_DIR)/window_manager/wallpaper.o: $(ROOT_DIR)/src/userspace/wallpaper.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -DWALLPAPER_USERSPACE -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	@mkdir -p $(@D)

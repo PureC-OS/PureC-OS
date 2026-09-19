@@ -1,11 +1,17 @@
 #include "personalization.h"
 #include "wallpaper.h"
+#ifdef PERSONALIZATION_USERSPACE
+#include "../libc/include/purec.h"
+#include "../libc/include/hosted/string.h"
+#define klogf(...) ((void)0)
+#else
 #include "display.h"
 #include "../drivers/interrupts/timer.h"
 #include "../fs/vfs.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
+#endif
 
 static struct personalization g_current;
 static bool g_has_current;
@@ -95,22 +101,39 @@ uint32_t personalization_font_size_clamped(uint32_t size){
 bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
+#ifdef PERSONALIZATION_USERSPACE
+    int32_t fd=pc_file_open(PERSONALIZATION_PATH);
+#else
     if(!vfs_is_root_mounted()) return true;
     filesystem_syscall_lock();
     int32_t fd=vfs_open(PERSONALIZATION_PATH);
+#endif
     char buffer[512];
     int32_t total=0;
     if(fd>=0){
         for(;;){
             if(total>=(int32_t)sizeof(buffer)-1) break;
-            int32_t n=vfs_read(fd,buffer+total,
-                (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
+            int32_t n=
+#ifdef PERSONALIZATION_USERSPACE
+                pc_file_read(fd,buffer+total,
+                    (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
+#else
+                vfs_read(fd,buffer+total,
+                    (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
+#endif
             if(n<=0) break;
             total+=n;
         }
-        (void)vfs_close(fd);
+        (void)
+#ifdef PERSONALIZATION_USERSPACE
+            pc_file_close(fd);
+#else
+            vfs_close(fd);
+#endif
     }
+#ifndef PERSONALIZATION_USERSPACE
     filesystem_syscall_unlock();
+#endif
     if(fd<0){
         if(g_had_config)
             klogf(KLOG_WARN,"personalization: lost '%s' rc=%d",
@@ -156,14 +179,21 @@ static bool same_personalization(const struct personalization *a,
 
 void personalization_apply(const struct personalization *p){
     if(!p) return;
+#ifndef PERSONALIZATION_USERSPACE
     uint32_t face=personalization_font_face(p->font);
     display_set_font_face(face==0 ? DISPLAY_FONT_CLASSIC
         : face==2 ? DISPLAY_FONT_BOLD : DISPLAY_FONT_CLEAN);
+#endif
     wallpaper_set_path(p->wallpaper);
 }
 
 bool personalization_poll(void){
+#ifdef PERSONALIZATION_USERSPACE
+    struct cpu_monitor_info cpu;
+    uint64_t now=pc_cpu_info(&cpu) ? cpu.uptime_ms : 0;
+#else
     uint64_t now=timer_ticks();
+#endif
     if(g_has_current && now-g_last_poll_tick<500) return false;
     g_last_poll_tick=now;
     struct personalization next;

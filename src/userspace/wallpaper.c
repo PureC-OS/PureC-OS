@@ -1,4 +1,9 @@
 #include "wallpaper.h"
+#ifdef WALLPAPER_USERSPACE
+#include "../libc/include/purec.h"
+#include "../libc/include/hosted/string.h"
+#define klogf(...) ((void)0)
+#else
 #include "../drivers/display/gop.h"
 #include "../drivers/interrupts/timer.h"
 #include "../fs/vfs.h"
@@ -6,6 +11,7 @@
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
+#endif
 
 #define WP_PATH_CAP 128
 #define WP_MAX_FILE_BYTES (4u*1024u*1024u)
@@ -25,9 +31,26 @@ static uint32_t g_cache_h;
 static bool g_failed;
 static uint64_t g_last_attempt_ms;
 
+#ifdef WALLPAPER_USERSPACE
+#define WP_FREE_BLOCKS 16
+static struct {
+    void *ptr;
+    uint64_t pages;
+} g_free_blocks[WP_FREE_BLOCKS];
+#endif
+
 static void wp_free(struct wp_buf *b){
     if(b && b->ptr && b->pages){
+#ifdef WALLPAPER_USERSPACE
+        for(uint32_t i=0;i<WP_FREE_BLOCKS;i++){
+            if(g_free_blocks[i].ptr) continue;
+            g_free_blocks[i].ptr=b->ptr;
+            g_free_blocks[i].pages=b->pages;
+            break;
+        }
+#else
         pmm_free_contiguous(b->phys,b->pages);
+#endif
         b->ptr=0;
         b->phys=0;
         b->pages=0;
@@ -39,12 +62,29 @@ static bool wp_alloc(struct wp_buf *b, uint64_t bytes){
     if(!b || !bytes) return false;
     uint64_t pages=(bytes+4095ULL)/4096ULL;
     if(!pages || pages>8192ULL) return false; /* 32MB cap */
+#ifdef WALLPAPER_USERSPACE
+    for(uint32_t i=0;i<WP_FREE_BLOCKS;i++){
+        if(!g_free_blocks[i].ptr || g_free_blocks[i].pages<pages) continue;
+        b->ptr=g_free_blocks[i].ptr;
+        b->phys=0;
+        b->pages=g_free_blocks[i].pages;
+        g_free_blocks[i].ptr=0;
+        g_free_blocks[i].pages=0;
+        return true;
+    }
+    void *ptr=pc_heap_grow(pages*4096ULL);
+    if(!ptr) return false;
+    b->ptr=ptr;
+    b->phys=0;
+    b->pages=pages;
+#else
     uint64_t phys=pmm_allocate_contiguous(pages);
     if(!phys) return false;
     b->ptr=pmm_physical_to_virtual(phys);
     if(!b->ptr) return false;
     b->phys=phys;
     b->pages=pages;
+#endif
     return true;
 }
 
@@ -72,22 +112,38 @@ static bool wp_load_file(const char *path, struct wp_buf *out,
     if(out){ out->ptr=0; out->phys=0; out->pages=0; }
     if(out_size) *out_size=0;
     if(!path || !path[0] || !out || !out_size) return false;
-    if(!vfs_is_root_mounted()) return false;
     if(!wp_alloc(out,WP_MAX_FILE_BYTES)) return false;
+#ifdef WALLPAPER_USERSPACE
+    int32_t fd=pc_file_open(path);
+#else
+    if(!vfs_is_root_mounted()){ wp_free(out); return false; }
     filesystem_syscall_lock();
     int32_t fd=vfs_open(path);
+#endif
     uint32_t total=0;
     if(fd>=0){
         uint8_t *dst=(uint8_t*)out->ptr;
         for(;;){
             if(total>=WP_MAX_FILE_BYTES) break;
-            int32_t n=vfs_read(fd,dst+total,WP_MAX_FILE_BYTES-total);
+            int32_t n=
+#ifdef WALLPAPER_USERSPACE
+                pc_file_read(fd,dst+total,WP_MAX_FILE_BYTES-total);
+#else
+                vfs_read(fd,dst+total,WP_MAX_FILE_BYTES-total);
+#endif
             if(n<=0) break;
             total+=(uint32_t)n;
         }
-        (void)vfs_close(fd);
+        (void)
+#ifdef WALLPAPER_USERSPACE
+            pc_file_close(fd);
+#else
+            vfs_close(fd);
+#endif
     }
+#ifndef WALLPAPER_USERSPACE
     filesystem_syscall_unlock();
+#endif
     if(fd<0 || !total){ wp_free(out); return false; }
     *out_size=total;
     return true;
@@ -616,6 +672,36 @@ static bool wp_decode_png(const uint8_t *data, uint32_t size,
 
 /* ---------- load + draw ---------- */
 
+static uint64_t wp_now_ms(void){
+#ifdef WALLPAPER_USERSPACE
+    struct cpu_monitor_info cpu;
+    return pc_cpu_info(&cpu) ? cpu.uptime_ms : 0;
+#else
+    return timer_ticks();
+#endif
+}
+
+static bool wp_screen_info(uint32_t *width,uint32_t *height){
+#ifdef WALLPAPER_USERSPACE
+    struct pc_display_info display;
+    if(!pc_display_get_info(&display) || !display.available) return false;
+    *width=display.width;
+    *height=display.height;
+#else
+    *width=gop_get_width();
+    *height=gop_get_height();
+#endif
+    return *width && *height;
+}
+
+static bool wp_blit(const uint32_t *pixels,uint32_t width,uint32_t height){
+#ifdef WALLPAPER_USERSPACE
+    return pc_display_blit(pixels,width,height);
+#else
+    return gop_blit_cover(pixels,width,height);
+#endif
+}
+
 static bool wp_try_load(uint32_t scr_w, uint32_t scr_h){
     struct wp_buf file={0};
     uint32_t file_size=0;
@@ -660,20 +746,22 @@ static bool wp_try_load(uint32_t scr_w, uint32_t scr_h){
 
 bool wallpaper_draw(void){
     if(!g_path[0]) return false;
+#ifndef WALLPAPER_USERSPACE
     if(!pmm_is_ready()) return false;
-    uint32_t scr_w=gop_get_width();
-    uint32_t scr_h=gop_get_height();
-    if(!scr_w || !scr_h) return false;
+#endif
+    uint32_t scr_w=0;
+    uint32_t scr_h=0;
+    if(!wp_screen_info(&scr_w,&scr_h)) return false;
     if(g_cache.ptr && g_cache_w==scr_w && g_cache_h==scr_h)
-        return gop_blit_cover((const uint32_t*)g_cache.ptr,scr_w,scr_h);
+        return wp_blit((const uint32_t*)g_cache.ptr,scr_w,scr_h);
     if(g_failed){
-        uint64_t now=timer_ticks();
+        uint64_t now=wp_now_ms();
         if(now-g_last_attempt_ms<WP_RETRY_MS) return false;
     }
-    g_last_attempt_ms=timer_ticks();
+    g_last_attempt_ms=wp_now_ms();
     if(wp_try_load(scr_w,scr_h)){
         g_failed=false;
-        return gop_blit_cover((const uint32_t*)g_cache.ptr,scr_w,scr_h);
+        return wp_blit((const uint32_t*)g_cache.ptr,scr_w,scr_h);
     }
     g_failed=true;
     wp_free(&g_cache);

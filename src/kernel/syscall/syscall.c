@@ -46,11 +46,16 @@ static uint8_t install_fs_type;
 /* One privileged ring-3 process owns desktop policy.  The old registry is
  * retained only as a checked kernel mechanism while clients migrate to IPC. */
 static volatile uint32_t wm_owner_pid;
+static volatile uint32_t console_owner_pid;
 static volatile uint32_t wm_redraw_requester;
 static volatile int32_t wm_redraw_waiter=-1;
 static volatile bool wm_redraw_pending;
 
 void syscall_window_manager_process_exited(uint32_t pid){
+    if(__atomic_load_n(&console_owner_pid,__ATOMIC_ACQUIRE)==pid){
+        gop_console_disable();
+        __atomic_store_n(&console_owner_pid,0,__ATOMIC_RELEASE);
+    }
     if(__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)!=pid) return;
     __atomic_store_n(&wm_owner_pid,0,__ATOMIC_RELEASE);
     __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
@@ -164,10 +169,20 @@ int64_t syscall_handler(struct syscall_regs *r){
             const char *s = (const char*)(uintptr_t)a1;
             uint64_t len = a2;
             if(!readable(s,len)) return -1;
+            uint32_t pid=(uint32_t)process_current_pid();
+            uint32_t console_owner=__atomic_load_n(
+                &console_owner_pid,__ATOMIC_ACQUIRE);
+            struct process *current=process_current();
+            bool owns_console=console_owner
+                && (pid==console_owner
+                    || (current && current->parent_pid==console_owner));
+            bool desktop_active=__atomic_load_n(
+                &wm_owner_pid,__ATOMIC_ACQUIRE)!=0;
             for(uint64_t i=0;i<len;i++){
                 serial_putc(s[i]);
-                if(gop_console_is_active()) gop_console_putc(s[i]);
-                else gop_putc(s[i]);
+                if(gop_console_is_active() && owns_console)
+                    gop_console_putc(s[i]);
+                else if(!desktop_active) gop_putc(s[i]);
             }
             return (int64_t)len;
         }
@@ -218,6 +233,18 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_FB_END_UPDATE:
             mouse_end_framebuffer_update();
             return 0;
+        case SYS_FB_BLIT: {
+            if(!process_has_capability(PROCESS_CAP_WINDOW_MANAGER)) return -1;
+            const uint32_t *pixels=(const uint32_t*)(uintptr_t)a1;
+            uint32_t width=(uint32_t)a2;
+            uint32_t height=(uint32_t)a3;
+            if(!width || !height || width!=gop_get_width()
+               || height!=gop_get_height()) return -1;
+            uint64_t count=(uint64_t)width*height;
+            if(count>UINT64_MAX/sizeof(uint32_t)
+               || !readable(pixels,count*sizeof(uint32_t))) return -1;
+            return gop_blit_cover(pixels,width,height) ? 0 : -1;
+        }
         case SYS_DISPLAY_SET_MODE:
             return display_mode_apply((uint32_t)a1, (uint32_t)a2,
                                       (uint8_t)a3);
@@ -225,17 +252,28 @@ int64_t syscall_handler(struct syscall_regs *r){
             const struct framebuffer_console_request *request=
                 (const struct framebuffer_console_request*)(uintptr_t)a1;
             if(!readable(request,sizeof(*request))) return -1;
-            return gop_console_configure(
+            bool configured=gop_console_configure(
                 request->x,request->y,request->width,request->height,
-                request->foreground,request->background) ? 0 : -1;
+                request->foreground,request->background);
+            if(configured) __atomic_store_n(&console_owner_pid,
+                (uint32_t)process_current_pid(),__ATOMIC_RELEASE);
+            return configured ? 0 : -1;
         }
         case SYS_CONSOLE_CLEAR:
-            if(!gop_console_is_active()) return -1;
+            if(!gop_console_is_active()
+               || __atomic_load_n(&console_owner_pid,__ATOMIC_ACQUIRE)
+                    !=(uint32_t)process_current_pid()) return -1;
             gop_console_clear();
             return 0;
-        case SYS_CONSOLE_DISABLE:
+        case SYS_CONSOLE_DISABLE: {
+            uint32_t pid=(uint32_t)process_current_pid();
+            uint32_t owner=__atomic_load_n(&console_owner_pid,__ATOMIC_ACQUIRE);
+            uint32_t wm=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
+            if(owner && pid!=owner && pid!=wm) return -1;
             gop_console_disable();
+            __atomic_store_n(&console_owner_pid,0,__ATOMIC_RELEASE);
             return 0;
+        }
         case SYS_DESKTOP_REDRAW: {
             uint32_t owner=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
             if(!owner || owner==(uint32_t)process_current_pid()) return 0;
