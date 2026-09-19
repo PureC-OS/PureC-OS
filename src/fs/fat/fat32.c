@@ -7,6 +7,7 @@
 #include "../ext2/include/ext2_dir.h"
 #include "../ext2/include/ext2_inode.h"
 #include "../vfs.h"
+#include "../initramfs.h"
 
 #include "../../drivers/storage/block_device.h"
 #include "../../kernel/diagnostics/klog.h"
@@ -2154,13 +2155,13 @@ static const char uefi_limine_config[]=
     "    kernel_path: boot():/boot/kernel.elf\n"
     "    module_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/boot/initra~1.cpi\n"
+    "    module_path: boot():" INITRAMFS_ESP_ALIAS "\n"
     "/PureC OS (UEFI fallback previous image)\n"
     "    protocol: limine\n"
     "    resolution: 1280x800x32\n"
     "    kernel_path: boot():/boot/kernel2.elf\n"
     "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n"
-    "    module_path: boot():/boot/initra~1.cpi\n";
+    "    module_path: boot():" INITRAMFS_ESP_ALIAS "\n";
 
 static int32_t write_uefi_config(const char *directory,
                                  const char *alias_path){
@@ -2546,8 +2547,7 @@ static int32_t install_uefi_payload(void){
         klog(KLOG_ERROR,"install: missing BOOTX64.EFI");
         return FS_ERROR_NOT_FOUND;
     }
-    if(!boot_get_module("/boot/initramfs.cpio",&initramfs_image,
-                        &initramfs_image_size) || !initramfs_image ||
+    if(!initramfs_boot_image(&initramfs_image,&initramfs_image_size) || !initramfs_image ||
        !initramfs_image_size || initramfs_image_size>UINT32_MAX){
         klog(KLOG_ERROR,"install: missing initramfs.cpio");
         return FS_ERROR_NOT_FOUND;
@@ -2574,7 +2574,7 @@ static int32_t install_uefi_payload(void){
         return status;
     }
     status=write_lfn_file("/boot","initramfs.cpio",
-                          "/boot/initra~1.cpi","INITRA~1.CPI",
+                          INITRAMFS_ESP_ALIAS,INITRAMFS_ESP_ALIAS_NAME,
                           initramfs_image,(uint32_t)initramfs_image_size);
     if(status<0){
         klogf(KLOG_ERROR,"install: write initramfs %d",status);
@@ -2612,7 +2612,7 @@ static int32_t install_uefi_payload(void){
     status=verify_installed_file("/boot/kernel2.elf",
                                  (uint32_t)fallback_kernel_image_size);
     if(status<0) return status;
-    status=verify_installed_file("/boot/initramfs.cpio",
+    status=verify_installed_file(INITRAMFS_ESP_ALIAS,
                                  (uint32_t)initramfs_image_size);
     if(status<0) return status;
     for(uint8_t index=0;index<sizeof(config_locations)/sizeof(config_locations[0]);index++){

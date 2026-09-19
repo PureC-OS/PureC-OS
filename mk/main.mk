@@ -16,14 +16,20 @@ export ROOT_DIR BIN_DIR
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad clean help \
 	test test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path \
-	test-dot11 test-qemu-network test-qemu-network-e1000 \
+	test-initramfs test-dot11 test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path test-dot11
+test: test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs
 	@echo "All host tests passed"
+
+test-initramfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) tests/initramfs_boot_test.c src/fs/initramfs.c \
+		-o $(BIN_DIR)/tests/initramfs_boot_test
+	$(BIN_DIR)/tests/initramfs_boot_test
 
 test-cpu:
 	@mkdir -p $(BIN_DIR)/tests

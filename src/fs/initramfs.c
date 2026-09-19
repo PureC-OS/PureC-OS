@@ -67,10 +67,17 @@ static bool next_entry(uint32_t *offset, const char **name, uint32_t *name_size,
     return true;
 }
 
+bool initramfs_boot_image(const void **data, uint64_t *size) {
+    if (!data || !size) return false;
+    return boot_get_module(INITRAMFS_BOOT_PATH, data, size)
+        || boot_get_module(INITRAMFS_ESP_ALIAS, data, size)
+        || boot_get_module("/boot/" INITRAMFS_ESP_ALIAS_NAME, data, size);
+}
+
 bool initramfs_mount(void) {
     const void *data = 0;
     uint64_t size = 0;
-    if (!boot_get_module("/boot/initramfs.cpio", &data, &size) || !data ||
+    if (!initramfs_boot_image(&data, &size) || !data ||
         size < CPIO_HEADER_SIZE || size > UINT32_MAX) return false;
     archive = data;
     archive_size = size;
