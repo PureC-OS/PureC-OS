@@ -23,7 +23,6 @@
 #include "../process/process.h"
 #include "../smp/cpu.h"
 #include "../../mm/pmm.h"
-#include "../../userspace/userspace.h"
 #include "../../userspace/window_manager.h"
 #include "../../userspace/display_mode.h"
 #include "../../net/api/ping.h"
@@ -43,6 +42,30 @@ static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
 static uint8_t install_fs_type;
+
+/* One privileged ring-3 process owns desktop policy.  The old registry is
+ * retained only as a checked kernel mechanism while clients migrate to IPC. */
+static volatile uint32_t wm_owner_pid;
+static volatile uint32_t wm_redraw_requester;
+static volatile int32_t wm_redraw_waiter=-1;
+static volatile bool wm_redraw_pending;
+
+void syscall_window_manager_process_exited(uint32_t pid){
+    if(__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)!=pid) return;
+    __atomic_store_n(&wm_owner_pid,0,__ATOMIC_RELEASE);
+    __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
+    int32_t waiter=__atomic_exchange_n(&wm_redraw_waiter,-1,__ATOMIC_ACQ_REL);
+    if(waiter>=0) scheduler_unblock(waiter);
+    klogf(KLOG_WARN,"wm: owner pid=%u exited; waiting for init restart",pid);
+}
+
+void syscall_window_manager_invalidate_desktop(void){
+    if(!__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return;
+    if(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)) return;
+    __atomic_store_n(&wm_redraw_requester,0,__ATOMIC_RELAXED);
+    __atomic_store_n(&wm_redraw_waiter,-1,__ATOMIC_RELAXED);
+    __atomic_store_n(&wm_redraw_pending,true,__ATOMIC_RELEASE);
+}
 
 static bool readable(const void *buffer, uint64_t size){
     return process_user_buffer(buffer,size,false);
@@ -213,9 +236,19 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_CONSOLE_DISABLE:
             gop_console_disable();
             return 0;
-        case SYS_DESKTOP_REDRAW:
-            userspace_redraw_desktop();
+        case SYS_DESKTOP_REDRAW: {
+            uint32_t owner=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
+            if(!owner || owner==(uint32_t)process_current_pid()) return 0;
+            while(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE))
+                scheduler_yield();
+            __atomic_store_n(&wm_redraw_requester,
+                             (uint32_t)process_current_pid(),__ATOMIC_RELAXED);
+            __atomic_store_n(&wm_redraw_waiter,scheduler_current_tid(),
+                             __ATOMIC_RELAXED);
+            __atomic_store_n(&wm_redraw_pending,true,__ATOMIC_RELEASE);
+            scheduler_block();
             return 0;
+        }
         case SYS_GUI_WINDOW_REGISTER: {
             const struct gui_window_request *request=
                 (const struct gui_window_request*)(uintptr_t)a1;
@@ -240,6 +273,52 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_GUI_WINDOW_REPAINT_DONE:
             window_manager_finish_repaint((uint32_t)process_current_pid());
             return 0;
+        case SYS_WM_CLAIM: {
+            if(!process_has_capability(PROCESS_CAP_WINDOW_MANAGER)) return -1;
+            uint32_t pid=(uint32_t)process_current_pid();
+            uint32_t expected=0;
+            if(!__atomic_compare_exchange_n(&wm_owner_pid,&expected,pid,false,
+                                             __ATOMIC_ACQ_REL,
+                                             __ATOMIC_ACQUIRE)
+               && expected!=pid) return -1;
+            mouse_set_bounds((int32_t)gop_get_width(),
+                             (int32_t)gop_get_height());
+            mouse_set_debug_overlay(false);
+            klog_set_screen_enabled(false);
+            klogf(KLOG_OK,"wm: ring-3 owner claimed by pid=%u",pid);
+            return 0;
+        }
+        case SYS_WM_POINTER: {
+            if((uint32_t)process_current_pid()
+               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            const struct wm_pointer_request *request=
+                (const struct wm_pointer_request*)(uintptr_t)a1;
+            if(!readable(request,sizeof(*request))) return -1;
+            bool focus_changed=false;
+            bool consumed=window_manager_handle_pointer(
+                request->x,request->y,request->pressed!=0,&focus_changed);
+            return (consumed ? WM_POINTER_CONSUMED : 0)
+                | (focus_changed ? WM_POINTER_FOCUS_CHANGED : 0);
+        }
+        case SYS_WM_NEXT_REDRAW: {
+            if((uint32_t)process_current_pid()
+               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            uint32_t *excluded=(uint32_t*)(uintptr_t)a1;
+            if(!writable(excluded,sizeof(*excluded))) return -1;
+            if(!__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)) return 0;
+            *excluded=__atomic_load_n(&wm_redraw_requester,__ATOMIC_RELAXED);
+            return 1;
+        }
+        case SYS_WM_COMPLETE_REDRAW: {
+            if((uint32_t)process_current_pid()
+               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            window_manager_request_repaint((uint32_t)a1);
+            __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
+            int32_t waiter=__atomic_exchange_n(&wm_redraw_waiter,-1,
+                                                __ATOMIC_ACQ_REL);
+            if(waiter>=0) scheduler_unblock(waiter);
+            return 0;
+        }
         case SYS_GETPID:
             return process_current_pid();
         case SYS_HEAP_GROW: {
@@ -301,6 +380,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             if(!writable(out,sizeof(*out))) return -1;
             ps2_mouse_poll();
             usb_mouse_poll();
+            mouse_flush_pending();
             *out = mouse_get_state();
             return 0;
         }

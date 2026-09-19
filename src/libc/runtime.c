@@ -325,6 +325,25 @@ void pc_gui_window_repaint_done(void){
     (void)pc_syscall(SYS_GUI_WINDOW_REPAINT_DONE,0,0,0);
 }
 
+bool pc_wm_claim(void){
+    return pc_syscall(SYS_WM_CLAIM,0,0,0)>=0;
+}
+
+uint32_t pc_wm_pointer(const struct wm_pointer_request *request){
+    int64_t result=pc_syscall(SYS_WM_POINTER,
+        (uint64_t)(uintptr_t)request,0,0);
+    return result<0 ? 0 : (uint32_t)result;
+}
+
+int32_t pc_wm_next_redraw(uint32_t *excluded_pid){
+    return (int32_t)pc_syscall(SYS_WM_NEXT_REDRAW,
+        (uint64_t)(uintptr_t)excluded_pid,0,0);
+}
+
+void pc_wm_complete_redraw(uint32_t excluded_pid){
+    (void)pc_syscall(SYS_WM_COMPLETE_REDRAW,excluded_pid,0,0);
+}
+
 bool pc_console_configure(uint32_t x, uint32_t y,
                           uint32_t width, uint32_t height,
                           uint32_t foreground, uint32_t background){

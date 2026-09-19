@@ -19,6 +19,10 @@
 #define SYS_DISPLAY_SET_MODE 281
 #define SYS_THERMAL_INFO 282
 #define SYS_CPU_CORE_INFO 283
+#define SYS_WM_CLAIM 284
+#define SYS_WM_POINTER 285
+#define SYS_WM_NEXT_REDRAW 286
+#define SYS_WM_COMPLETE_REDRAW 287
 #define SYS_FILE_OPEN   200
 #define SYS_FILE_READ   201
 #define SYS_FILE_DELETE 202
@@ -166,6 +170,21 @@ struct gui_window_request {
     uint32_t width;
     uint32_t height;
 };
+
+struct wm_pointer_request {
+    int32_t x;
+    int32_t y;
+    uint8_t pressed;
+    uint8_t reserved[3];
+};
+
+#define WM_POINTER_CONSUMED      (1U << 0)
+#define WM_POINTER_FOCUS_CHANGED (1U << 1)
+
+/* Called by process teardown so a crashed window manager cannot leave
+ * clients blocked in SYS_DESKTOP_REDRAW. */
+void syscall_window_manager_process_exited(uint32_t pid);
+void syscall_window_manager_invalidate_desktop(void);
 
 #define PROCESS_ENVIRONMENT_LIMIT 16
 #define PROCESS_ENVIRONMENT_NAME_LIMIT 32

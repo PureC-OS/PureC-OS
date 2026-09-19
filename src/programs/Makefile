@@ -13,6 +13,7 @@ LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 
 PLAIN_SOURCES := \
 	init/main.c \
+	window_manager/main.c \
 	nano/main.c \
 	nano/editor.c \
 	system/main.c \
@@ -85,6 +86,7 @@ GENERAL_OBJECTS := $(GENERAL_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
+	$(PROGRAM_DIR)/window-manager \
 	$(PROGRAM_DIR)/installer \
 	$(PROGRAM_DIR)/snake \
 	$(PROGRAM_DIR)/tetris \
@@ -157,6 +159,10 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	$(CXX) $(CPPFLAGS) -I$(ROOT_DIR)/src/programs/settings/include -I$(ROOT_DIR)/src/programs/hexedit/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CXXFLAGS) -c $< -o $@
 
 $(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/window-manager: $(OBJ_DIR)/window_manager/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
