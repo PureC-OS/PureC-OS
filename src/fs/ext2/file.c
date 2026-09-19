@@ -8,10 +8,34 @@
 #include "../../kernel/diagnostics/klog.h"
 #include "../../mm/pmm.h"
 
-static struct ext2_handle g_handles[EXT2_MAX_OPEN];
+static struct ext2_handle *g_handles;
+static uint32_t g_handles_capacity;
+static uint64_t g_handles_phys;
+static uint64_t g_handles_pages;
+
+static bool ext2_handles_ensure(uint32_t want){
+    if(want<g_handles_capacity) return true;
+    uint32_t grown=g_handles_capacity ? g_handles_capacity*2 : EXT2_HANDLES_INITIAL;
+    if(grown<want) grown=want;
+    if(grown>(1u<<20)) return false;
+    uint64_t pages=((uint64_t)grown*sizeof(struct ext2_handle)+4095)/4096;
+    uint64_t phys=pmm_allocate_contiguous(pages);
+    if(!phys) return false;
+    struct ext2_handle *tab=(struct ext2_handle*)pmm_physical_to_virtual(phys);
+    memset(tab,0,(size_t)(pages*4096));
+    if(g_handles && g_handles_capacity)
+        memcpy(tab,g_handles,(size_t)g_handles_capacity*sizeof(struct ext2_handle));
+    if(g_handles_phys) pmm_free_contiguous(g_handles_phys,g_handles_pages);
+    g_handles=tab;
+    g_handles_capacity=(uint32_t)((pages*4096)/sizeof(struct ext2_handle));
+    g_handles_phys=phys;
+    g_handles_pages=pages;
+    return true;
+}
 
 void ext2_file_handles_reset(void) {
-    memset(g_handles, 0, sizeof(g_handles));
+    if(g_handles && g_handles_capacity)
+        memset(g_handles, 0, (size_t)g_handles_capacity*sizeof(struct ext2_handle));
 }
 
 int32_t ext2_file_open(const char *path) {
@@ -28,7 +52,9 @@ int32_t ext2_file_open(const char *path) {
     if ((mode & 0xF000) == EXT2_S_IFDIR) {
         return -6;
     }
-    for (int i = 0; i < EXT2_MAX_OPEN; i++) {
+    for (int i = 0; ; i++) {
+        if((uint32_t)i>=g_handles_capacity && !ext2_handles_ensure((uint32_t)i+1))
+            return -4;
         if (!g_handles[i].used) {
             g_handles[i].used = true;
             g_handles[i].inode = ino;
@@ -42,7 +68,7 @@ int32_t ext2_file_open(const char *path) {
 
 int32_t ext2_file_read(int32_t descriptor, void *buffer, uint32_t count) {
     int idx = descriptor - EXT2_DESCRIPTOR_BASE;
-    if (idx < 0 || idx >= EXT2_MAX_OPEN || !g_handles[idx].used) {
+    if (idx < 0 || (uint32_t)idx >= g_handles_capacity || !g_handles || !g_handles[idx].used) {
         return -3;
     }
     if (!buffer && count) {
@@ -68,7 +94,7 @@ int32_t ext2_file_read(int32_t descriptor, void *buffer, uint32_t count) {
 
 int64_t ext2_file_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
     int idx = descriptor - EXT2_DESCRIPTOR_BASE;
-    if (idx < 0 || idx >= EXT2_MAX_OPEN || !g_handles[idx].used) {
+    if (idx < 0 || (uint32_t)idx >= g_handles_capacity || !g_handles || !g_handles[idx].used) {
         return -3;
     }
     if (whence != SEEK_SET && whence != SEEK_CUR && whence != SEEK_END) {
@@ -286,7 +312,7 @@ static int32_t ext2_create_file_internal(const char *path) {
 
 int32_t ext2_file_close(int32_t d) {
     int idx = d - EXT2_DESCRIPTOR_BASE;
-    if (idx < 0 || idx >= EXT2_MAX_OPEN || !g_handles[idx].used) {
+    if (idx < 0 || (uint32_t)idx >= g_handles_capacity || !g_handles || !g_handles[idx].used) {
         return -3;
     }
     g_handles[idx].used = false;

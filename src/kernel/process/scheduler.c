@@ -186,7 +186,6 @@ static void thread_node_free(struct thread *t){
 }
 
 #ifdef PUREC_HOST_TEST
-/* Host-test hooks: drain the runqueue and look nodes up by id. */
 void scheduler_host_reset(void){
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     struct thread *t=thread_list;

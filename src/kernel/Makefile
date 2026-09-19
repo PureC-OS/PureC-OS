@@ -97,6 +97,7 @@ C_SOURCES := \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
+	fs/initramfs.c \
 	userspace/display.c \
 	userspace/display_mode.c \
 	userspace/fs.c \

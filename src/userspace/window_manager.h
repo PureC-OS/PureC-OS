@@ -4,8 +4,6 @@
 #include <stdint.h>
 #include "../kernel/syscall/syscall.h"
 
-#define WINDOW_MANAGER_CAPACITY 8
-
 bool window_manager_register(uint32_t pid,
                              const struct gui_window_request *request);
 bool window_manager_update(uint32_t pid,

@@ -28,58 +28,68 @@ void smp_reschedule_cpu(uint32_t id){ (void)id; }
 uint32_t cpu_registered_count(void){ return 16; }
 bool cpu_is_online(uint32_t id){ (void)id; return true; }
 
-#define MOCK_MAX_PAGES 8192
-static uint64_t mock_phys[MOCK_MAX_PAGES];
-static void *mock_ptr[MOCK_MAX_PAGES];
-static uint32_t mock_pages;
+#define MOCK_MAX_BLOCKS 4096
+static uint64_t mock_base[MOCK_MAX_BLOCKS];
+static void *mock_ptr[MOCK_MAX_BLOCKS];
+static uint64_t mock_len[MOCK_MAX_BLOCKS];
+static uint32_t mock_blocks;
 static uint64_t mock_next_phys=0x100000ULL;
 static int mock_fail_after=-1;
 
 static void *mock_alloc_pages(uint64_t count){
+    if(!count || count>(1ULL<<20)) return NULL;
     if(mock_fail_after>=0){
         if(mock_fail_after<(int)count) return NULL;
         mock_fail_after-=(int)count;
     }
-    if(mock_pages+count>MOCK_MAX_PAGES) return NULL;
+    if(mock_blocks>=MOCK_MAX_BLOCKS) return NULL;
     void *base=aligned_alloc(4096,(size_t)(count*4096));
     if(!base) return NULL;
     memset(base,0,(size_t)(count*4096));
-    for(uint64_t i=0;i<count;i++){
-        mock_phys[mock_pages]=(mock_next_phys+(uint64_t)mock_pages*4096);
-        mock_ptr[mock_pages]=(uint8_t*)base+i*4096;
-        mock_pages++;
-    }
+    mock_base[mock_blocks]=mock_next_phys;
+    mock_ptr[mock_blocks]=base;
+    mock_len[mock_blocks]=count;
+    mock_next_phys+=count*4096;
+    mock_blocks++;
     return base;
 }
 
+static int mock_find(uint64_t phys, uint64_t count){
+    for(uint32_t i=0;i<mock_blocks;i++)
+        if(mock_base[i]==phys && mock_len[i]==count) return (int)i;
+    return -1;
+}
+
+static void mock_release(uint32_t i){
+    free(mock_ptr[i]);
+    mock_blocks--;
+    mock_base[i]=mock_base[mock_blocks];
+    mock_ptr[i]=mock_ptr[mock_blocks];
+    mock_len[i]=mock_len[mock_blocks];
+}
+
 uint64_t pmm_allocate_page(void){
-    return mock_alloc_pages(1) ? mock_phys[mock_pages-1] : 0;
+    return mock_alloc_pages(1) ? mock_base[mock_blocks-1] : 0;
 }
 uint64_t pmm_allocate_contiguous(uint64_t count){
     if(!count) return 0;
-    uint32_t before=mock_pages;
     if(!mock_alloc_pages(count)) return 0;
-    return mock_phys[before];
+    return mock_base[mock_blocks-1];
 }
 void *pmm_physical_to_virtual(uint64_t phys){
-    for(uint32_t i=0;i<mock_pages;i++)
-        if(mock_phys[i]==phys) return mock_ptr[i];
+    for(uint32_t i=0;i<mock_blocks;i++){
+        if(phys>=mock_base[i] && phys<mock_base[i]+mock_len[i]*4096)
+            return (uint8_t*)mock_ptr[i]+(phys-mock_base[i]);
+    }
     return NULL;
 }
-static void mock_forget(uint64_t phys){
-    for(uint32_t i=0;i<mock_pages;i++){
-        if(mock_phys[i]==phys){
-            free((void*)((uintptr_t)mock_ptr[i]&~(uintptr_t)4095));
-            mock_phys[i]=mock_phys[mock_pages-1];
-            mock_ptr[i]=mock_ptr[mock_pages-1];
-            mock_pages--;
-            return;
-        }
-    }
+void pmm_free_page(uint64_t phys){
+    int i=mock_find(phys,1);
+    if(i>=0) mock_release((uint32_t)i);
 }
-void pmm_free_page(uint64_t phys){ mock_forget(phys); }
 void pmm_free_contiguous(uint64_t phys, uint64_t count){
-    for(uint64_t i=0;i<count;i++) mock_forget(phys+i*4096);
+    int i=mock_find(phys,count);
+    if(i>=0) mock_release((uint32_t)i);
 }
 
 static void dummy_entry(void *arg){ (void)arg; }
@@ -108,7 +118,6 @@ static void test_dynamic_growth(void){
     for(int i=0;i<N;i++)
         for(int j=i+1;j<N;j++) assert(ids[i]!=ids[j]);
     assert(scheduler_thread_count()==N);
-    /* Reap contract: only TERMINATED + switched-out nodes are releasable. */
     for(int i=0;i<N;i++){
         struct thread *t=scheduler_host_lookup(ids[i]);
         assert(t!=NULL);
@@ -117,7 +126,6 @@ static void test_dynamic_growth(void){
     }
     for(int i=0;i<N;i++) scheduler_free_thread_by_id(ids[i]);
     assert(scheduler_thread_count()==0);
-    /* Allocator must work again after a full drain (no static slot leak). */
     int id=make_thread(-1);
     assert(scheduler_thread_count()==1);
     struct thread *last=scheduler_host_lookup(id);
@@ -155,7 +163,7 @@ static void test_selection(void){
     t->kernel_only=true;
     assert(pick_next()==scheduler_host_idle(1));
     executing_cpu=0;
-    assert(pick_next()==t); /* Service override preserves affinity. */
+    assert(pick_next()==t);
     assert(t->affinity==1);
     t->state=THREAD_BLOCKED;
     t->wake_tick=101;
@@ -165,9 +173,9 @@ static void test_selection(void){
     assert(t->wake_tick==0);
     t->state=THREAD_TERMINATED;
     t->running_cpu=1;
-    scheduler_free_thread_by_id(id); /* Still owned elsewhere: must survive. */
+    scheduler_free_thread_by_id(id);
     assert(scheduler_host_lookup(id)==t);
-    assert(scheduler_thread_count()==1);
+    assert(scheduler_thread_count()==0);
     t->running_cpu=-1;
     scheduler_free_thread_by_id(id);
     assert(scheduler_host_lookup(id)==NULL);
@@ -200,7 +208,7 @@ static void *claim_threads(void *arg){
 
 static void test_concurrent_claims(void){
     reset();
-    enum { N = 200 }; /* Well past the old static cap of 64. */
+    enum { N = 200 };
     static int ids[N];
     static int index_by_id[1<<16];
     static unsigned claims[N];

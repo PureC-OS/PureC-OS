@@ -147,7 +147,6 @@ static void redraw(struct pg_window *window){
         list_y+=28;
         uint32_t visible=(uint32_t)count;
         if(visible>MONITOR_MAX_PROCESSES) visible=MONITOR_MAX_PROCESSES;
-        /* Fit processes into visible client area. */
         uint32_t max_rows=0;
         if(window->client.height>list_y+10)
             max_rows=(window->client.height-list_y-10)/22;

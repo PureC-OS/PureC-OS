@@ -292,13 +292,13 @@ void bottom_panel_draw(uint32_t screen_width, uint32_t screen_height) {
 
     // Tasks
     uint32_t task_x = qx + 6;
-    uint32_t task_pids[WINDOW_MANAGER_CAPACITY];
-    uint32_t ntasks = window_manager_list(task_pids, 0, WINDOW_MANAGER_CAPACITY);
+    uint32_t task_pids[64];
+    uint32_t ntasks = window_manager_list(task_pids, 0, 64);
     uint32_t focused = window_manager_focused_pid();
     uint32_t max_tasks = 0;
     if (screen_width > task_x + TRAY_W + 16)
         max_tasks = (screen_width - task_x - TRAY_W - 16) / (TASK_W + TASK_GAP);
-    if (max_tasks > WINDOW_MANAGER_CAPACITY) max_tasks = WINDOW_MANAGER_CAPACITY;
+    if (max_tasks > 64) max_tasks = 64;
     if (ntasks > max_tasks) ntasks = max_tasks;
     for (uint32_t i = 0; i < ntasks; i++) {
         char name[32]; char short_name[20];
@@ -402,12 +402,12 @@ bool bottom_panel_handle_mouse(int32_t x, int32_t y, uint8_t buttons,
         }
         // Tasks: focus window
         uint32_t task_x = qx + 6;
-        uint32_t task_pids[WINDOW_MANAGER_CAPACITY];
-        uint32_t ntasks = window_manager_list(task_pids, 0, WINDOW_MANAGER_CAPACITY);
+        uint32_t task_pids[64];
+        uint32_t ntasks = window_manager_list(task_pids, 0, 64);
         uint32_t max_tasks = 0;
         if (screen_width > task_x + TRAY_W + 16)
             max_tasks = (screen_width - task_x - TRAY_W - 16) / (TASK_W + TASK_GAP);
-        if (max_tasks > WINDOW_MANAGER_CAPACITY) max_tasks = WINDOW_MANAGER_CAPACITY;
+        if (max_tasks > 64) max_tasks = 64;
         if (ntasks > max_tasks) ntasks = max_tasks;
         for (uint32_t i = 0; i < ntasks; i++) {
             uint32_t bx = task_x + i * (TASK_W + TASK_GAP);

@@ -1,5 +1,6 @@
 #include "window_manager.h"
 #include "../lib/string.h"
+#include "../mm/pmm.h"
 
 struct managed_window {
     uint32_t pid;
@@ -9,16 +10,68 @@ struct managed_window {
     bool repaint_pending;
 };
 
-static struct managed_window windows[WINDOW_MANAGER_CAPACITY];
+struct wm_chunk {
+    struct wm_chunk *next;
+};
+
+#define WM_PER_PAGE (4096u/sizeof(struct managed_window))
+
+static struct wm_chunk *wm_chunks;
+static uint32_t wm_used_count;
 static uint32_t focused_pid;
 static uint32_t next_z_order=1;
 static uint32_t repainting_pid;
 static bool registry_suspended;
 
+static struct managed_window *wm_slot_at(uint32_t n){
+    for(struct wm_chunk *c=wm_chunks;c;c=c->next){
+        struct managed_window *slots=(struct managed_window*)(c+1);
+        if(n<WM_PER_PAGE) return &slots[n];
+        n-=WM_PER_PAGE;
+    }
+    return 0;
+}
+
+static uint32_t wm_slot_total(void){
+    uint32_t total=0;
+    for(struct wm_chunk *c=wm_chunks;c;c=c->next) total+=WM_PER_PAGE;
+    return total;
+}
+
+static struct managed_window *wm_alloc_slot(void){
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *s=wm_slot_at(n);
+        if(s && !s->used){
+            memset(s,0,sizeof(*s));
+            s->used=true;
+            wm_used_count++;
+            return s;
+        }
+    }
+    uint64_t phys=pmm_allocate_page();
+    if(!phys) return 0;
+    struct wm_chunk *c=(struct wm_chunk*)pmm_physical_to_virtual(phys);
+    memset(c,0,4096);
+    c->next=wm_chunks;
+    wm_chunks=c;
+    struct managed_window *s=(struct managed_window*)(c+1);
+    s->used=true;
+    wm_used_count++;
+    return s;
+}
+
+static void wm_free_slot(struct managed_window *s){
+    if(!s || !s->used) return;
+    memset(s,0,sizeof(*s));
+    wm_used_count--;
+}
+
 static struct managed_window *find_window(uint32_t pid){
-    for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++){
-        if(windows[index].used && windows[index].pid==pid)
-            return &windows[index];
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *s=wm_slot_at(n);
+        if(s && s->used && s->pid==pid) return s;
     }
     return 0;
 }
@@ -32,9 +85,10 @@ static bool point_inside(int32_t x, int32_t y,
 
 static struct managed_window *top_window_at(int32_t x, int32_t y){
     struct managed_window *top=0;
-    for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++){
-        struct managed_window *window=&windows[index];
-        if(!window->used || !point_inside(x,y,&window->frame)) continue;
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *window=wm_slot_at(n);
+        if(!window || !window->used || !point_inside(x,y,&window->frame)) continue;
         if(!top || window->z_order>top->z_order) top=window;
     }
     return top;
@@ -42,9 +96,10 @@ static struct managed_window *top_window_at(int32_t x, int32_t y){
 
 static struct managed_window *next_repaint_window(void){
     struct managed_window *next=0;
-    for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++){
-        struct managed_window *window=&windows[index];
-        if(!window->used || !window->repaint_pending) continue;
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *window=wm_slot_at(n);
+        if(!window || !window->used || !window->repaint_pending) continue;
         if(!next || window->z_order<next->z_order) next=window;
     }
     return next;
@@ -54,18 +109,9 @@ bool window_manager_register(uint32_t pid,
                              const struct gui_window_request *request){
     if(!pid || !request || !request->width || !request->height) return false;
     struct managed_window *window=find_window(pid);
-    if(!window){
-        for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++){
-            if(!windows[index].used){
-                window=&windows[index];
-                memset(window,0,sizeof(*window));
-                window->used=true;
-                window->pid=pid;
-                break;
-            }
-        }
-    }
+    if(!window) window=wm_alloc_slot();
     if(!window) return false;
+    window->pid=pid;
     window->frame=*request;
     window->z_order=next_z_order++;
     focused_pid=pid;
@@ -85,15 +131,17 @@ void window_manager_unregister(uint32_t pid){
     struct managed_window *window=find_window(pid);
     if(!window) return;
     if(repainting_pid==pid) repainting_pid=0;
-    memset(window,0,sizeof(*window));
+    wm_free_slot(window);
     if(focused_pid!=pid) return;
     focused_pid=0;
-    for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++){
-        if(windows[index].used
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *s=wm_slot_at(n);
+        if(s && s->used
            && (!focused_pid
-               || windows[index].z_order
+               || s->z_order
                     >find_window(focused_pid)->z_order))
-            focused_pid=windows[index].pid;
+            focused_pid=s->pid;
     }
 }
 
@@ -162,29 +210,22 @@ uint32_t window_manager_list(uint32_t *pids,
                              struct gui_window_request *frames,
                              uint32_t capacity){
     uint32_t count = 0;
-    for(uint32_t pass = 0; pass < 2; pass++){
-        (void)pass;
-        for(uint32_t scan = 0; scan < WINDOW_MANAGER_CAPACITY; scan++){
-            struct managed_window *best = 0;
-            for(uint32_t index = 0; index < WINDOW_MANAGER_CAPACITY; index++){
-                struct managed_window *w = &windows[index];
-                if(!w->used) continue;
-                bool already = false;
-                for(uint32_t k = 0; k < count; k++){
-                    if(pids && pids[k] == w->pid){ already = true; break; }
-                }
-                if(already) continue;
-                if(!best || w->z_order < best->z_order) best = w;
-            }
-            if(!best) break;
-            if(count < capacity){
-                if(pids) pids[count] = best->pid;
-                if(frames) frames[count] = best->frame;
-            }
-            count++;
-            if(count >= WINDOW_MANAGER_CAPACITY) break;
+    uint32_t last_z = 0;
+    for(;;){
+        struct managed_window *best = 0;
+        uint32_t total=wm_slot_total();
+        for(uint32_t n=0;n<total;n++){
+            struct managed_window *w=wm_slot_at(n);
+            if(!w || !w->used || w->z_order<=last_z) continue;
+            if(!best || w->z_order<best->z_order) best=w;
         }
-        break;
+        if(!best) break;
+        if(count<capacity){
+            if(pids) pids[count]=best->pid;
+            if(frames) frames[count]=best->frame;
+        }
+        count++;
+        last_z=best->z_order;
     }
     return count;
 }
@@ -195,9 +236,10 @@ void window_manager_set_suspended(bool suspended){
 
 void window_manager_request_repaint(uint32_t excluded_pid){
     repainting_pid=0;
-    for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++){
-        windows[index].repaint_pending=windows[index].used
-            && windows[index].pid!=excluded_pid;
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *s=wm_slot_at(n);
+        if(s) s->repaint_pending=s->used && s->pid!=excluded_pid;
     }
 }
 
@@ -208,6 +250,9 @@ bool window_manager_repaint_pending(void){
 
 void window_manager_cancel_repaint(void){
     repainting_pid=0;
-    for(uint32_t index=0;index<WINDOW_MANAGER_CAPACITY;index++)
-        windows[index].repaint_pending=false;
+    uint32_t total=wm_slot_total();
+    for(uint32_t n=0;n<total;n++){
+        struct managed_window *s=wm_slot_at(n);
+        if(s) s->repaint_pending=false;
+    }
 }
