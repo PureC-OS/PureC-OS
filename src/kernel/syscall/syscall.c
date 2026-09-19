@@ -239,8 +239,11 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_DESKTOP_REDRAW: {
             uint32_t owner=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
             if(!owner || owner==(uint32_t)process_current_pid()) return 0;
-            while(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE))
-                scheduler_yield();
+            uint32_t waited=0;
+            while(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)){
+                if(++waited>=500) return -1;
+                scheduler_sleep(1);
+            }
             __atomic_store_n(&wm_redraw_requester,
                              (uint32_t)process_current_pid(),__ATOMIC_RELAXED);
             __atomic_store_n(&wm_redraw_waiter,scheduler_current_tid(),
@@ -313,6 +316,12 @@ int64_t syscall_handler(struct syscall_regs *r){
             if((uint32_t)process_current_pid()
                !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
             window_manager_request_repaint((uint32_t)a1);
+            uint32_t waited=0;
+            while(window_manager_repaint_pending() && waited<250){
+                scheduler_sleep(1);
+                waited++;
+            }
+            if(window_manager_repaint_pending()) window_manager_cancel_repaint();
             __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
             int32_t waiter=__atomic_exchange_n(&wm_redraw_waiter,-1,
                                                 __ATOMIC_ACQ_REL);

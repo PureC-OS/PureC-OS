@@ -82,6 +82,9 @@ GENERAL_CPP_SOURCES := \
 	hexedit/src/editor/editor.cpp \
 	hexedit/src/window/window.cpp
 PLAIN_OBJECTS := $(PLAIN_SOURCES:%.c=$(OBJ_DIR)/%.o)
+WINDOW_MANAGER_OBJECTS := \
+	$(OBJ_DIR)/window_manager/main.o \
+	$(OBJ_DIR)/window_manager/desktop_entries.o
 GENERAL_OBJECTS := $(GENERAL_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 TARGETS := \
@@ -154,6 +157,10 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/programs/settings/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CFLAGS) -c $< -o $@
 
+$(OBJ_DIR)/window_manager/desktop_entries.o: $(ROOT_DIR)/src/userspace/apps/desktop_entries.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CPPFLAGS) -I$(ROOT_DIR)/src/programs/settings/include -I$(ROOT_DIR)/src/programs/hexedit/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CXXFLAGS) -c $< -o $@
@@ -162,7 +169,7 @@ $(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/window-manager: $(OBJ_DIR)/window_manager/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/window-manager: $(WINDOW_MANAGER_OBJECTS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

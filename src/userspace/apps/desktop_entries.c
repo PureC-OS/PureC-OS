@@ -1,8 +1,7 @@
 #include "desktop_entries.h"
-#include "../../fs/vfs.h"
 #include "../../fs/types/fs_types.h"
-#include "../../kernel/syscall/syscall.h"
-#include "../../lib/string.h"
+#include "../../libc/include/purec.h"
+#include "../../libc/include/hosted/string.h"
 
 #define ENTRY_FILE_MAX 4096
 #define DIR_CAP 32
@@ -157,75 +156,21 @@ static uint8_t g_file_buf[ENTRY_FILE_MAX];
 
 static int32_t read_whole_file(const char *path, uint32_t *out_size) {
     if (out_size) *out_size = 0;
-    if (!vfs_is_root_mounted()) return -1;
-    filesystem_syscall_lock();
-    int32_t fd = vfs_open(path);
+    int32_t fd = pc_file_open(path);
     uint32_t total = 0;
     if (fd >= 0) {
         for (;;) {
             if (total >= sizeof(g_file_buf)) break;
-            int32_t n = vfs_read(fd, g_file_buf + total,
-                                 (uint32_t)(sizeof(g_file_buf) - total));
+            int32_t n = pc_file_read(fd, g_file_buf + total,
+                                     (uint32_t)(sizeof(g_file_buf) - total));
             if (n <= 0) break;
             total += (uint32_t)n;
         }
-        (void)vfs_close(fd);
+        (void)pc_file_close(fd);
     }
-    filesystem_syscall_unlock();
     if (fd < 0 || !total) return -1;
     if (out_size) *out_size = total;
     return 0;
-}
-
-struct fallback_def {
-    const char *file;
-    const char *name;
-    const char *exec;
-    const char *builtin;
-    uint32_t color;
-    const char *symbol;
-};
-
-static const struct fallback_def kFallback[] = {
-    {"files.desktop", "Files", "/bin/program/files", "", 0xF9E2AFu, "Files"},
-    {"monitor.desktop", "HTOP", "/bin/program/monitor", "", 0x89B4FAu, "HTOP"},
-    {"terminal.desktop", "Terminal", "/bin/program/terminal", "", 0x1E1E2Eu, ">_"},
-    {"clock.desktop", "Clock", "", "clock", 0x89DCEBu, "12"},
-    {"calc.desktop", "Calc", "", "calc", 0xA6E3A1u, "+"},
-    {"calendar.desktop", "Calendar", "", "calendar", 0xF9E2AFu, "28"},
-    {"settings.desktop", "Settings", "/bin/program/settings", "", 0x94E2D5u, "{}"},
-    {"install.desktop", "Install", "/bin/installer", "", 0xCBA6F7u, "OS"},
-    {"disks.desktop", "Disks", "/bin/program/disks", "", 0xF9E2AFu, "HD"},
-    {"devmgr.desktop", "Devices", "/bin/program/devmgr", "", 0x89DCEBu, "DV"},
-    {"tetris.desktop", "Tetris", "/bin/program/tetris", "", 0xF38BA8u, "[]"},
-    {"logview.desktop", "Logs", "/bin/program/logview", "", 0x89B4FAu, "LOG"},
-    {"hexedit.desktop", "HexEdit", "/bin/program/hexedit", "", 0xF5C2E7u, "HX"},
-};
-
-static void apply_fallback(void) {
-    uint32_t n = (uint32_t)(sizeof(kFallback) / sizeof(kFallback[0]));
-    if (n > DESKTOP_ENTRY_MAX) n = DESKTOP_ENTRY_MAX;
-    for (uint32_t i = 0; i < n; i++) {
-        struct desktop_entry *e = &g_entries[i];
-        memset(e, 0, sizeof(*e));
-        copy_trunc(e->name, sizeof(e->name), kFallback[i].name,
-                   (uint32_t)strlen(kFallback[i].name));
-        copy_trunc(e->exec, sizeof(e->exec), kFallback[i].exec,
-                   (uint32_t)strlen(kFallback[i].exec));
-        copy_trunc(e->builtin, sizeof(e->builtin), kFallback[i].builtin,
-                   (uint32_t)strlen(kFallback[i].builtin));
-        copy_trunc(e->icon_text, sizeof(e->icon_text), kFallback[i].symbol,
-                   (uint32_t)strlen(kFallback[i].symbol));
-        e->icon_color = kFallback[i].color;
-        const char *f = kFallback[i].file;
-        uint32_t fl = (uint32_t)strlen(f);
-        if (fl > 8) copy_trunc(e->id, sizeof(e->id), f, fl - 8);
-        else copy_trunc(e->id, sizeof(e->id), f, fl);
-        e->x = GRID_X0 + (i % GRID_PER_ROW) * GRID_DX;
-        e->y = GRID_Y0 + (i / GRID_PER_ROW) * GRID_DY;
-        e->hidden = false;
-    }
-    g_count = n;
 }
 
 static void assign_grid(void) {
@@ -240,13 +185,8 @@ void desktop_entries_rescan(void) {
     g_count = 0;
     static struct fs_directory_entry_long dir[DIR_CAP];
     memset(dir, 0, sizeof(dir));
-    filesystem_syscall_lock();
-    int32_t n = vfs_list_long(DESKTOP_ENTRY_SCAN_DIR, dir, DIR_CAP);
-    filesystem_syscall_unlock();
-    if (n <= 0) {
-        apply_fallback();
-        return;
-    }
+    int32_t n = pc_directory_list_long(DESKTOP_ENTRY_SCAN_DIR, dir, DIR_CAP);
+    if (n <= 0) return;
     if (n > (int32_t)DIR_CAP) n = (int32_t)DIR_CAP;
     // Stable order: insertion sort by name.
     for (int32_t i = 1; i < n; i++) {
@@ -286,10 +226,6 @@ void desktop_entries_rescan(void) {
         }
         e.hidden = false;
         g_entries[g_count++] = e;
-    }
-    if (!g_count) {
-        apply_fallback();
-        return;
     }
     assign_grid();
 }
