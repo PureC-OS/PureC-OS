@@ -1,0 +1,339 @@
+<mxfile host="65bd71144e">
+    <diagram id="boot" name="01 · Загрузка до userspace">
+        <mxGraphModel dx="2289" dy="1160" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1320" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=30;fontStyle=1;" value="PureC OS · От загрузчика до userspace" vertex="1">
+                    <mxGeometry height="45" width="1460" x="50" y="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="sub" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=15;fontStyle=1;" value="Текущая реализация • x86-64 / Limine • 19.09.2026 • Читай левую колонку сверху вниз, затем правую." vertex="1">
+                    <mxGeometry height="40" width="1450" x="50" y="78" as="geometry"/>
+                </mxCell>
+                <mxCell id="left" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=20;fontStyle=1;" value="A · Прошивка и ранний старт" vertex="1">
+                    <mxGeometry height="35" width="610" x="60" y="128" as="geometry"/>
+                </mxCell>
+                <mxCell id="right" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=20;fontStyle=1;" value="B · Подсистемы и запуск среды" vertex="1">
+                    <mxGeometry height="35" width="610" x="870" y="128" as="geometry"/>
+                </mxCell>
+                <mxCell id="b1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3df;strokeColor=#bb761c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;01  BIOS / UEFI → Limine&lt;/b&gt;&lt;br&gt;Чтение limine.conf; выбор primary или fallback.&lt;br&gt;ISO либо EFI System Partition (ESP).&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/boot/limine.conf.in • src/fs/fat/fat32.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="60" y="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="b2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3df;strokeColor=#bb761c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;02  Limine загружает ядро и модули&lt;/b&gt;&lt;br&gt;kernel.elf + initramfs + ресурсы установщика.&lt;br&gt;Передаёт framebuffer, memmap, HHDM, RSDP и SMP.&lt;br&gt;Вход уже в 64-bit long mode, paging включён.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/boot/boot.c: Limine requests&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="60" y="335" as="geometry"/>
+                </mxCell>
+                <mxCell id="b3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;03  _start(): принятие boot responses&lt;/b&gt;&lt;br&gt;Serial → проверка протокола и framebuffer.&lt;br&gt;Сохранение ответов Limine; настройка адресов MMIO.&lt;br&gt;GOP/framebuffer → klog → boot_diag.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/boot/boot.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="60" y="490" as="geometry"/>
+                </mxCell>
+                <mxCell id="b4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;04  Базовая инфраструктура x86-64&lt;/b&gt;&lt;br&gt;PIC → GDT/TSS/IST → IDT, включая int 0x80.&lt;br&gt;PS/2 mouse → timer_init(1000) → STI.&lt;br&gt;Затем вызов kernel_main().&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/boot/boot.c • src/arch/x86_64/{gdt,idt}&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="60" y="645" as="geometry"/>
+                </mxCell>
+                <mxCell id="b5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0eafa;strokeColor=#8462a7;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;05  CPU, память и начальная ФС&lt;/b&gt;&lt;br&gt;cpu_topology_init → system_info_init.&lt;br&gt;PMM → VMM → vfs_mount_initramfs().&lt;br&gt;CPIO проверяется; строится индекс файлов в RAM.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/core/kernel.c • src/mm • src/fs/initramfs.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="60" y="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="b6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;06  Состояние ядра&lt;/b&gt;&lt;br&gt;FPU → power_init / ACPI → process_init.&lt;br&gt;Проверка IDT через int3.&lt;br&gt;MMIO mapper → smp_start_all().&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/core/kernel.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="60" y="955" as="geometry"/>
+                </mxCell>
+                <mxCell id="b7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;07  syscall_init() и дисковые устройства&lt;/b&gt;&lt;br&gt;Audio → PCI storage probe → block_device_init.&lt;br&gt;Попытка монтирования диска: ext2, затем FAT32.&lt;br&gt;Если диск не смонтирован, начальный root — initramfs.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/syscall/syscall.c • src/fs/vfs.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="870" y="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="b8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;08  Сеть и обнаружение устройств&lt;/b&gt;&lt;br&gt;net_service_init → проверка syscall WRITE.&lt;br&gt;devman_init → PCI / ACPI enumeration.&lt;br&gt;Затем init_process_start().&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/core/kernel.c • src/kernel/devices&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="870" y="335" as="geometry"/>
+                </mxCell>
+                <mxCell id="b9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;09  Создание PID 1&lt;/b&gt;&lt;br&gt;scheduler_init → process_spawn_module(&quot;/bin/init&quot;).&lt;br&gt;ELF → адресное пространство → пользовательский поток.&lt;br&gt;PID 1 создан; выполнение начнётся по планировщику.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/core/init.c • src/kernel/process/process.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="870" y="490" as="geometry"/>
+                </mxCell>
+                <mxCell id="b10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;10  Подготовка рабочего стола · Ring 0&lt;/b&gt;&lt;br&gt;userspace_init(): keyboard, desktop entries, display.&lt;br&gt;Рисование рабочего стола, панели и оконная среда.&lt;br&gt;Создание процесса /bin/program/login.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/userspace/userspace.c — код слинкован с ядром&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="870" y="645" as="geometry"/>
+                </mxCell>
+                <mxCell id="b11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;11  Запуск планировщика&lt;/b&gt;&lt;br&gt;Создание потоков input, keyboard, kernel-log, net-rx.&lt;br&gt;Условные self-tests → scheduler_start().&lt;br&gt;AP выходят из ожидания; выбор готовых потоков.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/core/init.c • src/kernel/process/scheduler.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="870" y="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="b12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e4f4ee;strokeColor=#38836c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;12  Работа системы&lt;/b&gt;&lt;br&gt;Потоки ядра: рабочий стол, ввод, сеть, журнал.&lt;br&gt;Ring 3: /bin/init, login, terminal и другие ELF.&lt;br&gt;Переходы: iretq в Ring 3, int 0x80 в ядро.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/arch/x86_64/user.asm • src/programs&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="630" x="870" y="955" as="geometry"/>
+                </mxCell>
+                <mxCell id="legend" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8d9;strokeColor=#bf9b3b;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Как читать схему&lt;/b&gt;&lt;br&gt;Оранжевый — загрузчик; синий — Ring 0; фиолетовый — память; зелёный — Ring 3.&lt;br&gt;Стрелки на этой странице показывают порядок инициализации. Подробности — на страницах 02–04." vertex="1">
+                    <mxGeometry height="90" width="1440" x="60" y="1135" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge1" edge="1" parent="1" source="b1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b2" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge2" edge="1" parent="1" source="b2" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b3" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge3" edge="1" parent="1" source="b3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b4" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge4" edge="1" parent="1" source="b4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b5" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge5" edge="1" parent="1" source="b5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b6" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge6" edge="1" parent="1" source="b6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="b7" value="дальше">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="770" y="1017"/>
+                            <mxPoint x="770" y="242"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge7" edge="1" parent="1" source="b7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge8" edge="1" parent="1" source="b8" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b9" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge9" edge="1" parent="1" source="b9" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b10" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge10" edge="1" parent="1" source="b10" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b11" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge11" edge="1" parent="1" source="b11" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="b12" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="process" name="02 · ELF, Ring 3 и системные вызовы">
+        <mxGraphModel dx="1900" dy="1353" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1430" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=29;fontStyle=1;" value="Создание процесса и граница Ring 0 ↔ Ring 3" vertex="1">
+                    <mxGeometry height="50" width="1480" x="50" y="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="sub" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=15;fontStyle=1;" value="PID 1 и пользовательские приложения используют один загрузчик ELF. Исходники: src/kernel/process, src/arch/x86_64, src/programs/init." vertex="1">
+                    <mxGeometry height="45" width="1460" x="50" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="request" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Запрос запуска&lt;/b&gt;&lt;br&gt;Boot: /bin/init; desktop: login / выбранная программа.&lt;br&gt;Из Ring 3: SYS_EXEC → process_spawn_module()." vertex="1">
+                    <mxGeometry height="100" width="670" x="60" y="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="lookup" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Поиск образа: process_spawn_module()&lt;/b&gt;&lt;br&gt;1. initramfs_find(path), затем program_alias_resolve().&lt;br&gt;2. Если отсутствует: VFS open / stat / read.&lt;br&gt;Initramfs: прямой указатель; VFS: временная копия ELF." vertex="1">
+                    <mxGeometry height="130" width="670" x="60" y="310" as="geometry"/>
+                </mxCell>
+                <mxCell id="elf" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0eafa;strokeColor=#8462a7;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;process_spawn_elf() / elf_load_user_image()&lt;/b&gt;&lt;br&gt;PMM: дескриптор процесса; VMM: новое адресное пространство.&lt;br&gt;Проверка ELF64 x86-64 / PT_LOAD; страницы и копирование.&lt;br&gt;Права USER / WRITABLE / NX; общая верхняя половина ядра.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/process/elf.c • src/mm/vmm.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="670" x="60" y="485" as="geometry"/>
+                </mxCell>
+                <mxCell id="ready" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Готовый процесс и поток&lt;/b&gt;&lt;br&gt;User stack + heap bounds + args/env + PID.&lt;br&gt;scheduler_create_user_thread(): kernel stack и начальный контекст.&lt;br&gt;Процесс READY ждёт выбора планировщиком.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/process/process.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="120" width="670" x="60" y="665" as="geometry"/>
+                </mxCell>
+                <mxCell id="switch" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Планировщик выбирает поток&lt;/b&gt;&lt;br&gt;Сохранение FPU; TSS kernel stack; переключение CR3.&lt;br&gt;scheduler_asm_switch → thread_trampoline → user_process_entry.&lt;br&gt;process state = RUNNING; arch_enter_user(entry, stack).&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/process/scheduler.c • src/arch/x86_64/scheduler.asm&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="670" x="60" y="830" as="geometry"/>
+                </mxCell>
+                <mxCell id="iret" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e4f4ee;strokeColor=#38836c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Вход в Ring 3&lt;/b&gt;&lt;br&gt;arch_enter_user(): user SS/CS, RSP/RIP, IF=1 → iretq.&lt;br&gt;CPU продолжает с entry point ELF.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/arch/x86_64/user.asm&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="100" width="670" x="60" y="1000" as="geometry"/>
+                </mxCell>
+                <mxCell id="apps" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e4f4ee;strokeColor=#38836c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Ring 3 · исполнение приложений&lt;/b&gt;&lt;br&gt;/bin/init: собирает завершившихся детей и pc_sleep(500).&lt;br&gt;login, terminal, installer, monitor и другие ELF.&lt;br&gt;Вызовы ядра через библиотеки libc / libgui / libfs / libaudio.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/programs/init/main.c • src/libc • src/libgui • src/libfs&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="630" x="870" y="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="int" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;int 0x80 → Ring 0&lt;/b&gt;&lt;br&gt;IDT gate DPL3; переход на kernel stack через TSS.&lt;br&gt;ISR сохраняет регистры; idt.c → syscall_handler().&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/arch/x86_64/idt • src/kernel/syscall/syscall.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="110" width="630" x="870" y="360" as="geometry"/>
+                </mxCell>
+                <mxCell id="dispatch" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Обработка системного вызова&lt;/b&gt;&lt;br&gt;Проверка пользовательских адресов и прав.&lt;br&gt;Диспетчер: процессы, VFS, GUI, устройства, сеть.&lt;br&gt;Результат возвращается в RAX; возврат через ISR / iretq." vertex="1">
+                    <mxGeometry height="120" width="630" x="870" y="535" as="geometry"/>
+                </mxCell>
+                <mxCell id="services" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Операции ядра&lt;/b&gt;&lt;br&gt;SYS_EXEC → ещё один процесс.&lt;br&gt;SYS_WAIT / SYS_EXIT → ожидание и освобождение ресурсов.&lt;br&gt;Файлы: таблица fd процесса → VFS → backend." vertex="1">
+                    <mxGeometry height="115" width="630" x="870" y="720" as="geometry"/>
+                </mxCell>
+                <mxCell id="note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8d9;strokeColor=#bf9b3b;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Границы исполнения&lt;/b&gt;&lt;br&gt;Название src/userspace не означает Ring 3: desktop и window_manager работают внутри ядра.&lt;br&gt;PID 1 сейчас выполняет цикл reaping; графическую среду создаёт init_process_start() в Ring 0.&lt;br&gt;Ошибки загрузки init приводят к kernel_panic с причиной из process_last_spawn_error()." vertex="1">
+                    <mxGeometry height="145" width="1440" x="60" y="1170" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge1" edge="1" parent="1" source="request" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="lookup" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge2" edge="1" parent="1" source="lookup" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="elf" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge3" edge="1" parent="1" source="elf" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="ready" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge4" edge="1" parent="1" source="ready" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="switch" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge5" edge="1" parent="1" source="switch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="iret" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge6" edge="1" parent="1" source="iret" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="apps" value="entry ELF">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="800" y="1050"/>
+                            <mxPoint x="800" y="228"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge7" edge="1" parent="1" source="apps" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="int" value="вызов">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge8" edge="1" parent="1" source="int" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="dispatch" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge9" edge="1" parent="1" source="dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="services" value="обработчик">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge10" edge="1" parent="1" source="dispatch" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;dashed=1;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" target="apps" value="результат">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1530" y="595"/>
+                            <mxPoint x="1530" y="225"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="subsystems" name="03 · Подсистемы и взаимодействие">
+        <mxGraphModel dx="3460" dy="1353" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1330" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=30;fontStyle=1;" value="PureC OS · Подсистемы работающей системы" vertex="1">
+                    <mxGeometry height="50" width="1460" x="50" y="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="sub" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=15;fontStyle=1;" value="Стрелки показывают обращения между подсистемами, а не порядок загрузки. Все синие и фиолетовые блоки выполняются в Ring 0." vertex="1">
+                    <mxGeometry height="45" width="1460" x="50" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="user" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e4f4ee;strokeColor=#38836c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Приложения · Ring 3&lt;/b&gt;&lt;br&gt;init, login, terminal, installer, monitor, files, игры.&lt;br&gt;ELF-программы + пользовательские библиотеки.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/programs • src/libc • src/libgui • src/libfs&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="95" width="780" x="390" y="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="abi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Граница ABI: int 0x80&lt;/b&gt;&lt;br&gt;IDT / сохранение контекста → syscall_handler.&lt;br&gt;Проверка памяти процесса, диспетчер системных вызовов.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/syscall&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="95" width="780" x="390" y="305" as="geometry"/>
+                </mxCell>
+                <mxCell id="proc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Процессы и SMP scheduler&lt;/b&gt;&lt;br&gt;PID, parent, args/env, fd, wait/exit.&lt;br&gt;Общая очередь; состояние на CPU, affinity.&lt;br&gt;GDT/TSS, FPU, CR3; LAPIC timer / IPI.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/process • src/kernel/smp&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="50" y="485" as="geometry"/>
+                </mxCell>
+                <mxCell id="desktop" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Desktop и окна · Ring 0&lt;/b&gt;&lt;br&gt;userspace_init, window_manager, панели.&lt;br&gt;input / keyboard / log threads.&lt;br&gt;Обслуживание GUI-вызовов приложений.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/userspace&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="560" y="485" as="geometry"/>
+                </mxCell>
+                <mxCell id="vfs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Файловая система&lt;/b&gt;&lt;br&gt;VFS read/open/stat/seek и запись на диск.&lt;br&gt;Initramfs, виртуальные файлы /kernel.&lt;br&gt;Дисковые backend: ext2 и FAT32.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/fs&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="1070" y="485" as="geometry"/>
+                </mxCell>
+                <mxCell id="mem" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0eafa;strokeColor=#8462a7;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Память и синхронизация&lt;/b&gt;&lt;br&gt;PMM: физические страницы / bitmap.&lt;br&gt;VMM: таблицы страниц, USER/NX, TLB.&lt;br&gt;Spinlock и рекурсивные mutex.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/mm • src/kernel/sync&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="50" y="715" as="geometry"/>
+                </mxCell>
+                <mxCell id="io" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Ввод, графика, аудио&lt;/b&gt;&lt;br&gt;Keyboard, PS/2 и USB mouse.&lt;br&gt;Framebuffer/GOP; HDA / PC speaker.&lt;br&gt;Рабочий стол опрашивает события ввода.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/drivers • src/userspace/display.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="560" y="715" as="geometry"/>
+                </mxCell>
+                <mxCell id="block" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Блочные устройства&lt;/b&gt;&lt;br&gt;Единый block_device API.&lt;br&gt;ATA PIO / AHCI, USB storage.&lt;br&gt;USB-контроллеры xHCI / EHCI.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/drivers/storage • src/drivers/usb&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="1070" y="715" as="geometry"/>
+                </mxCell>
+                <mxCell id="net" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Сеть&lt;/b&gt;&lt;br&gt;net_service / net-rx → сетевой стек.&lt;br&gt;Ethernet, ARP, IPv4, UDP, DHCP, DNS, ICMP.&lt;br&gt;Драйверы e1000 / 82543gc / pcnet; Wi-Fi код.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/net • src/drivers/net&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="50" y="945" as="geometry"/>
+                </mxCell>
+                <mxCell id="devices" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;PCI / ACPI и устройства&lt;/b&gt;&lt;br&gt;devman: перечисление PCI и ACPI.&lt;br&gt;power_init, uACPI, питание и датчики.&lt;br&gt;MMIO mapper для регистров устройств.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/devices • src/drivers/power • acpi&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="560" y="945" as="geometry"/>
+                </mxCell>
+                <mxCell id="diag" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fce8e6;strokeColor=#bb5650;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Диагностика&lt;/b&gt;&lt;br&gt;serial, klog, boot_diag.&lt;br&gt;Исключения → kernel_panic_exception.&lt;br&gt;Паника: регистры, call trace, остановка CPU.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/diagnostics&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="135" width="440" x="1070" y="945" as="geometry"/>
+                </mxCell>
+                <mxCell id="scope" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8d9;strokeColor=#bf9b3b;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Текущие ограничения архитектуры&lt;/b&gt;&lt;br&gt;Драйверы и desktop слинкованы с ядром. Наличие .ko / .elf в конфигурации Limine ещё не означает динамическую загрузку драйверов.&lt;br&gt;Boot-модули Limine, архив initramfs и процессы ELF — разные сущности. Схема показывает существующие связи, без планируемого module loader." vertex="1">
+                    <mxGeometry height="105" width="1460" x="50" y="1160" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge1" edge="1" parent="1" source="user" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="abi" value="syscalls">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge2" edge="1" parent="1" source="abi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="proc" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge3" edge="1" parent="1" source="abi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="desktop" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge4" edge="1" parent="1" source="abi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="vfs" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge5" edge="1" parent="1" source="proc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="mem" value="страницы, блокировки">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge6" edge="1" parent="1" source="desktop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="io" value="ввод / вывод">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge7" edge="1" parent="1" source="vfs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="block" value="FAT32 / ext2 I/O">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge8" edge="1" parent="1" source="abi" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;dashed=1;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" target="net" value="сетевые вызовы">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="25" y="350"/>
+                            <mxPoint x="25" y="1010"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="edge9" edge="1" parent="1" source="devices" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;dashed=1;" target="io" value="обнаружение / настройка">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="filesystems" name="04 · Initramfs, ESP и дисковый root">
+        <mxGraphModel dx="1900" dy="1353" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1410" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="title" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=29;fontStyle=1;" value="От сборки архива до загрузки установленной системы" vertex="1">
+                    <mxGeometry height="50" width="1460" x="50" y="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="sub" parent="1" style="text;html=1;whiteSpace=wrap;align=left;verticalAlign=middle;fontColor=#20354c;fontSize=15;fontStyle=1;" value="ESP остаётся FAT32 при выборе как FAT32, так и ext2 для системного раздела. Initramfs монтируется из памяти, переданной Limine." vertex="1">
+                    <mxGeometry height="45" width="1460" x="50" y="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="manifest" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3df;strokeColor=#bb761c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Сборка: assets/manifest.txt&lt;/b&gt;&lt;br&gt;Пути программ, библиотек, заголовков и ресурсов.&lt;br&gt;mk/gen_assets.py → CPIO newc + конфигурация ISO.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;mk/main.mk • mk/gen_assets.py&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="110" width="630" x="60" y="165" as="geometry"/>
+                </mxCell>
+                <mxCell id="iso" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3df;strokeColor=#bb761c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Загрузка ISO&lt;/b&gt;&lt;br&gt;boot/kernel.elf + /boot/initramfs.cpio.&lt;br&gt;Limine передаёт архив как boot module в RAM.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/boot/limine.conf.in&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="100" width="630" x="60" y="335" as="geometry"/>
+                </mxCell>
+                <mxCell id="install" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3df;strokeColor=#bb761c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Установщик&lt;/b&gt;&lt;br&gt;fat32_format_uefi_device_progress_ex(): GPT.&lt;br&gt;ESP: FAT32 → bootloader, ядра, initramfs, limine.conf.&lt;br&gt;Системный раздел: FAT32 либо ext2 → программы.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/fs/fat/fat32.c • src/fs/ext2/format.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="130" width="630" x="870" y="165" as="geometry"/>
+                </mxCell>
+                <mxCell id="esp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff3df;strokeColor=#bb761c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Загрузка установленной системы&lt;/b&gt;&lt;br&gt;Limine с ESP: kernel.elf или kernel2.elf.&lt;br&gt;Архив: /boot/initra~1.cpi (8.3 alias).&lt;br&gt;Длинное имя на ESP: initramfs.cpio." vertex="1">
+                    <mxGeometry height="120" width="630" x="870" y="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="get" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0eafa;strokeColor=#8462a7;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Единый поиск boot-архива&lt;/b&gt;&lt;br&gt;initramfs_boot_image(): initramfs.cpio или initra~1.cpi.&lt;br&gt;Также принимает /boot/INITRA~1.CPI.&lt;br&gt;boot_get_module() возвращает адрес и размер из Limine.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/fs/initramfs.c • src/boot/boot.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="780" x="390" y="545" as="geometry"/>
+                </mxCell>
+                <mxCell id="mount" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0eafa;strokeColor=#8462a7;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;vfs_mount_initramfs()&lt;/b&gt;&lt;br&gt;После PMM/VMM: проверка CPIO, индекс файлов.&lt;br&gt;Начальный VFS root = INITRAMFS; данные остаются в RAM.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/core/kernel.c • src/fs/initramfs.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="100" width="780" x="390" y="720" as="geometry"/>
+                </mxCell>
+                <mxCell id="root" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Позже: syscall_init() → vfs_mount_root()&lt;/b&gt;&lt;br&gt;Автопоиск root: ext2_init(), затем fat32_init().&lt;br&gt;Успех переключает дисковый backend; архив остаётся доступным.&lt;br&gt;Отсутствие дискового root не мешает запуску из initramfs.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/syscall/syscall.c • src/fs/vfs.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="125" width="780" x="390" y="870" as="geometry"/>
+                </mxCell>
+                <mxCell id="exec" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e4f4ee;strokeColor=#38836c;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Запуск программы&lt;/b&gt;&lt;br&gt;process_spawn_module: поиск в initramfs / alias.&lt;br&gt;Если файла нет — чтение через VFS.&lt;br&gt;Найденный образ → process_spawn_elf.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/kernel/process/process.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="120" width="630" x="60" y="1070" as="geometry"/>
+                </mxCell>
+                <mxCell id="access" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e9f1fc;strokeColor=#4875aa;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Обычное чтение файла&lt;/b&gt;&lt;br&gt;VFS: /kernel и log special files; затем initramfs.&lt;br&gt;Если в архиве нет файла — дисковый backend.&lt;br&gt;Запись: выбранный FAT32 / ext2; архив read-only.&lt;br&gt;&lt;font style=&quot;font-size:11px&quot; color=&quot;#536174&quot;&gt;src/fs/vfs.c&lt;/font&gt;" vertex="1">
+                    <mxGeometry height="120" width="630" x="870" y="1070" as="geometry"/>
+                </mxCell>
+                <mxCell id="caution" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff8d9;strokeColor=#bf9b3b;fontColor=#172638;fontSize=15;align=left;verticalAlign=middle;spacing=15;arcSize=10;" value="&lt;b&gt;Особенность текущего VFS&lt;/b&gt;&lt;br&gt;Это не универсальная таблица mount points: используется vfs_active_fs и отдельный поиск в initramfs.&lt;br&gt;При open/stat файлы архива имеют приоритет над диском; list/list_long зависят от активного backend.&lt;br&gt;Поэтому содержимое каталога и приоритет чтения сейчас могут различаться." vertex="1">
+                    <mxGeometry height="115" width="1440" x="60" y="1250" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge1" edge="1" parent="1" source="manifest" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="iso" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge2" edge="1" parent="1" source="manifest" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;dashed=1;" target="install" value="ISO → запуск installer">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge3" edge="1" parent="1" source="install" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="esp" value="после установки и перезагрузки">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge4" edge="1" parent="1" source="iso" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="get" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge5" edge="1" parent="1" source="esp" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="get" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge6" edge="1" parent="1" source="get" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="mount" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge7" edge="1" parent="1" source="mount" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="root" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge8" edge="1" parent="1" source="root" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="exec" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="edge9" edge="1" parent="1" source="root" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=#64778b;strokeWidth=2;fontSize=12;fontColor=#33475b;labelBackgroundColor=#ffffff;" target="access" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
