@@ -176,13 +176,10 @@ int64_t syscall_handler(struct syscall_regs *r){
             bool owns_console=console_owner
                 && (pid==console_owner
                     || (current && current->parent_pid==console_owner));
-            bool desktop_active=__atomic_load_n(
-                &wm_owner_pid,__ATOMIC_ACQUIRE)!=0;
             for(uint64_t i=0;i<len;i++){
                 serial_putc(s[i]);
                 if(gop_console_is_active() && owns_console)
                     gop_console_putc(s[i]);
-                else if(!desktop_active) gop_putc(s[i]);
             }
             return (int64_t)len;
         }
@@ -234,7 +231,6 @@ int64_t syscall_handler(struct syscall_regs *r){
             mouse_end_framebuffer_update();
             return 0;
         case SYS_FB_BLIT: {
-            if(!process_has_capability(PROCESS_CAP_WINDOW_MANAGER)) return -1;
             const uint32_t *pixels=(const uint32_t*)(uintptr_t)a1;
             uint32_t width=(uint32_t)a2;
             uint32_t height=(uint32_t)a3;
@@ -243,7 +239,7 @@ int64_t syscall_handler(struct syscall_regs *r){
             uint64_t count=(uint64_t)width*height;
             if(count>UINT64_MAX/sizeof(uint32_t)
                || !readable(pixels,count*sizeof(uint32_t))) return -1;
-            return gop_blit_cover(pixels,width,height) ? 0 : -1;
+            return gop_blit_frame(pixels,width,height) ? 0 : -1;
         }
         case SYS_DISPLAY_SET_MODE:
             return display_mode_apply((uint32_t)a1, (uint32_t)a2,

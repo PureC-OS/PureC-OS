@@ -1,21 +1,10 @@
 #include "personalization.h"
 #include "wallpaper.h"
-#ifdef PERSONALIZATION_USERSPACE
 #include "../libc/include/purec.h"
 #include "../libc/include/hosted/string.h"
-#define klogf(...) ((void)0)
-#else
-#include "display.h"
-#include "../drivers/interrupts/timer.h"
-#include "../fs/vfs.h"
-#include "../kernel/diagnostics/klog.h"
-#include "../kernel/syscall/syscall.h"
-#include "../lib/string.h"
-#endif
 
 static struct personalization g_current;
 static bool g_has_current;
-static bool g_had_config;
 static uint64_t g_last_poll_tick;
 
 static const struct {
@@ -44,39 +33,18 @@ static bool starts_with(const char *text, const char *prefix){
     return true;
 }
 
-static uint32_t parse_u32(const char *text){
-    uint32_t value=0;
-    while(text && *text>='0' && *text<='9'){
-        uint32_t digit=(uint32_t)(*text-'0');
-        if(value>(UINT32_MAX-digit)/10U) return UINT32_MAX;
-        value=value*10U+digit;
-        text++;
-    }
-    return value;
-}
-
-void personalization_defaults(struct personalization *p){
+static void personalization_defaults(struct personalization *p){
     if(!p) return;
     copy_str(p->theme,sizeof(p->theme),"catppuccin-dark");
     p->wallpaper[0]='\0';
-    copy_str(p->font,sizeof(p->font),"clean");
-    p->font_size=8;
 }
 
-uint32_t personalization_theme_count(void){
-    return sizeof(theme_table)/sizeof(theme_table[0]);
-}
-
-const char *personalization_theme_name_at(uint32_t index){
-    if(index>=personalization_theme_count()) return theme_table[0].name;
-    return theme_table[index].name;
-}
-
-bool personalization_theme_colors(const char *name,
-                                  struct personalization_colors *out){
+static bool personalization_theme_colors(
+    const char *name,struct personalization_colors *out){
     if(out) *out=theme_table[0].colors;
     if(!name || !out) return false;
-    for(uint32_t i=0;i<personalization_theme_count();i++){
+    uint32_t count=(uint32_t)(sizeof(theme_table)/sizeof(theme_table[0]));
+    for(uint32_t i=0;i<count;i++){
         if(strcmp(name,theme_table[i].name)==0){
             *out=theme_table[i].colors;
             return true;
@@ -85,66 +53,25 @@ bool personalization_theme_colors(const char *name,
     return false;
 }
 
-uint32_t personalization_font_face(const char *font){
-    if(!font) return 1;
-    if(strcmp(font,"classic")==0) return 0;
-    if(strcmp(font,"bold")==0) return 2;
-    return 1;
-}
-
-uint32_t personalization_font_size_clamped(uint32_t size){
-    if(size<8) return 8;
-    if(size>24) return 24;
-    return size;
-}
-
-bool personalization_load(struct personalization *p){
+static bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
-#ifdef PERSONALIZATION_USERSPACE
     int32_t fd=pc_file_open(PERSONALIZATION_PATH);
-#else
-    if(!vfs_is_root_mounted()) return true;
-    filesystem_syscall_lock();
-    int32_t fd=vfs_open(PERSONALIZATION_PATH);
-#endif
     char buffer[512];
     int32_t total=0;
     if(fd>=0){
         for(;;){
             if(total>=(int32_t)sizeof(buffer)-1) break;
-            int32_t n=
-#ifdef PERSONALIZATION_USERSPACE
-                pc_file_read(fd,buffer+total,
-                    (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
-#else
-                vfs_read(fd,buffer+total,
-                    (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
-#endif
+            int32_t n=pc_file_read(fd,buffer+total,
+                (uint32_t)(sizeof(buffer)-1-(uint32_t)total));
             if(n<=0) break;
             total+=n;
         }
-        (void)
-#ifdef PERSONALIZATION_USERSPACE
-            pc_file_close(fd);
-#else
-            vfs_close(fd);
-#endif
+        (void)pc_file_close(fd);
     }
-#ifndef PERSONALIZATION_USERSPACE
-    filesystem_syscall_unlock();
-#endif
     if(fd<0){
-        if(g_had_config)
-            klogf(KLOG_WARN,"personalization: lost '%s' rc=%d",
-                PERSONALIZATION_PATH,fd);
-        g_had_config=false;
         return true;
     }
-    if(!g_had_config)
-        klogf(KLOG_OK,"personalization: found '%s' bytes=%d",
-            PERSONALIZATION_PATH,total);
-    g_had_config=true;
     if(total<=0) return true;
     buffer[total]='\0';
     for(char *line=buffer;*line;){
@@ -156,44 +83,27 @@ bool personalization_load(struct personalization *p){
             copy_str(p->theme,sizeof(p->theme),line+6);
         else if(starts_with(line,"wallpaper="))
             copy_str(p->wallpaper,sizeof(p->wallpaper),line+10);
-        else if(starts_with(line,"font="))
-            copy_str(p->font,sizeof(p->font),line+5);
-        else if(starts_with(line,"font_size="))
-            p->font_size=personalization_font_size_clamped(
-                parse_u32(line+10));
         if(!saved) break;
         line=end+1;
         while(*line=='\n' || *line=='\r') line++;
     }
-    if(!p->font_size) p->font_size=8;
     return true;
 }
 
 static bool same_personalization(const struct personalization *a,
                                  const struct personalization *b){
     return strcmp(a->theme,b->theme)==0
-        && strcmp(a->wallpaper,b->wallpaper)==0
-        && strcmp(a->font,b->font)==0
-        && a->font_size==b->font_size;
+        && strcmp(a->wallpaper,b->wallpaper)==0;
 }
 
-void personalization_apply(const struct personalization *p){
+static void personalization_apply(const struct personalization *p){
     if(!p) return;
-#ifndef PERSONALIZATION_USERSPACE
-    uint32_t face=personalization_font_face(p->font);
-    display_set_font_face(face==0 ? DISPLAY_FONT_CLASSIC
-        : face==2 ? DISPLAY_FONT_BOLD : DISPLAY_FONT_CLEAN);
-#endif
     wallpaper_set_path(p->wallpaper);
 }
 
 bool personalization_poll(void){
-#ifdef PERSONALIZATION_USERSPACE
     struct cpu_monitor_info cpu;
     uint64_t now=pc_cpu_info(&cpu) ? cpu.uptime_ms : 0;
-#else
-    uint64_t now=timer_ticks();
-#endif
     if(g_has_current && now-g_last_poll_tick<500) return false;
     g_last_poll_tick=now;
     struct personalization next;
@@ -204,14 +114,10 @@ bool personalization_poll(void){
     g_has_current=true;
     personalization_apply(&g_current);
     if(first) return false;
-    klogf(KLOG_INFO,
-        "personalization: theme='%s' wallpaper='%s' font='%s' size=%u",
-        g_current.theme,g_current.wallpaper[0] ? g_current.wallpaper : "(solid)",
-        g_current.font,g_current.font_size);
     return true;
 }
 
-const struct personalization *personalization_current(void){
+static const struct personalization *personalization_current(void){
     if(!g_has_current){
         personalization_load(&g_current);
         g_has_current=true;

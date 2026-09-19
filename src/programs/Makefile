@@ -165,11 +165,11 @@ $(OBJ_DIR)/window_manager/desktop_entries.o: $(ROOT_DIR)/src/userspace/apps/desk
 
 $(OBJ_DIR)/window_manager/personalization.o: $(ROOT_DIR)/src/userspace/personalization.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -DPERSONALIZATION_USERSPACE -c $< -o $@
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/window_manager/wallpaper.o: $(ROOT_DIR)/src/userspace/wallpaper.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -DWALLPAPER_USERSPACE -c $< -o $@
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	@mkdir -p $(@D)

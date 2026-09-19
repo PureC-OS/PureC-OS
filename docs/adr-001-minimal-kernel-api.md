@@ -13,7 +13,10 @@ Keep GOP/framebuffer support in the kernel only as a low-level display driver
 for boot diagnostics, kernel panic output and system API implementation.
 Expose framebuffer information and drawing operations through syscall numbers
 `SYS_FB_INFO`, `SYS_DRAW_TEXT`, `SYS_DRAW_TEXT_SIZED`,
-`SYS_SCROLL_RECT_UP`, `SYS_SET_FONT_FACE` and `SYS_GET_FONT_FACE`.
+`SYS_SCROLL_RECT_UP`, `SYS_FB_BLIT`, `SYS_SET_FONT_FACE` and
+`SYS_GET_FONT_FACE`. These operations are generic graphics primitives: the
+kernel does not assign desktop, wallpaper, compositor or display-server
+semantics to their input.
 
 Userspace modules must call `src/userspace/display.*` and
 Standalone ring-3 programs use `libpurec` monitoring calls instead of including
