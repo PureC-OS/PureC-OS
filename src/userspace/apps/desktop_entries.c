@@ -4,7 +4,7 @@
 #include "../../libc/include/hosted/string.h"
 
 #define ENTRY_FILE_MAX 4096
-#define DIR_CAP 32
+#define DIR_CAP 64
 #define GRID_X0 40u
 #define GRID_DX 72u
 #define GRID_Y0 48u
@@ -206,10 +206,12 @@ void desktop_entries_rescan(void) {
         const char *dd = DESKTOP_ENTRY_SCAN_DIR;
         uint32_t dl = (uint32_t)strlen(dd);
         uint32_t nl = (uint32_t)strlen(dir[i].name);
-        if (dl + 1 + nl >= sizeof(path)) continue;
+        bool needs_separator = dl && dd[dl - 1] != '/';
+        uint32_t separator = needs_separator ? 1u : 0u;
+        if (dl + separator + nl >= sizeof(path)) continue;
         memcpy(path, dd, dl);
-        path[dl] = '/';
-        memcpy(path + dl + 1, dir[i].name, nl + 1);
+        if (needs_separator) path[dl] = '/';
+        memcpy(path + dl + separator, dir[i].name, nl + 1);
         uint32_t size = 0;
         if (read_whole_file(path, &size) < 0) continue;
         struct desktop_entry e;
