@@ -3,6 +3,9 @@
 ## UserSpace
 
 - [x] Доделать нормально мишку | priority:normal
+- [x] Добавить поддержку Usb Mouse в userspace | priority:normal
+- [x] Исправить Баги с мышкой | priority:normal
+- [x] Добавить поддержку PS2 Mouse для старого железа | priority:normal
 - [x] Обновить Window Manager Что бы при перемещении окна не было мирцаный | priority:normal
 - [x] Доделать нормальные драйвера Видео Карты Что бы можно было менять разрешение экрана {Работаеть частично на bare metal и в VirtualBox не работаеть} | priority:normal
 - [x] Добавить возможность Менять розрешение экрана без перезагрузки ядра {Работаеть частично на bare metal и в VirtualBox не работаеть} | priority:normal
@@ -20,12 +23,13 @@
 
 ## Network
 
-- [ ] Добавить поддержку 802.11 ассоциации | priority:low
+- [ ] Добавить поддержку 802.11 ассоциации | priority:high
   Частично было добавлено
 - [ ] Поднять Atheros AR928X Wirless Network Adapter | priority:normal
 - [ ] Поднять network stack и обединить с 802.11 асоцицией | priority:normal
 - [ ] Сделать норм wifi backend | priority:normal
   - [ ] Добавить нормальный бэкенд для сети | priority:normal
+- [ ] Проверить wifi на bare metal | priority:normal
 
 ## ACPI
 
@@ -36,8 +40,15 @@
 ## Kernel
 
 - [x] Добавить менеджер устройств через ACPI чтения AML namespace | priority:normal
-- [x] Сделать возможность чтения темпиратуры cpu на intel через ACPI | priority:normal
-- [x] Сделать возможность чтения оборотов кулира через ACPI | priority:normal
+  - [x] чтение всех устройств и их свойств | priority:normal
+  - [ ] поддержка всех устройств на pci что бы можно было зделать /dev/acpi_device | priority:normal
+  - [ ] поддержка всех устройств на пк и ноутбуке | priority:normal
+  - [ ] Добавить возможность управления устройствами | priority:normal
+- [x] Сделать возможность чтения того что можно прочитать из ACPI | priority:normal
+  - [x] Сделать возможность чтения темпиратуры cpu на intel через ACPI | priority:normal
+  - [ ] Сделать возможность чтения скорости вентиляторов через ACPI | priority:normal (не понятно как реализовать)
+  - [ ] Сделать возможность управления вентиляторами через ACPI | priority:normal (не понятно как реализовать)
+    - [ ] Скорее всего будет через vender soft | priority:normal
 - [ ] На Pentium Dual-Core T4500 @ 2.30 GHz температура не читается через ACPI нужен другой метод чтения температуры на пеньке | priority:normal
 - [ ] На новом и старом железе показатели с батареи и зарядки не читаются через ACPI | priority:normal
 - [x] Сделать initramfs | priority:normal
@@ -114,6 +125,33 @@
 
 ## Process
 
-- [ ] Добавить name space для процессов | priority:normal
-  - [ ] Разделить каждый процесс на свои потоки | priority:normal
-  - [ ] Убрать window manager из ринг 0 | priority:normal
+- [x] Добавить name space для процессов | priority:normal
+  - [x] Разделить каждый процесс на свои потоки | priority:normal
+  - [x] Убрать window manager из ринг 0 | priority:normal
+
+## Filesystem
+
+- [ ] Добавить поддержки ext3 | priority:normal
+  - [ ] начать розширять поддержку файловых систем начнём с ext3 | priority:normal
+    - [ ] добавить inods | priority:normal
+    - [ ] добавить блокс | priority:normal
+    - [ ] добавить группы блоков | priority:normal
+    - [ ] добавить суперблок | priority:normal
+    - [ ] добавить файловую таблицу | priority:normal
+    - [ ] добавить поддержку жёстких ссылок | priority:normal
+    - [ ] добавить поддержку символических ссылок | priority:normal
+    - [ ] добавить журналирование для ext3 | priority:normal
+- [ ] доделать ext2 | priority:normal
+  - [ ] на bare metal когда ставишь ОС на ext2 диск она поставилась но как только делаешь персонализацию ядро падает в kernel panic и файловая система перестает открыватся | priority:high
+  - [ ] нужно разобраться почему это происходит | priority:normal
+  - [ ] нужно проверить что с ext2 в этот момент происходит | priority:normal
+  - [x] нужно проверить как ext2 работает на VirtualBox | priority:normal
+  - [x] нужно проверить как ext2 работает на qemu | priority:normal
+- [ ] обновить структуру всех fs от fat32 до ext2 под единый стандарт для всех fs | priority:normal (нужно будет обновить и переписать код для всех fs чтобы они работали под единым стандартом что бы можно было зделать много пользовательских os)
+
+## Security
+
+- [ ] добавить права доступа к файлам и папкам (rwx) | priority:normal
+- [x] Добавить хеш паролей для входа (sha512) и проверять пароль при входе в ОС | priority:normal
+  (реализовано чисто через purec-libxcrypt https://github.com/PureC-OS/libxcrypt)
+- [ ] добавыть в install созданыя юзеров которые будут добавляться в /home/username | priority:normal
