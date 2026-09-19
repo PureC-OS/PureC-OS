@@ -344,6 +344,20 @@ void pc_wm_complete_redraw(uint32_t excluded_pid){
     (void)pc_syscall(SYS_WM_COMPLETE_REDRAW,excluded_pid,0,0);
 }
 
+int32_t pc_wm_window_list(struct wm_window_info *entries,uint32_t capacity){
+    return (int32_t)pc_syscall(SYS_WM_WINDOW_LIST,
+        (uint64_t)(uintptr_t)entries,capacity,0);
+}
+
+uint32_t pc_wm_focused(void){
+    int64_t result=pc_syscall(SYS_WM_FOCUSED,0,0,0);
+    return result<0 ? 0 : (uint32_t)result;
+}
+
+bool pc_wm_focus(uint32_t pid){
+    return pc_syscall(SYS_WM_FOCUS,pid,0,0)>=0;
+}
+
 bool pc_console_configure(uint32_t x, uint32_t y,
                           uint32_t width, uint32_t height,
                           uint32_t foreground, uint32_t background){

@@ -84,6 +84,9 @@
 #define SYS_TRY_GET_SPECIAL 258
 #define SYS_NET_PING 259
 #define SYS_NET_IF_LIST 290
+#define SYS_WM_WINDOW_LIST 291
+#define SYS_WM_FOCUSED 292
+#define SYS_WM_FOCUS 293
 #define SYS_WIFI_SCAN 260
 #define SYS_WIFI_LIST 261
 #define SYS_WIFI_CONNECT 262
@@ -176,6 +179,11 @@ struct wm_pointer_request {
     int32_t y;
     uint8_t pressed;
     uint8_t reserved[3];
+};
+
+struct wm_window_info {
+    uint32_t pid;
+    struct gui_window_request frame;
 };
 
 #define WM_POINTER_CONSUMED      (1U << 0)

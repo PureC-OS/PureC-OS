@@ -81,6 +81,9 @@ bool pc_wm_claim(void);
 uint32_t pc_wm_pointer(const struct wm_pointer_request *request);
 int32_t pc_wm_next_redraw(uint32_t *excluded_pid);
 void pc_wm_complete_redraw(uint32_t excluded_pid);
+int32_t pc_wm_window_list(struct wm_window_info *entries,uint32_t capacity);
+uint32_t pc_wm_focused(void);
+bool pc_wm_focus(uint32_t pid);
 bool pc_console_configure(uint32_t x, uint32_t y,
                           uint32_t width, uint32_t height,
                           uint32_t foreground, uint32_t background);

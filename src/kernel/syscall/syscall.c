@@ -319,6 +319,33 @@ int64_t syscall_handler(struct syscall_regs *r){
             if(waiter>=0) scheduler_unblock(waiter);
             return 0;
         }
+        case SYS_WM_WINDOW_LIST: {
+            if((uint32_t)process_current_pid()
+               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            struct wm_window_info *entries=
+                (struct wm_window_info*)(uintptr_t)a1;
+            uint32_t capacity=(uint32_t)a2;
+            if(capacity>64 || (capacity
+               && !writable(entries,(uint64_t)capacity*sizeof(*entries))))
+                return -1;
+            uint32_t pids[64];
+            struct gui_window_request frames[64];
+            uint32_t count=window_manager_list(pids,frames,capacity);
+            uint32_t copied=count<capacity ? count : capacity;
+            for(uint32_t i=0;i<copied;i++){
+                entries[i].pid=pids[i];
+                entries[i].frame=frames[i];
+            }
+            return count;
+        }
+        case SYS_WM_FOCUSED:
+            if((uint32_t)process_current_pid()
+               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            return window_manager_focused_pid();
+        case SYS_WM_FOCUS:
+            if((uint32_t)process_current_pid()
+               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            return window_manager_focus_pid((uint32_t)a1) ? 0 : -1;
         case SYS_GETPID:
             return process_current_pid();
         case SYS_HEAP_GROW: {
