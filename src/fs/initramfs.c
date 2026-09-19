@@ -93,6 +93,7 @@ bool initramfs_mount(void) {
         file_index[file_count].path_hash = path_hash(name, namesize);
         file_index[file_count].path_length = namesize;
         file_index[file_count].data = filedata;
+        // file_index[file_count].data = filedata;
         file_index[file_count].size = filesize;
         file_count++;
     }
