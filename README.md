@@ -50,7 +50,7 @@ And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test 
 
 ## Sources and Related Repositories
 
-Kernel: [pablaofficeal/My-OS-Kernel-C](https://github.com/pablaofficeal/My-OS-Kernel-C) (this repository).
+Kernel: [PureC-OS](https://github.com/PureC-OS/PureC-OS) (this repository).
 
 Components not residing in the kernel core are pulled in via separate repositories using fetch targets in the main `Makefile` (`crypt-fetch`, `acpi-fetch`, `tcc-fetch`, `userspace-fetch`); they are automatically cloned during the build process if the corresponding directory does not exist:
 

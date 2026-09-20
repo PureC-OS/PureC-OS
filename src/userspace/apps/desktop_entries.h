@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define DESKTOP_ENTRY_MAX 24
-#define DESKTOP_ENTRY_SCAN_DIR "/bin/program"
+#define DESKTOP_ENTRY_SCAN_DIR "/bin/program/"
 
 struct desktop_entry {
     char name[32];

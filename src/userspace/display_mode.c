@@ -1,6 +1,4 @@
 #include "display_mode.h"
-#include "display.h"
-#include "userspace.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/display/vbe.h"
 #include "../drivers/mouse/ps2_mouse.h"
@@ -145,7 +143,6 @@ static int display_mode_apply_low(uint32_t width, uint32_t height,
         write_back_ini(actual_w,actual_h,bpp);
     }
     mouse_set_bounds((int32_t)actual_w,(int32_t)actual_h);
-    display_invalidate_cache();
     klogf(KLOG_OK, "display: live mode %ux%ux%u",actual_w,actual_h,bpp);
     return 0;
 }
@@ -153,7 +150,7 @@ static int display_mode_apply_low(uint32_t width, uint32_t height,
 int display_mode_apply(uint32_t width, uint32_t height, uint8_t bpp){
     int rc=display_mode_apply_low(width,height,bpp);
     if(rc!=0) return rc;
-    userspace_redraw_desktop();
+    syscall_window_manager_invalidate_desktop();
     return 0;
 }
 
@@ -174,5 +171,6 @@ void display_mode_poll(void){
     if(!display_mode_current(&cur_w,&cur_h,&cur_b)) return;
     if(w==cur_w && h==cur_h && b==cur_b) return;
     klogf(KLOG_INFO, "display: config changed, applying %ux%ux%u",w,h,b);
-    if(display_mode_apply_low(w,h,b)==0) userspace_redraw_desktop();
+    if(display_mode_apply_low(w,h,b)==0)
+        syscall_window_manager_invalidate_desktop();
 }

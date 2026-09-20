@@ -215,6 +215,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     strncpy(process->name,name ? name : "process",sizeof(process->name)-1);
     if(name && (strcmp(name,"installer")==0 || strcmp(name,"disks")==0))
         process->capabilities|=PROCESS_CAP_STORAGE_ADMIN;
+    if(name && strcmp(name,"window-manager")==0 && process->parent_pid==1)
+        process->capabilities|=PROCESS_CAP_WINDOW_MANAGER;
     process->thread_id=scheduler_create_user_thread(
         user_process_entry,process,process->name,USER_PROCESS_PRIORITY,-1,
         process->address_space,process);
@@ -411,6 +413,7 @@ void process_exit_current(int32_t status){
             }
         }
         window_manager_unregister(process->pid);
+        syscall_window_manager_process_exited(process->pid);
         for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
             if(process->descriptors[fd]>=VFS_FD_BASE){
                 (void)vfs_close(process->descriptors[fd]);

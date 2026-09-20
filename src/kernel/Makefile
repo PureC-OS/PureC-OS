@@ -64,6 +64,7 @@ C_SOURCES := \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \
 	kernel/diagnostics/panic.c \
+	kernel/diagnostics/persistent_log.c \
 	drivers/input/keyboard.c \
 	drivers/pci/pci.c \
 	drivers/net/e1000/e1000_82540em.c \
@@ -98,28 +99,14 @@ C_SOURCES := \
 	fs/ext2/debug.c \
 	fs/vfs.c \
 	fs/initramfs.c \
-	userspace/display.c \
 	userspace/display_mode.c \
-	userspace/fs.c \
-	userspace/personalization.c \
-	userspace/wallpaper.c \
-	userspace/audio.c \
-	userspace/audio_overlay.c \
-	userspace/userspace.c \
 	userspace/window_manager.c \
-	userspace/apps/datetime_service.c \
-	userspace/apps/desktop_entries.c \
-	userspace/apps/clock_app.c \
-	userspace/apps/calendar_app.c \
-	userspace/apps/calculator_app.c \
-	userspace/apps/desktop_apps.c \
-	userspace/apps/bottom_panel.c \
 	kernel/process/scheduler.c \
 	drivers/power/power.c \
 	drivers/audio/audio_hda.c \
 	drivers/audio/audio.c \
 	kernel/devices/device_manager.c
-CPP_SOURCES := userspace/apps/audio_panel.cpp
+CPP_SOURCES :=
 ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
 	arch/x86_64/idt/asm/idt.asm \

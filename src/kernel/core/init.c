@@ -9,7 +9,10 @@
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
-#include "../../userspace/userspace.h"
+#include "../../drivers/input/keyboard.h"
+#include "../../drivers/display/gop.h"
+#include "../diagnostics/persistent_log.h"
+#include "../../userspace/display_mode.h"
 #include "../../net/core/net_service.h"
 #include "../../net/tests/qemu_network_test.h"
 
@@ -29,14 +32,14 @@ void init_process_start(void){
     }
     klog(KLOG_OK,"process: /bin/init started as PID 1");
 
-    serial_write_string("[INIT] PID 1 registered, initializing desktop\n");
-    userspace_init();
+    serial_write_string("[INIT] PID 1 registered; userspace owns services\n");
+    keyboard_init();
+    display_mode_boot_apply();
+    mouse_set_bounds((int32_t)gop_get_width(),(int32_t)gop_get_height());
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
-                         "init and desktop ready, starting scheduler");
+                         "init ready, starting userspace supervisor");
 
-    scheduler_create_thread(userspace_input_thread, 0, "init-input", 1, 0);
-    scheduler_create_thread(userspace_keyboard_thread, 0, "desktop-keyboard", 1, 0);
-    scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, 0);
+    scheduler_create_thread(persistent_log_thread, 0, "kernel-log", 3, 0);
     if(scheduler_create_thread(net_service_thread,0,"net-rx",2,0)<0)
         klog(KLOG_WARN,"net: failed to create polling thread");
     if(qemu_network_test_requested()

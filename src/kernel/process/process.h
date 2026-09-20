@@ -9,6 +9,7 @@
 #define PROCESS_ENVIRONMENT_NAME_CAPACITY 32
 #define PROCESS_ENVIRONMENT_VALUE_CAPACITY 128
 #define PROCESS_CAP_STORAGE_ADMIN (1U<<0)
+#define PROCESS_CAP_WINDOW_MANAGER (1U<<1)
 
 struct process_environment_entry {
     bool used;
