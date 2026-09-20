@@ -43,8 +43,6 @@ static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
 static uint8_t install_fs_type;
 
-/* One privileged ring-3 process owns desktop policy.  The old registry is
- * retained only as a checked kernel mechanism while clients migrate to IPC. */
 static volatile uint32_t wm_owner_pid;
 static volatile uint32_t console_owner_pid;
 static volatile uint32_t wm_redraw_requester;
