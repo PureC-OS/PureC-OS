@@ -157,18 +157,21 @@ static uint8_t g_file_buf[ENTRY_FILE_MAX];
 
 static int32_t read_whole_file(const char *path, uint32_t *out_size) {
     if (out_size) *out_size = 0;
-    int32_t fd = pc_file_open(path);
+    if (!vfs_is_root_mounted()) return -1;
+    filesystem_syscall_lock();
+    int32_t fd = vfs_open(path);
     uint32_t total = 0;
     if (fd >= 0) {
         for (;;) {
             if (total >= sizeof(g_file_buf)) break;
-            int32_t n = pc_file_read(fd, g_file_buf + total,
-                                     (uint32_t)(sizeof(g_file_buf) - total));
+            int32_t n = vfs_read(fd, g_file_buf + total,
+                                 (uint32_t)(sizeof(g_file_buf) - total));
             if (n <= 0) break;
             total += (uint32_t)n;
         }
-        (void)pc_file_close(fd);
+        (void)vfs_close(fd);
     }
+    filesystem_syscall_unlock();
     if (fd < 0 || !total) return -1;
     if (out_size) *out_size = total;
     return 0;
@@ -186,7 +189,10 @@ void desktop_entries_rescan(void) {
     g_count = 0;
     static struct fs_directory_entry_long dir[DIR_CAP];
     memset(dir, 0, sizeof(dir));
-    int32_t n = pc_directory_list_long(DESKTOP_ENTRY_SCAN_DIR, dir, DIR_CAP);
+    if (!vfs_is_root_mounted()) return;
+    filesystem_syscall_lock();
+    int32_t n = vfs_list_long(DESKTOP_ENTRY_SCAN_DIR, dir, DIR_CAP);
+    filesystem_syscall_unlock();
     if (n <= 0) return;
     if (n > (int32_t)DIR_CAP) n = (int32_t)DIR_CAP;
     // Stable order: insertion sort by name.
