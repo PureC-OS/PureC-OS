@@ -1,6 +1,7 @@
 #include "window_manager.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
+#include "../kernel/diagnostics/klog.h"
 
 struct managed_window {
     uint32_t pid;
@@ -129,10 +130,17 @@ bool window_manager_update(uint32_t pid,
 
 void window_manager_unregister(uint32_t pid){
     struct managed_window *window=find_window(pid);
-    if(!window) return;
+    if(!window){
+        klogf(KLOG_DEBUG,"DIAG wm-reg: unregister pid=%u (not registered)",pid);
+        return;
+    }
     if(repainting_pid==pid) repainting_pid=0;
     wm_free_slot(window);
-    if(focused_pid!=pid) return;
+    if(focused_pid!=pid){
+        klogf(KLOG_DEBUG,"DIAG wm-reg: unregister pid=%u focused=%u left=%u",
+              pid,focused_pid,wm_used_count);
+        return;
+    }
     focused_pid=0;
     uint32_t best_z=0;
     uint32_t total=wm_slot_total();
@@ -144,6 +152,8 @@ void window_manager_unregister(uint32_t pid){
             best_z=s->z_order;
         }
     }
+    klogf(KLOG_DEBUG,"DIAG wm-reg: unregister pid=%u focused now=%u left=%u",
+          pid,focused_pid,wm_used_count);
 }
 
 uint32_t window_manager_state(uint32_t pid){

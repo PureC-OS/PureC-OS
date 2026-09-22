@@ -74,7 +74,13 @@ static void launch_pending(void){
     char path[sizeof(pending_launch)];
     copy_text(path,sizeof(path),pending_launch);
     pending_launch[0]='\0';
-    (void)pc_exec(path);
+    pc_write("DIAG wm: launch ");
+    pc_write(path);
+    pc_write("\n");
+    int32_t pid=pc_exec(path);
+    pc_write("DIAG wm: launched pid=");
+    pc_write_i64(pid);
+    pc_write("\n");
 }
 
 static const char *process_name(uint32_t pid,char out[24]){
@@ -322,6 +328,11 @@ static void reap_children(void){
         if(list[i].parent_pid==self && list[i].state==PROCESS_MONITOR_STATE_EXITED){
             int32_t status;
             (void)pc_wait((int32_t)list[i].pid,&status,true);
+            pc_write("DIAG wm: reaped pid=");
+            pc_write_i64((int32_t)list[i].pid);
+            pc_write(" status=");
+            pc_write_i64(status);
+            pc_write("\n");
         }
     }
 }
@@ -339,9 +350,15 @@ void _start(void){
     draw_desktop(&display);
 
     uint32_t reap_tick=0;
+    uint32_t alive_tick=0;
     for(;;){
         uint32_t excluded_pid=0;
-        if(pc_wm_next_redraw(&excluded_pid)>0) redraw(&display,excluded_pid);
+        if(pc_wm_next_redraw(&excluded_pid)>0){
+            pc_write("DIAG wm: next_redraw excluded=");
+            pc_write_i64(excluded_pid);
+            pc_write("\n");
+            redraw(&display,excluded_pid);
+        }
         struct mouse_state mouse;
         if(pc_mouse_get(&mouse)){
             bool pressed=(mouse.buttons&1U) && !(previous_buttons&1U);
@@ -408,6 +425,16 @@ void _start(void){
             redraw(&display,0);
         }
         if(++reap_tick>=250){ reap_tick=0; reap_children(); }
+        if(++alive_tick>=2500){
+            alive_tick=0;
+            struct wm_window_info aws[64];
+            uint32_t nwin=window_list(aws);
+            pc_write("DIAG wm: alive windows=");
+            pc_write_i64(nwin);
+            pc_write(" focused=");
+            pc_write_i64(pc_wm_focused());
+            pc_write("\n");
+        }
         pc_sleep(2);
     }
 }

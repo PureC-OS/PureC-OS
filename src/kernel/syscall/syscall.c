@@ -278,16 +278,28 @@ int64_t syscall_handler(struct syscall_regs *r){
                 scheduler_sleep(1);
             }
             int32_t my_tid=scheduler_current_tid();
+            klogf(KLOG_DEBUG,"DIAG wm-hs: DESKTOP_REDRAW wait pid=%u tid=%d",
+                  self,my_tid);
             __atomic_store_n(&wm_redraw_requester,self,__ATOMIC_RELAXED);
             __atomic_store_n(&wm_redraw_waiter,my_tid,__ATOMIC_RELAXED);
             __atomic_store_n(&wm_redraw_pending,true,__ATOMIC_RELEASE);
             for(waited=0;waited<200;waited++){
                 scheduler_sleep(5);
                 if(__atomic_load_n(&wm_redraw_waiter,
-                                   __ATOMIC_ACQUIRE)!=my_tid) return 0;
+                                   __ATOMIC_ACQUIRE)!=my_tid){
+                    klogf(KLOG_DEBUG,"DIAG wm-hs: DESKTOP_REDRAW done pid=%u",
+                          self);
+                    return 0;
+                }
                 if(!__atomic_load_n(&wm_redraw_pending,
-                                     __ATOMIC_ACQUIRE)) return 0;
+                                     __ATOMIC_ACQUIRE)){
+                    klogf(KLOG_DEBUG,"DIAG wm-hs: DESKTOP_REDRAW done pid=%u",
+                          self);
+                    return 0;
+                }
             }
+            klogf(KLOG_WARN,"DIAG wm-hs: DESKTOP_REDRAW TIMEOUT pid=%u tid=%d",
+                  self,my_tid);
             int32_t expect=my_tid;
             __atomic_compare_exchange_n(&wm_redraw_waiter,&expect,-1,false,
                                         __ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE);
@@ -360,13 +372,22 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_WM_COMPLETE_REDRAW: {
             if((uint32_t)process_current_pid()
                !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
+            uint32_t req=__atomic_load_n(&wm_redraw_requester,
+                                         __ATOMIC_RELAXED);
             window_manager_request_repaint((uint32_t)a1);
             uint32_t waited=0;
             while(window_manager_repaint_pending() && waited<250){
                 scheduler_sleep(1);
                 waited++;
             }
-            if(window_manager_repaint_pending()) window_manager_cancel_repaint();
+            if(window_manager_repaint_pending()){
+                klogf(KLOG_WARN,"DIAG wm-hs: COMPLETE_REDRAW repaint TIMEOUT req=%u",
+                      req);
+                window_manager_cancel_repaint();
+            } else {
+                klogf(KLOG_DEBUG,"DIAG wm-hs: COMPLETE_REDRAW done req=%u wait=%ums",
+                      req,waited);
+            }
             __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
             int32_t waiter=__atomic_exchange_n(&wm_redraw_waiter,-1,
                                                 __ATOMIC_ACQ_REL);
