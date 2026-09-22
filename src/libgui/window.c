@@ -114,10 +114,7 @@ void pg_window_end(struct pg_window *window){
 }
 
 void pg_window_close(struct pg_window *window){
-    if(!window || !window->open) return;
-    pc_write("DIAG gui: close pid=");
-    pc_write_i64(pc_getpid());
-    pc_write("\n");
+    if(!window) return;
     window->open=false;
     if(window->registered){
         pc_gui_window_unregister();

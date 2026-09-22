@@ -334,11 +334,6 @@ void gop_cancel_compose(void){
     batch_depth=0;
 }
 
-void gop_reset_batch(void){
-    batch_depth=0;
-    gop_present_forced();
-}
-
 bool gop_has_backbuffer(void){ return backbuffer!=0; }
 
 static void gop_present_nolock(void);
@@ -861,7 +856,7 @@ void gop_draw_line(uint32_t x0,uint32_t y0,uint32_t x1,uint32_t y1,uint32_t c){ 
     }
 }
 
-bool gop_blit_frame(const uint32_t *pixels, uint32_t width, uint32_t height){
+bool gop_blit_cover(const uint32_t *pixels, uint32_t width, uint32_t height){
     if(!gop.available || !gop.addr || !pixels) return false;
     if(!width || !height || width!=gop.width || height!=gop.height)
         return false;
