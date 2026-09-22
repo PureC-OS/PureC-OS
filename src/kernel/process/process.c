@@ -14,6 +14,7 @@ static mutex_t process_mutex;
 #include "../../mm/vmm.h"
 #include "../../lib/string.h"
 #include "../../userspace/window_manager.h"
+#include "../../drivers/mouse/ps2_mouse.h"
 
 #define USER_STACK_TOP 0x00007FFFFFF00000ULL
 #define USER_STACK_PAGES 16
@@ -414,6 +415,7 @@ void process_exit_current(int32_t status){
         }
         window_manager_unregister(process->pid);
         syscall_window_manager_process_exited(process->pid);
+        mouse_reset_framebuffer_update();
         for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
             if(process->descriptors[fd]>=VFS_FD_BASE){
                 (void)vfs_close(process->descriptors[fd]);

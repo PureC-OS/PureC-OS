@@ -114,7 +114,7 @@ void pg_window_end(struct pg_window *window){
 }
 
 void pg_window_close(struct pg_window *window){
-    if(!window) return;
+    if(!window || !window->open) return;
     window->open=false;
     if(window->registered){
         pc_gui_window_unregister();

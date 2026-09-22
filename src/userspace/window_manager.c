@@ -134,14 +134,15 @@ void window_manager_unregister(uint32_t pid){
     wm_free_slot(window);
     if(focused_pid!=pid) return;
     focused_pid=0;
+    uint32_t best_z=0;
     uint32_t total=wm_slot_total();
     for(uint32_t n=0;n<total;n++){
         struct managed_window *s=wm_slot_at(n);
-        if(s && s->used
-           && (!focused_pid
-               || s->z_order
-                    >find_window(focused_pid)->z_order))
+        if(!s || !s->used) continue;
+        if(!focused_pid || s->z_order>best_z){
             focused_pid=s->pid;
+            best_z=s->z_order;
+        }
     }
 }
 

@@ -222,6 +222,16 @@ void mouse_end_framebuffer_update_keep(void){
     gop_end_batch_keep();
     if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
 }
+void mouse_reset_framebuffer_update(void){
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    if(framebuffer_update_depth){
+        framebuffer_update_depth=0;
+        gop_reset_batch();
+        draw_cursor(state.x,state.y);
+    }
+    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+}
 
 static inline bool cursor_inside(int dx, int dy){
     if(dy < 12 && dx <= (11 - dy)) return true;

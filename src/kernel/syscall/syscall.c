@@ -270,19 +270,32 @@ int64_t syscall_handler(struct syscall_regs *r){
         }
         case SYS_DESKTOP_REDRAW: {
             uint32_t owner=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
-            if(!owner || owner==(uint32_t)process_current_pid()) return 0;
+            uint32_t self=(uint32_t)process_current_pid();
+            if(!owner || owner==self) return 0;
             uint32_t waited=0;
             while(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)){
                 if(++waited>=500) return -1;
                 scheduler_sleep(1);
             }
-            __atomic_store_n(&wm_redraw_requester,
-                             (uint32_t)process_current_pid(),__ATOMIC_RELAXED);
-            __atomic_store_n(&wm_redraw_waiter,scheduler_current_tid(),
-                             __ATOMIC_RELAXED);
+            int32_t my_tid=scheduler_current_tid();
+            __atomic_store_n(&wm_redraw_requester,self,__ATOMIC_RELAXED);
+            __atomic_store_n(&wm_redraw_waiter,my_tid,__ATOMIC_RELAXED);
             __atomic_store_n(&wm_redraw_pending,true,__ATOMIC_RELEASE);
-            scheduler_block();
-            return 0;
+            for(waited=0;waited<200;waited++){
+                scheduler_sleep(5);
+                if(__atomic_load_n(&wm_redraw_waiter,
+                                   __ATOMIC_ACQUIRE)!=my_tid) return 0;
+                if(!__atomic_load_n(&wm_redraw_pending,
+                                     __ATOMIC_ACQUIRE)) return 0;
+            }
+            int32_t expect=my_tid;
+            __atomic_compare_exchange_n(&wm_redraw_waiter,&expect,-1,false,
+                                        __ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE);
+            if(__atomic_load_n(&wm_redraw_requester,
+                               __ATOMIC_RELAXED)==self)
+                __atomic_store_n(&wm_redraw_pending,false,
+                                 __ATOMIC_RELEASE);
+            return -1;
         }
         case SYS_GUI_WINDOW_REGISTER: {
             const struct gui_window_request *request=

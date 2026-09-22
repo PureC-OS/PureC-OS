@@ -30,6 +30,7 @@ void mouse_flush_pending(void);
 void mouse_begin_framebuffer_update(void);
 void mouse_end_framebuffer_update(void);
 void mouse_end_framebuffer_update_keep(void);
+void mouse_reset_framebuffer_update(void);
 void mouse_set_debug_overlay(bool enabled);
 bool mouse_get_debug_overlay(void);
 struct mouse_state mouse_get_state(void);

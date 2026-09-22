@@ -57,6 +57,7 @@ void gop_end_batch_keep(void);
 void gop_end_compose_keep(void);
 bool gop_dirty_pending(void);
 void gop_cancel_compose(void);
+void gop_reset_batch(void);
 void gop_present(void);
 void gop_present_forced(void);
 void gop_defer_present(void);

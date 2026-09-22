@@ -334,6 +334,11 @@ void gop_cancel_compose(void){
     batch_depth=0;
 }
 
+void gop_reset_batch(void){
+    batch_depth=0;
+    gop_present_forced();
+}
+
 bool gop_has_backbuffer(void){ return backbuffer!=0; }
 
 static void gop_present_nolock(void);
