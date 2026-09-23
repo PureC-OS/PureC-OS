@@ -58,8 +58,8 @@
 - [x] Сделать initramfs | priority:normal
 - [x] Переделать модель загрузки модулей что бы ядро при старте монтировало initramfs и загружало с него все нужные модули | priority:normal
 - [ ] Добавить drivers manager он должен уметь сканирувать все устройства и загружать нужные драйверы | priority:normal
-  - [ ] Добавить простенький drivers manager | priority:low
-
+  - [x] Добавить простенький drivers manager | priority:low
+  - [ ] Загрузчик relocatable-модулей (kmod): LD -r .elf/.ko из /bin/modules, kmod_info, резолв символов | priority:normal
 
 ## touchpad
 

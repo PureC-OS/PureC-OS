@@ -80,6 +80,8 @@ void kernel_main(struct limine_framebuffer *fb) {
     klog(KLOG_INFO, "Initializing device manager...");
     devman_init();
     devman_enumerate();
+    devman_register_builtin_drivers();
+    devman_autoload();
     devman_dump();
     klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
 

@@ -1,6 +1,8 @@
 #include "device_manager.h"
+#include "device_ids.h"
 #include "../../drivers/pci/pci.h"
 #include "../../acpi/include/acpi/acpi.h"
+#include "../../boot/install_source.h"
 #include "../diagnostics/klog.h"
 #include "../../lib/string.h"
 #include <stdint.h>
@@ -12,6 +14,7 @@ static uint32_t g_pci_count = 0;
 static uint32_t g_acpi_count = 0;
 static bool g_enumerated = false;
 static struct device_driver *g_drivers = NULL;
+static bool g_builtin_registered = false;
 
 static void device_zero(struct device_info *dev) {
     memset(dev, 0, sizeof(*dev));
@@ -311,6 +314,7 @@ void devman_init(void) {
     g_acpi_count = 0;
     g_enumerated = false;
     g_drivers = NULL;
+    g_builtin_registered = false;
     for (uint32_t i = 0; i < DEVICE_MANAGER_MAX_DEVICES; i++)
         device_zero(&g_devices[i]);
     klog(KLOG_INFO, "devman: initialized");
@@ -390,20 +394,13 @@ int devman_register_driver(struct device_driver *driver) {
 }
 
 static bool driver_match_device(struct device_driver *driver, const struct device_info *dev) {
+    if (!driver || !dev) return false;
     if (driver->type != DEVICE_TYPE_UNKNOWN && driver->type != dev->type)
         return false;
     if (driver->device_class != CLASS_NONE && driver->device_class != dev->device_class)
         return false;
     if (driver->match) return driver->match(dev, NULL);
-    if (dev->type == DEVICE_TYPE_PCI && driver->type == DEVICE_TYPE_PCI) {
-        if (dev->pci.vendor_id == 0xFFFF) return true;
-        return true;
-    }
-    if (dev->type == DEVICE_TYPE_ACPI && driver->type == DEVICE_TYPE_ACPI) {
-        if (dev->acpi.hid[0]) return true;
-        return true;
-    }
-    return false;
+    return driver->type == dev->type && driver->type != DEVICE_TYPE_UNKNOWN;
 }
 
 void devman_driver_probe_all(void) {
@@ -430,6 +427,206 @@ void devman_driver_probe_all(void) {
             klogf(KLOG_INFO, "devman: driver '%s' probed %d device(s)", drv->name, probed);
         drv = drv->next;
     }
+}
+
+static bool match_pci_table(const struct device_info *dev,
+                            const struct devman_pci_id *ids,
+                            uint32_t count) {
+    if (!dev || dev->type != DEVICE_TYPE_PCI) return false;
+    return devman_pci_match_any(dev->pci.vendor_id, dev->pci.device_id,
+                                dev->pci.class_code, dev->pci.subclass,
+                                dev->pci.programming_interface, ids, count);
+}
+
+static bool match_e1000(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_E1000_82540EM,
+                           sizeof(DEVMAN_ID_E1000_82540EM) /
+                           sizeof(DEVMAN_ID_E1000_82540EM[0]));
+}
+
+static bool match_e1000_gc(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_E1000_82543GC,
+                           sizeof(DEVMAN_ID_E1000_82543GC) /
+                           sizeof(DEVMAN_ID_E1000_82543GC[0]));
+}
+
+static bool match_pcnet(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_PCNET,
+                           sizeof(DEVMAN_ID_PCNET) /
+                           sizeof(DEVMAN_ID_PCNET[0]));
+}
+
+static bool match_ar9285(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_AR9285,
+                           sizeof(DEVMAN_ID_AR9285) /
+                           sizeof(DEVMAN_ID_AR9285[0]));
+}
+
+static bool match_ahci(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_AHCI,
+                           sizeof(DEVMAN_ID_AHCI) /
+                           sizeof(DEVMAN_ID_AHCI[0]));
+}
+
+static bool match_nvme(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_NVME,
+                           sizeof(DEVMAN_ID_NVME) /
+                           sizeof(DEVMAN_ID_NVME[0]));
+}
+
+static bool match_xhci(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_XHCI,
+                           sizeof(DEVMAN_ID_XHCI) /
+                           sizeof(DEVMAN_ID_XHCI[0]));
+}
+
+static bool match_ehci(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_EHCI,
+                           sizeof(DEVMAN_ID_EHCI) /
+                           sizeof(DEVMAN_ID_EHCI[0]));
+}
+
+static bool match_hda(const struct device_info *dev, void *ctx) {
+    (void)ctx;
+    return match_pci_table(dev, DEVMAN_ID_HDA,
+                           sizeof(DEVMAN_ID_HDA) /
+                           sizeof(DEVMAN_ID_HDA[0]));
+}
+
+static int devman_claim_probe(const struct device_info *dev) {
+    (void)dev;
+    return 0;
+}
+
+static struct device_driver g_drv_e1000 = {
+    "e1000-82540em", DEVICE_TYPE_PCI, CLASS_NETWORK,
+    match_e1000, devman_claim_probe, NULL,
+    DEVMAN_ID_E1000_82540EM,
+    sizeof(DEVMAN_ID_E1000_82540EM) / sizeof(DEVMAN_ID_E1000_82540EM[0]),
+    "/bin/modules/e1000.elf", NULL,
+};
+
+static struct device_driver g_drv_e1000_gc = {
+    "e1000-82543gc", DEVICE_TYPE_PCI, CLASS_NETWORK,
+    match_e1000_gc, devman_claim_probe, NULL,
+    DEVMAN_ID_E1000_82543GC,
+    sizeof(DEVMAN_ID_E1000_82543GC) / sizeof(DEVMAN_ID_E1000_82543GC[0]),
+    "/bin/modules/e1000_82543gc.elf", NULL,
+};
+
+static struct device_driver g_drv_pcnet = {
+    "pcnet-am79c970a", DEVICE_TYPE_PCI, CLASS_NETWORK,
+    match_pcnet, devman_claim_probe, NULL,
+    DEVMAN_ID_PCNET,
+    sizeof(DEVMAN_ID_PCNET) / sizeof(DEVMAN_ID_PCNET[0]),
+    "/bin/modules/pcnet_am79c970a.elf", NULL,
+};
+
+static struct device_driver g_drv_ar9285 = {
+    "ar9285", DEVICE_TYPE_PCI, CLASS_NETWORK,
+    match_ar9285, devman_claim_probe, NULL,
+    DEVMAN_ID_AR9285,
+    sizeof(DEVMAN_ID_AR9285) / sizeof(DEVMAN_ID_AR9285[0]),
+    "/bin/modules/ar9285.elf", NULL,
+};
+
+static struct device_driver g_drv_ahci = {
+    "ahci", DEVICE_TYPE_PCI, CLASS_MASS_STORAGE,
+    match_ahci, devman_claim_probe, NULL,
+    DEVMAN_ID_AHCI,
+    sizeof(DEVMAN_ID_AHCI) / sizeof(DEVMAN_ID_AHCI[0]),
+    NULL, NULL,
+};
+
+static struct device_driver g_drv_nvme = {
+    "nvme", DEVICE_TYPE_PCI, CLASS_MASS_STORAGE,
+    match_nvme, devman_claim_probe, NULL,
+    DEVMAN_ID_NVME,
+    sizeof(DEVMAN_ID_NVME) / sizeof(DEVMAN_ID_NVME[0]),
+    NULL, NULL,
+};
+
+static struct device_driver g_drv_xhci = {
+    "xhci", DEVICE_TYPE_PCI, CLASS_USB,
+    match_xhci, devman_claim_probe, NULL,
+    DEVMAN_ID_XHCI,
+    sizeof(DEVMAN_ID_XHCI) / sizeof(DEVMAN_ID_XHCI[0]),
+    NULL, NULL,
+};
+
+static struct device_driver g_drv_ehci = {
+    "ehci", DEVICE_TYPE_PCI, CLASS_USB,
+    match_ehci, devman_claim_probe, NULL,
+    DEVMAN_ID_EHCI,
+    sizeof(DEVMAN_ID_EHCI) / sizeof(DEVMAN_ID_EHCI[0]),
+    NULL, NULL,
+};
+
+static struct device_driver g_drv_hda = {
+    "hda-audio", DEVICE_TYPE_PCI, CLASS_AUDIO,
+    match_hda, devman_claim_probe, NULL,
+    DEVMAN_ID_HDA,
+    sizeof(DEVMAN_ID_HDA) / sizeof(DEVMAN_ID_HDA[0]),
+    NULL, NULL,
+};
+
+void devman_register_builtin_drivers(void) {
+    if (g_builtin_registered) return;
+    g_builtin_registered = true;
+    devman_register_driver(&g_drv_e1000);
+    devman_register_driver(&g_drv_e1000_gc);
+    devman_register_driver(&g_drv_pcnet);
+    devman_register_driver(&g_drv_ar9285);
+    devman_register_driver(&g_drv_ahci);
+    devman_register_driver(&g_drv_nvme);
+    devman_register_driver(&g_drv_xhci);
+    devman_register_driver(&g_drv_ehci);
+    devman_register_driver(&g_drv_hda);
+    klog(KLOG_INFO, "devman: builtin drivers registered");
+}
+
+uint32_t devman_bound_count(void) {
+    uint32_t bound = 0;
+    for (uint32_t i = 0; i < g_device_count; i++)
+        if (g_devices[i].driver_bound) bound++;
+    return bound;
+}
+
+uint32_t devman_unbound_count(void) {
+    uint32_t bound = devman_bound_count();
+    return g_device_count >= bound ? g_device_count - bound : 0;
+}
+
+void devman_autoload(void) {
+    if (!g_enumerated)
+        devman_enumerate();
+    devman_register_builtin_drivers();
+    devman_driver_probe_all();
+    struct device_driver *drv = g_drivers;
+    while (drv) {
+        if (drv->module_path) {
+            const void *addr = 0;
+            uint64_t size = 0;
+            if (boot_get_module(drv->module_path, &addr, &size))
+                klogf(KLOG_INFO, "devman: module '%s' staged for '%s' (%llu bytes)",
+                      drv->module_path, drv->name,
+                      (unsigned long long)size);
+            else
+                klogf(KLOG_DEBUG, "devman: no staged module for '%s' (%s); builtin path",
+                      drv->name, drv->module_path);
+        }
+        drv = drv->next;
+    }
+    klogf(KLOG_OK, "devman: autoload done total=%u bound=%u unbound=%u",
+          g_device_count, devman_bound_count(), devman_unbound_count());
 }
 
 bool devman_is_ready(void) {
