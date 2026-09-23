@@ -57,6 +57,9 @@
 - [ ] На новом и старом железе показатели с батареи и зарядки не читаются через ACPI | priority:normal
 - [x] Сделать initramfs | priority:normal
 - [x] Переделать модель загрузки модулей что бы ядро при старте монтировало initramfs и загружало с него все нужные модули | priority:normal
+- [ ] Добавить drivers manager он должен уметь сканирувать все устройства и загружать нужные драйверы | priority:normal
+  - [ ] Добавить простенький drivers manager | priority:low
+
 
 ## touchpad
 
