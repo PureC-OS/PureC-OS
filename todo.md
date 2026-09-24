@@ -27,7 +27,7 @@
 
 ## Network
 
-- [ ] Добавить поддержку 802.11 ассоциации | priority:high
+- [x] Добавить поддержку 802.11 ассоциации | priority:high
   Частично было добавлено
 - [ ] Поднять Atheros AR928X Wirless Network Adapter | priority:normal
 - [ ] Поднять network stack и обединить с 802.11 асоцицией | priority:normal
