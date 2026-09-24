@@ -74,6 +74,9 @@ REPOS: List[Repo] = [
     Repo("PureC-OS-ACPI",      "https://github.com/PureC-OS/PureC-OS-ACPI.git",
          "acpi",               "acpi/src/acpi.c",
          "ACPI (shutdown / reboot)"),
+    Repo("PureC-OS-UACPI",     "https://github.com/uACPI/uACPI.git",
+         "acpi/AML/uACPI",      "acpi/AML/uACPI/source",
+         "uACPI AML interpreter"),
     Repo("PureC-TCC",          "https://github.com/PureC-OS/PureC-TCC.git",
          "tcc",                "tcc",
          "C compiler port for Ring-3"),
@@ -309,7 +312,18 @@ def cmd_setup(only: Optional[str] = None):
             ok_count += 1
             continue
         dest_abs = os.path.join(ROOT, r.dest)
-        rc = _run_git_clone(r.url, dest_abs, r.name)
+        if r.dest == os.path.join("acpi", "AML", "uACPI"):
+            rc = _run_live(
+                ["git", "-C", os.path.join(ROOT, "acpi"),
+                 "submodule", "update", "--init", "--depth", "1", "AML/uACPI"],
+                "git submodule update AML/uACPI",
+            )
+            if rc != 0:
+                if os.path.isdir(dest_abs) and not os.listdir(dest_abs):
+                    os.rmdir(dest_abs)
+                rc = _run_git_clone(r.url, dest_abs, r.name)
+        else:
+            rc = _run_git_clone(r.url, dest_abs, r.name)
         if rc != 0:
             _err(f"Failed to clone {r.name}")
         else:
