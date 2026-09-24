@@ -9,7 +9,9 @@ TARGET_ELF := $(MODULE_DIR)/ar9285.elf
 TARGET_KO := $(MODULE_DIR)/ar9285.ko
 
 SOURCES := ar9285.c
-OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o) $(OBJ_DIR)/dot11_assoc.o
+DOT11_B_NAMES := b_rates b_chan b_plcp b_mgmt
+OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o) $(OBJ_DIR)/dot11_assoc.o \
+	$(DOT11_B_NAMES:%=$(OBJ_DIR)/dot11_b_%.o)
 DEPS := $(OBJECTS:.o=.d)
 
 CPPFLAGS += -I$(ATH9K_DIR)/include
@@ -25,6 +27,10 @@ $(OBJ_DIR)/%.o: $(ATH9K_DIR)/%.c
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(MOD_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/dot11_assoc.o: $(DOT11_DIR)/assoc.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(MOD_CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/dot11_b_%.o: $(DOT11_DIR)/b/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(MOD_CFLAGS) -c $< -o $@
 

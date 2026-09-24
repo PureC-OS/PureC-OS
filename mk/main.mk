@@ -16,13 +16,13 @@ export ROOT_DIR BIN_DIR
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad clean help \
 	test test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path \
-	test-initramfs test-dot11 test-qemu-network test-qemu-network-e1000 \
+	test-initramfs test-dot11 test-devman test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs
+test: test-cpu test-scheduler-cpu test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman
 	@echo "All host tests passed"
 
 test-initramfs:
@@ -74,6 +74,16 @@ test-dot11:
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
 		tests/dot11_assoc_test.c src/net/802.11/assoc.c -o $(BIN_DIR)/tests/dot11_assoc_test
 	$(BIN_DIR)/tests/dot11_assoc_test
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/dot11_b_test.c src/net/802.11/b/b_rates.c src/net/802.11/b/b_chan.c \
+		src/net/802.11/b/b_plcp.c src/net/802.11/b/b_mgmt.c -o $(BIN_DIR)/tests/dot11_b_test
+	$(BIN_DIR)/tests/dot11_b_test
+
+test-devman:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/devman_match_test.c -o $(BIN_DIR)/tests/devman_match_test
+	$(BIN_DIR)/tests/devman_match_test
 
 test-qemu-network: test-qemu-network-e1000 test-qemu-network-8254xgc test-qemu-network-pcnet
 	@echo "All QEMU wired-network tests passed"

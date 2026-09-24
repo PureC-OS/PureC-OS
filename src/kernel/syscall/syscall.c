@@ -23,6 +23,7 @@
 #include "../process/process.h"
 #include "../smp/cpu.h"
 #include "../../mm/pmm.h"
+#include "../../userspace/userspace.h"
 #include "../../userspace/window_manager.h"
 #include "../../userspace/display_mode.h"
 #include "../../net/api/ping.h"
@@ -42,33 +43,6 @@ static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
 static uint8_t install_fs_type;
-
-static volatile uint32_t wm_owner_pid;
-static volatile uint32_t console_owner_pid;
-static volatile uint32_t wm_redraw_requester;
-static volatile int32_t wm_redraw_waiter=-1;
-static volatile bool wm_redraw_pending;
-
-void syscall_window_manager_process_exited(uint32_t pid){
-    if(__atomic_load_n(&console_owner_pid,__ATOMIC_ACQUIRE)==pid){
-        gop_console_disable();
-        __atomic_store_n(&console_owner_pid,0,__ATOMIC_RELEASE);
-    }
-    if(__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)!=pid) return;
-    __atomic_store_n(&wm_owner_pid,0,__ATOMIC_RELEASE);
-    __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
-    int32_t waiter=__atomic_exchange_n(&wm_redraw_waiter,-1,__ATOMIC_ACQ_REL);
-    if(waiter>=0) scheduler_unblock(waiter);
-    klogf(KLOG_WARN,"wm: owner pid=%u exited; waiting for init restart",pid);
-}
-
-void syscall_window_manager_invalidate_desktop(void){
-    if(!__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return;
-    if(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)) return;
-    __atomic_store_n(&wm_redraw_requester,0,__ATOMIC_RELAXED);
-    __atomic_store_n(&wm_redraw_waiter,-1,__ATOMIC_RELAXED);
-    __atomic_store_n(&wm_redraw_pending,true,__ATOMIC_RELEASE);
-}
 
 static bool readable(const void *buffer, uint64_t size){
     return process_user_buffer(buffer,size,false);
@@ -167,17 +141,10 @@ int64_t syscall_handler(struct syscall_regs *r){
             const char *s = (const char*)(uintptr_t)a1;
             uint64_t len = a2;
             if(!readable(s,len)) return -1;
-            uint32_t pid=(uint32_t)process_current_pid();
-            uint32_t console_owner=__atomic_load_n(
-                &console_owner_pid,__ATOMIC_ACQUIRE);
-            struct process *current=process_current();
-            bool owns_console=console_owner
-                && (pid==console_owner
-                    || (current && current->parent_pid==console_owner));
             for(uint64_t i=0;i<len;i++){
                 serial_putc(s[i]);
-                if(gop_console_is_active() && owns_console)
-                    gop_console_putc(s[i]);
+                if(gop_console_is_active()) gop_console_putc(s[i]);
+                else gop_putc(s[i]);
             }
             return (int64_t)len;
         }
@@ -228,17 +195,6 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_FB_END_UPDATE:
             mouse_end_framebuffer_update();
             return 0;
-        case SYS_FB_BLIT: {
-            const uint32_t *pixels=(const uint32_t*)(uintptr_t)a1;
-            uint32_t width=(uint32_t)a2;
-            uint32_t height=(uint32_t)a3;
-            if(!width || !height || width!=gop_get_width()
-               || height!=gop_get_height()) return -1;
-            uint64_t count=(uint64_t)width*height;
-            if(count>UINT64_MAX/sizeof(uint32_t)
-               || !readable(pixels,count*sizeof(uint32_t))) return -1;
-            return gop_blit_frame(pixels,width,height) ? 0 : -1;
-        }
         case SYS_DISPLAY_SET_MODE:
             return display_mode_apply((uint32_t)a1, (uint32_t)a2,
                                       (uint8_t)a3);
@@ -246,44 +202,20 @@ int64_t syscall_handler(struct syscall_regs *r){
             const struct framebuffer_console_request *request=
                 (const struct framebuffer_console_request*)(uintptr_t)a1;
             if(!readable(request,sizeof(*request))) return -1;
-            bool configured=gop_console_configure(
+            return gop_console_configure(
                 request->x,request->y,request->width,request->height,
-                request->foreground,request->background);
-            if(configured) __atomic_store_n(&console_owner_pid,
-                (uint32_t)process_current_pid(),__ATOMIC_RELEASE);
-            return configured ? 0 : -1;
+                request->foreground,request->background) ? 0 : -1;
         }
         case SYS_CONSOLE_CLEAR:
-            if(!gop_console_is_active()
-               || __atomic_load_n(&console_owner_pid,__ATOMIC_ACQUIRE)
-                    !=(uint32_t)process_current_pid()) return -1;
+            if(!gop_console_is_active()) return -1;
             gop_console_clear();
             return 0;
-        case SYS_CONSOLE_DISABLE: {
-            uint32_t pid=(uint32_t)process_current_pid();
-            uint32_t owner=__atomic_load_n(&console_owner_pid,__ATOMIC_ACQUIRE);
-            uint32_t wm=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
-            if(owner && pid!=owner && pid!=wm) return -1;
+        case SYS_CONSOLE_DISABLE:
             gop_console_disable();
-            __atomic_store_n(&console_owner_pid,0,__ATOMIC_RELEASE);
             return 0;
-        }
-        case SYS_DESKTOP_REDRAW: {
-            uint32_t owner=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE);
-            if(!owner || owner==(uint32_t)process_current_pid()) return 0;
-            uint32_t waited=0;
-            while(__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)){
-                if(++waited>=500) return -1;
-                scheduler_sleep(1);
-            }
-            __atomic_store_n(&wm_redraw_requester,
-                             (uint32_t)process_current_pid(),__ATOMIC_RELAXED);
-            __atomic_store_n(&wm_redraw_waiter,scheduler_current_tid(),
-                             __ATOMIC_RELAXED);
-            __atomic_store_n(&wm_redraw_pending,true,__ATOMIC_RELEASE);
-            scheduler_block();
+        case SYS_DESKTOP_REDRAW:
+            userspace_redraw_desktop();
             return 0;
-        }
         case SYS_GUI_WINDOW_REGISTER: {
             const struct gui_window_request *request=
                 (const struct gui_window_request*)(uintptr_t)a1;
@@ -308,85 +240,6 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_GUI_WINDOW_REPAINT_DONE:
             window_manager_finish_repaint((uint32_t)process_current_pid());
             return 0;
-        case SYS_WM_CLAIM: {
-            if(!process_has_capability(PROCESS_CAP_WINDOW_MANAGER)) return -1;
-            uint32_t pid=(uint32_t)process_current_pid();
-            uint32_t expected=0;
-            if(!__atomic_compare_exchange_n(&wm_owner_pid,&expected,pid,false,
-                                             __ATOMIC_ACQ_REL,
-                                             __ATOMIC_ACQUIRE)
-               && expected!=pid) return -1;
-            mouse_set_bounds((int32_t)gop_get_width(),
-                             (int32_t)gop_get_height());
-            mouse_set_debug_overlay(false);
-            klog_set_screen_enabled(false);
-            klogf(KLOG_OK,"wm: ring-3 owner claimed by pid=%u",pid);
-            return 0;
-        }
-        case SYS_WM_POINTER: {
-            if((uint32_t)process_current_pid()
-               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
-            const struct wm_pointer_request *request=
-                (const struct wm_pointer_request*)(uintptr_t)a1;
-            if(!readable(request,sizeof(*request))) return -1;
-            bool focus_changed=false;
-            bool consumed=window_manager_handle_pointer(
-                request->x,request->y,request->pressed!=0,&focus_changed);
-            return (consumed ? WM_POINTER_CONSUMED : 0)
-                | (focus_changed ? WM_POINTER_FOCUS_CHANGED : 0);
-        }
-        case SYS_WM_NEXT_REDRAW: {
-            if((uint32_t)process_current_pid()
-               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
-            uint32_t *excluded=(uint32_t*)(uintptr_t)a1;
-            if(!writable(excluded,sizeof(*excluded))) return -1;
-            if(!__atomic_load_n(&wm_redraw_pending,__ATOMIC_ACQUIRE)) return 0;
-            *excluded=__atomic_load_n(&wm_redraw_requester,__ATOMIC_RELAXED);
-            return 1;
-        }
-        case SYS_WM_COMPLETE_REDRAW: {
-            if((uint32_t)process_current_pid()
-               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
-            window_manager_request_repaint((uint32_t)a1);
-            uint32_t waited=0;
-            while(window_manager_repaint_pending() && waited<250){
-                scheduler_sleep(1);
-                waited++;
-            }
-            if(window_manager_repaint_pending()) window_manager_cancel_repaint();
-            __atomic_store_n(&wm_redraw_pending,false,__ATOMIC_RELEASE);
-            int32_t waiter=__atomic_exchange_n(&wm_redraw_waiter,-1,
-                                                __ATOMIC_ACQ_REL);
-            if(waiter>=0) scheduler_unblock(waiter);
-            return 0;
-        }
-        case SYS_WM_WINDOW_LIST: {
-            if((uint32_t)process_current_pid()
-               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
-            struct wm_window_info *entries=
-                (struct wm_window_info*)(uintptr_t)a1;
-            uint32_t capacity=(uint32_t)a2;
-            if(capacity>64 || (capacity
-               && !writable(entries,(uint64_t)capacity*sizeof(*entries))))
-                return -1;
-            uint32_t pids[64];
-            struct gui_window_request frames[64];
-            uint32_t count=window_manager_list(pids,frames,capacity);
-            uint32_t copied=count<capacity ? count : capacity;
-            for(uint32_t i=0;i<copied;i++){
-                entries[i].pid=pids[i];
-                entries[i].frame=frames[i];
-            }
-            return count;
-        }
-        case SYS_WM_FOCUSED:
-            if((uint32_t)process_current_pid()
-               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
-            return window_manager_focused_pid();
-        case SYS_WM_FOCUS:
-            if((uint32_t)process_current_pid()
-               !=__atomic_load_n(&wm_owner_pid,__ATOMIC_ACQUIRE)) return -1;
-            return window_manager_focus_pid((uint32_t)a1) ? 0 : -1;
         case SYS_GETPID:
             return process_current_pid();
         case SYS_HEAP_GROW: {
@@ -448,7 +301,6 @@ int64_t syscall_handler(struct syscall_regs *r){
             if(!writable(out,sizeof(*out))) return -1;
             ps2_mouse_poll();
             usb_mouse_poll();
-            mouse_flush_pending();
             *out = mouse_get_state();
             return 0;
         }

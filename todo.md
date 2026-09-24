@@ -13,6 +13,10 @@
 - [ ] И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3. | priority:normal
 - [x] Мой notepad++ при новом рендеренге текста в notepad++ исчез весь текст букви и цифры | priority:normal
 - [x] на taskbar батарея перекрывает время | priority:normal
+- [x] User space ведёт себя не так как задумано | priority:urgent | tags:bug | deadline:2026-09-23
+  Когда userspace а точнее window manager стартует в отдельном процессе Я открываю окно что-то делаю в программе потом закрываю окно
+  И полностью вся система падает с какой ошибкой я не знаю
+  Просто зависает
 
 ## Userspace programs
 
@@ -53,6 +57,9 @@
 - [ ] На новом и старом железе показатели с батареи и зарядки не читаются через ACPI | priority:normal
 - [x] Сделать initramfs | priority:normal
 - [x] Переделать модель загрузки модулей что бы ядро при старте монтировало initramfs и загружало с него все нужные модули | priority:normal
+- [ ] Добавить drivers manager он должен уметь сканирувать все устройства и загружать нужные драйверы | priority:normal
+  - [x] Добавить простенький drivers manager | priority:low
+  - [ ] Загрузчик relocatable-модулей (kmod): LD -r .elf/.ko из /bin/modules, kmod_info, резолв символов | priority:normal
 
 ## touchpad
 

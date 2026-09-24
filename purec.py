@@ -400,13 +400,21 @@ def qemu_log_file():
     if not _ensure_iso() or not _qemu_ok(): return
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     int_log = LOG_FILE.replace(".log", "-internal.log")
+    mon_sock = os.path.join(os.path.dirname(LOG_FILE), "qemu-mon.sock")
+    try:
+        if os.path.exists(mon_sock): os.unlink(mon_sock)
+    except OSError:
+        pass
     _step(f"QEMU — graphics + logs → file")
     print(c(C.SUB, f"  Serial : {LOG_FILE}"))
-    print(c(C.SUB, f"  QEMU   : {int_log}\n"))
+    print(c(C.SUB, f"  QEMU   : {int_log}"))
+    print(c(C.SUB, f"  Monitor: {mon_sock}  (при зависании: socat - UNIX-CONNECT:{mon_sock})"))
+    print(c(C.SUB, f"           в мониторе: info registers / info status\n"))
     _run_live(
         _qemu_base() + [
             "-vga", "std",
             "-serial", f"file:{LOG_FILE}",
+            "-monitor", f"unix:{mon_sock},server,nowait",
             "-D", int_log,
             "-d", "int,cpu_reset,guest_errors",
         ],

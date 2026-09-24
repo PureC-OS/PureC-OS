@@ -83,6 +83,8 @@ struct device_info {
 typedef bool (*device_visitor_t)(const struct device_info *dev, void *ctx);
 typedef bool (*device_driver_match_t)(const struct device_info *dev, void *ctx);
 
+struct devman_pci_id;
+
 struct device_driver {
     const char *name;
     enum device_type type;
@@ -90,6 +92,9 @@ struct device_driver {
     device_driver_match_t match;
     int (*probe)(const struct device_info *dev);
     void (*remove)(const struct device_info *dev);
+    const struct devman_pci_id *pci_ids;
+    uint32_t pci_id_count;
+    const char *module_path;
     struct device_driver *next;
 };
 
@@ -103,6 +108,10 @@ const struct device_info *devman_find_by_class(enum device_class cls, uint8_t su
 const struct device_info *devman_find_by_acpi_hid(const char *hid);
 int devman_register_driver(struct device_driver *driver);
 void devman_driver_probe_all(void);
+void devman_register_builtin_drivers(void);
+void devman_autoload(void);
+uint32_t devman_bound_count(void);
+uint32_t devman_unbound_count(void);
 bool devman_is_ready(void);
 void devman_dump(void);
 const char *devman_device_type_name(enum device_type type);
