@@ -22,7 +22,6 @@
 
 # --- core programs (required) ---
 /bin/init /bin/init - 1 bin/programs/init
-/bin/window-manager /bin/window-manager /bin/window~1 1 bin/programs/window-manager
 /bin/installer /bin/installer /bin/instal~1 1 bin/programs/installer
 /bin/snake /bin/snake - 1 bin/programs/snake
 /bin/snake /game/snake - 1 bin/programs/snake
