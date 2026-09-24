@@ -4,7 +4,7 @@ include $(ROOT_DIR)/mk/toolchain.mk
 DOT11_DIR := $(ROOT_DIR)/src/net/802.11
 OBJ_DIR := $(BIN_DIR)/obj/kernel/net/802.11
 
-SOURCES := assoc.c
+SOURCES := assoc.c b/b_rates.c b/b_chan.c b/b_plcp.c b/b_mgmt.c
 OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o)
 DEPS := $(OBJECTS:.o=.d)
 

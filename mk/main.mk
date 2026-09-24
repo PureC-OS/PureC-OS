@@ -74,6 +74,10 @@ test-dot11:
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
 		tests/dot11_assoc_test.c src/net/802.11/assoc.c -o $(BIN_DIR)/tests/dot11_assoc_test
 	$(BIN_DIR)/tests/dot11_assoc_test
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/dot11_b_test.c src/net/802.11/b/b_rates.c src/net/802.11/b/b_chan.c \
+		src/net/802.11/b/b_plcp.c src/net/802.11/b/b_mgmt.c -o $(BIN_DIR)/tests/dot11_b_test
+	$(BIN_DIR)/tests/dot11_b_test
 
 test-devman:
 	@mkdir -p $(BIN_DIR)/tests
