@@ -232,6 +232,18 @@ sudo modprobe vboxdrv
 
 ---
 
+# Build PureC OS
+
+clone repository
+
+```bash
+git clone https://github.com/PureC-OS/PureC-OS.git
+cd PureC-OS
+```
+
+
+---
+
 # TODO PureC OS Project
 
 [todo.md](todo.md)
