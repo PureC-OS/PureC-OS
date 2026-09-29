@@ -40,8 +40,22 @@ static FILE *fd_lookup(int fd) {
 // through this accessor to avoid a header cycle.
 const char *stdio_stream_path(const FILE *stream);
 
+// No kernel cwd: resolve relative paths against logical $PWD so ported
+// programs (tcc, etc.) work with "file.c" instead of only "/abs/path".
+static const char *resolve_user_path(const char *path, char *buf, size_t cap) {
+    (void)cap;
+    if (!path || !path[0] || path[0] == '/' ||
+        (path[0] == '-' && path[1] == '\0'))
+        return path;
+    if (!buf) return path;
+    if (!realpath(path, buf)) return path;
+    return buf;
+}
+
 int open(const char *path, int flags, ...) {
     if (!path) { errno = EINVAL; return -1; }
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
     bool create = (flags & O_CREAT) != 0;
     bool exclusive = (flags & O_EXCL) != 0;
     bool truncate = (flags & O_TRUNC) != 0;
@@ -152,6 +166,8 @@ static void fill_stat(struct stat *info, uint64_t size, bool is_dir) {
 
 int stat(const char *path, struct stat *info) {
     if (!path || !info) { errno = EINVAL; return -1; }
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
     struct file_stat_info raw;
     if (pc_file_stat(path, &raw) < 0) { errno = ENOENT; return -1; }
     fill_stat(info, raw.size, raw.is_directory != 0);
@@ -176,6 +192,8 @@ int lstat(const char *path, struct stat *info) {
 
 int unlink(const char *path) {
     if (!path) { errno = EINVAL; return -1; }
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
     if (pc_file_delete(path) < 0) { errno = ENOENT; return -1; }
     return 0;
 }
@@ -183,6 +201,8 @@ int unlink(const char *path) {
 int access(const char *path, int mode) {
     if (!path) { errno = EINVAL; return -1; }
     (void)mode;
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
     struct file_stat_info raw;
     if (pc_file_stat(path, &raw) < 0) { errno = ENOENT; return -1; }
     if ((mode & X_OK) && raw.is_directory == 0) {
