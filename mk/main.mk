@@ -133,6 +133,7 @@ kernel:
 	$(MAKE) -C src/drivers/net/e1000    module
 	$(MAKE) -C src/drivers/net/82543gc  module
 	$(MAKE) -C src/drivers/net/pcnet    module
+	$(MAKE) -C src/drivers/net/ath9k    module
 	$(MAKE) -C $(CRYPT_DIR)             module
 	$(MAKE) -C $(ACPI_DIR)              module
 
@@ -161,7 +162,7 @@ iso: kernel programs
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
-	for mod in ext2 crypt acpi e1000 e1000_82543gc pcnet_am79c970a; do \
+	for mod in ext2 crypt acpi e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
 			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/bin/modules/$$mod.$$ext" || true; \

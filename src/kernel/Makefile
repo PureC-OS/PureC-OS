@@ -30,6 +30,10 @@ E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
 CPPFLAGS += -I$(E1000_GC_DIR)/include
 PCNET_DIR := $(ROOT_DIR)/src/drivers/net/pcnet
 CPPFLAGS += -I$(PCNET_DIR)/include
+ATH9K_DIR := $(ROOT_DIR)/src/drivers/net/ath9k
+CPPFLAGS += -I$(ATH9K_DIR)/include
+DOT11_DIR := $(ROOT_DIR)/src/net/802.11
+CPPFLAGS += -I$(DOT11_DIR)/include -I$(ROOT_DIR)/src
 
 C_SOURCES := \
 	boot/boot.c \
@@ -70,6 +74,12 @@ C_SOURCES := \
 	drivers/net/82543gc/e1000_82543gc.c \
 	drivers/net/pcnet/pcnet_am79c970a.c \
 	net/wifi/wifi.c \
+	net/802.11/assoc.c \
+	net/802.11/b/b_rates.c \
+	net/802.11/b/b_chan.c \
+	net/802.11/b/b_plcp.c \
+	net/802.11/b/b_mgmt.c \
+	drivers/net/ath9k/ar9285.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \
 	net/link/arp.c \
