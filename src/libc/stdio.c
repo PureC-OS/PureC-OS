@@ -74,6 +74,10 @@ static void registry_remove(FILE *stream) {
 FILE *fopen(const char *path, const char *mode) {
     stdio_init_std();
     if (!path || !mode) { errno = EINVAL; return 0; }
+    char abs[512];
+    if (path[0] != '/' && !(path[0] == '-' && path[1] == '\0')) {
+        if (realpath(path, abs)) path = abs;
+    }
     bool read = false, write = false, append = false, truncate = false, must_exist = false;
     // Parse "r/w/a" + "+" + "b"/"t".
     for (const char *m = mode; *m; m++) {
@@ -423,12 +427,24 @@ const char *stdio_stream_path(const FILE *stream) {
 }
 
 int remove(const char *path) {    if (!path) { errno = EINVAL; return -1; }
+    char abs[512];
+    if (path[0] != '/') {
+        if (realpath(path, abs)) path = abs;
+    }
     if (pc_file_delete(path) < 0) { errno = ENOENT; return -1; }
     return 0;
 }
 
 int rename(const char *old_path, const char *new_path) {
     if (!old_path || !new_path) { errno = EINVAL; return -1; }
+    char abs_old[512];
+    char abs_new[512];
+    if (old_path[0] != '/') {
+        if (realpath(old_path, abs_old)) old_path = abs_old;
+    }
+    if (new_path[0] != '/') {
+        if (realpath(new_path, abs_new)) new_path = abs_new;
+    }
     // pc_file_rename takes (path, new_name); extract the basename.
     const char *base = new_path;
     for (const char *p = new_path; *p; p++) {

@@ -13,7 +13,7 @@
 - [ ] И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3. | priority:normal
 - [x] Мой notepad++ при новом рендеренге текста в notepad++ исчез весь текст букви и цифры | priority:normal
 - [x] на taskbar батарея перекрывает время | priority:normal
-- [x] User space ведёт себя не так как задумано | priority:urgent | tags:bug | deadline:2026-09-23
+- [x] User space ведёт себя не так как задумано | priority:high | tags:bug | deadline:2026-09-23
   Когда userspace а точнее window manager стартует в отдельном процессе Я открываю окно что-то делаю в программе потом закрываю окно
   И полностью вся система падает с какой ошибкой я не знаю
   Просто зависает
@@ -27,13 +27,16 @@
 
 ## Network
 
-- [ ] Добавить поддержку 802.11 ассоциации | priority:high
+- [x] Добавить поддержку 802.11 ассоциации | priority:high
   Частично было добавлено
-- [ ] Поднять Atheros AR928X Wirless Network Adapter | priority:normal
+  - [x] Добавить поддержку 802.11b | priority:normal
 - [ ] Поднять network stack и обединить с 802.11 асоцицией | priority:normal
 - [ ] Сделать норм wifi backend | priority:normal
   - [ ] Добавить нормальный бэкенд для сети | priority:normal
 - [ ] Проверить wifi на bare metal | priority:normal
+- [x] Поднять Atheros AR928X Wirless Network Adapter (Этот пункт частично реализован, но не работаеть)| priority:normal | priority:normal
+- [ ] нужно снимать rfkill с ar928 | priority:low | tags:dev
+  нужно доделать ar928 начать снимать rfkill и если там есть пропреитарние блобы их нужно грузить
 
 ## ACPI
 

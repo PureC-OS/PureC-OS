@@ -6,6 +6,7 @@
 #include "lib/string.h"
 #include "mm/pmm.h"
 #include "net/802.11/include/802.h"
+#include "net/802.11/b/b_mgmt.h"
 #include "net/core/net_device.h"
 #include "net/wifi/wifi.h"
 #include <stddef.h>
@@ -121,6 +122,9 @@ struct ar9285_device {
     struct dot11_mlme mlme;
     bool mlme_active;
     bool data_path_warned;
+
+    bool scan_active;
+    uint64_t scan_start_ms;
 };
 
 static struct ar9285_device adapter;
@@ -370,9 +374,48 @@ static void ar_mlme_failed(void *ctx) {
     wifi_notify_connect_failed(err);
 }
 
+#define AR9285_SCAN_TIMEOUT_MS 4000U
+#define AR9285_SCAN_RSSI_DEFAULT (-60)
+
+static void ar_scan_stop_locked(struct ar9285_device *dev, bool report_done) {
+    if (!dev || !dev->scan_active)
+        return;
+    dev->scan_active = false;
+    if (report_done)
+        wifi_notify_scan_done();
+}
+
+static void ar_handle_scan_frame(struct ar9285_device *dev, const uint8_t *frame,
+                                  uint16_t len) {
+    struct dot11_bss bss;
+    if (!dot11_parse_bss(frame, len, &bss))
+        return;
+    if (!bss.ssid_len || !bss.ssid[0])
+        return; /* hidden: BSSID unknown to userspace, skip for now */
+    struct wifi_network net;
+    memset(&net, 0, sizeof(net));
+    memcpy(net.ssid, bss.ssid, sizeof(net.ssid) - 1);
+    memcpy(net.bssid, bss.bssid, 6);
+    net.channel = bss.channel ? bss.channel : 1;
+    net.rssi = AR9285_SCAN_RSSI_DEFAULT;
+    if ((bss.capability & DOT11_CAP_PRIVACY) || bss.has_rsn)
+        net.security = WIFI_SECURITY_WPA2;
+    else
+        net.security = WIFI_SECURITY_OPEN;
+    if (wifi_report_scan_result(&net)) {
+        klogf(KLOG_DEBUG, "ar9285: scan hit '%s' chan=%u sec=%u bssid=%02x:%02x:%02x:%02x:%02x:%02x",
+              net.ssid, net.channel, net.security,
+              net.bssid[0], net.bssid[1], net.bssid[2],
+              net.bssid[3], net.bssid[4], net.bssid[5]);
+    }
+    (void)dev;
+}
+
 static void ar_rx_poll(uint64_t now_ms) {
     struct ar9285_device *dev = &adapter;
-    if (!dev->initialized || !dev->rx_ready || !dev->rx_ring || !dev->mlme_active)
+    if (!dev->initialized || !dev->rx_ready || !dev->rx_ring)
+        return;
+    if (!dev->mlme_active && !dev->scan_active)
         return;
     for (uint32_t n = 0; n < AR9285_RX_RING; n++) {
         uint16_t idx = dev->rx_next;
@@ -380,9 +423,14 @@ static void ar_rx_poll(uint64_t now_ms) {
         __atomic_thread_fence(__ATOMIC_ACQUIRE);
 
         uint32_t len = d->len;
-        if (!len || len < 24 || len > DOT11_MGMT_MAX) {
-
+        if (!len)
             break;
+        if (len < 24 || len > DOT11_MGMT_MAX) {
+            d->len = 0;
+            d->status = 0;
+            __atomic_thread_fence(__ATOMIC_RELEASE);
+            dev->rx_next = (uint16_t)((idx + 1) % AR9285_RX_RING);
+            continue;
         }
         uint8_t tmp[DOT11_MGMT_MAX];
         memcpy(tmp, dev->rx_bufs[idx], len > sizeof(tmp) ? sizeof(tmp) : len);
@@ -390,10 +438,14 @@ static void ar_rx_poll(uint64_t now_ms) {
         d->status = 0;
         __atomic_thread_fence(__ATOMIC_RELEASE);
         dev->rx_next = (uint16_t)((idx + 1) % AR9285_RX_RING);
-        (void)dot11_mlme_input(&dev->mlme, tmp, (uint16_t)len, now_ms);
-        if (dev->mlme.state == DOT11_MLME_ASSOCIATED ||
-            dev->mlme.state == DOT11_MLME_FAILED)
-            return;
+        if (dev->mlme_active) {
+            (void)dot11_mlme_input(&dev->mlme, tmp, (uint16_t)len, now_ms);
+            if (dev->mlme.state == DOT11_MLME_ASSOCIATED ||
+                dev->mlme.state == DOT11_MLME_FAILED)
+                return;
+        } else if (dev->scan_active) {
+            ar_handle_scan_frame(dev, tmp, (uint16_t)len);
+        }
     }
 }
 
@@ -437,9 +489,30 @@ static bool ar9285_wifi_scan(void *context) {
     struct ar9285_device *dev = context;
     if (!dev || !dev->initialized)
         return false;
-    klog(KLOG_INFO, "ar9285: scan requested (phase2a: passive scan pending phase 2b, reporting cache)");
-
-    wifi_notify_scan_done();
+    if (dev->mlme_active) {
+        klog(KLOG_INFO, "ar9285: scan deferred while associating");
+        return false;
+    }
+    if (dev->scan_active)
+        return true;
+    if (!dev->rx_ready) {
+        klog(KLOG_WARN, "ar9285: scan impossible, RX ring not ready");
+        return false;
+    }
+    dev->scan_active = true;
+    dev->scan_start_ms = timer_ticks();
+    /* Active solicitation: wildcard probe request to trigger probe responses
+       in addition to passive beacon listening. Failure is non-fatal. */
+    if (dev->tx_ready) {
+        static const uint8_t b_rates[] = {0x82, 0x84, 0x8B, 0x96};
+        uint8_t probe[DOT11_MGMT_MAX];
+        uint16_t plen = dot11b_build_probe_req(dev->net.mac, NULL, 0,
+                                               b_rates, sizeof(b_rates),
+                                               probe, sizeof(probe));
+        if (plen)
+            (void)ar_tx_mgmt(probe, plen);
+    }
+    klog(KLOG_INFO, "ar9285: passive scan started (beacon/probe-resp, 4s window)");
     return true;
 }
 
@@ -458,6 +531,7 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     (void)password;
     if (!dev || !dev->initialized || !ssid || !ssid[0])
         return false;
+    ar_scan_stop_locked(dev, false);
     if (dev->mlme_active &&
         (dev->mlme.state == DOT11_MLME_AUTH_SENT ||
          dev->mlme.state == DOT11_MLME_ASSOC_SENT)) {
@@ -520,6 +594,7 @@ static bool ar9285_wifi_disconnect(void *context) {
     struct ar9285_device *dev = context;
     if (!dev)
         return false;
+    ar_scan_stop_locked(dev, false);
     dev->target_ssid[0] = '\0';
     dev->target_password[0] = '\0';
     if (dev->mlme_active)
@@ -534,9 +609,16 @@ static bool ar9285_wifi_disconnect(void *context) {
 
 static void ar9285_wifi_poll(void *context, uint64_t now_ms) {
     struct ar9285_device *dev = context;
-    if (!dev || !dev->initialized || !dev->mlme_active)
+    if (!dev || !dev->initialized)
         return;
     ar_rx_poll(now_ms);
+    if (dev->scan_active &&
+        (now_ms - dev->scan_start_ms >= AR9285_SCAN_TIMEOUT_MS)) {
+        klog(KLOG_INFO, "ar9285: scan window elapsed, reporting results");
+        ar_scan_stop_locked(dev, true);
+    }
+    if (!dev->mlme_active)
+        return;
     uint8_t before = dev->mlme.state;
     dot11_mlme_poll(&dev->mlme, now_ms);
     if (before != dev->mlme.state) {

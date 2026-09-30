@@ -1,26 +1,3 @@
-# PureC OS install asset manifest — single source of truth for every file
-# the installer seeds into the target filesystem.
-#
-# Columns (whitespace separated, exactly 5):
-#   module    Limine boot module path (also the ISO path). Must start with /.
-#   dest      Target filesystem path. Parent directories are auto-created.
-#   alias     8.3 alias path for non-8.3 names, or - for a direct write.
-#   required  1 = missing/broken module aborts install, 0 = warn and skip.
-#   stage     Host path (relative to repo ROOT) used to stage the ISO module.
-#
-# Consumers (all generated/validated by mk/gen_assets.py, installed by the
-# generic manifest loop in src/fs/fat/fat32.c):
-#   - ISO staging: ROOT/<stage> -> <ISO_ROOT><module>
-#   - limine.conf: one "module_path: boot():<module>" per unique module
-#     (+ /manifest.txt itself), optional modules only if the stage exists.
-#   - installer: for each line, boot_get_module(<module>) -> write <dest>
-#     (via alias when set) -> verify. No per-file C code needed.
-#
-# Rules: no spaces inside fields; lines starting with # are comments;
-# (module,dest) pairs must be unique; a module may feed several dests.
-# The installer fetches /manifest.txt directly, so it needs no entry here.
-
-# --- core programs (required) ---
 /bin/init /bin/init - 1 bin/programs/init
 /bin/installer /bin/installer /bin/instal~1 1 bin/programs/installer
 /bin/snake /bin/snake - 1 bin/programs/snake
@@ -65,8 +42,6 @@
 /bin/halt /bin/halt - 1 bin/programs/halt
 /bin/program/files /bin/program/files - 1 bin/programs/files
 /bin/gui-demo /bin/gui-demo - 1 bin/programs/gui-demo
-
-# --- optional programs ---
 /bin/tetris /bin/tetris - 0 bin/programs/tetris
 /bin/program/tetris /bin/program/tetris - 0 bin/programs/tetris
 /bin/tetris /game/tetris - 0 bin/programs/tetris
@@ -76,7 +51,6 @@
 /bin/2048 /bin/2048 - 0 bin/programs/2048
 /bin/program/2048 /bin/program/2048 - 0 bin/programs/2048
 /bin/2048 /game/2048 - 0 bin/programs/2048
-
 /bin/program/settings /bin/program/settings - 0 bin/programs/settings
 /bin/program/monitor /bin/program/monitor - 0 bin/programs/monitor
 /bin/program/disks /bin/program/disks - 0 bin/programs/disks
@@ -90,8 +64,6 @@
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
 /bin/program/pl /bin/program/pl - 0 bin/programs/pl
-
-# --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
 /bin/program/files.desktop /bin/program/files.desktop /bin/program/FILES.DES 0 src/userspace/desktop_entries/files.desktop
 /bin/program/monitor.desktop /bin/program/monitor.desktop /bin/program/MONITOR.DES 0 src/userspace/desktop_entries/monitor.desktop
 /bin/program/terminal.desktop /bin/program/terminal.desktop /bin/program/TERMINAL.DES 0 src/userspace/desktop_entries/terminal.desktop
@@ -109,15 +81,11 @@
 /bin/program/notepad.desktop /bin/program/notepad.desktop /bin/program/NOTEPAD.DES 0 src/userspace/desktop_entries/notepad.desktop
 /bin/program/pl.desktop /bin/program/pl.desktop /bin/program/PL.DES 0 userspace/desktop_entries/pl.desktop
 /bin/program/2048.desktop /bin/program/2048.desktop /bin/program/2048.DES 0 src/userspace/desktop_entries/2048.desktop
-
-# --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
 /lib/libpurefs.a /lib/libpurefs.a /lib/libpur~2.a 1 bin/lib/libpurefs.a
 /lib/libpuregui.a /lib/libpuregui.a /lib/libpur~1.a 1 bin/lib/libpuregui.a
 /lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
 /lib/libpureaudio.a /lib/libpureaudio.a /lib/libpur~3.a 0 bin/lib/libpureaudio.a
-
-# --- development headers (required, except audio/tcc extras) ---
 /include/puregui.h /include/puregui.h - 1 src/libgui/include/puregui.h
 /include/pguiw.h /include/pguiw.h - 1 src/libgui/include/pguiw.h
 /include/purefs.h /include/purefs.h - 1 src/libfs/include/purefs.h
@@ -151,14 +119,10 @@
 /lib/tcc/include/stdalign.h /lib/tcc/include/stdalign.h - 0 tcc/include/stdalign.h
 /lib/tcc/include/stdatomic.h /lib/tcc/include/stdatomic.h /lib/tcc/include/STDATO~1.H 0 tcc/include/stdatomic.h
 /lib/tcc/include/stdnoreturn.h /lib/tcc/include/stdnoreturn.h /lib/tcc/include/STDNOR~1.H 0 tcc/include/stdnoreturn.h
-
-# --- demo assets ---
 /src/demo/screenshot.bmp /src/demo/screenshot.bmp /src/demo/SCREEN~1.BMP 0 src/demo/screenshot.bmp
 /src/demo/screenshot.bmp /demo/screenshot.bmp /demo/SCREEN~1.BMP 0 src/demo/screenshot.bmp
 /src/demo/image.png /src/demo/image.png - 0 src/demo/image.png
 /src/demo/image.png /demo/image.png - 0 src/demo/image.png
-
-# --- bundled wallpapers (24-bit BMP, 8.3 names, stretched by desktop) ---
 /walpaper/ducati1.png /walpaper/ducati1.png - 0 src/wallpapers/ducati1.png
 /walpaper/bmw2.png /walpaper/bmw2.png - 0 src/wallpapers/bmw2.png
 /walpaper/bmw3.png /walpaper/bmw3.png - 0 src/wallpapers/bmw3.png
@@ -181,8 +145,6 @@
 /walpaper/wp15.png /walpaper/wp15.png - 0 src/wallpapers/wp15.png
 /walpaper/wp16.png /walpaper/wp16.png - 0 src/wallpapers/wp16.png
 /walpaper/wp17.png /walpaper/wp17.png - 0 src/wallpapers/wp17.png
-
-# --- game sound effects (22050 Hz mono WAV) ---
 /game/sound/turn.wav /game/sound/turn.wav - 0 src/audio/snake/turn.wav
 /game/sound/eat.wav /game/sound/eat.wav - 0 src/audio/snake/eat.wav
 /game/sound/die.wav /game/sound/die.wav - 0 src/audio/snake/die.wav

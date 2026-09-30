@@ -10,6 +10,8 @@
 #include "e1000_82540em.h"
 #include "e1000_82543gc.h"
 #include "pcnet_am79c970a.h"
+#include "ar9285.h"
+#include "../wifi/wifi.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
@@ -22,6 +24,7 @@ static bool ready;
 bool net_service_init(void){
     net_device_registry_init();
     ethernet_init();
+    wifi_system_init();
     if(!arp_init()){
         klog(KLOG_ERROR,"net: cannot register ARP Ethernet handler");
         ready=false;
@@ -36,11 +39,17 @@ bool net_service_init(void){
     bool em_ready=e1000_82540em_init();
     bool gc_ready=e1000_82543gc_init();
     bool pcnet_ready=pcnet_am79c970a_init();
-    ready=em_ready||gc_ready||pcnet_ready;
+    bool wifi_ready=ar9285_init();
+    ready=em_ready||gc_ready||pcnet_ready||wifi_ready;
     if(!ready) klog(KLOG_WARN,"net: no supported network adapter found");
     else {
-        for(uint32_t index=0;index<net_device_count();index++)
-            (void)dhcp_start(net_device_get(index));
+        for(uint32_t index=0;index<net_device_count();index++){
+            struct net_device *dev=net_device_get(index);
+            if(!dev) continue;
+            if(dev->name[0]=='w' && dev->name[1]=='l' && dev->name[2]=='a' && dev->name[3]=='n')
+                continue;
+            (void)dhcp_start(dev);
+        }
     }
     return ready;
 }
@@ -62,6 +71,7 @@ void net_service_thread(void *argument){
         }
         uint64_t now=timer_ticks();
         dhcp_poll(now);
+        wifi_poll(now);
         if(now-last_housekeeping>=1000){
             arp_poll(now);
             last_housekeeping=now;
