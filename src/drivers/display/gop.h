@@ -37,6 +37,7 @@ void gop_putc(char c);
 void gop_write(const char *s);
 void gop_write_hex(uint64_t v);
 bool gop_console_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t foreground, uint32_t background);
+bool gop_console_configure_owner(uint32_t owner_pid, uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t foreground, uint32_t background);
 bool gop_console_is_active(void);
 void gop_console_putc(char character);
 void gop_console_clear(void);

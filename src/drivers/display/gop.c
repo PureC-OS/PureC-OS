@@ -36,15 +36,6 @@ static gfx_font_face_t console_gfx_face(void){
     return GFX_FONT_CLEAN;
 }
 
-static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c);
-static void gop_gfx_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                         uint32_t color, void *ctx){
-    (void)ctx;
-    for(uint32_t dy=0;dy<h;dy++)
-        for(uint32_t dx=0;dx<w;dx++)
-            put_pixel(x+dx, y+dy, color);
-}
-
 #define GOP_CONSOLE_COLUMNS 128
 #define GOP_CONSOLE_ROWS 64
 
@@ -62,9 +53,24 @@ struct gop_console {
     char characters[GOP_CONSOLE_ROWS][GOP_CONSOLE_COLUMNS];
     bool initialized;
     bool active;
+    uint32_t owner_pid;
 };
 
 static struct gop_console user_console;
+
+static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c);
+static void gop_gfx_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                         uint32_t color, void *ctx){
+    (void)ctx;
+    if(user_console.active && user_console.owner_pid
+       && compositor_window_exists(user_console.owner_pid)){
+        compositor_draw_rect(user_console.owner_pid, x, y, w, h, color);
+        return;
+    }
+    for(uint32_t dy=0;dy<h;dy++)
+        for(uint32_t dx=0;dx<w;dx++)
+            put_pixel(x+dx, y+dy, color);
+}
 
 void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type){
     if(!fb) { gop.available=false; return; }
@@ -695,13 +701,15 @@ void gop_write_hex(uint64_t v){
     for(int i=60;i>=0;i-=4) gop_putc(h[(v>>i)&0xF]);
     }
 
-bool gop_console_configure(uint32_t x, uint32_t y,
-                           uint32_t width, uint32_t height,
-                           uint32_t foreground, uint32_t background){
+bool gop_console_configure_owner(uint32_t owner_pid,
+                                 uint32_t x, uint32_t y,
+                                 uint32_t width, uint32_t height,
+                                 uint32_t foreground, uint32_t background){
     if(!gop.available || !width || !height || x>=gop.width || y>=gop.height)
         return false;
     if(width>gop.width-x) width=gop.width-x;
     if(height>gop.height-y) height=gop.height-y;
+    user_console.owner_pid=owner_pid;
     user_console.x=x;
     user_console.y=y;
     user_console.width=width;
@@ -727,7 +735,11 @@ bool gop_console_configure(uint32_t x, uint32_t y,
     if(user_console.cursor_row>=user_console.rows)
         user_console.cursor_row=user_console.rows-1;
     gop_begin_batch();
-    gop_draw_rect(x,y,width,height,background);
+    if(user_console.owner_pid && compositor_window_exists(user_console.owner_pid)){
+        compositor_draw_rect(user_console.owner_pid,x,y,width,height,background);
+    } else {
+        gop_draw_rect(x,y,width,height,background);
+    }
     for(uint32_t row=0;row<user_console.rows;row++){
         for(uint32_t column=0;column<user_console.columns;column++){
             char character=user_console.characters[row][column];
@@ -736,23 +748,41 @@ bool gop_console_configure(uint32_t x, uint32_t y,
                                   foreground,background);
         }
     }
-    if(backbuffer){ dirty_expand(x, y, width, height); }
+    if(!user_console.owner_pid || !compositor_window_exists(user_console.owner_pid)){
+        if(backbuffer){ dirty_expand(x, y, width, height); }
+    }
     gop_end_batch();
     return true;
+}
+
+bool gop_console_configure(uint32_t x, uint32_t y,
+                           uint32_t width, uint32_t height,
+                           uint32_t foreground, uint32_t background){
+    return gop_console_configure_owner(0,x,y,width,height,foreground,background);
 }
 
 bool gop_console_is_active(void){ return user_console.active; }
 
 void gop_console_clear(void){
     if(!user_console.active) return;
-    gop_draw_rect(user_console.x,user_console.y,user_console.width,
-                  user_console.height,user_console.background);
+    if(user_console.owner_pid && compositor_window_exists(user_console.owner_pid)){
+        compositor_draw_rect(user_console.owner_pid,
+                             user_console.x,user_console.y,
+                             user_console.width,user_console.height,
+                             user_console.background);
+    } else {
+        gop_draw_rect(user_console.x,user_console.y,user_console.width,
+                      user_console.height,user_console.background);
+    }
     memset(user_console.characters,' ',sizeof(user_console.characters));
     user_console.cursor_column=0;
     user_console.cursor_row=0;
 }
 
-void gop_console_disable(void){ user_console.active=false; }
+void gop_console_disable(void){
+    user_console.active=false;
+    user_console.owner_pid=0;
+}
 
 void gop_console_putc(char character){
     if(!user_console.active){ gop_putc(character); return; }
@@ -767,7 +797,9 @@ void gop_console_putc(char character){
             gop_console_glyph(' ',cx,cy,
                               user_console.foreground,
                               user_console.background);
-            if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
+            if(!user_console.owner_pid || !compositor_window_exists(user_console.owner_pid)){
+                if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
+            }
         }
         return;
     }
@@ -789,7 +821,9 @@ void gop_console_putc(char character){
         gop_console_glyph(character,cx,cy,
                           user_console.foreground,
                           user_console.background);
-        if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
+        if(!user_console.owner_pid || !compositor_window_exists(user_console.owner_pid)){
+            if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
+        }
         user_console.cursor_column++;
     }
 scroll:
@@ -799,8 +833,15 @@ scroll:
                    user_console.characters[row],GOP_CONSOLE_COLUMNS);
         memset(user_console.characters[user_console.rows-1],' ',
                GOP_CONSOLE_COLUMNS);
-        gop_scroll_rect_up(user_console.x,user_console.y,user_console.width,
-                           user_console.height,10,user_console.background);
+        if(user_console.owner_pid && compositor_window_exists(user_console.owner_pid)){
+            compositor_scroll_rect_up(user_console.owner_pid,
+                                      user_console.x,user_console.y,
+                                      user_console.width,user_console.height,
+                                      10,user_console.background);
+        } else {
+            gop_scroll_rect_up(user_console.x,user_console.y,user_console.width,
+                               user_console.height,10,user_console.background);
+        }
         user_console.cursor_row=user_console.rows-1;
     }
 }

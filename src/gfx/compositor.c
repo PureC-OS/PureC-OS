@@ -5,7 +5,7 @@
 #include "../mm/pmm.h"
 
 #define COMP_MAX_WINDOWS 32
-#define COMP_SHADOW 8
+#define COMP_SHADOW 16
 #define COMP_CHUNK 1024
 #define COMP_MAX_PIXELS (16u * 1024u * 1024u)
 #define CURSOR_SPRITE_W 12
@@ -37,13 +37,6 @@ struct comp_ctx {
     uint64_t flags;
     bool guard;
     bool irqs;
-};
-
-struct comp_rect {
-    uint32_t x;
-    uint32_t y;
-    uint32_t w;
-    uint32_t h;
 };
 
 static struct comp_window windows[COMP_MAX_WINDOWS];
@@ -379,8 +372,10 @@ bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy,
         comp_leave(&c);
         return false;
     }
-    struct comp_rect outside[4];
-    uint32_t outside_count = 0;
+    if(!uw || !uh){
+        comp_leave(&c);
+        return true;
+    }
     int64_t x0 = ux;
     int64_t y0 = uy;
     int64_t x1 = x0 + uw;
@@ -393,13 +388,7 @@ bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy,
     int64_t iy0 = max64(y0, sy0);
     int64_t ix1 = min64(x1, sx1);
     int64_t iy1 = min64(y1, sy1);
-    if(!uw || !uh){
-        comp_leave(&c);
-        return true;
-    }
-    if(ix0 >= ix1 || iy0 >= iy1){
-        outside[outside_count++] = (struct comp_rect){ux, uy, uw, uh};
-    } else {
+    if(ix0 < ix1 && iy0 < iy1){
         uint32_t value = 0xFF000000u | (color & 0x00FFFFFFu);
         for(int64_t row = iy0; row < iy1; row++){
             uint32_t *line = &w->pixels[(uint64_t)(row - sy0) * w->aw
@@ -407,26 +396,9 @@ bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy,
             for(int64_t k = 0; k < ix1 - ix0; k++) line[k] = value;
         }
         mark_dirty(w, ix0, iy0, ix1, iy1);
-        if(iy0 > y0)
-            outside[outside_count++] = (struct comp_rect){
-                ux, uy, uw, (uint32_t)(iy0 - y0)};
-        if(iy1 < y1)
-            outside[outside_count++] = (struct comp_rect){
-                ux, (uint32_t)iy1, uw, (uint32_t)(y1 - iy1)};
-        if(ix0 > x0)
-            outside[outside_count++] = (struct comp_rect){
-                ux, (uint32_t)iy0, (uint32_t)(ix0 - x0),
-                (uint32_t)(iy1 - iy0)};
-        if(ix1 < x1)
-            outside[outside_count++] = (struct comp_rect){
-                (uint32_t)ix1, (uint32_t)iy0, (uint32_t)(x1 - ix1),
-                (uint32_t)(iy1 - iy0)};
         flush_if_idle(w);
     }
     comp_leave(&c);
-    for(uint32_t i = 0; i < outside_count; i++)
-        gop_draw_rect(outside[i].x, outside[i].y, outside[i].w,
-                      outside[i].h, color);
     return true;
 }
 
@@ -447,11 +419,6 @@ bool compositor_draw_line(uint32_t pid, uint32_t ux0, uint32_t uy0,
     int64_t y0 = uy0;
     int64_t x1 = ux1;
     int64_t y1 = uy1;
-    if(x0 < sx0 || x0 >= sx1 || y0 < sy0 || y0 >= sy1
-       || x1 < sx0 || x1 >= sx1 || y1 < sy0 || y1 >= sy1){
-        comp_leave(&c);
-        return false;
-    }
     int64_t minx = min64(x0, x1);
     int64_t maxx = max64(x0, x1);
     int64_t miny = min64(y0, y1);
@@ -463,7 +430,8 @@ bool compositor_draw_line(uint32_t pid, uint32_t ux0, uint32_t uy0,
     int64_t err = dx + dy;
     uint32_t value = 0xFF000000u | (color & 0x00FFFFFFu);
     for(;;){
-        w->pixels[(uint64_t)(y0 - sy0) * w->aw + (uint64_t)(x0 - sx0)] = value;
+        if(x0 >= sx0 && x0 < sx1 && y0 >= sy0 && y0 < sy1)
+            w->pixels[(uint64_t)(y0 - sy0) * w->aw + (uint64_t)(x0 - sx0)] = value;
         if(x0 == x1 && y0 == y1) break;
         int64_t e2 = 2 * err;
         if(e2 >= dy){
@@ -493,26 +461,30 @@ bool compositor_scroll_rect_up(uint32_t pid, uint32_t ux, uint32_t uy,
     }
     int64_t sx0 = w->x;
     int64_t sy0 = w->y;
-    if((int64_t)ux < sx0 || (int64_t)uy < sy0
-       || (int64_t)ux + uw > sx0 + w->aw
-       || (int64_t)uy + uh > sy0 + w->ah){
-        comp_leave(&c);
-        return false;
+    int64_t sx1 = sx0 + w->aw;
+    int64_t sy1 = sy0 + w->ah;
+    int64_t x0 = max64((int64_t)ux, sx0);
+    int64_t y0 = max64((int64_t)uy, sy0);
+    int64_t x1 = min64((int64_t)ux + uw, sx1);
+    int64_t y1 = min64((int64_t)uy + uh, sy1);
+    if(x0 < x1 && y0 < y1){
+        uint32_t cw = (uint32_t)(x1 - x0);
+        uint32_t ch = (uint32_t)(y1 - y0);
+        uint32_t col = (uint32_t)(x0 - sx0);
+        uint32_t row0 = (uint32_t)(y0 - sy0);
+        if(amount > ch) amount = ch;
+        uint32_t value = 0xFF000000u | (fill_color & 0x00FFFFFFu);
+        for(uint32_t row = 0; row + amount < ch; row++)
+            memmove(&w->pixels[(uint64_t)(row0 + row) * w->aw + col],
+                    &w->pixels[(uint64_t)(row0 + row + amount) * w->aw + col],
+                    (uint64_t)cw * sizeof(uint32_t));
+        for(uint32_t row = ch - amount; row < ch; row++){
+            uint32_t *line = &w->pixels[(uint64_t)(row0 + row) * w->aw + col];
+            for(uint32_t k = 0; k < cw; k++) line[k] = value;
+        }
+        mark_dirty(w, x0, y0, x1, y1);
+        flush_if_idle(w);
     }
-    uint32_t value = 0xFF000000u | (fill_color & 0x00FFFFFFu);
-    uint32_t col = (uint32_t)((int64_t)ux - sx0);
-    uint32_t row0 = (uint32_t)((int64_t)uy - sy0);
-    if(amount > uh) amount = uh;
-    for(uint32_t row = 0; row + amount < uh; row++)
-        memmove(&w->pixels[(uint64_t)(row0 + row) * w->aw + col],
-                &w->pixels[(uint64_t)(row0 + row + amount) * w->aw + col],
-                (uint64_t)uw * sizeof(uint32_t));
-    for(uint32_t row = uh - amount; row < uh; row++){
-        uint32_t *line = &w->pixels[(uint64_t)(row0 + row) * w->aw + col];
-        for(uint32_t k = 0; k < uw; k++) line[k] = value;
-    }
-    mark_dirty(w, ux, uy, (int64_t)ux + uw, (int64_t)uy + uh);
-    flush_if_idle(w);
     comp_leave(&c);
     return true;
 }

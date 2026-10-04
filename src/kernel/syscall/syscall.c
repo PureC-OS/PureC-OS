@@ -216,7 +216,8 @@ int64_t syscall_handler(struct syscall_regs *r){
             const struct framebuffer_console_request *request=
                 (const struct framebuffer_console_request*)(uintptr_t)a1;
             if(!readable(request,sizeof(*request))) return -1;
-            return gop_console_configure(
+            return gop_console_configure_owner(
+                (uint32_t)process_current_pid(),
                 request->x,request->y,request->width,request->height,
                 request->foreground,request->background) ? 0 : -1;
         }
