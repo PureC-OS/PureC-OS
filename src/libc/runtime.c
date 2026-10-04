@@ -158,8 +158,13 @@ int32_t pc_listenv(struct process_environment_variable *variables,
 
 int32_t pc_process_list(struct process_monitor_info *processes,
                         uint32_t capacity){
+    return pc_process_list_page(processes,capacity,0);
+}
+
+int32_t pc_process_list_page(struct process_monitor_info *processes,
+                             uint32_t capacity, uint32_t offset){
     return (int32_t)pc_syscall(SYS_PROCESS_LIST,
-        (uint64_t)(uintptr_t)processes,capacity,0);
+        (uint64_t)(uintptr_t)processes,capacity,offset);
 }
 
 bool pc_cpu_info(struct cpu_monitor_info *info){

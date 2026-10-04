@@ -352,8 +352,8 @@ void show_my_name(void) {
 ---
 
 #### `SYS_PROCESS_LIST` (257)
-- **Регистры**: `rax = 257`, `rbx = (uintptr_t)processes`, `rcx = capacity`
-- **Обертка stdlib**: `int32_t pc_process_list(struct process_monitor_info *processes, uint32_t capacity)`
+- **Регистры**: `rax = 257`, `rbx = (uintptr_t)processes`, `rcx = capacity`, `rdx = offset` (0 — с начала)
+- **Обертки stdlib**: `int32_t pc_process_list(struct process_monitor_info *processes, uint32_t capacity)` и `int32_t pc_process_list_page(struct process_monitor_info *processes, uint32_t capacity, uint32_t offset)`
 - **Структура**:
 ```c
 struct process_monitor_info {

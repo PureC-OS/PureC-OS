@@ -575,7 +575,8 @@ int64_t syscall_handler(struct syscall_regs *r){
             struct process_monitor_info *entries=
                 (struct process_monitor_info*)(uintptr_t)a1;
             if(a2 && !writable(entries,a2*sizeof(*entries))) return -1;
-            return process_monitor_list(entries,(uint32_t)a2);
+            if(a3>UINT32_MAX) return -1;
+            return process_monitor_list_page(entries,(uint32_t)a2,(uint32_t)a3);
         }
         case SYS_DISK_STATS: {
             struct disk_monitor_info *info=(struct disk_monitor_info*)(uintptr_t)a1;

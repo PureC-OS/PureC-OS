@@ -426,8 +426,8 @@ void process_exit_current(int32_t status){
     __builtin_unreachable();
 }
 
-int32_t process_monitor_list(struct process_monitor_info *entries,
-                             uint32_t capacity){
+int32_t process_monitor_list_page(struct process_monitor_info *entries,
+                                  uint32_t capacity, uint32_t offset){
     MUTEX_SCOPE(&process_mutex);
     uint64_t now=timer_ticks();
     uint64_t elapsed=now-process_sample_tick;
@@ -437,8 +437,8 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
         uint64_t runtime=process->state==PROCESS_EXITED
             ? process->runtime_ticks
             : scheduler_thread_runtime_ticks(process->thread_id);
-        if(count<capacity){
-            struct process_monitor_info *entry=&entries[count];
+        if(count>=offset && count-offset<capacity){
+            struct process_monitor_info *entry=&entries[count-offset];
             memset(entry,0,sizeof(*entry));
             entry->pid=process->pid;
             entry->parent_pid=process->parent_pid;
@@ -458,6 +458,11 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
     }
     process_sample_tick=now;
     return (int32_t)count;
+}
+
+int32_t process_monitor_list(struct process_monitor_info *entries,
+                             uint32_t capacity){
+    return process_monitor_list_page(entries,capacity,0);
 }
 
 int32_t process_fd_install(int32_t kernel_descriptor){
