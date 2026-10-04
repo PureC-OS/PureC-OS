@@ -1,6 +1,7 @@
 #include "window_manager.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
+#include "../gfx/compositor.h"
 
 struct managed_window {
     uint32_t pid;
@@ -115,6 +116,9 @@ bool window_manager_register(uint32_t pid,
     window->frame=*request;
     window->z_order=next_z_order++;
     focused_pid=pid;
+    (void)compositor_window_create(pid,request->x,request->y,
+                                   request->width,request->height);
+    compositor_window_raise(pid);
     return true;
 }
 
@@ -124,6 +128,8 @@ bool window_manager_update(uint32_t pid,
     if(!window || !request || !request->width || !request->height)
         return false;
     window->frame=*request;
+    (void)compositor_window_update(pid,request->x,request->y,
+                                   request->width,request->height);
     return true;
 }
 
@@ -132,6 +138,7 @@ void window_manager_unregister(uint32_t pid){
     if(!window) return;
     if(repainting_pid==pid) repainting_pid=0;
     wm_free_slot(window);
+    compositor_window_destroy(pid);
     if(focused_pid!=pid) return;
     focused_pid=0;
     uint32_t total=wm_slot_total();
@@ -181,6 +188,7 @@ bool window_manager_handle_pointer(int32_t x, int32_t y, bool pressed,
         if(top){
             focused_pid=top->pid;
             top->z_order=next_z_order++;
+            compositor_window_raise(top->pid);
         } else {
             focused_pid=0;
         }
@@ -203,6 +211,7 @@ bool window_manager_focus_pid(uint32_t pid){
     if(!w) return false;
     focused_pid = pid;
     w->z_order = next_z_order++;
+    compositor_window_raise(pid);
     return true;
 }
 

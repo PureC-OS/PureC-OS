@@ -294,26 +294,10 @@ static void redraw_scene(void){
     mouse_end_framebuffer_update();
 }
 
-static void wait_for_managed_repaint(void){
-    for(uint32_t attempt = 0;
-        attempt < 250 && window_manager_repaint_pending(); attempt++)
-        scheduler_sleep(1);
-    if(window_manager_repaint_pending()) window_manager_cancel_repaint();
-}
-
 static void redraw_managed_scene(uint32_t excluded_pid){
+    (void)excluded_pid;
     mouse_begin_framebuffer_update();
-    gop_begin_compose();
     redraw_scene();
-    window_manager_request_repaint(excluded_pid);
-    wait_for_managed_repaint();
-    if(excluded_pid != 0){
-        gop_end_compose_keep();
-        mouse_end_framebuffer_update_keep();
-        gop_defer_present();
-        return;
-    }
-    gop_end_compose();
     mouse_end_framebuffer_update();
 }
 

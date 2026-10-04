@@ -61,6 +61,7 @@ C_SOURCES := \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	gfx/compositor.c \
 	drivers/display/vbe.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \

@@ -6,6 +6,7 @@
 #include "../display/vga.h"
 #include "../../gfx/text.h"
 #include "../../kernel/diagnostics/klog.h"
+#include "../../gfx/compositor.h"
 #include <stdint.h>
 
 #define PS2_DATA   0x60
@@ -65,6 +66,8 @@ static struct mouse_state state = {.x=400,.y=300,.buttons=0};
 static int32_t bound_w=1280, bound_h=800;
 static uint8_t packet[4];
 static int pkt_idx=0;
+static int pkt_size=3;
+static int32_t accel_x=0, accel_y=0;
 static bool has_mouse=false;
 static int32_t old_x=400, old_y=300;
 static bool first_draw=true;
@@ -260,21 +263,9 @@ static void draw_cursor(int32_t x,int32_t y){
         return;
     }
     if(gop_has_backbuffer()){
-        if(!first_draw
-           && (x!=old_x || y!=old_y)){
-            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
-        } else if(!first_draw){
-            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
-        }
         first_draw=false;
-        for(int dy=0;dy<CURS_H;dy++){
-            for(int dx=0;dx<CURS_W;dx++){
-                if(cursor_inside(dx,dy))
-                    gop_put_pixel_front((uint32_t)(x+dx), (uint32_t)(y+dy),
-                                        cursor_pixel(dx,dy));
-            }
-        }
         old_x=x; old_y=y;
+        compositor_cursor_move(x, y);
         return;
     }
     if(!first_draw){
@@ -300,11 +291,25 @@ static bool process_mouse_byte(uint8_t data){
         return false;
     }
     packet[pkt_idx++] = data;
-    if(pkt_idx==3){
+    if(pkt_idx==pkt_size){
         uint8_t b0 = packet[0];
         int8_t dx = (int8_t)packet[1];
         int8_t dy = (int8_t)packet[2];
+        if(b0 & 0x40) dx = 0;
+        if(b0 & 0x80) dy = 0;
+        int32_t scroll = 0;
+        if(pkt_size==4){
+            int32_t z = packet[3] & 0x0F;
+            if(z & 0x08) z -= 16;
+            scroll = z;
+        }
         mouse_handle_relative(b0&0x07,dx,(int8_t)-dy);
+        if(scroll){
+            uint64_t flags;
+            __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+            state.wheel += -scroll;
+            if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+        }
         debug_state.packet_count++;
 
         if(!packet_seen){
@@ -318,13 +323,30 @@ static bool process_mouse_byte(uint8_t data){
     return false;
 }
 
+static int32_t accelerate_axis(int32_t delta, int32_t magnitude, int32_t *remainder){
+    int32_t gain = 256;
+    if(magnitude > 3){
+        gain += (magnitude - 3) * 48;
+        if(gain > 768) gain = 768;
+    }
+    int32_t scaled = delta * gain + *remainder;
+    int32_t whole = scaled / 256;
+    *remainder = scaled - whole * 256;
+    return whole;
+}
+
 void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy){
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    state.dx=dx;
-    state.dy=dy;
-    state.x+=dx;
-    state.y+=dy;
+    int32_t adx = dx < 0 ? -(int32_t)dx : (int32_t)dx;
+    int32_t ady = dy < 0 ? -(int32_t)dy : (int32_t)dy;
+    int32_t magnitude = adx > ady ? adx : ady;
+    int32_t mx = accelerate_axis(dx, magnitude, &accel_x);
+    int32_t my = accelerate_axis(dy, magnitude, &accel_y);
+    state.dx=mx;
+    state.dy=my;
+    state.x+=mx;
+    state.y+=my;
     if(state.x<0) state.x=0;
     if(state.y<0) state.y=0;
     if(state.x>=bound_w) state.x=bound_w-1;
@@ -342,8 +364,6 @@ static void refresh_mouse_ui(void){
         return;
     }
     if(gop_has_backbuffer()){
-        if(!first_draw)
-            gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
         first_draw=true;
         if(debug_overlay_enabled){
             gop_begin_batch();
@@ -433,6 +453,23 @@ void ps2_mouse_init(void){
         klogf(KLOG_WARN, "psmouse: reset ack=0x%x (no mouse or not PS/2)", ack);
     }
     if(mouse_write(0xF6)) (void)mouse_read_ack();
+    {
+        static const uint8_t magic[3]={200,100,80};
+        bool magic_ok=true;
+        for(int i=0;i<3 && magic_ok;i++){
+            magic_ok = mouse_write(0xF3) && mouse_read_ack()==0xFA
+                    && mouse_write(magic[i]) && mouse_read_ack()==0xFA;
+        }
+        if(magic_ok && mouse_write(0xF2) && mouse_read_ack()==0xFA){
+            uint8_t id=0xFF;
+            if(ps2_read_data_timeout(&id) && id==3){
+                pkt_size=4;
+                klog(KLOG_OK, "psmouse: IntelliMouse wheel detected");
+            }
+        }
+        if(mouse_write(0xF3) && mouse_read_ack()==0xFA
+           && mouse_write(100)) (void)mouse_read_ack();
+    }
     bool en_ok = false;
     if(mouse_write(0xF4)){
         uint8_t ack2 = mouse_read_ack();

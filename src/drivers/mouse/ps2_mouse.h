@@ -7,6 +7,7 @@ struct mouse_state {
     int32_t dx, dy;
     uint8_t buttons;
     bool has_data;
+    int32_t wheel;
 };
 
 struct mouse_debug_state {

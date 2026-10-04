@@ -142,7 +142,6 @@ bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y){
     window->frame.y=y;
     update_client_rect(window);
     (void)pg_internal_update_registered_frame(window);
-    pc_desktop_redraw();
     return true;
 }
 

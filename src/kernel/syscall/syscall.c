@@ -4,6 +4,7 @@
 #include "../diagnostics/panic.h"
 #include "../../drivers/serial/serial.h"
 #include "../../drivers/display/gop.h"
+#include "../../gfx/compositor.h"
 #include "../../drivers/display/vga.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
@@ -157,12 +158,16 @@ int64_t syscall_handler(struct syscall_regs *r){
         case SYS_DRAW_RECT: {
             uint32_t x=(uint32_t)a1, y=(uint32_t)a2, w=(uint32_t)a3, h=(uint32_t)r->rsi;
             uint32_t c=(uint32_t)r->rdi;
+            if(compositor_draw_rect((uint32_t)process_current_pid(),x,y,w,h,c))
+                return 0;
             gop_draw_rect(x,y,w,h,c);
             return 0;
         }
         case SYS_DRAW_LINE: {
             uint32_t x0=(uint32_t)a1, y0=(uint32_t)a2, x1=(uint32_t)a3, y1=(uint32_t)r->rsi;
             uint32_t c=(uint32_t)r->rdi;
+            if(compositor_draw_line((uint32_t)process_current_pid(),x0,y0,x1,y1,c))
+                return 0;
             gop_draw_line(x0,y0,x1,y1,c);
             return 0;
         }
@@ -184,15 +189,24 @@ int64_t syscall_handler(struct syscall_regs *r){
             struct framebuffer_scroll_request *request=
                 (struct framebuffer_scroll_request*)(uintptr_t)a1;
             if(!readable(request,sizeof(*request))) return -1;
+            if(readable(request,sizeof(*request))
+               && compositor_scroll_rect_up((uint32_t)process_current_pid(),
+                    request->x,request->y,request->w,request->h,
+                    request->amount,request->fill_color))
+                return 0;
             gop_scroll_rect_up(request->x,request->y,request->w,request->h,
                                request->amount,request->fill_color);
             return 0;
         }
 
         case SYS_FB_BEGIN_UPDATE:
+            if(compositor_begin_update((uint32_t)process_current_pid()))
+                return 0;
             mouse_begin_framebuffer_update();
             return 0;
         case SYS_FB_END_UPDATE:
+            if(compositor_end_update((uint32_t)process_current_pid()))
+                return 0;
             mouse_end_framebuffer_update();
             return 0;
         case SYS_DISPLAY_SET_MODE:

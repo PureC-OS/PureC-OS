@@ -5,6 +5,7 @@
 #include "../../mm/pmm.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/process/scheduler.h"
+#include "../../gfx/compositor.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -405,6 +406,7 @@ static void gop_present_nolock(void){
     if(y1>gop.height) y1=gop.height;
     if(x0>=x1 || y0>=y1){ dirty_valid=false; return; }
     dirty_valid=false;
+    if(compositor_present(x0, y0, x1, y1)) return;
     uint32_t span = x1 - x0;
     if(gop.bpp==24){
         uint8_t *base = (uint8_t*)gop.addr;
@@ -447,6 +449,7 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
     if(x+w>gop.width) w=gop.width-x;
     if(y+h>gop.height) h=gop.height-y;
     if(!w || !h) return;
+    if(compositor_present(x, y, x+w, y+h)) return;
     if(gop.bpp==24){
         uint8_t *base=(uint8_t*)gop.addr;
         uint32_t pitch_bytes=gop.pitch*3;
@@ -484,6 +487,36 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
 
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
     front_write_32(x, y, color);
+}
+
+const uint32_t *gop_backbuffer_row(uint32_t y){
+    if(!backbuffer || y>=backbuffer_height) return 0;
+    return &backbuffer[(uint64_t)y * backbuffer_width];
+}
+
+void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count){
+    if(!gop.available || !gop.addr || !pixels || x>=gop.width || y>=gop.height) return;
+    if(count>gop.width-x) count=gop.width-x;
+    if(gop.bpp==24){
+        uint8_t *dst=(uint8_t*)gop.addr + (uint64_t)y*gop.pitch*3 + (uint64_t)x*3;
+        for(uint32_t i=0;i<count;i++){
+            uint32_t c=pixels[i];
+            dst[i*3+0]=(uint8_t)(c&0xFF);
+            dst[i*3+1]=(uint8_t)((c>>8)&0xFF);
+            dst[i*3+2]=(uint8_t)((c>>16)&0xFF);
+        }
+        return;
+    }
+    if(gop.bpp==16){
+        uint16_t *dst=&((uint16_t*)gop.addr)[(uint64_t)y*gop.pitch+x];
+        for(uint32_t i=0;i<count;i++){
+            uint32_t c=pixels[i];
+            uint16_t r=(c>>19)&0x1F, gg=(c>>10)&0x3F, b=(c>>3)&0x1F;
+            dst[i]=(r<<11)|(gg<<5)|b;
+        }
+        return;
+    }
+    memcpy(&gop.addr[(uint64_t)y*gop.pitch+x], pixels, (uint64_t)count*sizeof(uint32_t));
 }
 
 static void gop_scroll(void){
