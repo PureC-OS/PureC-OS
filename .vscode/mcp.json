@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "analog-wakatime": {
+      "url": "https://api.analogwakatime.com/main/api/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${env:ANALOG_WAKATIME_MCP_TOKEN}"
+      }
+    }
+  }
+}
