@@ -59,19 +59,26 @@ static void copy_trunc(char *dst, uint32_t cap, const char *src) {
 
 static void task_name_for_pid(uint32_t pid, char *out, uint32_t cap) {
     #define TASKBAR_LOOKUP_CAP 64
-    struct process_monitor_info list[TASKBAR_LOOKUP_CAP];
-    int32_t n = process_monitor_list(list, TASKBAR_LOOKUP_CAP);
-    if (n > 0) {
-        for (int32_t i = 0; i < n; i++) {
-            if (list[i].pid == pid && list[i].name[0]) {
-                const char *name = list[i].name;
-                const char *slash = name;
-                for (const char *p = name; *p; p++)
-                    if (*p == '/') slash = p + 1;
-                copy_trunc(out, cap, slash[0] ? slash : name);
+    #define TASKBAR_LOOKUP_CHUNK 8
+    struct process_monitor_info list[TASKBAR_LOOKUP_CHUNK];
+    uint32_t offset=0;
+    for(;;){
+        int32_t total=process_monitor_list_page(list,TASKBAR_LOOKUP_CHUNK,offset);
+        if(total<=0) break;
+        int32_t got=(total>(int32_t)(offset+TASKBAR_LOOKUP_CHUNK)) ? TASKBAR_LOOKUP_CHUNK : total-(int32_t)offset;
+        if(got<=0) break;
+        for(int32_t i=0;i<got;i++){
+            if(list[i].pid==pid && list[i].name[0]){
+                const char *name=list[i].name;
+                const char *slash=name;
+                for(const char *p=name;*p;p++)
+                    if(*p=='/') slash=p+1;
+                copy_trunc(out,cap,slash[0] ? slash : name);
                 return;
             }
         }
+        offset+=(uint32_t)got;
+        if(offset>=TASKBAR_LOOKUP_CAP || offset>=(uint32_t)total) break;
     }
     char tmp[16];
     uint32_t len = 0;

@@ -46,6 +46,7 @@ struct process {
     struct process_environment_entry environment[PROCESS_ENVIRONMENT_COUNT];
     char name[32];
     struct process *next;
+    struct process *hnext;
     uint64_t node_phys;
 };
 

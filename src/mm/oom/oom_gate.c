@@ -3,13 +3,21 @@
 #include "oom_account.h"
 #include "oom_victim.h"
 #include "oom_pressure.h"
+#include "oom_reclaim.h"
 #include "oom_slab.h"
+static bool oom_gate_slab_shrinker(uint64_t want_pages, void *ctx)
+{
+    (void)want_pages;
+    (void)ctx;
+    return oom_slab_reclaim_empty() > 0;
+}
 void oom_gate_init(void)
 {
     oom_init();
     oom_account_init();
     oom_victim_init();
     oom_slab_init();
+    oom_reclaim_register(oom_gate_slab_shrinker, NULL);
 }
 bool oom_gate_try_charge_user(uint32_t pid, uint64_t pages)
 {

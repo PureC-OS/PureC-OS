@@ -130,12 +130,34 @@ static void draw_process(struct pg_window *window, uint32_t row,
     pg_window_text(window,18,base_y+row*22,line,color);
 }
 
+#define MONITOR_FETCH_CHUNK 32
 static void redraw(struct pg_window *window){
     struct cpu_monitor_info cpu={0};
     struct memory_monitor_info memory={0};
     struct cpu_core_info cores={0};
-    struct process_monitor_info processes[MONITOR_MAX_PROCESSES];
-    int32_t count=pc_process_list(processes,MONITOR_PROCESS_QUERY);
+    static struct process_monitor_info *heap_procs=0;
+    static uint32_t heap_cap=0;
+    if(!heap_procs){
+        heap_procs=(struct process_monitor_info*)pc_heap_grow((uint64_t)MONITOR_MAX_PROCESSES*sizeof(*heap_procs));
+        if(heap_procs) heap_cap=MONITOR_MAX_PROCESSES;
+    }
+    int32_t count=-1;
+    if(heap_procs && heap_cap){
+        uint32_t off=0;
+        int32_t total=pc_process_list_page(0,0,0);
+        if(total>=0){
+            if(total>MONITOR_MAX_PROCESSES) total=MONITOR_MAX_PROCESSES;
+            count=total;
+            while(off<(uint32_t)count){
+                uint32_t want=(uint32_t)count-off;
+                if(want>MONITOR_FETCH_CHUNK) want=MONITOR_FETCH_CHUNK;
+                int32_t got=pc_process_list_page(heap_procs+off,want,off);
+                if(got<0){ count=-1; break; }
+                if(got<count) count=got;
+                off+=want;
+            }
+        }
+    }
     bool available=pc_cpu_info(&cpu) && pc_memory_info(&memory) && count>=0;
     bool cores_ok=pc_cpu_core_info(&cores)>=0;
     pg_window_begin(window);
@@ -152,7 +174,7 @@ static void redraw(struct pg_window *window){
             max_rows=(window->client.height-list_y-10)/22;
         if(visible>max_rows) visible=max_rows;
         for(uint32_t index=0;index<visible;index++)
-            draw_process(window,index,list_y,&processes[index]);
+            draw_process(window,index,list_y,&heap_procs[index]);
         if(cores_ok){
             prev_cores=cores;
             prev_cores_valid=true;

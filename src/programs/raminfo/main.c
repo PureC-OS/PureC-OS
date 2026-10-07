@@ -3,7 +3,9 @@
 
 #define RAMVIEW_WIDTH 860
 #define RAMVIEW_HEIGHT 600
-#define RAMVIEW_MAX_PROCS 64
+#define RAMVIEW_MAX_PROCS 256
+#define RAMVIEW_FETCH_CHUNK 64
+#define RAMVIEW_FETCH_MAX 1024
 #define PAGE_SIZE 4096ULL
 #define MIB (1024ULL*1024ULL)
 #define KIB 1024ULL
@@ -44,15 +46,47 @@ static void sort_by_ram(struct process_monitor_info *p, int32_t n){
 
 static bool refresh(struct ram_state *st){
     struct memory_monitor_info mem={0};
-    struct process_monitor_info procs[RAMVIEW_MAX_PROCS];
-    int32_t n=pc_process_list(procs,RAMVIEW_MAX_PROCS);
+    static struct process_monitor_info *heap_buf=0;
+    static uint32_t heap_cap=0;
+    int32_t total=pc_process_list_page(0,0,0);
+    if(total<0) total=0;
+    if(total>RAMVIEW_FETCH_MAX) total=RAMVIEW_FETCH_MAX;
+    if(total>0 && (uint32_t)total>heap_cap){
+        uint64_t grow_bytes=((uint64_t)(uint32_t)total-heap_cap)*sizeof(*heap_buf);
+        void *grown;
+        if(!heap_buf){
+            heap_buf=(struct process_monitor_info*)pc_heap_grow(grow_bytes);
+            grown=heap_buf;
+        } else {
+            grown=pc_heap_grow(grow_bytes);
+        }
+        if(!grown){
+            total=(int32_t)heap_cap;
+        } else {
+            heap_cap=(uint32_t)total;
+        }
+    }
+    int32_t n=0;
+    if(total>0 && heap_buf && heap_cap){
+        uint32_t off=0;
+        n=total;
+        if(n>(int32_t)heap_cap) n=(int32_t)heap_cap;
+        while(off<(uint32_t)n){
+            uint32_t want=(uint32_t)n-off;
+            if(want>RAMVIEW_FETCH_CHUNK) want=RAMVIEW_FETCH_CHUNK;
+            int32_t got_total=pc_process_list_page(heap_buf+off,want,off);
+            if(got_total<0){ n=0; break; }
+            if(got_total<n) n=got_total;
+            off+=want;
+        }
+    }
     if(!pc_memory_info(&mem) || n<0){
         st->has_data=false;
         return false;
     }
     st->mem=mem;
     st->count=n>RAMVIEW_MAX_PROCS ? RAMVIEW_MAX_PROCS : n;
-    for(int32_t i=0;i<st->count;i++) st->procs[i]=procs[i];
+    for(int32_t i=0;i<st->count;i++) st->procs[i]=heap_buf[i];
     sort_by_ram(st->procs,st->count);
     if(st->scroll<0) st->scroll=0;
     st->has_data=true;

@@ -2,13 +2,14 @@
 #include "../pmm.h"
 #include "../../kernel/sync/spinlock.h"
 #define OOM_SLAB_PAGE 4096ULL
-#define OOM_SLAB_CLASSES 7
-static const uint64_t oom_slab_sizes[OOM_SLAB_CLASSES] = {32, 64, 128, 256, 512, 1024, 2048};
+#define OOM_SLAB_CLASSES 8
+static const uint64_t oom_slab_sizes[OOM_SLAB_CLASSES] = {32, 64, 128, 256, 512, 1024, 2048, 4096};
 struct oom_slab_link {
     struct oom_slab_link *next;
 };
 struct oom_slab_page {
     struct oom_slab_page *next;
+    uint64_t phys;
     uint64_t free_count;
     uint64_t total_count;
 };
@@ -59,6 +60,7 @@ static bool oom_slab_grow_locked(int cls)
         return false;
     }
     pg->next = oom_page_heads[cls];
+    pg->phys = phys;
     pg->free_count = n;
     pg->total_count = n;
     oom_page_heads[cls] = pg;
@@ -133,5 +135,40 @@ uint64_t oom_slab_pages_used(void)
 }
 uint64_t oom_slab_reclaim_empty(void)
 {
-    return 0;
+    uint64_t flags = spin_lock_irqsave(&oom_slab_lock);
+    uint64_t freed = 0;
+    for (int cls = 0; cls < OOM_SLAB_CLASSES; cls++) {
+        struct oom_slab_page *kept_empty = NULL;
+        struct oom_slab_page **link = &oom_page_heads[cls];
+        while (*link) {
+            struct oom_slab_page *pg = *link;
+            if (pg->free_count != pg->total_count) {
+                link = &pg->next;
+                continue;
+            }
+            if (!kept_empty) {
+                kept_empty = pg;
+                link = &pg->next;
+                continue;
+            }
+            *link = pg->next;
+            uint8_t *pb = (uint8_t *)pg;
+            uint8_t *pe = pb + OOM_SLAB_PAGE;
+            struct oom_slab_link **flink = &oom_free_heads[cls];
+            while (*flink) {
+                uint8_t *p = (uint8_t *)(*flink);
+                if (p >= pb && p < pe) {
+                    *flink = (*flink)->next;
+                } else {
+                    flink = &(*flink)->next;
+                }
+            }
+            uint64_t phys = pg->phys;
+            oom_slab_page_count--;
+            freed++;
+            pmm_free_page(phys);
+        }
+    }
+    spin_unlock_irqrestore(&oom_slab_lock, flags);
+    return freed;
 }
