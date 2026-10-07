@@ -14,6 +14,7 @@
 #include "../process/process.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
+#include "../../mm/oom/oom_gate.h"
 #include "../../net/core/net_service.h"
 #include "../../fs/vfs.h"
 #include "../devices/device_manager.h"
@@ -47,6 +48,7 @@ void kernel_main(struct limine_framebuffer *fb) {
     boot_diag_checkpoint(BOOT_STAGE_SYSTEM_INFO,"initializing physical memory");
     pmm_init(memmap_response_ptr,hhdm_offset_global);
     if(!pmm_is_ready()) kernel_panic("physical memory manager initialization failed");
+    oom_gate_init();
     vmm_init();
     if (!vfs_mount_initramfs()) kernel_panic("cannot mount /boot/initramfs.cpio");
     fpu_init();

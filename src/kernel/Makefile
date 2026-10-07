@@ -50,6 +50,14 @@ C_SOURCES := \
 	kernel/process/elf.c \
 	mm/pmm.c \
 	mm/vmm.c \
+	mm/oom/oom.c \
+	mm/oom/oom_account.c \
+	mm/oom/oom_victim.c \
+	mm/oom/oom_pressure.c \
+	mm/oom/oom_reclaim.c \
+	mm/oom/oom_slab.c \
+	mm/oom/oom_gate.c \
+	mm/oom/oom_info.c \
 	arch/x86_64/gdt/c/gdt.c \
 	arch/x86_64/idt/c/idt.c \
 	arch/x86_64/fpu/fpu.c \

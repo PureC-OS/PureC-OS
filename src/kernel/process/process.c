@@ -12,6 +12,8 @@ static mutex_t process_mutex;
 #include "../../fs/initramfs.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
+#include "../../mm/oom/oom_gate.h"
+#include "../../mm/oom/oom_account.h"
 #include "../../lib/string.h"
 #include "../../userspace/window_manager.h"
 
@@ -44,6 +46,7 @@ static struct process *process_node_alloc(void){
 
 static void process_node_free(struct process *process){
     if(!process) return;
+    oom_gate_remove_process(process->pid);
     uint64_t phys=process->node_phys;
     struct process **link=&process_list;
     while(*link && *link!=process) link=&(*link)->next;
@@ -152,6 +155,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line){
     MUTEX_SCOPE(&process_mutex);
     struct process *parent=process_current();
+    if(!oom_gate_can_spawn()){ last_spawn_error="out of memory"; return -1; }
     struct process *process=allocate_process();
     if(!process){ last_spawn_error="cannot allocate process descriptor"; return -1; }
     process->address_space=vmm_create_address_space();
@@ -383,13 +387,19 @@ uint64_t process_heap_grow(uint64_t size){
     uint64_t requested_break=previous_break+size;
     uint64_t requested_mapping=(requested_break+PMM_PAGE_SIZE-1)
         &~(PMM_PAGE_SIZE-1);
+    uint64_t need_pages=(requested_mapping>process->heap_mapped_end)
+        ? (requested_mapping-process->heap_mapped_end+PMM_PAGE_SIZE-1)/PMM_PAGE_SIZE : 0;
+    if(need_pages && !oom_gate_try_charge_user(process->pid,need_pages)) return 0;
+    uint64_t mapped_pages=0;
     while(process->heap_mapped_end<requested_mapping){
         if(!vmm_map_new_pages(process->address_space,
                               process->heap_mapped_end,1,
                               VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
+            if(mapped_pages<need_pages) oom_gate_release_user(process->pid,need_pages-mapped_pages);
             return 0;
         }
         process->heap_mapped_end+=PMM_PAGE_SIZE;
+        mapped_pages++;
     }
     process->heap_break=requested_break;
     return previous_break;
