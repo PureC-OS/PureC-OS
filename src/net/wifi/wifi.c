@@ -328,7 +328,8 @@ void wifi_poll(uint64_t now_ms){
         }
     } else {
         if(!mgr.connecting && (now_ms - mgr.last_scan_ms >= WIFI_SCAN_INTERVAL_MS)){
-            (void)wifi_trigger_scan();
+            if(!mgr.active) mgr.last_scan_ms = now_ms;
+            else (void)wifi_trigger_scan();
         }
     }
 
