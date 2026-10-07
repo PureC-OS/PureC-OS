@@ -201,7 +201,11 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line){
     MUTEX_SCOPE(&process_mutex);
     struct process *parent=process_current();
-    if(!oom_gate_can_spawn()){ last_spawn_error="out of memory"; return -1; }
+    if(!oom_gate_can_spawn()){
+        last_spawn_error="out of memory";
+        klog(KLOG_WARN,"oom: spawn denied, kernel reserve kept");
+        return -1;
+    }
     struct process *process=allocate_process();
     if(!process){ last_spawn_error="cannot allocate process descriptor"; return -1; }
     process->address_space=vmm_create_address_space();
@@ -249,6 +253,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
         uint64_t initial_user_pages=vmm_user_page_count(process->address_space);
         if(!oom_gate_try_charge_user(process->pid,initial_user_pages)){
             last_spawn_error="out of memory";
+            klogf(KLOG_WARN,"oom: spawn pid charge denied pages=%llu",
+                (unsigned long long)initial_user_pages);
             vmm_destroy_address_space(process->address_space);
             process->address_space=0;
             process_node_free(process);
@@ -443,13 +449,18 @@ uint64_t process_heap_grow(uint64_t size){
         &~(PMM_PAGE_SIZE-1);
     uint64_t need_pages=(requested_mapping>process->heap_mapped_end)
         ? (requested_mapping-process->heap_mapped_end+PMM_PAGE_SIZE-1)/PMM_PAGE_SIZE : 0;
-    if(need_pages && !oom_gate_try_charge_user(process->pid,need_pages)) return 0;
+    if(need_pages && !oom_gate_try_charge_user(process->pid,need_pages)){
+        klogf(KLOG_WARN,"oom: heap grow denied pid=%u pages=%llu",
+            process->pid,(unsigned long long)need_pages);
+        return 0;
+    }
     uint64_t mapped_pages=0;
     while(process->heap_mapped_end<requested_mapping){
         if(!vmm_map_new_pages(process->address_space,
                               process->heap_mapped_end,1,
                               VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
             if(mapped_pages<need_pages) oom_gate_release_user(process->pid,need_pages-mapped_pages);
+            klogf(KLOG_WARN,"oom: heap map denied pid=%u",process->pid);
             return 0;
         }
         process->heap_mapped_end+=PMM_PAGE_SIZE;
