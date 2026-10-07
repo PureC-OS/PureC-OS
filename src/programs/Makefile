@@ -65,6 +65,8 @@ GENERAL_SOURCES := \
 	clear/clear.c \
  	echo/echo.c \
  	battery/battery.c \
+ 	burn/main.c \
+ 	eat/main.c \
  	cpuinfo/main.c \
  	raminfo/main.c \
  	hddcheck/main.c \
@@ -116,6 +118,8 @@ TARGETS := \
 	$(PROGRAM_DIR)/clear \
  	$(PROGRAM_DIR)/echo \
  	$(PROGRAM_DIR)/battery \
+ 	$(PROGRAM_DIR)/burn \
+ 	$(PROGRAM_DIR)/eat \
  	$(PROGRAM_DIR)/cpuinfo \
  	$(PROGRAM_DIR)/raminfo \
  	$(PROGRAM_DIR)/hddcheck \
@@ -235,6 +239,14 @@ $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/burn: $(OBJ_DIR)/burn/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/eat: $(OBJ_DIR)/eat/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
