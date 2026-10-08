@@ -15,8 +15,8 @@
 #define ELF_RELA_WIDTH 24ULL
 #define ELF_SO_STRIDE 0x10000000ULL
 
-
-struct elf64_header {
+struct elf64_header
+{
   uint8_t identity[16];
   uint16_t type;
   uint16_t machine;
@@ -33,7 +33,8 @@ struct elf64_header {
   uint16_t section_names;
 } __attribute__((packed));
 
-struct elf64_program_header {
+struct elf64_program_header
+{
   uint32_t type;
   uint32_t flags;
   uint64_t offset;
@@ -44,24 +45,47 @@ struct elf64_program_header {
   uint64_t alignment;
 } __attribute__((packed));
 
-struct elf64_dyn {
+struct elf64_dyn
+{
   int64_t tag;
   uint64_t value;
 } __attribute__((packed));
 
-struct elf64_rela {
+struct elf64_rela
+{
   uint64_t offset;
   uint64_t info;
   int64_t addend;
 } __attribute__((packed));
 
-static bool add_overflows(uint64_t left, uint64_t right) {
+struct elf64_sym
+{
+  uint32_t name;
+  uint8_t info;
+  uint8_t other;
+  uint16_t shndx;
+  uint64_t value;
+  uint64_t size;
+} __attribute__((packed));
+
+struct elf_file_dyn
+{
+  uint64_t needed[ELF_MAX_NEEDED];
+  uint64_t needed_count;
+  uint64_t strtab_vaddr;
+  uint64_t strtab_size;
+};
+
+static bool add_overflows(uint64_t left, uint64_t right)
+{
   return left > UINT64_MAX - right;
 }
 
 static bool copy_to_space(uint64_t address_space, uint64_t destination,
-                          const uint8_t *source, uint64_t size) {
-  while (size) {
+                          const uint8_t *source, uint64_t size)
+{
+  while (size)
+  {
     uint64_t physical = vmm_translate(address_space, destination);
     if (!physical)
       return false;
@@ -77,8 +101,10 @@ static bool copy_to_space(uint64_t address_space, uint64_t destination,
 }
 
 static bool copy_from_space(uint64_t address_space, uint64_t source,
-                            uint8_t *destination, uint64_t size) {
-  while (size) {
+                            uint8_t *destination, uint64_t size)
+{
+  while (size)
+  {
     uint64_t physical = vmm_translate(address_space, source);
     if (!physical)
       return false;
@@ -94,13 +120,15 @@ static bool copy_from_space(uint64_t address_space, uint64_t source,
 }
 
 static bool write_u64_to_space(uint64_t address_space, uint64_t destination,
-                               uint64_t value) {
+                               uint64_t value)
+{
   uint8_t bytes[8];
   memcpy(bytes, &value, 8);
   return copy_to_space(address_space, destination, bytes, 8);
 }
 
-static uint16_t peek_type(const void *image, uint64_t image_size) {
+static uint16_t peek_type(const void *image, uint64_t image_size)
+{
   if (!image || image_size < sizeof(struct elf64_header))
     return 0;
   const struct elf64_header *header = (const struct elf64_header *)image;
@@ -116,7 +144,8 @@ static uint16_t peek_type(const void *image, uint64_t image_size) {
 
 static bool parse_dynamic(const uint8_t *bytes, uint64_t image_size,
                           uint64_t dyn_offset, uint64_t dyn_filesz,
-                          uint64_t bias, struct elf_dynamic_info *dynamic) {
+                          uint64_t bias, struct elf_dynamic_info *dynamic)
+{
   memset(dynamic, 0, sizeof(*dynamic));
   dynamic->bias = bias;
   dynamic->syment_size = 24;
@@ -130,12 +159,14 @@ static bool parse_dynamic(const uint8_t *bytes, uint64_t image_size,
     return false;
   uint64_t count = dyn_filesz / ELF_DYN_TAG_WIDTH;
   bool seen_null = false;
-  for (uint64_t i = 0; i < count; i++) {
+  for (uint64_t i = 0; i < count; i++)
+  {
     struct elf64_dyn entry;
     memcpy(&entry, bytes + dyn_offset + i * ELF_DYN_TAG_WIDTH,
            ELF_DYN_TAG_WIDTH);
     int64_t tag = entry.tag;
-    if (tag == ELF_DT_NULL) {
+    if (tag == ELF_DT_NULL)
+    {
       seen_null = true;
       break;
     }
@@ -159,6 +190,8 @@ static bool parse_dynamic(const uint8_t *bytes, uint64_t image_size,
       dynamic->syment_size = entry.value;
     else if (tag == ELF_DT_RELACOUNT)
       dynamic->relacount = entry.value;
+    else if (tag == ELF_DT_HASH)
+      dynamic->hash_address = entry.value + bias;
   }
   if (!seen_null)
     return false;
@@ -167,7 +200,8 @@ static bool parse_dynamic(const uint8_t *bytes, uint64_t image_size,
 }
 
 static bool apply_rela_table(uint64_t address_space, uint64_t bias,
-                             uint64_t table, uint64_t size, uint64_t entsize) {
+                             uint64_t table, uint64_t size, uint64_t entsize)
+{
   if (size == 0)
     return true;
   if (entsize != ELF_RELA_WIDTH)
@@ -175,7 +209,8 @@ static bool apply_rela_table(uint64_t address_space, uint64_t bias,
   if (size % ELF_RELA_WIDTH != 0)
     return false;
   uint64_t count = size / ELF_RELA_WIDTH;
-  for (uint64_t i = 0; i < count; i++) {
+  for (uint64_t i = 0; i < count; i++)
+  {
     struct elf64_rela rela;
     if (!copy_from_space(address_space, table + i * ELF_RELA_WIDTH,
                          (uint8_t *)&rela, ELF_RELA_WIDTH))
@@ -184,7 +219,8 @@ static bool apply_rela_table(uint64_t address_space, uint64_t bias,
     uint32_t sym = (uint32_t)(rela.info >> 32);
     if (type == ELF_R_X86_64_NONE)
       continue;
-    if (type == ELF_R_X86_64_RELATIVE) {
+    if (type == ELF_R_X86_64_RELATIVE)
+    {
       if (sym != 0)
         return false;
       uint64_t value;
@@ -203,7 +239,8 @@ static bool apply_rela_table(uint64_t address_space, uint64_t bias,
 bool elf_load_user_image_biased(const void *image, uint64_t image_size,
                                 uint64_t address_space, uint64_t bias,
                                 struct elf_load_result *result,
-                                struct elf_dynamic_info *dynamic) {
+                                struct elf_dynamic_info *dynamic)
+{
   if (!image || !result || image_size < sizeof(struct elf64_header))
     return false;
   const struct elf64_header *header = (const struct elf64_header *)image;
@@ -214,12 +251,14 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
       (header->type != ELF_TYPE_EXECUTABLE &&
        header->type != ELF_TYPE_SHARED) ||
       header->machine != ELF_MACHINE_X86_64 ||
-      header->program_entry_size != sizeof(struct elf64_program_header)) {
+      header->program_entry_size != sizeof(struct elf64_program_header))
+  {
     return false;
   }
   if (header->type == ELF_TYPE_EXECUTABLE && bias != 0)
     return false;
-  if (header->type == ELF_TYPE_SHARED) {
+  if (header->type == ELF_TYPE_SHARED)
+  {
     if ((bias & (PMM_PAGE_SIZE - 1)) != 0)
       return false;
     if (bias < ELF_USER_MIN || bias > ELF_SO_END)
@@ -237,12 +276,14 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
   uint64_t dyn_offset = 0;
   uint64_t dyn_filesz = 0;
   bool have_dyn = false;
-  for (uint16_t index = 0; index < header->program_count; index++) {
+  for (uint16_t index = 0; index < header->program_count; index++)
+  {
     const struct elf64_program_header *program =
         (const struct elf64_program_header *)(bytes + header->program_offset +
                                               (uint64_t)index *
                                                   header->program_entry_size);
-    if (program->type == ELF_PROGRAM_DYNAMIC) {
+    if (program->type == ELF_PROGRAM_DYNAMIC)
+    {
       if (have_dyn)
         return false;
       have_dyn = true;
@@ -256,12 +297,14 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
         add_overflows(program->offset, program->file_size) ||
         program->offset + program->file_size > image_size ||
         add_overflows(program->virtual_address, bias) ||
-        add_overflows(program->virtual_address + bias, program->memory_size)) {
+        add_overflows(program->virtual_address + bias, program->memory_size))
+    {
       return false;
     }
     uint64_t vaddr = program->virtual_address + bias;
     if (vaddr < ELF_USER_MIN || vaddr + program->memory_size > ELF_USER_MAX ||
-        vaddr + program->memory_size < vaddr) {
+        vaddr + program->memory_size < vaddr)
+    {
       return false;
     }
     uint64_t first = vaddr & ~(PMM_PAGE_SIZE - 1);
@@ -274,11 +317,13 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
       flags |= VMM_PAGE_WRITABLE;
     if (!(program->flags & ELF_FLAG_EXECUTABLE))
       flags |= VMM_PAGE_NX;
-    for (uint64_t address = first; address < end; address += PMM_PAGE_SIZE) {
+    for (uint64_t address = first; address < end; address += PMM_PAGE_SIZE)
+    {
       if (vmm_translate(address_space, address))
         continue;
       uint64_t physical = oom_alloc_user_page();
-      if (!physical || !vmm_map_page(address_space, address, physical, flags)) {
+      if (!physical || !vmm_map_page(address_space, address, physical, flags))
+      {
         if (physical)
           pmm_free_page(physical);
         return false;
@@ -320,7 +365,8 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
 
 bool elf_load_user_image(const void *image, uint64_t image_size,
                          uint64_t address_space,
-                         struct elf_load_result *result) {
+                         struct elf_load_result *result)
+{
   uint16_t type = peek_type(image, image_size);
   if (type != ELF_TYPE_EXECUTABLE)
     return false;
@@ -330,7 +376,8 @@ bool elf_load_user_image(const void *image, uint64_t image_size,
 }
 
 bool elf_apply_relative_relocs(uint64_t address_space,
-                               const struct elf_dynamic_info *dynamic) {
+                               const struct elf_dynamic_info *dynamic)
+{
   if (!dynamic || !dynamic->has_dynamic)
     return true;
   if (!apply_rela_table(address_space, dynamic->bias, dynamic->rela_address,
@@ -342,7 +389,8 @@ bool elf_apply_relative_relocs(uint64_t address_space,
   return true;
 }
 
-uint64_t elf_dyn_base_for_index(uint64_t index) {
+uint64_t elf_dyn_base_for_index(uint64_t index)
+{
   if (add_overflows(ELF_SO_BASE, index * ELF_SO_STRIDE))
     return 0;
   uint64_t base = ELF_SO_BASE + index * ELF_SO_STRIDE;
