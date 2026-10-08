@@ -9,15 +9,34 @@ CAP = 1536
 AREA_SIZE = 98304
 
 
-def ksyms_offset(kernel):
+def section_info(kernel):
     out = subprocess.run(
         ["x86_64-elf-readelf", "-S", "-W", kernel],
         capture_output=True, text=True, check=True).stdout
     for line in out.splitlines():
         cols = line.split()
-        if len(cols) >= 6 and cols[1] == ".ksyms":
-            return int(cols[4], 16)
+        if len(cols) >= 7 and cols[2] == ".ksyms":
+            return int(cols[4], 16), int(cols[5], 16)
     raise SystemExit("ksyms.py: no .ksyms section in %s" % kernel)
+
+
+def symbol_value(kernel, name):
+    out = subprocess.run(
+        ["x86_64-elf-nm", kernel],
+        capture_output=True, text=True, check=True).stdout
+    for line in out.splitlines():
+        cols = line.split()
+        if len(cols) == 3 and cols[2] == name:
+            return int(cols[0], 16)
+    raise SystemExit("ksyms.py: no symbol %s in %s" % (name, kernel))
+
+
+def ksyms_offset(kernel):
+    addr, off = section_info(kernel)
+    area = symbol_value(kernel, "__ksyms_area")
+    if area < addr:
+        raise SystemExit("ksyms.py: __ksyms_area outside .ksyms")
+    return off + (area - addr)
 
 
 def main():

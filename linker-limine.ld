@@ -23,6 +23,7 @@ SECTIONS
     .ksyms : AT(ADDR(.ksyms) - 0xffffffff80000000 + 0x100000) {
         __ksyms_start = .;
         KEEP(*(.ksyms .ksyms.*))
+        BYTE(0)
         . = ALIGN(8);
         __ksyms_area = .;
         . = . + 98304;
