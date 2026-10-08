@@ -1,6 +1,7 @@
 #include "elf.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
+#include "../../mm/oom/oom.h"
 #include "../../lib/string.h"
 
 #define ELF_CLASS_64 2
@@ -103,7 +104,7 @@ bool elf_load_user_image(const void *image, uint64_t image_size,
         if(!(program->flags&ELF_FLAG_EXECUTABLE)) flags|=VMM_PAGE_NX;
         for(uint64_t address=first;address<end;address+=PMM_PAGE_SIZE){
             if(vmm_translate(address_space,address)) continue;
-            uint64_t physical=pmm_allocate_page();
+            uint64_t physical=oom_alloc_user_page();
             if(!physical || !vmm_map_page(address_space,address,physical,flags)){
                 if(physical) pmm_free_page(physical);
                 return false;

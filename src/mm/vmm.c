@@ -13,6 +13,7 @@ static bool vmm_user_range_accessible_locked(uint64_t address_space, uint64_t ad
                                uint64_t size, bool writable);
 static uint64_t vmm_user_page_count_locked(uint64_t address_space);
 #include "pmm.h"
+#include "oom/oom_pressure.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"
 
@@ -136,6 +137,8 @@ static bool vmm_map_page_locked(uint64_t address_space, uint64_t virtual_address
 
 static bool vmm_map_new_pages_locked(uint64_t address_space, uint64_t virtual_address,
                        uint64_t page_count, uint64_t flags){
+    if(!page_count) return false;
+    if((flags&VMM_PAGE_USER) && !oom_pressure_user_can_alloc(page_count)) return false;
     for(uint64_t page=0;page<page_count;page++){
         uint64_t physical=pmm_allocate_page();
         if(!physical) return false;

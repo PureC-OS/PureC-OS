@@ -6,3 +6,4 @@
 void calculator_app_open(void);
 void calculator_app_draw(uint32_t window_x, uint32_t window_y);
 bool calculator_app_handle_key(char key);
+bool calculator_app_handle_click(uint32_t window_x, uint32_t window_y, int32_t point_x, int32_t point_y);

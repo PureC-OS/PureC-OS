@@ -9,6 +9,7 @@
 #include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../mm/vmm.h"
 #include "../../mm/pmm.h"
+#include "../../mm/oom/oom_slab.h"
 #include "../../lib/string.h"
 
 _Static_assert(sizeof(struct thread)<=4096,
@@ -34,6 +35,32 @@ static struct scheduler_cpu cpu_schedulers[CPU_MAX_COUNT];
 static spinlock_t runqueue_lock = SPINLOCK_INIT;
 static uint32_t next_id = 1;
 static uint32_t active_mask;
+#define THASH_BITS 8
+#define THASH_SIZE (1u<<THASH_BITS)
+static struct thread *thash_buckets[THASH_SIZE];
+static uint32_t thash_idx(uint32_t tid){
+    tid^=tid>>THASH_BITS;
+    return tid&(THASH_SIZE-1);
+}
+static void thash_insert(struct thread *t){
+    uint32_t i=thash_idx(t->id);
+    t->hnext=thash_buckets[i];
+    thash_buckets[i]=t;
+}
+static void thash_remove(struct thread *t){
+    uint32_t i=thash_idx(t->id);
+    struct thread **link=&thash_buckets[i];
+    while(*link && *link!=t) link=&(*link)->hnext;
+    if(*link) *link=t->hnext;
+    t->hnext=NULL;
+}
+static struct thread *thash_find(uint32_t tid){
+    if(!tid) return NULL;
+    uint32_t i=thash_idx(tid);
+    for(struct thread *t=thash_buckets[i];t;t=t->hnext)
+        if(t->id==tid && t->state!=THREAD_FREE) return t;
+    return NULL;
+}
 
 static struct scheduler_cpu *local_scheduler(void){
     uint32_t id = gdt_current_cpu_id();
@@ -111,12 +138,29 @@ static void validate_switch_target(const struct thread *prev,
 }
 
 
+static void thread_node_free(struct thread *t);
 static void finish_switch(void){
     struct scheduler_cpu *cpu = local_scheduler();
     struct thread *previous = cpu->previous;
-    if(previous) previous->running_cpu = -1;
+    struct thread *victim = NULL;
+    if(previous){
+        previous->running_cpu = -1;
+        if(previous->state==THREAD_TERMINATED && !previous->idle){
+            struct thread **link=&thread_list;
+            while(*link && *link!=previous) link=&(*link)->next;
+            if(*link){
+                *link=previous->next;
+                thread_live_count--;
+                for(unsigned i=0;i<CPU_MAX_COUNT;i++)
+                    if(cpu_schedulers[i].cursor==previous) cpu_schedulers[i].cursor=NULL;
+                thash_remove(previous);
+                victim=previous;
+            }
+        }
+    }
     cpu->previous = NULL;
     spin_unlock(&runqueue_lock);
+    if(victim) thread_node_free(victim);
 }
 
 static void thread_trampoline(void){
@@ -161,16 +205,25 @@ void scheduler_init(void){
     if(gdt_current_cpu_id() != 0 || local_scheduler()->initialized) return;
     thread_list = NULL;
     thread_live_count = 0;
+    for(unsigned i=0;i<THASH_SIZE;i++) thash_buckets[i]=NULL;
     scheduler_init_cpu();
     klogf(KLOG_OK, "sched: dynamic runqueue, limit=RAM");
 }
 
 static struct thread *thread_node_alloc(void){
-    uint64_t node_phys=pmm_allocate_page();
-    if(!node_phys) return NULL;
+    struct thread *t=(struct thread*)oom_slab_alloc(sizeof(struct thread));
+    uint64_t node_phys=0;
+    if(!t){
+        node_phys=pmm_allocate_page();
+        if(!node_phys) return NULL;
+        t=(struct thread*)pmm_physical_to_virtual(node_phys);
+    }
     uint64_t stack_phys=pmm_allocate_contiguous(SCHEDULER_STACK_PAGES);
-    if(!stack_phys){ pmm_free_page(node_phys); return NULL; }
-    struct thread *t=(struct thread*)pmm_physical_to_virtual(node_phys);
+    if(!stack_phys){
+        if(node_phys) pmm_free_page(node_phys);
+        else oom_slab_free(t,sizeof(struct thread));
+        return NULL;
+    }
     memset(t,0,sizeof(*t));
     t->node_phys=node_phys;
     t->kstack_phys=stack_phys;
@@ -180,9 +233,12 @@ static struct thread *thread_node_alloc(void){
 }
 
 static void thread_node_free(struct thread *t){
-    if(!t) return;
-    if(t->kstack_phys) pmm_free_contiguous(t->kstack_phys,SCHEDULER_STACK_PAGES);
-    if(t->node_phys) pmm_free_page(t->node_phys);
+    if(!t || t->idle) return;
+    uint64_t kstack_phys=t->kstack_phys;
+    uint64_t node_phys=t->node_phys;
+    if(kstack_phys) pmm_free_contiguous(kstack_phys,SCHEDULER_STACK_PAGES);
+    if(node_phys) pmm_free_page(node_phys);
+    else oom_slab_free(t,sizeof(struct thread));
 }
 
 #ifdef PUREC_HOST_TEST
@@ -192,6 +248,7 @@ void scheduler_host_reset(void){
     thread_list=NULL;
     thread_live_count=0;
     next_id=1;
+    for(unsigned i=0;i<THASH_SIZE;i++) thash_buckets[i]=NULL;
     memset(cpu_schedulers,0,sizeof(cpu_schedulers));
     memset(idle_threads,0,sizeof(idle_threads));
     spin_unlock_irqrestore(&runqueue_lock,flags);
@@ -205,10 +262,7 @@ void scheduler_host_reset(void){
 struct thread *scheduler_host_lookup(int tid){
     if(tid<0) return NULL;
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
-    struct thread *found=NULL;
-    for(struct thread *t=thread_list;t;t=t->next){
-        if(t->id==(uint32_t)tid){ found=t; break; }
-    }
+    struct thread *found=thash_find((uint32_t)tid);
     spin_unlock_irqrestore(&runqueue_lock,flags);
     return found;
 }
@@ -241,17 +295,21 @@ static struct thread *alloc_thread(void){
 void scheduler_free_thread_by_id(int tid){
     if(tid<0) return;
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
-    struct thread **link=&thread_list;
-    while(*link && ((*link)->id!=(uint32_t)tid
-           || (*link)->state!=THREAD_TERMINATED
-           || (*link)->running_cpu!=-1 || (*link)->idle))
-        link=&(*link)->next;
-    struct thread *victim=*link;
+    struct thread *victim=thash_find((uint32_t)tid);
+    if(victim && (victim->state!=THREAD_TERMINATED
+           || victim->running_cpu!=-1 || victim->idle)) victim=NULL;
     if(victim){
-        *link=victim->next;
-        thread_live_count--;
-        for(unsigned i=0;i<CPU_MAX_COUNT;i++)
-            if(cpu_schedulers[i].cursor==victim) cpu_schedulers[i].cursor=NULL;
+        struct thread **link=&thread_list;
+        while(*link && *link!=victim) link=&(*link)->next;
+        if(*link){
+            *link=victim->next;
+            thread_live_count--;
+            for(unsigned i=0;i<CPU_MAX_COUNT;i++)
+                if(cpu_schedulers[i].cursor==victim) cpu_schedulers[i].cursor=NULL;
+            thash_remove(victim);
+        } else {
+            victim=NULL;
+        }
     }
     spin_unlock_irqrestore(&runqueue_lock,flags);
     if(victim) thread_node_free(victim);
@@ -266,6 +324,7 @@ static int create_thread(void (*entry)(void*), void *arg, const char *name,
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     struct thread *t = alloc_thread();
     if(!t){ spin_unlock_irqrestore(&runqueue_lock, flags); return -1; }
+    thash_remove(t);
     uint8_t *kstack=t->kstack;
     uint64_t kstack_phys=t->kstack_phys;
     uint64_t node_phys=t->node_phys;
@@ -278,14 +337,11 @@ static int create_thread(void (*entry)(void*), void *arg, const char *name,
     t->id = next_id++;
     if(t->id==0) t->id=next_id++;
     for(;;){
-        bool clash=false;
-        for(struct thread *o=thread_list;o;o=o->next){
-            if(o!=t && o->id==t->id){ clash=true; break; }
-        }
-        if(!clash) break;
+        if(!thash_find(t->id)) break;
         if(++next_id==0) next_id=1;
         t->id=next_id++;
     }
+    thash_insert(t);
     t->entry = entry;
     t->arg = arg;
     t->priority = priority > 7 ? 7 : priority;
@@ -348,19 +404,16 @@ uint32_t scheduler_thread_count(void){
 uint64_t scheduler_thread_runtime_ticks(int tid){
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     uint64_t result = 0;
-    for(struct thread *t=thread_list;t;t=t->next)
-        if(t->id==(uint32_t)tid && t->state!=THREAD_FREE){ result=t->runtime_ticks; break; }
+    struct thread *found=(tid>0) ? thash_find((uint32_t)tid) : NULL;
+    if(found) result=found->runtime_ticks;
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return result;
 }
 bool scheduler_thread_stopped(int tid){
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
     bool stopped = true;
-    for(struct thread *t=thread_list;t;t=t->next)
-        if(t->id==(uint32_t)tid){
-            stopped = t->state==THREAD_TERMINATED && t->running_cpu==-1;
-            break;
-        }
+    struct thread *found=(tid>=0) ? thash_find((uint32_t)tid) : NULL;
+    if(found) stopped = found->state==THREAD_TERMINATED && found->running_cpu==-1;
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return stopped;
 }
@@ -386,8 +439,8 @@ void scheduler_set_affinity(int tid, int16_t core){
     if(core < -1 || core >= (int16_t)cpu_registered_count()) return;
     if(core >= 0 && !cpu_is_online((uint32_t)core)) return;
     uint64_t flags = spin_lock_irqsave(&runqueue_lock);
-    for(struct thread *t=thread_list;t;t=t->next)
-        if(t->id==(uint32_t)tid && t->state!=THREAD_FREE){ t->affinity=core; break; }
+    struct thread *found=(tid>=0) ? thash_find((uint32_t)tid) : NULL;
+    if(found && found->state!=THREAD_FREE){ found->affinity=core; found->affinity_auto=false; }
     spin_unlock_irqrestore(&runqueue_lock, flags);
     smp_reschedule_all();
 }
@@ -521,11 +574,10 @@ void scheduler_block(void){
 }
 void scheduler_unblock(int tid){
     uint64_t flags=spin_lock_irqsave(&runqueue_lock);
-    for(struct thread *t=thread_list;t;t=t->next){
-        if(t->id!=(uint32_t)tid) continue;
+    struct thread *t=(tid>=0) ? thash_find((uint32_t)tid) : NULL;
+    if(t){
         if(t->state==THREAD_BLOCKED){ t->wake_tick=0; t->state=THREAD_READY; }
         else if(t->state==THREAD_RUNNING || t->state==THREAD_READY) t->wake_pending=true;
-        break;
     }
     spin_unlock_irqrestore(&runqueue_lock,flags);
     smp_reschedule_all();
@@ -606,7 +658,20 @@ void scheduler_leave_kernel(void){
     if(!t || !t->user_mode) return;
     uint64_t flags=spin_lock_irqsave(&runqueue_lock);
     t->kernel_only=false;
-    bool must_move=!eligible(t,gdt_current_cpu_id());
+    uint32_t here=gdt_current_cpu_id();
+    if(t->affinity==-1 || t->affinity_auto){
+        int16_t target=-1;
+        for(uint32_t j=0;j<CPU_MAX_COUNT;j++){
+            if(j==here) continue;
+            if(j>=cpu_registered_count() || !cpu_is_online(j)) continue;
+            struct scheduler_cpu *c=&cpu_schedulers[j];
+            if(!c->initialized || !c->started) continue;
+            if(c->current && c->current->idle){ target=(int16_t)j; break; }
+        }
+        if(target>=0){ t->affinity=target; t->affinity_auto=true; }
+        else { t->affinity=-1; t->affinity_auto=false; }
+    }
+    bool must_move=!eligible(t,here);
     spin_unlock_irqrestore(&runqueue_lock,flags);
     if(must_move){ smp_reschedule_all(); scheduler_yield(); }
 }

@@ -42,6 +42,8 @@ int32_t pc_listenv(struct process_environment_variable *variables,
                    uint32_t capacity);
 int32_t pc_process_list(struct process_monitor_info *processes,
                         uint32_t capacity);
+int32_t pc_process_list_page(struct process_monitor_info *processes,
+                             uint32_t capacity, uint32_t offset);
 bool pc_cpu_info(struct cpu_monitor_info *info);
 bool pc_memory_info(struct memory_monitor_info *info);
 int32_t pc_cpu_core_info(struct cpu_core_info *info);

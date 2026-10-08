@@ -46,6 +46,7 @@ struct process {
     struct process_environment_entry environment[PROCESS_ENVIRONMENT_COUNT];
     char name[32];
     struct process *next;
+    struct process *hnext;
     uint64_t node_phys;
 };
 
@@ -57,6 +58,7 @@ const char *process_last_spawn_error(void);
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
 int32_t process_current_pid(void);
+int32_t process_parent_pid(uint32_t pid);
 bool process_current_is_user(void);
 bool process_has_capability(uint32_t capability);
 uint64_t process_current_address_space(void);
@@ -78,5 +80,7 @@ int32_t process_environment_list(struct process_environment_entry *entries,
 struct process_monitor_info;
 int32_t process_monitor_list(struct process_monitor_info *entries,
                              uint32_t capacity);
+int32_t process_monitor_list_page(struct process_monitor_info *entries,
+                                  uint32_t capacity, uint32_t offset);
 
 bool process_set_affinity(uint32_t pid, int16_t core);

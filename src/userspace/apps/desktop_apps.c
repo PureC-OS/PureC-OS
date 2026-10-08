@@ -358,6 +358,26 @@ bool desktop_apps_handle_mouse(
             drag_offset_x = point_x - (int32_t)window->x;
             drag_offset_y = point_y - (int32_t)window->y;
         }
+
+        if (app == DESKTOP_APP_CALCULATOR && (buttons & 1) != 0) {
+            if (!point_inside(
+                    point_x,
+                    point_y,
+                    window->x,
+                    window->y,
+                    WINDOW_WIDTH,
+                    TITLE_BAR_HEIGHT)
+                && calculator_app_handle_click(
+                    window->x,
+                    window->y,
+                    point_x,
+                    point_y)) {
+                if (redraw_required != 0) {
+                    *redraw_required = true;
+                }
+                return true;
+            }
+        }
     }
 
     if (dragged_app >= 0 && (buttons & 1) != 0) {

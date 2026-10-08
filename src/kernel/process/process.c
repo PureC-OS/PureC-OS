@@ -12,6 +12,11 @@ static mutex_t process_mutex;
 #include "../../fs/initramfs.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
+#include "../../mm/oom/oom_gate.h"
+#include "../../mm/oom/oom_account.h"
+#include "../../mm/oom/oom_victim.h"
+#include "../../mm/oom/oom_slab.h"
+#include "../../drivers/display/gop.h"
 #include "../../lib/string.h"
 #include "../../userspace/window_manager.h"
 
@@ -33,10 +38,33 @@ const char *process_last_spawn_error(void){ return last_spawn_error; }
 _Static_assert(sizeof(struct process)<=4096,
     "process node must fit in a single PMM page");
 
+#define PHASH_BITS 8
+#define PHASH_SIZE (1u<<PHASH_BITS)
+static struct process *phash_buckets[PHASH_SIZE];
+static uint32_t phash_idx(uint32_t pid){
+    pid^=pid>>PHASH_BITS;
+    return pid&(PHASH_SIZE-1);
+}
+static void phash_insert(struct process *p){
+    uint32_t i=phash_idx(p->pid);
+    p->hnext=phash_buckets[i];
+    phash_buckets[i]=p;
+}
+static void phash_remove(struct process *p){
+    uint32_t i=phash_idx(p->pid);
+    struct process **link=&phash_buckets[i];
+    while(*link && *link!=p) link=&(*link)->hnext;
+    if(*link) *link=p->hnext;
+    p->hnext=NULL;
+}
 static struct process *process_node_alloc(void){
-    uint64_t phys=pmm_allocate_page();
-    if(!phys) return NULL;
-    struct process *process=(struct process*)pmm_physical_to_virtual(phys);
+    struct process *process=(struct process*)oom_slab_alloc(sizeof(struct process));
+    uint64_t phys=0;
+    if(!process){
+        phys=pmm_allocate_page();
+        if(!phys) return NULL;
+        process=(struct process*)pmm_physical_to_virtual(phys);
+    }
     memset(process,0,sizeof(*process));
     process->node_phys=phys;
     return process;
@@ -44,15 +72,20 @@ static struct process *process_node_alloc(void){
 
 static void process_node_free(struct process *process){
     if(!process) return;
+    oom_gate_remove_process(process->pid);
     uint64_t phys=process->node_phys;
     struct process **link=&process_list;
     while(*link && *link!=process) link=&(*link)->next;
     if(*link) *link=process->next;
+    phash_remove(process);
     if(phys) pmm_free_page(phys);
+    else oom_slab_free(process,sizeof(struct process));
 }
 
 static struct process *process_find_by_pid(uint32_t pid){
-    for(struct process *p=process_list;p;p=p->next)
+    if(!pid) return NULL;
+    uint32_t i=phash_idx(pid);
+    for(struct process *p=phash_buckets[i];p;p=p->hnext)
         if(p->state!=PROCESS_FREE && p->pid==pid) return p;
     return NULL;
 }
@@ -142,16 +175,38 @@ static void user_process_entry(void *argument){
     arch_enter_user(process->entry,process->user_stack_top);
 }
 
+static uint32_t oom_reap_zombie(uint32_t pid);
 void process_init(void){
     process_list=NULL;
     next_pid=1;
+    for(uint32_t i=0;i<PHASH_SIZE;i++) phash_buckets[i]=NULL;
+    oom_victim_set_killer(oom_reap_zombie);
     klog(KLOG_OK,"process: dynamic table ready (limit=RAM)");
+}
+
+static uint32_t oom_reap_zombie(uint32_t pid){
+    struct process *target=process_find_by_pid(pid);
+    if(!target) return 0;
+    if(target->pid==1) return 0;
+    if(target->state!=PROCESS_EXITED) return 0;
+    if(!scheduler_thread_stopped(target->thread_id)) return 0;
+    int exiting_tid=target->thread_id;
+    vmm_destroy_address_space(target->address_space);
+    target->address_space=0;
+    scheduler_free_thread_by_id(exiting_tid);
+    process_node_free(target);
+    return pid;
 }
 
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line){
     MUTEX_SCOPE(&process_mutex);
     struct process *parent=process_current();
+    if(!oom_gate_can_spawn()){
+        last_spawn_error="out of memory";
+        klog(KLOG_WARN,"oom: spawn denied, kernel reserve kept");
+        return -1;
+    }
     struct process *process=allocate_process();
     if(!process){ last_spawn_error="cannot allocate process descriptor"; return -1; }
     process->address_space=vmm_create_address_space();
@@ -189,13 +244,23 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     process->pid=next_pid++;
     if(process->pid==0) process->pid=next_pid++;
     for(;;){
-        bool clash=false;
-        for(struct process *o=process_list;o;o=o->next){
-            if(o!=process && o->pid==process->pid){ clash=true; break; }
-        }
-        if(!clash) break;
+        struct process *hit=process_find_by_pid(process->pid);
+        if(!hit || hit==process) break;
         process->pid=next_pid++;
         if(process->pid==0) process->pid=next_pid++;
+    }
+    phash_insert(process);
+    {
+        uint64_t initial_user_pages=vmm_user_page_count(process->address_space);
+        if(!oom_gate_try_charge_user(process->pid,initial_user_pages)){
+            last_spawn_error="out of memory";
+            klogf(KLOG_WARN,"oom: spawn pid charge denied pages=%llu",
+                (unsigned long long)initial_user_pages);
+            vmm_destroy_address_space(process->address_space);
+            process->address_space=0;
+            process_node_free(process);
+            return -1;
+        }
     }
     process->parent_pid=(uint32_t)(process_current_pid()>0
         ? process_current_pid() : 0);
@@ -358,6 +423,13 @@ int32_t process_current_pid(void){
     return process ? (int32_t)process->pid : 0;
 }
 
+int32_t process_parent_pid(uint32_t pid){
+    MUTEX_SCOPE(&process_mutex);
+    struct process *process=process_find_by_pid(pid);
+    if(!process) return -1;
+    return (int32_t)process->parent_pid;
+}
+
 bool process_current_is_user(void){
     struct thread *thread=scheduler_current_thread();
     return thread && thread->user_mode;
@@ -383,13 +455,24 @@ uint64_t process_heap_grow(uint64_t size){
     uint64_t requested_break=previous_break+size;
     uint64_t requested_mapping=(requested_break+PMM_PAGE_SIZE-1)
         &~(PMM_PAGE_SIZE-1);
+    uint64_t need_pages=(requested_mapping>process->heap_mapped_end)
+        ? (requested_mapping-process->heap_mapped_end+PMM_PAGE_SIZE-1)/PMM_PAGE_SIZE : 0;
+    if(need_pages && !oom_gate_try_charge_user(process->pid,need_pages)){
+        klogf(KLOG_WARN,"oom: heap grow denied pid=%u pages=%llu",
+            process->pid,(unsigned long long)need_pages);
+        return 0;
+    }
+    uint64_t mapped_pages=0;
     while(process->heap_mapped_end<requested_mapping){
         if(!vmm_map_new_pages(process->address_space,
                               process->heap_mapped_end,1,
                               VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
+            if(mapped_pages<need_pages) oom_gate_release_user(process->pid,need_pages-mapped_pages);
+            klogf(KLOG_WARN,"oom: heap map denied pid=%u",process->pid);
             return 0;
         }
         process->heap_mapped_end+=PMM_PAGE_SIZE;
+        mapped_pages++;
     }
     process->heap_break=requested_break;
     return previous_break;
@@ -411,6 +494,7 @@ void process_exit_current(int32_t status){
             }
         }
         window_manager_unregister(process->pid);
+        gop_console_release(process->pid);
         for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
             if(process->descriptors[fd]>=VFS_FD_BASE){
                 (void)vfs_close(process->descriptors[fd]);
@@ -426,8 +510,8 @@ void process_exit_current(int32_t status){
     __builtin_unreachable();
 }
 
-int32_t process_monitor_list(struct process_monitor_info *entries,
-                             uint32_t capacity){
+int32_t process_monitor_list_page(struct process_monitor_info *entries,
+                                  uint32_t capacity, uint32_t offset){
     MUTEX_SCOPE(&process_mutex);
     uint64_t now=timer_ticks();
     uint64_t elapsed=now-process_sample_tick;
@@ -437,8 +521,8 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
         uint64_t runtime=process->state==PROCESS_EXITED
             ? process->runtime_ticks
             : scheduler_thread_runtime_ticks(process->thread_id);
-        if(count<capacity){
-            struct process_monitor_info *entry=&entries[count];
+        if(count>=offset && count-offset<capacity){
+            struct process_monitor_info *entry=&entries[count-offset];
             memset(entry,0,sizeof(*entry));
             entry->pid=process->pid;
             entry->parent_pid=process->parent_pid;
@@ -458,6 +542,11 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
     }
     process_sample_tick=now;
     return (int32_t)count;
+}
+
+int32_t process_monitor_list(struct process_monitor_info *entries,
+                             uint32_t capacity){
+    return process_monitor_list_page(entries,capacity,0);
 }
 
 int32_t process_fd_install(int32_t kernel_descriptor){

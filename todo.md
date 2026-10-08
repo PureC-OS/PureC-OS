@@ -125,13 +125,13 @@
 - [x] Спавн с VFS: точный размер файла вместо буфера 8MB contiguous + чтение циклом. | priority:normal
 - [x] Зомби-ликвидация (утечка слотов и адресных пространств): EXITED-процесс, | priority:normal
   которого родитель так и не подождал, висит вечно. Сделать reparent сирот на PID 1 при выходе + цикл reap в init (wait nohang по детям в EXITED). Сбросить stale waiter_thread_id при reparent (иначе wait init упрётся в -1).
-- [ ] Ядерная куча поверх PMM (slab под struct process / struct thread). | priority:normal
-- [ ] Таблица процессов на куче: рост чанками по мере spawn, OOM -> -1. | priority:normal
-- [ ] Стеки тредов аллоцировать из PMM поштучно (4 страницы), а не держать | priority:normal
+- [x] Ядерная куча поверх PMM (slab под struct process / struct thread). | priority:normal
+- [x] Таблица процессов на куче: рост чанками по мере spawn, OOM -> -1. | priority:normal
+- [x] Стеки тредов аллоцировать из PMM поштучно (4 страницы), а не держать | priority:normal
   массив 64x16KB в BSS; освобождать стек при TERMINATED после переключения.
-- [ ] Планировщик: уйти от O(n)-скана всей таблицы при каждом переключении | priority:normal
+- [x] Планировщик: уйти от O(n)-скана всей таблицы при каждом переключении | priority:normal
   (runqueue), PID-хэш вместо линейного поиска.
-- [ ] Листинг процессов постранично (count + offset), юзерспейс на heap. | priority:normal
+- [x] Листинг процессов постранично (count + offset), юзерспейс на heap. | priority:normal
 
 ## Process
 

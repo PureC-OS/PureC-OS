@@ -23,6 +23,7 @@ struct thread {
     enum thread_state state;
     uint8_t priority;
     int16_t affinity;
+    bool affinity_auto;
     uint32_t id;
     char name[32];
     uint32_t ticks_remaining;
@@ -38,6 +39,7 @@ struct thread {
     uint32_t cpu_mask;
     uint64_t migrations;
     struct thread *next;
+    struct thread *hnext;
     uint64_t node_phys;
     uint64_t kstack_phys;
     uint8_t *kstack;
