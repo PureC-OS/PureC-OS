@@ -5,6 +5,8 @@
 #include "../../mm/pmm.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/process/scheduler.h"
+#include "../../kernel/process/process.h"
+#include "../../kernel/sync/spinlock.h"
 #include "../../gfx/compositor.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -38,6 +40,7 @@ static gfx_font_face_t console_gfx_face(void){
 
 #define GOP_CONSOLE_COLUMNS 128
 #define GOP_CONSOLE_ROWS 64
+#define GOP_CONSOLE_SLOTS 8
 
 struct gop_console {
     uint32_t x;
@@ -56,15 +59,60 @@ struct gop_console {
     uint32_t owner_pid;
 };
 
-static struct gop_console user_console;
+static struct gop_console user_consoles[GOP_CONSOLE_SLOTS];
+static spinlock_t console_lock = SPINLOCK_INIT;
+
+static struct gop_console *console_find_locked(uint32_t owner_pid){
+    for(uint32_t i=0;i<GOP_CONSOLE_SLOTS;i++){
+        if(user_consoles[i].owner_pid==owner_pid
+           && (user_consoles[i].active || user_consoles[i].initialized))
+            return &user_consoles[i];
+    }
+    return NULL;
+}
+
+static struct gop_console *console_alloc_locked(uint32_t owner_pid){
+    struct gop_console *found=console_find_locked(owner_pid);
+    if(found) return found;
+    for(uint32_t i=0;i<GOP_CONSOLE_SLOTS;i++){
+        if(user_consoles[i].owner_pid==0 && !user_consoles[i].active
+           && !user_consoles[i].initialized){
+            user_consoles[i].owner_pid=owner_pid;
+            return &user_consoles[i];
+        }
+    }
+    return NULL;
+}
+
+#define GOP_CONSOLE_CHAIN 8
+
+static uint32_t console_chain(uint32_t pid, uint32_t *out, uint32_t cap){
+    uint32_t n=0;
+    uint32_t cur=pid;
+    while(n<cap){
+        out[n++]=cur;
+        int32_t parent=process_parent_pid(cur);
+        if(parent<=0) break;
+        cur=(uint32_t)parent;
+    }
+    return n;
+}
+
+static struct gop_console *console_pick_locked(const uint32_t *chain, uint32_t depth){
+    for(uint32_t i=0;i<depth;i++){
+        struct gop_console *slot=console_find_locked(chain[i]);
+        if(slot && slot->active) return slot;
+    }
+    return NULL;
+}
 
 static inline void put_pixel(uint32_t x, uint32_t y, uint32_t c);
 static void gop_gfx_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                          uint32_t color, void *ctx){
-    (void)ctx;
-    if(user_console.active && user_console.owner_pid
-       && compositor_window_exists(user_console.owner_pid)){
-        compositor_draw_rect(user_console.owner_pid, x, y, w, h, color);
+    struct gop_console *slot=(struct gop_console*)ctx;
+    if(slot && slot->owner_pid
+       && compositor_window_exists(slot->owner_pid)){
+        compositor_draw_rect(slot->owner_pid, x, y, w, h, color);
         return;
     }
     for(uint32_t dy=0;dy<h;dy++)
@@ -172,7 +220,11 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
     compose_depth=0;
     last_present_tick=0;
     present_deferred=false;
-    user_console.active=false;
+    for(uint32_t i=0;i<GOP_CONSOLE_SLOTS;i++){
+        user_consoles[i].active=false;
+        user_consoles[i].owner_pid=0;
+        user_consoles[i].initialized=false;
+    }
     return true;
 }
 
@@ -648,10 +700,11 @@ void gop_set_color(uint32_t f, uint32_t b){
 }
 
 static void gop_console_glyph(char c, uint32_t x, uint32_t y,
-                              uint32_t cell_fg, uint32_t cell_bg){
+                              uint32_t cell_fg, uint32_t cell_bg,
+                              struct gop_console *slot){
     char text[2] = {c, '\0'};
     gfx_draw_text_opaque(text, x, y, cell_fg, cell_bg, 8,
-                         console_gfx_face(), gop_gfx_rect, 0);
+                         console_gfx_face(), gop_gfx_rect, slot);
 }
 
 void gop_putc(char c){
@@ -662,7 +715,7 @@ void gop_putc(char c){
     (void)ensure_backbuffer();
     if(c=='\b'){
         if(cur_x>12) cur_x-=8;
-        gop_console_glyph(' ',cur_x,cur_y,fg,bg);
+        gop_console_glyph(' ',cur_x,cur_y,fg,bg,NULL);
         if(backbuffer){
             dirty_expand(cur_x, cur_y, 8, 8);
             maybe_present();
@@ -685,7 +738,7 @@ void gop_putc(char c){
         if(cur_y+8 >= gop.height) gop_scroll();
     }
     if(cur_y+8 >= gop.height) gop_scroll();
-    gop_console_glyph(c,cur_x,cur_y,fg,bg);
+    gop_console_glyph(c,cur_x,cur_y,fg,bg,NULL);
     if(backbuffer){
         dirty_expand(cur_x, cur_y, 8, 8);
         maybe_present();
@@ -709,49 +762,53 @@ bool gop_console_configure_owner(uint32_t owner_pid,
         return false;
     if(width>gop.width-x) width=gop.width-x;
     if(height>gop.height-y) height=gop.height-y;
-    user_console.owner_pid=owner_pid;
-    user_console.x=x;
-    user_console.y=y;
-    user_console.width=width;
-    user_console.height=height;
-    user_console.foreground=foreground;
-    user_console.background=background;
-    user_console.columns=width/8;
-    user_console.rows=height/10;
-    if(user_console.columns>GOP_CONSOLE_COLUMNS)
-        user_console.columns=GOP_CONSOLE_COLUMNS;
-    if(user_console.rows>GOP_CONSOLE_ROWS)
-        user_console.rows=GOP_CONSOLE_ROWS;
-    if(!user_console.columns || !user_console.rows) return false;
-    user_console.active=true;
-    if(!user_console.initialized){
-        memset(user_console.characters,' ',sizeof(user_console.characters));
-        user_console.cursor_column=0;
-        user_console.cursor_row=0;
-        user_console.initialized=true;
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_alloc_locked(owner_pid);
+    if(!slot){ spin_unlock_irqrestore(&console_lock,flags); return false; }
+    slot->owner_pid=owner_pid;
+    slot->x=x;
+    slot->y=y;
+    slot->width=width;
+    slot->height=height;
+    slot->foreground=foreground;
+    slot->background=background;
+    slot->columns=width/8;
+    slot->rows=height/10;
+    if(slot->columns>GOP_CONSOLE_COLUMNS)
+        slot->columns=GOP_CONSOLE_COLUMNS;
+    if(slot->rows>GOP_CONSOLE_ROWS)
+        slot->rows=GOP_CONSOLE_ROWS;
+    if(!slot->columns || !slot->rows){ spin_unlock_irqrestore(&console_lock,flags); return false; }
+    slot->active=true;
+    if(!slot->initialized){
+        memset(slot->characters,' ',sizeof(slot->characters));
+        slot->cursor_column=0;
+        slot->cursor_row=0;
+        slot->initialized=true;
     }
-    if(user_console.cursor_column>=user_console.columns)
-        user_console.cursor_column=user_console.columns-1;
-    if(user_console.cursor_row>=user_console.rows)
-        user_console.cursor_row=user_console.rows-1;
+    if(slot->cursor_column>=slot->columns)
+        slot->cursor_column=slot->columns-1;
+    if(slot->cursor_row>=slot->rows)
+        slot->cursor_row=slot->rows-1;
     gop_begin_batch();
-    if(user_console.owner_pid && compositor_window_exists(user_console.owner_pid)){
-        compositor_draw_rect(user_console.owner_pid,x,y,width,height,background);
+    if(slot->owner_pid && compositor_window_exists(slot->owner_pid)){
+        compositor_draw_rect(slot->owner_pid,x,y,width,height,background);
     } else {
         gop_draw_rect(x,y,width,height,background);
     }
-    for(uint32_t row=0;row<user_console.rows;row++){
-        for(uint32_t column=0;column<user_console.columns;column++){
-            char character=user_console.characters[row][column];
+    for(uint32_t row=0;row<slot->rows;row++){
+        for(uint32_t column=0;column<slot->columns;column++){
+            char character=slot->characters[row][column];
             if(character!=' ')
                 gop_console_glyph(character,x+column*8,y+row*10,
-                                  foreground,background);
+                                  foreground,background,slot);
         }
     }
-    if(!user_console.owner_pid || !compositor_window_exists(user_console.owner_pid)){
+    if(!slot->owner_pid || !compositor_window_exists(slot->owner_pid)){
         if(backbuffer){ dirty_expand(x, y, width, height); }
     }
     gop_end_batch();
+    spin_unlock_irqrestore(&console_lock,flags);
     return true;
 }
 
@@ -761,89 +818,117 @@ bool gop_console_configure(uint32_t x, uint32_t y,
     return gop_console_configure_owner(0,x,y,width,height,foreground,background);
 }
 
-bool gop_console_is_active(void){ return user_console.active; }
+bool gop_console_is_active(void){
+    uint32_t chain[GOP_CONSOLE_CHAIN];
+    uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_pick_locked(chain,depth);
+    bool active=slot!=NULL;
+    spin_unlock_irqrestore(&console_lock,flags);
+    return active;
+}
 
 void gop_console_clear(void){
-    if(!user_console.active) return;
-    if(user_console.owner_pid && compositor_window_exists(user_console.owner_pid)){
-        compositor_draw_rect(user_console.owner_pid,
-                             user_console.x,user_console.y,
-                             user_console.width,user_console.height,
-                             user_console.background);
+    uint32_t chain[GOP_CONSOLE_CHAIN];
+    uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_pick_locked(chain,depth);
+    if(!slot){ spin_unlock_irqrestore(&console_lock,flags); return; }
+    if(slot->owner_pid && compositor_window_exists(slot->owner_pid)){
+        compositor_draw_rect(slot->owner_pid,
+                             slot->x,slot->y,
+                             slot->width,slot->height,
+                             slot->background);
     } else {
-        gop_draw_rect(user_console.x,user_console.y,user_console.width,
-                      user_console.height,user_console.background);
+        gop_draw_rect(slot->x,slot->y,slot->width,slot->height,slot->background);
     }
-    memset(user_console.characters,' ',sizeof(user_console.characters));
-    user_console.cursor_column=0;
-    user_console.cursor_row=0;
+    memset(slot->characters,' ',sizeof(slot->characters));
+    slot->cursor_column=0;
+    slot->cursor_row=0;
+    spin_unlock_irqrestore(&console_lock,flags);
 }
 
 void gop_console_disable(void){
-    user_console.active=false;
-    user_console.owner_pid=0;
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_find_locked((uint32_t)process_current_pid());
+    if(slot) slot->active=false;
+    spin_unlock_irqrestore(&console_lock,flags);
+}
+
+void gop_console_release(uint32_t owner_pid){
+    if(!owner_pid) return;
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_find_locked(owner_pid);
+    if(slot){ slot->active=false; slot->owner_pid=0; slot->initialized=false; }
+    spin_unlock_irqrestore(&console_lock,flags);
 }
 
 void gop_console_putc(char character){
-    if(!user_console.active){ gop_putc(character); return; }
+    uint32_t chain[GOP_CONSOLE_CHAIN];
+    uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_pick_locked(chain,depth);
+    if(!slot){ spin_unlock_irqrestore(&console_lock,flags); gop_putc(character); return; }
     (void)ensure_backbuffer();
     if(character=='\b'){
-        if(user_console.cursor_column){
-            user_console.cursor_column--;
-            user_console.characters[user_console.cursor_row]
-                                    [user_console.cursor_column]=' ';
-            uint32_t cx=user_console.x+user_console.cursor_column*8;
-            uint32_t cy=user_console.y+user_console.cursor_row*10;
+        if(slot->cursor_column){
+            slot->cursor_column--;
+            slot->characters[slot->cursor_row]
+                              [slot->cursor_column]=' ';
+            uint32_t cx=slot->x+slot->cursor_column*8;
+            uint32_t cy=slot->y+slot->cursor_row*10;
             gop_console_glyph(' ',cx,cy,
-                              user_console.foreground,
-                              user_console.background);
-            if(!user_console.owner_pid || !compositor_window_exists(user_console.owner_pid)){
+                              slot->foreground,
+                              slot->background,slot);
+            if(!slot->owner_pid || !compositor_window_exists(slot->owner_pid)){
                 if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
             }
         }
+        spin_unlock_irqrestore(&console_lock,flags);
         return;
     }
     if(character=='\n'){
-        user_console.cursor_column=0;
-        user_console.cursor_row++;
+        slot->cursor_column=0;
+        slot->cursor_row++;
     } else if(character=='\r'){
-        user_console.cursor_column=0;
+        slot->cursor_column=0;
     } else {
-        if(user_console.cursor_column>=user_console.columns){
-            user_console.cursor_column=0;
-            user_console.cursor_row++;
+        if(slot->cursor_column>=slot->columns){
+            slot->cursor_column=0;
+            slot->cursor_row++;
         }
-        if(user_console.cursor_row>=user_console.rows) goto scroll;
-        user_console.characters[user_console.cursor_row]
-                                [user_console.cursor_column]=character;
-        uint32_t cx=user_console.x+user_console.cursor_column*8;
-        uint32_t cy=user_console.y+user_console.cursor_row*10;
+        if(slot->cursor_row>=slot->rows) goto scroll;
+        slot->characters[slot->cursor_row]
+                          [slot->cursor_column]=character;
+        uint32_t cx=slot->x+slot->cursor_column*8;
+        uint32_t cy=slot->y+slot->cursor_row*10;
         gop_console_glyph(character,cx,cy,
-                          user_console.foreground,
-                          user_console.background);
-        if(!user_console.owner_pid || !compositor_window_exists(user_console.owner_pid)){
+                          slot->foreground,
+                          slot->background,slot);
+        if(!slot->owner_pid || !compositor_window_exists(slot->owner_pid)){
             if(backbuffer){ dirty_expand(cx, cy, 8, 10); maybe_present(); }
         }
-        user_console.cursor_column++;
+        slot->cursor_column++;
     }
 scroll:
-    if(user_console.cursor_row>=user_console.rows){
-        for(uint32_t row=1;row<user_console.rows;row++)
-            memcpy(user_console.characters[row-1],
-                   user_console.characters[row],GOP_CONSOLE_COLUMNS);
-        memset(user_console.characters[user_console.rows-1],' ',
+    if(slot->cursor_row>=slot->rows){
+        for(uint32_t row=1;row<slot->rows;row++)
+            memcpy(slot->characters[row-1],
+                   slot->characters[row],GOP_CONSOLE_COLUMNS);
+        memset(slot->characters[slot->rows-1],' ',
                GOP_CONSOLE_COLUMNS);
-        if(user_console.owner_pid && compositor_window_exists(user_console.owner_pid)){
-            compositor_scroll_rect_up(user_console.owner_pid,
-                                      user_console.x,user_console.y,
-                                      user_console.width,user_console.height,
-                                      10,user_console.background);
+        if(slot->owner_pid && compositor_window_exists(slot->owner_pid)){
+            compositor_scroll_rect_up(slot->owner_pid,
+                                      slot->x,slot->y,
+                                      slot->width,slot->height,
+                                      10,slot->background);
         } else {
-            gop_scroll_rect_up(user_console.x,user_console.y,user_console.width,
-                               user_console.height,10,user_console.background);
+            gop_scroll_rect_up(slot->x,slot->y,slot->width,slot->height,
+                               10,slot->background);
         }
-        user_console.cursor_row=user_console.rows-1;
+        slot->cursor_row=slot->rows-1;
     }
+    spin_unlock_irqrestore(&console_lock,flags);
 }
 void gop_draw_rect(uint32_t x,uint32_t y,uint32_t w,uint32_t h,uint32_t c){
     if(!gop.available || !gop.addr || !w || !h) return;

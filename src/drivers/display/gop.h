@@ -42,6 +42,7 @@ bool gop_console_is_active(void);
 void gop_console_putc(char character);
 void gop_console_clear(void);
 void gop_console_disable(void);
+void gop_console_release(uint32_t owner_pid);
 
 uint32_t gop_get_pixel(uint32_t x, uint32_t y);
 void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color);

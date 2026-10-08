@@ -58,6 +58,7 @@ const char *process_last_spawn_error(void);
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
 int32_t process_current_pid(void);
+int32_t process_parent_pid(uint32_t pid);
 bool process_current_is_user(void);
 bool process_has_capability(uint32_t capability);
 uint64_t process_current_address_space(void);

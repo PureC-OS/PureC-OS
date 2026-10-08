@@ -16,6 +16,7 @@ static mutex_t process_mutex;
 #include "../../mm/oom/oom_account.h"
 #include "../../mm/oom/oom_victim.h"
 #include "../../mm/oom/oom_slab.h"
+#include "../../drivers/display/gop.h"
 #include "../../lib/string.h"
 #include "../../userspace/window_manager.h"
 
@@ -422,6 +423,13 @@ int32_t process_current_pid(void){
     return process ? (int32_t)process->pid : 0;
 }
 
+int32_t process_parent_pid(uint32_t pid){
+    MUTEX_SCOPE(&process_mutex);
+    struct process *process=process_find_by_pid(pid);
+    if(!process) return -1;
+    return (int32_t)process->parent_pid;
+}
+
 bool process_current_is_user(void){
     struct thread *thread=scheduler_current_thread();
     return thread && thread->user_mode;
@@ -486,6 +494,7 @@ void process_exit_current(int32_t status){
             }
         }
         window_manager_unregister(process->pid);
+        gop_console_release(process->pid);
         for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
             if(process->descriptors[fd]>=VFS_FD_BASE){
                 (void)vfs_close(process->descriptors[fd]);
