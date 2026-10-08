@@ -167,6 +167,19 @@
   (реализовано чисто через purec-libxcrypt https://github.com/PureC-OS/libxcrypt)
 - [ ] добавыть в install созданыя юзеров которые будут добавляться в /home/username | priority:normal
 
+## SO формат (ET_DYN)
+
+- [x] Ревизия стандартов линковки ядра (ядро static, юзер PIC) | priority:high
+- [x] Ревизия адресного пространства (PIE 0x555555554000, .so 0x600000000000, стек/USER_TOP без изменений) | priority:high
+- [x] Спецификация .so (ET_DYN, PT_DYNAMIC, RELA, SONAME/NEEDED) | priority:high
+- [x] elf.c: ET_DYN + слайд базы + PT_DYNAMIC + RELATIVE/GLOB_DAT/JUMP_SLOT/64 + DT_NEEDED | priority:high
+- [x] process_spawn_elf: загрузка DT_NEEDED из /lib, скоп-резолв, куча после верхней границы объектов | priority:high
+- [x] Toolchain: USER_SO_CFLAGS, SO/PIE_LINK_FLAGS, userspace-so.ld, linker-userspace-pie.ld, libpurec.so, echo-dyn пилот | priority:normal
+- [x] kmod .so лоадер: .ksyms в ядре + mk/ksyms.py, vmm_protect_page, kmod_so (map/relocate/W^X), .so таргеты 6 модулей, devman probe | priority:high
+- [ ] SYS_dlopen/dlclose/dlsym + настоящий dlfcn вместо стабов | priority:normal
+- [ ] Миграция всех программ на PIE + QEMU boot-тест echo-dyn c libpurec.so | priority:normal
+- [ ] Cutover драйверов на .so (вызов init из модуля, уход от builtin-дублей) | priority:normal
+
 ## SO / линковка / адресное пространство
 
 - [/] Ревизия стандартов линковки ядра (linker-limine.ld, toolchain.mk, MOD_CFLAGS) | priority:high

@@ -2,11 +2,19 @@
 #include "../../acpi/include/acpi/acpi.h"
 #include "../../boot/install_source.h"
 #include "../../drivers/pci/pci.h"
+#include "../../fs/initramfs.h"
+#include "../../fs/vfs.h"
 #include "../../lib/string.h"
+#include "../../mm/pmm.h"
 #include "../diagnostics/klog.h"
+#include "../module/kmod_so.h"
 #include "device_ids.h"
 #include <stdbool.h>
 #include <stdint.h>
+
+#define DEVMAN_SO_PATH_CAP 96
+#define DEVMAN_SO_LIMIT (16ULL * 1024ULL * 1024ULL)
+#define DEVMAN_SO_CHUNK 1048576U
 
 static struct device_info g_devices[DEVICE_MANAGER_MAX_DEVICES];
 static uint32_t g_device_count = 0;
@@ -770,6 +778,85 @@ uint32_t devman_unbound_count(void) {
   return g_device_count >= bound ? g_device_count - bound : 0;
 }
 
+static bool devman_so_path(const char *elf, char *out) {
+  size_t len = strlen(elf);
+  if (len < 5 || len + 1 > DEVMAN_SO_PATH_CAP)
+    return false;
+  if (strcmp(elf + len - 4, ".elf") != 0)
+    return false;
+  strncpy(out, elf, DEVMAN_SO_PATH_CAP - 1);
+  out[DEVMAN_SO_PATH_CAP - 1] = 0;
+  out[len - 3] = 's';
+  out[len - 2] = 'o';
+  out[len - 1] = 0;
+  return true;
+}
+
+static void devman_probe_so(struct device_driver *drv) {
+  char path[DEVMAN_SO_PATH_CAP];
+  if (!drv->module_path || !devman_so_path(drv->module_path, path))
+    return;
+  const void *data = 0;
+  uint64_t size = 0;
+  uint64_t phys = 0;
+  uint64_t pages = 0;
+  bool owned = false;
+  const void *ram = 0;
+  uint32_t ram_size = 0;
+  if (initramfs_find(path, &ram, &ram_size)) {
+    data = ram;
+    size = ram_size;
+  } else {
+    int32_t fd = vfs_open(path);
+    if (fd < 0)
+      return;
+    struct file_stat_info st = {0};
+    uint64_t blob = 0;
+    if (vfs_stat(path, &st) >= 0)
+      blob = st.size;
+    if (!blob || blob > DEVMAN_SO_LIMIT) {
+      vfs_close(fd);
+      return;
+    }
+    pages = (blob + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+    phys = pmm_allocate_contiguous(pages);
+    if (!phys) {
+      vfs_close(fd);
+      return;
+    }
+    uint8_t *buf = (uint8_t *)pmm_physical_to_virtual(phys);
+    uint64_t done = 0;
+    bool bad = false;
+    while (done < blob) {
+      uint64_t left = blob - done;
+      uint32_t want =
+          left > DEVMAN_SO_CHUNK ? DEVMAN_SO_CHUNK : (uint32_t)left;
+      int32_t got = vfs_read(fd, buf + done, want);
+      if (got <= 0) {
+        bad = true;
+        break;
+      }
+      done += (uint64_t)got;
+    }
+    vfs_close(fd);
+    if (bad || done != blob) {
+      pmm_free_contiguous(phys, pages);
+      return;
+    }
+    data = buf;
+    size = done;
+    owned = true;
+  }
+  if (kmod_syms_ready()) {
+    if (!kmod_load_so(drv->name, data, size))
+      klogf(KLOG_WARN, "devman: .so probe failed for '%s'", path);
+  } else {
+    klogf(KLOG_DEBUG, "devman: ksyms not ready, skip '%s'", path);
+  }
+  if (owned)
+    pmm_free_contiguous(phys, pages);
+}
+
 void devman_autoload(void) {
   if (!g_enumerated)
     devman_enumerate();
@@ -787,6 +874,7 @@ void devman_autoload(void) {
         klogf(KLOG_DEBUG,
               "devman: no staged module for '%s' (%s); builtin path", drv->name,
               drv->module_path);
+      devman_probe_so(drv);
     }
     drv = drv->next;
   }
