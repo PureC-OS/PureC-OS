@@ -144,6 +144,7 @@
 /include/sys/mman.h /include/sys/mman.h - 1 src/libc/include/hosted/sys/mman.h
 /include/sys/ucontext.h /include/sys/ucontext.h - 1 src/libc/include/hosted/sys/ucontext.h
 /lib/crt0.o /lib/crt0.o - 1 bin/lib/crt0.o
+/lib/tcc/libtcc1.a /lib/tcc/libtcc1.a - 0 bin/lib/tcc/libtcc1.a
 /lib/tcc/include/float.h /lib/tcc/include/float.h - 0 tcc/include/float.h
 /lib/tcc/include/stdarg.h /lib/tcc/include/stdarg.h - 0 tcc/include/stdarg.h
 /lib/tcc/include/stdbool.h /lib/tcc/include/stdbool.h - 0 tcc/include/stdbool.h

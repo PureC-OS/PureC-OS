@@ -354,9 +354,31 @@ $(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DI
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -c $< -o $@
 
-$(PROGRAM_DIR)/tcc: $(OBJ_DIR)/tcc/tcc.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/tcc: $(OBJ_DIR)/tcc/tcc.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LIB_DIR)/tcc/libtcc1.a $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/tcc/tcc.o $(LIBPUREC)
+
+TCCRT_DIR := $(ROOT_DIR)/tcc/lib
+TCCRT_OBJ_DIR := $(OBJ_DIR)/tcc/rt
+TCCRT_LIB := $(LIB_DIR)/tcc/libtcc1.a
+TCCRT_OBJECTS := $(TCCRT_OBJ_DIR)/libtcc1.o $(TCCRT_OBJ_DIR)/alloca.o \
+	$(TCCRT_OBJ_DIR)/alloca-bt.o $(TCCRT_OBJ_DIR)/stdatomic.o \
+	$(TCCRT_OBJ_DIR)/atomic.o $(TCCRT_OBJ_DIR)/builtin.o \
+	$(TCCRT_OBJ_DIR)/va_list.o
+
+-include $(TCCRT_OBJECTS:.o=.d)
+
+$(TCCRT_OBJ_DIR)/%.o: $(TCCRT_DIR)/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -c $< -o $@
+
+$(TCCRT_OBJ_DIR)/%.o: $(TCCRT_DIR)/%.S
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -c $< -o $@
+
+$(TCCRT_LIB): $(TCCRT_OBJECTS)
+	@mkdir -p $(@D)
+	$(AR) rcs $@ $^
 endif
 
 # Hosted demo: standard main() + crt0 + hosted headers (TCC migration
