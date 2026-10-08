@@ -655,6 +655,8 @@ bool elf_resolve_symbol(uint64_t address_space,
           continue;
         if (strcmp(candidate, name) != 0)
           continue;
+        if ((uint64_t)sym.name + strlen(candidate) >= dyn->strtab_size)
+          continue;
         if (sym.shndx == ELF_SHN_ABS)
           *value = sym.value;
         else
@@ -722,6 +724,8 @@ static bool apply_scoped_table(uint64_t address_space,
       if (!read_cstring_from_space(address_space,
                                    self->strtab_address + entry.name, wanted,
                                    sizeof(wanted)))
+        return false;
+      if ((uint64_t)entry.name + strlen(wanted) >= self->strtab_size)
         return false;
       uint64_t found = 0;
       if (!elf_resolve_symbol(address_space, scope, scope_count, wanted,
