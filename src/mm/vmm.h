@@ -3,10 +3,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define VMM_PAGE_PRESENT  (1ULL<<0)
-#define VMM_PAGE_WRITABLE (1ULL<<1)
-#define VMM_PAGE_USER     (1ULL<<2)
-#define VMM_PAGE_NX       (1ULL<<63)
+#define VMM_PAGE_PRESENT (1ULL << 0)
+#define VMM_PAGE_WRITABLE (1ULL << 1)
+#define VMM_PAGE_USER (1ULL << 2)
+#define VMM_PAGE_NX (1ULL << 63)
 
 void vmm_init(void);
 bool vmm_init_cpu(void);
