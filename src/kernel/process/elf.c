@@ -11,8 +11,10 @@
 #define ELF_PROGRAM_LOAD 1
 #define ELF_FLAG_WRITABLE 2
 #define ELF_FLAG_EXECUTABLE 1
-#define ELF_USER_MIN 0x0000000000400000ULL
-#define ELF_USER_MAX 0x0000700000000000ULL
+#define ELF_DYN_TAG_WIDTH 16ULL
+#define ELF_RELA_WIDTH 24ULL
+#define ELF_SO_STRIDE 0x10000000ULL
+
 
 struct elf64_header {
   uint8_t identity[16];
@@ -42,6 +44,17 @@ struct elf64_program_header {
   uint64_t alignment;
 } __attribute__((packed));
 
+struct elf64_dyn {
+  int64_t tag;
+  uint64_t value;
+} __attribute__((packed));
+
+struct elf64_rela {
+  uint64_t offset;
+  uint64_t info;
+  int64_t addend;
+} __attribute__((packed));
+
 static bool add_overflows(uint64_t left, uint64_t right) {
   return left > UINT64_MAX - right;
 }
@@ -63,9 +76,134 @@ static bool copy_to_space(uint64_t address_space, uint64_t destination,
   return true;
 }
 
-bool elf_load_user_image(const void *image, uint64_t image_size,
-                         uint64_t address_space,
-                         struct elf_load_result *result) {
+static bool copy_from_space(uint64_t address_space, uint64_t source,
+                            uint8_t *destination, uint64_t size) {
+  while (size) {
+    uint64_t physical = vmm_translate(address_space, source);
+    if (!physical)
+      return false;
+    uint64_t amount = PMM_PAGE_SIZE - (source & (PMM_PAGE_SIZE - 1));
+    if (amount > size)
+      amount = size;
+    memcpy(destination, pmm_physical_to_virtual(physical), amount);
+    source += amount;
+    destination += amount;
+    size -= amount;
+  }
+  return true;
+}
+
+static bool write_u64_to_space(uint64_t address_space, uint64_t destination,
+                               uint64_t value) {
+  uint8_t bytes[8];
+  memcpy(bytes, &value, 8);
+  return copy_to_space(address_space, destination, bytes, 8);
+}
+
+static uint16_t peek_type(const void *image, uint64_t image_size) {
+  if (!image || image_size < sizeof(struct elf64_header))
+    return 0;
+  const struct elf64_header *header = (const struct elf64_header *)image;
+  if (header->identity[0] != 0x7F || header->identity[1] != 'E' ||
+      header->identity[2] != 'L' || header->identity[3] != 'F' ||
+      header->identity[4] != ELF_CLASS_64 ||
+      header->identity[5] != ELF_DATA_LITTLE_ENDIAN ||
+      header->machine != ELF_MACHINE_X86_64 ||
+      header->program_entry_size != sizeof(struct elf64_program_header))
+    return 0;
+  return header->type;
+}
+
+static bool parse_dynamic(const uint8_t *bytes, uint64_t image_size,
+                          uint64_t dyn_offset, uint64_t dyn_filesz,
+                          uint64_t bias, struct elf_dynamic_info *dynamic) {
+  memset(dynamic, 0, sizeof(*dynamic));
+  dynamic->bias = bias;
+  dynamic->syment_size = 24;
+  dynamic->rela_entsize = ELF_RELA_WIDTH;
+  if (dyn_filesz == 0)
+    return true;
+  if (add_overflows(dyn_offset, dyn_filesz) ||
+      dyn_offset + dyn_filesz > image_size)
+    return false;
+  if (dyn_filesz % ELF_DYN_TAG_WIDTH != 0)
+    return false;
+  uint64_t count = dyn_filesz / ELF_DYN_TAG_WIDTH;
+  bool seen_null = false;
+  for (uint64_t i = 0; i < count; i++) {
+    struct elf64_dyn entry;
+    memcpy(&entry, bytes + dyn_offset + i * ELF_DYN_TAG_WIDTH,
+           ELF_DYN_TAG_WIDTH);
+    int64_t tag = entry.tag;
+    if (tag == ELF_DT_NULL) {
+      seen_null = true;
+      break;
+    }
+    if (tag == ELF_DT_RELA)
+      dynamic->rela_address = entry.value + bias;
+    else if (tag == ELF_DT_RELASZ)
+      dynamic->rela_size = entry.value;
+    else if (tag == ELF_DT_RELAENT)
+      dynamic->rela_entsize = entry.value;
+    else if (tag == ELF_DT_JMPREL)
+      dynamic->jmprel_address = entry.value + bias;
+    else if (tag == ELF_DT_PLTRELSZ)
+      dynamic->jmprel_size = entry.value;
+    else if (tag == ELF_DT_SYMTAB)
+      dynamic->symtab_address = entry.value + bias;
+    else if (tag == ELF_DT_STRTAB)
+      dynamic->strtab_address = entry.value + bias;
+    else if (tag == ELF_DT_STRSZ)
+      dynamic->strtab_size = entry.value;
+    else if (tag == ELF_DT_SYMENT)
+      dynamic->syment_size = entry.value;
+    else if (tag == ELF_DT_RELACOUNT)
+      dynamic->relacount = entry.value;
+  }
+  if (!seen_null)
+    return false;
+  dynamic->has_dynamic = true;
+  return true;
+}
+
+static bool apply_rela_table(uint64_t address_space, uint64_t bias,
+                             uint64_t table, uint64_t size, uint64_t entsize) {
+  if (size == 0)
+    return true;
+  if (entsize != ELF_RELA_WIDTH)
+    return false;
+  if (size % ELF_RELA_WIDTH != 0)
+    return false;
+  uint64_t count = size / ELF_RELA_WIDTH;
+  for (uint64_t i = 0; i < count; i++) {
+    struct elf64_rela rela;
+    if (!copy_from_space(address_space, table + i * ELF_RELA_WIDTH,
+                         (uint8_t *)&rela, ELF_RELA_WIDTH))
+      return false;
+    uint32_t type = (uint32_t)(rela.info & 0xFFFFFFFFULL);
+    uint32_t sym = (uint32_t)(rela.info >> 32);
+    if (type == ELF_R_X86_64_NONE)
+      continue;
+    if (type == ELF_R_X86_64_RELATIVE) {
+      if (sym != 0)
+        return false;
+      uint64_t value;
+      if (rela.addend < 0 && bias < (uint64_t)(-(rela.addend + 1)) + 1)
+        return false;
+      value = bias + (uint64_t)rela.addend;
+      if (!write_u64_to_space(address_space, rela.offset + bias, value))
+        return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+bool elf_load_user_image_biased(const void *image, uint64_t image_size,
+                                uint64_t address_space, uint64_t bias,
+                                struct elf_load_result *result,
+                                struct elf_dynamic_info *dynamic) {
   if (!image || !result || image_size < sizeof(struct elf64_header))
     return false;
   const struct elf64_header *header = (const struct elf64_header *)image;
@@ -73,10 +211,19 @@ bool elf_load_user_image(const void *image, uint64_t image_size,
       header->identity[2] != 'L' || header->identity[3] != 'F' ||
       header->identity[4] != ELF_CLASS_64 ||
       header->identity[5] != ELF_DATA_LITTLE_ENDIAN ||
-      header->type != ELF_TYPE_EXECUTABLE ||
+      (header->type != ELF_TYPE_EXECUTABLE &&
+       header->type != ELF_TYPE_SHARED) ||
       header->machine != ELF_MACHINE_X86_64 ||
       header->program_entry_size != sizeof(struct elf64_program_header)) {
     return false;
+  }
+  if (header->type == ELF_TYPE_EXECUTABLE && bias != 0)
+    return false;
+  if (header->type == ELF_TYPE_SHARED) {
+    if ((bias & (PMM_PAGE_SIZE - 1)) != 0)
+      return false;
+    if (bias < ELF_USER_MIN || bias > ELF_SO_END)
+      return false;
   }
   uint64_t table_size =
       (uint64_t)header->program_count * header->program_entry_size;
@@ -84,29 +231,44 @@ bool elf_load_user_image(const void *image, uint64_t image_size,
       header->program_offset + table_size > image_size)
     return false;
 
-  result->entry = header->entry;
   result->lowest_address = UINT64_MAX;
   result->highest_address = 0;
   const uint8_t *bytes = (const uint8_t *)image;
+  uint64_t dyn_offset = 0;
+  uint64_t dyn_filesz = 0;
+  bool have_dyn = false;
   for (uint16_t index = 0; index < header->program_count; index++) {
     const struct elf64_program_header *program =
         (const struct elf64_program_header *)(bytes + header->program_offset +
                                               (uint64_t)index *
                                                   header->program_entry_size);
+    if (program->type == ELF_PROGRAM_DYNAMIC) {
+      if (have_dyn)
+        return false;
+      have_dyn = true;
+      dyn_offset = program->offset;
+      dyn_filesz = program->file_size;
+      continue;
+    }
     if (program->type != ELF_PROGRAM_LOAD)
       continue;
     if (program->file_size > program->memory_size ||
         add_overflows(program->offset, program->file_size) ||
         program->offset + program->file_size > image_size ||
-        add_overflows(program->virtual_address, program->memory_size) ||
-        program->virtual_address < ELF_USER_MIN ||
-        program->virtual_address + program->memory_size > ELF_USER_MAX) {
+        add_overflows(program->virtual_address, bias) ||
+        add_overflows(program->virtual_address + bias, program->memory_size)) {
       return false;
     }
-    uint64_t first = program->virtual_address & ~(PMM_PAGE_SIZE - 1);
-    uint64_t end =
-        (program->virtual_address + program->memory_size + PMM_PAGE_SIZE - 1) &
-        ~(PMM_PAGE_SIZE - 1);
+    uint64_t vaddr = program->virtual_address + bias;
+    if (vaddr < ELF_USER_MIN || vaddr + program->memory_size > ELF_USER_MAX ||
+        vaddr + program->memory_size < vaddr) {
+      return false;
+    }
+    uint64_t first = vaddr & ~(PMM_PAGE_SIZE - 1);
+    uint64_t end = (vaddr + program->memory_size + PMM_PAGE_SIZE - 1) &
+                   ~(PMM_PAGE_SIZE - 1);
+    if (end < vaddr)
+      return false;
     uint64_t flags = VMM_PAGE_USER;
     if (program->flags & ELF_FLAG_WRITABLE)
       flags |= VMM_PAGE_WRITABLE;
@@ -123,17 +285,68 @@ bool elf_load_user_image(const void *image, uint64_t image_size,
       }
     }
     if (program->file_size &&
-        !copy_to_space(address_space, program->virtual_address,
-                       bytes + program->offset, program->file_size))
+        !copy_to_space(address_space, vaddr, bytes + program->offset,
+                       program->file_size))
       return false;
     if (first < result->lowest_address)
       result->lowest_address = first;
     if (end > result->highest_address)
       result->highest_address = end;
   }
-  if (result->lowest_address == UINT64_MAX ||
-      result->entry < result->lowest_address ||
-      result->entry >= result->highest_address)
+  if (result->lowest_address == UINT64_MAX)
+    return false;
+  uint64_t entry = header->entry + bias;
+  if (add_overflows(header->entry, bias))
+    return false;
+  if (entry < result->lowest_address || entry >= result->highest_address)
+    return false;
+  result->entry = entry;
+  struct elf_dynamic_info local;
+  if (dynamic == 0)
+    dynamic = &local;
+  memset(dynamic, 0, sizeof(*dynamic));
+  dynamic->bias = bias;
+  dynamic->syment_size = 24;
+  dynamic->rela_entsize = ELF_RELA_WIDTH;
+  if (!have_dyn)
+    return true;
+  if (!parse_dynamic(bytes, image_size, dyn_offset, dyn_filesz, bias, dynamic))
+    return false;
+  if (dynamic->rela_size && (dynamic->rela_address < result->lowest_address ||
+                             dynamic->rela_address >= result->highest_address))
     return false;
   return true;
+}
+
+bool elf_load_user_image(const void *image, uint64_t image_size,
+                         uint64_t address_space,
+                         struct elf_load_result *result) {
+  uint16_t type = peek_type(image, image_size);
+  if (type != ELF_TYPE_EXECUTABLE)
+    return false;
+  struct elf_dynamic_info dynamic;
+  return elf_load_user_image_biased(image, image_size, address_space, 0, result,
+                                    &dynamic);
+}
+
+bool elf_apply_relative_relocs(uint64_t address_space,
+                               const struct elf_dynamic_info *dynamic) {
+  if (!dynamic || !dynamic->has_dynamic)
+    return true;
+  if (!apply_rela_table(address_space, dynamic->bias, dynamic->rela_address,
+                        dynamic->rela_size, dynamic->rela_entsize))
+    return false;
+  if (!apply_rela_table(address_space, dynamic->bias, dynamic->jmprel_address,
+                        dynamic->jmprel_size, ELF_RELA_WIDTH))
+    return false;
+  return true;
+}
+
+uint64_t elf_dyn_base_for_index(uint64_t index) {
+  if (add_overflows(ELF_SO_BASE, index * ELF_SO_STRIDE))
+    return 0;
+  uint64_t base = ELF_SO_BASE + index * ELF_SO_STRIDE;
+  if (base > ELF_SO_END)
+    return 0;
+  return base;
 }

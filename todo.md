@@ -166,3 +166,11 @@
 - [x] Добавить хеш паролей для входа (sha512) и проверять пароль при входе в ОС | priority:normal
   (реализовано чисто через purec-libxcrypt https://github.com/PureC-OS/libxcrypt)
 - [ ] добавыть в install созданыя юзеров которые будут добавляться в /home/username | priority:normal
+
+## SO / линковка / адресное пространство
+
+- [/] Ревизия стандартов линковки ядра (linker-limine.ld, toolchain.mk, MOD_CFLAGS) | priority:high
+- [ ] Спецификация формата .so для PureC-OS (ET_DYN, PT_DYNAMIC, baselib) | priority:high
+- [ ] Ревизия адресного пространства ядра (higher-half, USER_TOP, ELF_USER_MIN/MAX) | priority:high
+- [ ] Расширить elf.c: ET_DYN + PT_DYNAMIC + RELA (R_X86_64_RELATIVE/GLOB_DAT/JUMP_SLOT) | priority:normal
+- [ ] Toolchain под .so: -fPIC/-pie/-shared, userspace.ld + libpurec.so, kmod LD -r сохранить | priority:normal
