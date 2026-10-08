@@ -398,3 +398,365 @@ uint64_t elf_dyn_base_for_index(uint64_t index)
     return 0;
   return base;
 }
+
+uint16_t elf_image_type(const void *image, uint64_t image_size)
+{
+  return peek_type(image, image_size);
+}
+
+static bool file_vaddr_to_offset(const uint8_t *bytes, uint64_t image_size,
+                                 uint64_t vaddr, uint64_t size,
+                                 uint64_t *offset)
+{
+  if (image_size < sizeof(struct elf64_header))
+    return false;
+  const struct elf64_header *header = (const struct elf64_header *)bytes;
+  uint64_t table_size =
+      (uint64_t)header->program_count * header->program_entry_size;
+  if (header->program_entry_size != sizeof(struct elf64_program_header) ||
+      add_overflows(header->program_offset, table_size) ||
+      header->program_offset + table_size > image_size)
+    return false;
+  for (uint16_t index = 0; index < header->program_count; index++)
+  {
+    struct elf64_program_header program;
+    memcpy(&program,
+           bytes + header->program_offset +
+               (uint64_t)index * header->program_entry_size,
+           sizeof(program));
+    if (program.type != ELF_PROGRAM_LOAD)
+      continue;
+    if (vaddr < program.virtual_address ||
+        vaddr >= program.virtual_address + program.memory_size)
+      continue;
+    uint64_t inner = vaddr - program.virtual_address;
+    if (inner >= program.file_size || size > program.file_size - inner)
+      return false;
+    if (add_overflows(program.offset, inner))
+      return false;
+    *offset = program.offset + inner;
+    return true;
+  }
+  return false;
+}
+
+static bool file_parse_needed(const uint8_t *bytes, uint64_t image_size,
+                              struct elf_file_dyn *out)
+{
+  memset(out, 0, sizeof(*out));
+  if (image_size < sizeof(struct elf64_header))
+    return false;
+  const struct elf64_header *header = (const struct elf64_header *)bytes;
+  if (header->identity[0] != 0x7F || header->identity[1] != 'E' ||
+      header->identity[2] != 'L' || header->identity[3] != 'F' ||
+      header->identity[4] != ELF_CLASS_64 ||
+      header->identity[5] != ELF_DATA_LITTLE_ENDIAN ||
+      header->program_entry_size != sizeof(struct elf64_program_header))
+    return false;
+  uint64_t table_size =
+      (uint64_t)header->program_count * header->program_entry_size;
+  if (add_overflows(header->program_offset, table_size) ||
+      header->program_offset + table_size > image_size)
+    return false;
+  bool have_dyn = false;
+  uint64_t dyn_offset = 0;
+  uint64_t dyn_filesz = 0;
+  for (uint16_t index = 0; index < header->program_count; index++)
+  {
+    struct elf64_program_header program;
+    memcpy(&program,
+           bytes + header->program_offset +
+               (uint64_t)index * header->program_entry_size,
+           sizeof(program));
+    if (program.type == ELF_PROGRAM_DYNAMIC)
+    {
+      if (have_dyn)
+        return false;
+      have_dyn = true;
+      dyn_offset = program.offset;
+      dyn_filesz = program.file_size;
+    }
+  }
+  if (!have_dyn)
+    return true;
+  if (add_overflows(dyn_offset, dyn_filesz) ||
+      dyn_offset + dyn_filesz > image_size ||
+      dyn_filesz % ELF_DYN_TAG_WIDTH != 0)
+    return false;
+  uint64_t count = dyn_filesz / ELF_DYN_TAG_WIDTH;
+  bool seen_null = false;
+  for (uint64_t i = 0; i < count; i++)
+  {
+    struct elf64_dyn entry;
+    memcpy(&entry, bytes + dyn_offset + i * ELF_DYN_TAG_WIDTH,
+           ELF_DYN_TAG_WIDTH);
+    if (entry.tag == ELF_DT_NULL)
+    {
+      seen_null = true;
+      break;
+    }
+    if (entry.tag == ELF_DT_NEEDED)
+    {
+      if (out->needed_count >= ELF_MAX_NEEDED)
+        return false;
+      out->needed[out->needed_count++] = entry.value;
+    }
+    else if (entry.tag == ELF_DT_STRTAB)
+    {
+      out->strtab_vaddr = entry.value;
+    }
+    else if (entry.tag == ELF_DT_STRSZ)
+    {
+      out->strtab_size = entry.value;
+    }
+  }
+  if (!seen_null)
+    return false;
+  if (out->needed_count > 0 && out->strtab_size == 0)
+    return false;
+  return true;
+}
+
+uint64_t elf_needed_count(const void *image, uint64_t image_size)
+{
+  struct elf_file_dyn info;
+  if (!file_parse_needed((const uint8_t *)image, image_size, &info))
+    return 0;
+  return info.needed_count;
+}
+
+bool elf_needed_name(const void *image, uint64_t image_size, uint64_t index,
+                     char *out, uint64_t capacity)
+{
+  if (!out || capacity < 2)
+    return false;
+  struct elf_file_dyn info;
+  const uint8_t *bytes = (const uint8_t *)image;
+  if (!file_parse_needed(bytes, image_size, &info))
+    return false;
+  if (index >= info.needed_count)
+    return false;
+  uint64_t offset = 0;
+  if (!file_vaddr_to_offset(bytes, image_size, info.strtab_vaddr,
+                            info.strtab_size, &offset))
+    return false;
+  if (info.needed[index] >= info.strtab_size)
+    return false;
+  uint64_t start = offset + info.needed[index];
+  uint64_t limit = offset + info.strtab_size;
+  if (start >= limit)
+    return false;
+  uint64_t pos = 0;
+  while (start + pos < limit && pos + 1 < capacity)
+  {
+    char c = (char)bytes[start + pos];
+    out[pos] = c;
+    pos++;
+    if (c == 0)
+      return pos > 1;
+  }
+  return false;
+}
+
+static bool read_cstring_from_space(uint64_t address_space, uint64_t address,
+                                    char *out, uint64_t capacity)
+{
+  if (!out || capacity < 2)
+    return false;
+  uint64_t pos = 0;
+  while (pos + 1 < capacity)
+  {
+    uint64_t page_remain = PMM_PAGE_SIZE - (address & (PMM_PAGE_SIZE - 1));
+    uint64_t take = page_remain;
+    if (take > capacity - 1 - pos)
+      take = capacity - 1 - pos;
+    if (!copy_from_space(address_space, address, (uint8_t *)(out + pos), take))
+      return false;
+    for (uint64_t i = 0; i < take; i++)
+    {
+      if (out[pos + i] == 0)
+        return pos + i > 0;
+    }
+    pos += take;
+    address += take;
+  }
+  return false;
+}
+
+static bool read_sym(uint64_t address_space,
+                     const struct elf_dynamic_info *dyn, uint32_t index,
+                     struct elf64_sym *out)
+{
+  if (!dyn->symtab_address || dyn->syment_size != sizeof(struct elf64_sym))
+    return false;
+  if (add_overflows(dyn->symtab_address,
+                    (uint64_t)index * sizeof(struct elf64_sym)))
+    return false;
+  return copy_from_space(address_space,
+                         dyn->symtab_address +
+                             (uint64_t)index * sizeof(struct elf64_sym),
+                         (uint8_t *)out, sizeof(*out));
+}
+
+static bool read_hash_count(uint64_t address_space,
+                            const struct elf_dynamic_info *dyn,
+                            uint32_t *count)
+{
+  if (!dyn->hash_address)
+    return false;
+  uint8_t raw[8];
+  if (!copy_from_space(address_space, dyn->hash_address, raw, 8))
+    return false;
+  uint32_t nchain = 0;
+  memcpy(&nchain, raw + 4, 4);
+  if (nchain == 0 || nchain > 1U << 24)
+    return false;
+  *count = nchain;
+  return true;
+}
+
+bool elf_resolve_symbol(uint64_t address_space,
+                        const struct elf_object *scope, uint64_t scope_count,
+                        const char *name, uint64_t *value)
+{
+  if (!scope || !name || !value || !name[0] || scope_count == 0)
+    return false;
+  for (uint32_t pass = 0; pass < 2; pass++)
+  {
+    for (uint64_t o = 0; o < scope_count; o++)
+    {
+      const struct elf_dynamic_info *dyn = &scope[o].dyn;
+      if (!dyn->has_dynamic || !dyn->symtab_address ||
+          !dyn->strtab_address || !dyn->strtab_size)
+        continue;
+      uint32_t nchain = 0;
+      if (!read_hash_count(address_space, dyn, &nchain))
+        continue;
+      for (uint32_t i = 1; i < nchain; i++)
+      {
+        struct elf64_sym sym;
+        if (!read_sym(address_space, dyn, i, &sym))
+          break;
+        uint32_t bind = sym.info >> 4;
+        if (bind != ELF_STB_GLOBAL && bind != ELF_STB_WEAK)
+          continue;
+        if ((pass == 0 && bind != ELF_STB_GLOBAL) ||
+            (pass == 1 && bind != ELF_STB_WEAK))
+          continue;
+        if (sym.shndx == ELF_SHN_UNDEF)
+          continue;
+        if (add_overflows(sym.name, 1) ||
+            (uint64_t)sym.name + 1 >= dyn->strtab_size)
+          continue;
+        char candidate[ELF_NAME_CAP + 32];
+        if (!read_cstring_from_space(address_space,
+                                     dyn->strtab_address + sym.name, candidate,
+                                     sizeof(candidate)))
+          continue;
+        if (strcmp(candidate, name) != 0)
+          continue;
+        if (sym.shndx == ELF_SHN_ABS)
+          *value = sym.value;
+        else
+          *value = dyn->bias + sym.value;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+static bool apply_scoped_table(uint64_t address_space,
+                               const struct elf_object *scope,
+                               uint64_t scope_count, uint64_t self_index,
+                               uint64_t table, uint64_t size)
+{
+  if (size == 0)
+    return true;
+  if (size % ELF_RELA_WIDTH != 0 || self_index >= scope_count)
+    return false;
+  uint64_t self_bias = scope[self_index].dyn.bias;
+  const struct elf_dynamic_info *self = &scope[self_index].dyn;
+  uint64_t count = size / ELF_RELA_WIDTH;
+  for (uint64_t i = 0; i < count; i++)
+  {
+    struct elf64_rela rela;
+    if (!copy_from_space(address_space, table + i * ELF_RELA_WIDTH,
+                         (uint8_t *)&rela, ELF_RELA_WIDTH))
+      return false;
+    uint32_t type = (uint32_t)(rela.info & 0xFFFFFFFFULL);
+    uint32_t sym = (uint32_t)(rela.info >> 32);
+    if (type == ELF_R_X86_64_NONE)
+      continue;
+    if (type == ELF_R_X86_64_RELATIVE)
+    {
+      if (sym != 0)
+        return false;
+      if (rela.addend < 0 && self_bias < (uint64_t)(-(rela.addend + 1)) + 1)
+        return false;
+      if (!write_u64_to_space(address_space, rela.offset + self_bias,
+                              self_bias + (uint64_t)rela.addend))
+        return false;
+      continue;
+    }
+    if (type != ELF_R_X86_64_GLOB_DAT && type != ELF_R_X86_64_JUMP_SLOT &&
+        type != ELF_R_X86_64_64)
+      return false;
+    uint64_t resolved = 0;
+    if (sym == 0)
+    {
+      if (type != ELF_R_X86_64_64)
+        return false;
+      if (rela.addend < 0 && self_bias < (uint64_t)(-(rela.addend + 1)) + 1)
+        return false;
+      resolved = self_bias + (uint64_t)rela.addend;
+    }
+    else
+    {
+      struct elf64_sym entry;
+      if (!read_sym(address_space, self, sym, &entry))
+        return false;
+      if (entry.name >= self->strtab_size)
+        return false;
+      char wanted[ELF_NAME_CAP + 32];
+      if (!read_cstring_from_space(address_space,
+                                   self->strtab_address + entry.name, wanted,
+                                   sizeof(wanted)))
+        return false;
+      uint64_t found = 0;
+      if (!elf_resolve_symbol(address_space, scope, scope_count, wanted,
+                              &found))
+      {
+        uint32_t bind = entry.info >> 4;
+        if (bind != ELF_STB_WEAK)
+          return false;
+        found = 0;
+      }
+      if (type == ELF_R_X86_64_64)
+        resolved = found + (uint64_t)rela.addend;
+      else
+        resolved = found;
+    }
+    if (!write_u64_to_space(address_space, rela.offset + self_bias, resolved))
+      return false;
+  }
+  return true;
+}
+
+bool elf_apply_relocs_with_scope(uint64_t address_space,
+                                 const struct elf_object *scope,
+                                 uint64_t scope_count, uint64_t self_index)
+{
+  if (!scope || self_index >= scope_count)
+    return false;
+  const struct elf_dynamic_info *dyn = &scope[self_index].dyn;
+  if (!dyn->has_dynamic)
+    return true;
+  if (!apply_scoped_table(address_space, scope, scope_count, self_index,
+                          dyn->rela_address, dyn->rela_size))
+    return false;
+  if (!apply_scoped_table(address_space, scope, scope_count, self_index,
+                          dyn->jmprel_address, dyn->jmprel_size))
+    return false;
+  return true;
+}
