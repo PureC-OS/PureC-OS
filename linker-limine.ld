@@ -19,7 +19,15 @@ SECTIONS
     .bss : AT(ADDR(.bss) - 0xffffffff80000000 + 0x100000) {
         *(COMMON)
         *(.bss .bss.*)
-        PROVIDE(_kernel_end = .);
     }
+    .ksyms : AT(ADDR(.ksyms) - 0xffffffff80000000 + 0x100000) {
+        __ksyms_start = .;
+        KEEP(*(.ksyms .ksyms.*))
+        . = ALIGN(8);
+        __ksyms_area = .;
+        . = . + 98304;
+        __ksyms_end = .;
+    }
+    _kernel_end = .;
     /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
 }

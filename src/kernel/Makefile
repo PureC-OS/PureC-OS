@@ -48,6 +48,7 @@ C_SOURCES := \
 	kernel/process/process.c \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \
+	kernel/module/kmod_so.c \
 	mm/pmm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \
@@ -173,6 +174,7 @@ $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	@if [ -f $@ ]; then cp $@ $(FALLBACK); fi
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(OBJECTS)
+	@$(CROSS)nm -g --defined-only $@ | python3 $(ROOT_DIR)/mk/ksyms.py $@
 	@if [ ! -f $(FALLBACK) ]; then cp $@ $(FALLBACK); fi
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
