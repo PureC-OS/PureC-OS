@@ -1,24 +1,24 @@
 #include "../sync/mutex.h"
 static mutex_t process_mutex;
-#include "process.h"
-#include "elf.h"
-#include "scheduler.h"
+#include "../../drivers/display/gop.h"
 #include "../../drivers/interrupts/timer.h"
-#include "../syscall/syscall.h"
-#include "../diagnostics/klog.h"
-#include "../diagnostics/panic.h"
-#include "program_alias.h"
-#include "../../fs/vfs.h"
 #include "../../fs/initramfs.h"
+#include "../../fs/vfs.h"
+#include "../../lib/string.h"
+#include "../../mm/oom/oom_account.h"
+#include "../../mm/oom/oom_gate.h"
+#include "../../mm/oom/oom_slab.h"
+#include "../../mm/oom/oom_victim.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
-#include "../../mm/oom/oom_gate.h"
-#include "../../mm/oom/oom_account.h"
-#include "../../mm/oom/oom_victim.h"
-#include "../../mm/oom/oom_slab.h"
-#include "../../drivers/display/gop.h"
-#include "../../lib/string.h"
 #include "../../userspace/window_manager.h"
+#include "../diagnostics/klog.h"
+#include "../diagnostics/panic.h"
+#include "../syscall/syscall.h"
+#include "elf.h"
+#include "process.h"
+#include "program_alias.h"
+#include "scheduler.h"
 
 #define USER_STACK_TOP 0x00007FFFFFF00000ULL
 #define USER_STACK_PAGES 16
@@ -29,657 +29,740 @@ extern void arch_enter_user(uint64_t instruction_pointer,
                             uint64_t stack_pointer) __attribute__((noreturn));
 
 static struct process *process_list;
-static uint32_t next_pid=1;
+static uint32_t next_pid = 1;
 static uint64_t process_sample_tick;
-static const char *last_spawn_error="unknown process load failure";
+static const char *last_spawn_error = "unknown process load failure";
 
-const char *process_last_spawn_error(void){ return last_spawn_error; }
+const char *process_last_spawn_error(void) { return last_spawn_error; }
 
-_Static_assert(sizeof(struct process)<=4096,
-    "process node must fit in a single PMM page");
+_Static_assert(sizeof(struct process) <= 4096,
+               "process node must fit in a single PMM page");
 
 #define PHASH_BITS 8
-#define PHASH_SIZE (1u<<PHASH_BITS)
+#define PHASH_SIZE (1u << PHASH_BITS)
 static struct process *phash_buckets[PHASH_SIZE];
-static uint32_t phash_idx(uint32_t pid){
-    pid^=pid>>PHASH_BITS;
-    return pid&(PHASH_SIZE-1);
+static uint32_t phash_idx(uint32_t pid) {
+  pid ^= pid >> PHASH_BITS;
+  return pid & (PHASH_SIZE - 1);
 }
-static void phash_insert(struct process *p){
-    uint32_t i=phash_idx(p->pid);
-    p->hnext=phash_buckets[i];
-    phash_buckets[i]=p;
+static void phash_insert(struct process *p) {
+  uint32_t i = phash_idx(p->pid);
+  p->hnext = phash_buckets[i];
+  phash_buckets[i] = p;
 }
-static void phash_remove(struct process *p){
-    uint32_t i=phash_idx(p->pid);
-    struct process **link=&phash_buckets[i];
-    while(*link && *link!=p) link=&(*link)->hnext;
-    if(*link) *link=p->hnext;
-    p->hnext=NULL;
+static void phash_remove(struct process *p) {
+  uint32_t i = phash_idx(p->pid);
+  struct process **link = &phash_buckets[i];
+  while (*link && *link != p)
+    link = &(*link)->hnext;
+  if (*link)
+    *link = p->hnext;
+  p->hnext = NULL;
 }
-static struct process *process_node_alloc(void){
-    struct process *process=(struct process*)oom_slab_alloc(sizeof(struct process));
-    uint64_t phys=0;
-    if(!process){
-        phys=pmm_allocate_page();
-        if(!phys) return NULL;
-        process=(struct process*)pmm_physical_to_virtual(phys);
-    }
-    memset(process,0,sizeof(*process));
-    process->node_phys=phys;
-    return process;
-}
-
-static void process_node_free(struct process *process){
-    if(!process) return;
-    oom_gate_remove_process(process->pid);
-    uint64_t phys=process->node_phys;
-    struct process **link=&process_list;
-    while(*link && *link!=process) link=&(*link)->next;
-    if(*link) *link=process->next;
-    phash_remove(process);
-    if(phys) pmm_free_page(phys);
-    else oom_slab_free(process,sizeof(struct process));
+static struct process *process_node_alloc(void) {
+  struct process *process =
+      (struct process *)oom_slab_alloc(sizeof(struct process));
+  uint64_t phys = 0;
+  if (!process) {
+    phys = pmm_allocate_page();
+    if (!phys)
+      return NULL;
+    process = (struct process *)pmm_physical_to_virtual(phys);
+  }
+  memset(process, 0, sizeof(*process));
+  process->node_phys = phys;
+  return process;
 }
 
-static struct process *process_find_by_pid(uint32_t pid){
-    if(!pid) return NULL;
-    uint32_t i=phash_idx(pid);
-    for(struct process *p=phash_buckets[i];p;p=p->hnext)
-        if(p->state!=PROCESS_FREE && p->pid==pid) return p;
+static void process_node_free(struct process *process) {
+  if (!process)
+    return;
+  oom_gate_remove_process(process->pid);
+  uint64_t phys = process->node_phys;
+  struct process **link = &process_list;
+  while (*link && *link != process)
+    link = &(*link)->next;
+  if (*link)
+    *link = process->next;
+  phash_remove(process);
+  if (phys)
+    pmm_free_page(phys);
+  else
+    oom_slab_free(process, sizeof(struct process));
+}
+
+static struct process *process_find_by_pid(uint32_t pid) {
+  if (!pid)
     return NULL;
+  uint32_t i = phash_idx(pid);
+  for (struct process *p = phash_buckets[i]; p; p = p->hnext)
+    if (p->state != PROCESS_FREE && p->pid == pid)
+      return p;
+  return NULL;
 }
 
-static bool environment_name_valid(const char *name){
-    if(!name || !name[0]) return false;
-    for(uint32_t index=0;name[index];index++){
-        char character=name[index];
-        if(index>=PROCESS_ENVIRONMENT_NAME_CAPACITY-1
-           || !((character>='a' && character<='z')
-                || (character>='A' && character<='Z')
-                || character=='_' || (index>0 && character>='0'
-                                      && character<='9'))) return false;
-    }
-    return true;
+static bool environment_name_valid(const char *name) {
+  if (!name || !name[0])
+    return false;
+  for (uint32_t index = 0; name[index]; index++) {
+    char character = name[index];
+    if (index >= PROCESS_ENVIRONMENT_NAME_CAPACITY - 1 ||
+        !((character >= 'a' && character <= 'z') ||
+          (character >= 'A' && character <= 'Z') || character == '_' ||
+          (index > 0 && character >= '0' && character <= '9')))
+      return false;
+  }
+  return true;
 }
 
 static int32_t environment_find(const struct process *process,
-                                const char *name){
-    for(uint32_t index=0;index<PROCESS_ENVIRONMENT_COUNT;index++){
-        if(process->environment[index].used
-           && strcmp(process->environment[index].name,name)==0)
-            return (int32_t)index;
-    }
-    return -1;
+                                const char *name) {
+  for (uint32_t index = 0; index < PROCESS_ENVIRONMENT_COUNT; index++) {
+    if (process->environment[index].used &&
+        strcmp(process->environment[index].name, name) == 0)
+      return (int32_t)index;
+  }
+  return -1;
 }
 
 static void environment_put(struct process *process, const char *name,
-                            const char *value){
-    int32_t slot=environment_find(process,name);
-    if(slot<0){
-        for(uint32_t index=0;index<PROCESS_ENVIRONMENT_COUNT;index++){
-            if(!process->environment[index].used){
-                slot=(int32_t)index;
-                break;
-            }
-        }
+                            const char *value) {
+  int32_t slot = environment_find(process, name);
+  if (slot < 0) {
+    for (uint32_t index = 0; index < PROCESS_ENVIRONMENT_COUNT; index++) {
+      if (!process->environment[index].used) {
+        slot = (int32_t)index;
+        break;
+      }
     }
-    if(slot<0) return;
-    struct process_environment_entry *entry=&process->environment[slot];
-    entry->used=true;
-    strncpy(entry->name,name,sizeof(entry->name)-1);
-    entry->name[sizeof(entry->name)-1]='\0';
-    strncpy(entry->value,value,sizeof(entry->value)-1);
-    entry->value[sizeof(entry->value)-1]='\0';
+  }
+  if (slot < 0)
+    return;
+  struct process_environment_entry *entry = &process->environment[slot];
+  entry->used = true;
+  strncpy(entry->name, name, sizeof(entry->name) - 1);
+  entry->name[sizeof(entry->name) - 1] = '\0';
+  strncpy(entry->value, value, sizeof(entry->value) - 1);
+  entry->value[sizeof(entry->value) - 1] = '\0';
 }
 
 static void environment_initialize(struct process *process,
-                                   const struct process *parent){
-    if(parent){
-        memcpy(process->environment,parent->environment,
-               sizeof(process->environment));
-        return;
-    }
-    environment_put(process,"HOME","/");
-    environment_put(process,"PWD","/");
-    environment_put(process,"USER","purec");
-    environment_put(process,"SHELL","/bin/program/terminal");
-    environment_put(process,"PATH","/bin/program:/bin");
+                                   const struct process *parent) {
+  if (parent) {
+    memcpy(process->environment, parent->environment,
+           sizeof(process->environment));
+    return;
+  }
+  environment_put(process, "HOME", "/");
+  environment_put(process, "PWD", "/");
+  environment_put(process, "USER", "purec");
+  environment_put(process, "SHELL", "/bin/program/terminal");
+  environment_put(process, "PATH", "/bin/program:/bin");
 }
 
-static struct process *allocate_process(void){
-    struct process *process=process_node_alloc();
-    if(!process) return 0;
-    process->state=PROCESS_LOADING;
-    process->waiter_thread_id=-1;
-    for(uint32_t fd=0;fd<PROCESS_FD_COUNT;fd++) process->descriptors[fd]=-1;
-    process->descriptors[0]=VFS_FD_STDIN;
-    process->descriptors[1]=VFS_FD_STDOUT;
-    process->descriptors[2]=VFS_FD_STDERR;
-    process->next=NULL;
-    if(!process_list) process_list=process;
-    else {
-        struct process *tail=process_list;
-        while(tail->next) tail=tail->next;
-        tail->next=process;
-    }
-    return process;
+static struct process *allocate_process(void) {
+  struct process *process = process_node_alloc();
+  if (!process)
+    return 0;
+  process->state = PROCESS_LOADING;
+  process->waiter_thread_id = -1;
+  for (uint32_t fd = 0; fd < PROCESS_FD_COUNT; fd++)
+    process->descriptors[fd] = -1;
+  process->descriptors[0] = VFS_FD_STDIN;
+  process->descriptors[1] = VFS_FD_STDOUT;
+  process->descriptors[2] = VFS_FD_STDERR;
+  process->next = NULL;
+  if (!process_list)
+    process_list = process;
+  else {
+    struct process *tail = process_list;
+    while (tail->next)
+      tail = tail->next;
+    tail->next = process;
+  }
+  return process;
 }
 
-static void user_process_entry(void *argument){
-    struct process *process=(struct process*)argument;
-    mutex_lock(&process_mutex);
-    process->state=PROCESS_RUNNING;
-    mutex_unlock(&process_mutex);
-    scheduler_leave_kernel();
-    arch_enter_user(process->entry,process->user_stack_top);
+static void user_process_entry(void *argument) {
+  struct process *process = (struct process *)argument;
+  mutex_lock(&process_mutex);
+  process->state = PROCESS_RUNNING;
+  mutex_unlock(&process_mutex);
+  scheduler_leave_kernel();
+  arch_enter_user(process->entry, process->user_stack_top);
 }
 
 static uint32_t oom_reap_zombie(uint32_t pid);
-void process_init(void){
-    process_list=NULL;
-    next_pid=1;
-    for(uint32_t i=0;i<PHASH_SIZE;i++) phash_buckets[i]=NULL;
-    oom_victim_set_killer(oom_reap_zombie);
-    klog(KLOG_OK,"process: dynamic table ready (limit=RAM)");
+void process_init(void) {
+  process_list = NULL;
+  next_pid = 1;
+  for (uint32_t i = 0; i < PHASH_SIZE; i++)
+    phash_buckets[i] = NULL;
+  oom_victim_set_killer(oom_reap_zombie);
+  klog(KLOG_OK, "process: dynamic table ready (limit=RAM)");
 }
 
-static uint32_t oom_reap_zombie(uint32_t pid){
-    struct process *target=process_find_by_pid(pid);
-    if(!target) return 0;
-    if(target->pid==1) return 0;
-    if(target->state!=PROCESS_EXITED) return 0;
-    if(!scheduler_thread_stopped(target->thread_id)) return 0;
-    int exiting_tid=target->thread_id;
-    vmm_destroy_address_space(target->address_space);
-    target->address_space=0;
-    scheduler_free_thread_by_id(exiting_tid);
-    process_node_free(target);
-    return pid;
+static uint32_t oom_reap_zombie(uint32_t pid) {
+  struct process *target = process_find_by_pid(pid);
+  if (!target)
+    return 0;
+  if (target->pid == 1)
+    return 0;
+  if (target->state != PROCESS_EXITED)
+    return 0;
+  if (!scheduler_thread_stopped(target->thread_id))
+    return 0;
+  int exiting_tid = target->thread_id;
+  vmm_destroy_address_space(target->address_space);
+  target->address_space = 0;
+  scheduler_free_thread_by_id(exiting_tid);
+  process_node_free(target);
+  return pid;
 }
 
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
-                          const char *name, const char *command_line){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *parent=process_current();
-    if(!oom_gate_can_spawn()){
-        last_spawn_error="out of memory";
-        klog(KLOG_WARN,"oom: spawn denied, kernel reserve kept");
-        return -1;
-    }
-    struct process *process=allocate_process();
-    if(!process){ last_spawn_error="cannot allocate process descriptor"; return -1; }
-    process->address_space=vmm_create_address_space();
-    if(!process->address_space){
-        last_spawn_error="cannot create process address space";
-        process_node_free(process); return -1;
-    }
-    struct elf_load_result loaded;
-    if(!elf_load_user_image(image,image_size,process->address_space,&loaded)){
-        last_spawn_error="ELF image validation or mapping failed";
-        vmm_destroy_address_space(process->address_space);
-        process->address_space=0;
-        process_node_free(process);
-        return -1;
-    }
-    uint64_t stack_base=USER_STACK_TOP-USER_STACK_PAGES*PMM_PAGE_SIZE;
-    uint64_t heap_base=loaded.highest_address
-        +USER_HEAP_GUARD_PAGES*PMM_PAGE_SIZE;
-    uint64_t heap_limit=stack_base-USER_HEAP_GUARD_PAGES*PMM_PAGE_SIZE;
-    if(heap_base>=heap_limit){
-        last_spawn_error="ELF address range collides with user stack";
-        vmm_destroy_address_space(process->address_space);
-        process->address_space=0;
-        process_node_free(process);
-        return -1;
-    }
-    if(!vmm_map_new_pages(process->address_space,stack_base,USER_STACK_PAGES,
-                          VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
-        last_spawn_error="cannot allocate user stack pages";
-        vmm_destroy_address_space(process->address_space);
-        process->address_space=0;
-        process_node_free(process);
-        return -1;
-    }
-    process->pid=next_pid++;
-    if(process->pid==0) process->pid=next_pid++;
-    for(;;){
-        struct process *hit=process_find_by_pid(process->pid);
-        if(!hit || hit==process) break;
-        process->pid=next_pid++;
-        if(process->pid==0) process->pid=next_pid++;
-    }
-    phash_insert(process);
-    {
-        uint64_t initial_user_pages=vmm_user_page_count(process->address_space);
-        if(!oom_gate_try_charge_user(process->pid,initial_user_pages)){
-            last_spawn_error="out of memory";
-            klogf(KLOG_WARN,"oom: spawn pid charge denied pages=%llu",
-                (unsigned long long)initial_user_pages);
-            vmm_destroy_address_space(process->address_space);
-            process->address_space=0;
-            process_node_free(process);
-            return -1;
-        }
-    }
-    process->parent_pid=(uint32_t)(process_current_pid()>0
-        ? process_current_pid() : 0);
-    process->state=PROCESS_READY;
-    process->entry=loaded.entry;
-    process->user_stack_top=USER_STACK_TOP-8;
-    process->heap_base=heap_base;
-    process->heap_break=heap_base;
-    process->heap_mapped_end=heap_base;
-    process->heap_limit=heap_limit;
-    environment_initialize(process,parent);
-    if(command_line){
-        strncpy(process->command_line,command_line,
-                sizeof(process->command_line)-1);
-        process->command_line[sizeof(process->command_line)-1]='\0';
-    }
-    strncpy(process->name,name ? name : "process",sizeof(process->name)-1);
-    if(name && (strcmp(name,"installer")==0 || strcmp(name,"disks")==0))
-        process->capabilities|=PROCESS_CAP_STORAGE_ADMIN;
-    process->thread_id=scheduler_create_user_thread(
-        user_process_entry,process,process->name,USER_PROCESS_PRIORITY,-1,
-        process->address_space,process);
-    if(process->thread_id<0){
-        last_spawn_error="cannot create initial process thread";
-        vmm_destroy_address_space(process->address_space);
-        process->address_space=0;
-        process_node_free(process);
-        return -1;
-    }
-    klogf(KLOG_OK,"process: pid=%u name=%s entry=0x%llx cr3=0x%llx",
-          process->pid,process->name,process->entry,process->address_space);
-    return (int32_t)process->pid;
-}
-
-int32_t process_spawn_module(const char *path, const char *command_line){
-    MUTEX_SCOPE(&process_mutex);
-    last_spawn_error="unknown process load failure";
-    const char *module_path=path;
-    if(!path) {
-        last_spawn_error="process path is null";
-        klog(KLOG_ERROR,"process: spawn requested with no path"); return -1;
-    }
-
-    const char *name=path;
-    for(const char *cursor=path;*cursor;cursor++){
-        if(*cursor=='/' && cursor[1]) name=cursor+1;
-    }
-
-    /* Initramfs files already reside in kernel-readable memory. Loading the
-       ELF directly avoids allocating a VFS handle and a second contiguous
-       copy of the executable during the memory-constrained boot phase. */
-    const void *initramfs_image=0;
-    uint32_t initramfs_size=0;
-    if(initramfs_find(path,&initramfs_image,&initramfs_size))
-        return process_spawn_elf(initramfs_image,initramfs_size,name,command_line);
-    if(program_alias_resolve(path,&module_path)
-       && initramfs_find(module_path,&initramfs_image,&initramfs_size))
-        return process_spawn_elf(initramfs_image,initramfs_size,name,command_line);
-
-    int32_t fd=vfs_open(path);
-    const char *used_path=(fd>=0) ? path : 0;
-    if(fd<0 && module_path && module_path!=path){
-        fd=vfs_open(module_path);
-        if(fd>=0) used_path=module_path;
-    }
-    if(fd<0){
-        last_spawn_error=fd==FS_ERROR_NO_SPACE
-            ? "VFS cannot allocate a file handle"
-            : "executable not found in initramfs or VFS";
-        klogf(KLOG_ERROR,"process: cannot open %s (vfs=%d, root=%s)",
-              path,fd,vfs_root_device_name());
-        return -1;
-    }
-    {
-        struct file_stat_info st={0};
-        uint64_t blob_size=0;
-        if(used_path && vfs_stat(used_path,&st)>=0) blob_size=st.size;
-        if(!blob_size || blob_size>64ULL*1024ULL*1024ULL){
-            last_spawn_error="invalid executable size in initramfs";
-            klogf(KLOG_ERROR,"process: invalid size for %s: %llu",used_path,
-                  (unsigned long long)blob_size);
-            vfs_close(fd);
-            return -1;
-        }
-        uint64_t pages=(blob_size+PMM_PAGE_SIZE-1)/PMM_PAGE_SIZE;
-        uint64_t phys=pmm_allocate_contiguous(pages);
-        if(phys){
-            uint8_t *vbuf=(uint8_t*)pmm_physical_to_virtual(phys);
-            uint64_t done=0;
-            int32_t failed=0;
-            while(done<blob_size){
-                uint64_t left=blob_size-done;
-                uint32_t want=left>1048576 ? 1048576 : (uint32_t)left;
-                int32_t got=vfs_read(fd,vbuf+done,want);
-                if(got<=0){
-                    last_spawn_error="short read from initramfs";
-                    klogf(KLOG_ERROR,"process: read %s failed at %llu/%llu (vfs=%d)",
-                          used_path,(unsigned long long)done,
-                          (unsigned long long)blob_size,got);
-                    failed=1; break;
-                }
-                done+=(uint64_t)got;
-            }
-            vfs_close(fd);
-            if(!failed){
-                int32_t pid=process_spawn_elf(vbuf,done,name,command_line);
-                pmm_free_contiguous(phys,pages);
-                if(pid<0) klogf(KLOG_ERROR,"process: ELF load failed for %s (%llu bytes)",
-                                 used_path,(unsigned long long)done);
-                return pid;
-            }
-            pmm_free_contiguous(phys,pages);
-            return -1;
-        }
-        klogf(KLOG_ERROR,"process: cannot allocate %llu pages for %s",
-              (unsigned long long)pages,used_path);
-        last_spawn_error="cannot allocate executable read buffer";
-        vfs_close(fd);
-    }
+                          const char *name, const char *command_line) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *parent = process_current();
+  if (!oom_gate_can_spawn()) {
+    last_spawn_error = "out of memory";
+    klog(KLOG_WARN, "oom: spawn denied, kernel reserve kept");
     return -1;
-}
-
-int32_t process_wait(uint32_t pid, int32_t *status, bool nohang){
-    if(!pid) return -1;
-    for(;;){
-        bool exiting=false;
-        {
-            MUTEX_SCOPE(&process_mutex);
-            struct process *target=process_find_by_pid(pid);
-            if(!target) return -1;
-            int32_t caller=process_current_pid();
-            if(caller>0 && target->parent_pid!=(uint32_t)caller) return -1;
-            if(target->state==PROCESS_EXITED && scheduler_thread_stopped(target->thread_id)){
-                if(status) *status=target->exit_code;
-                int exiting_tid=target->thread_id;
-                vmm_destroy_address_space(target->address_space);
-                target->address_space=0;
-                scheduler_free_thread_by_id(exiting_tid);
-                process_node_free(target);
-                return (int32_t)pid;
-            }
-            if(nohang) return 0;
-            int32_t waiter=scheduler_current_tid();
-            if(waiter<0 || (target->waiter_thread_id>=0 && target->waiter_thread_id!=waiter)) return -1;
-            target->waiter_thread_id=waiter;
-            exiting=target->state==PROCESS_EXITED;
-        }
-        if(exiting) scheduler_sleep(1);
-        else scheduler_block();
+  }
+  struct process *process = allocate_process();
+  if (!process) {
+    last_spawn_error = "cannot allocate process descriptor";
+    return -1;
+  }
+  process->address_space = vmm_create_address_space();
+  if (!process->address_space) {
+    last_spawn_error = "cannot create process address space";
+    process_node_free(process);
+    return -1;
+  }
+  struct elf_load_result loaded;
+  if (!elf_load_user_image(image, image_size, process->address_space,
+                           &loaded)) {
+    last_spawn_error = "ELF image validation or mapping failed";
+    vmm_destroy_address_space(process->address_space);
+    process->address_space = 0;
+    process_node_free(process);
+    return -1;
+  }
+  uint64_t stack_base = USER_STACK_TOP - USER_STACK_PAGES * PMM_PAGE_SIZE;
+  uint64_t heap_base =
+      loaded.highest_address + USER_HEAP_GUARD_PAGES * PMM_PAGE_SIZE;
+  uint64_t heap_limit = stack_base - USER_HEAP_GUARD_PAGES * PMM_PAGE_SIZE;
+  if (heap_base >= heap_limit) {
+    last_spawn_error = "ELF address range collides with user stack";
+    vmm_destroy_address_space(process->address_space);
+    process->address_space = 0;
+    process_node_free(process);
+    return -1;
+  }
+  if (!vmm_map_new_pages(process->address_space, stack_base, USER_STACK_PAGES,
+                         VMM_PAGE_USER | VMM_PAGE_WRITABLE | VMM_PAGE_NX)) {
+    last_spawn_error = "cannot allocate user stack pages";
+    vmm_destroy_address_space(process->address_space);
+    process->address_space = 0;
+    process_node_free(process);
+    return -1;
+  }
+  process->pid = next_pid++;
+  if (process->pid == 0)
+    process->pid = next_pid++;
+  for (;;) {
+    struct process *hit = process_find_by_pid(process->pid);
+    if (!hit || hit == process)
+      break;
+    process->pid = next_pid++;
+    if (process->pid == 0)
+      process->pid = next_pid++;
+  }
+  phash_insert(process);
+  {
+    uint64_t initial_user_pages = vmm_user_page_count(process->address_space);
+    if (!oom_gate_try_charge_user(process->pid, initial_user_pages)) {
+      last_spawn_error = "out of memory";
+      klogf(KLOG_WARN, "oom: spawn pid charge denied pages=%llu",
+            (unsigned long long)initial_user_pages);
+      vmm_destroy_address_space(process->address_space);
+      process->address_space = 0;
+      process_node_free(process);
+      return -1;
     }
+  }
+  process->parent_pid =
+      (uint32_t)(process_current_pid() > 0 ? process_current_pid() : 0);
+  process->state = PROCESS_READY;
+  process->entry = loaded.entry;
+  process->user_stack_top = USER_STACK_TOP - 8;
+  process->heap_base = heap_base;
+  process->heap_break = heap_base;
+  process->heap_mapped_end = heap_base;
+  process->heap_limit = heap_limit;
+  environment_initialize(process, parent);
+  if (command_line) {
+    strncpy(process->command_line, command_line,
+            sizeof(process->command_line) - 1);
+    process->command_line[sizeof(process->command_line) - 1] = '\0';
+  }
+  strncpy(process->name, name ? name : "process", sizeof(process->name) - 1);
+  if (name && (strcmp(name, "installer") == 0 || strcmp(name, "disks") == 0))
+    process->capabilities |= PROCESS_CAP_STORAGE_ADMIN;
+  process->thread_id = scheduler_create_user_thread(
+      user_process_entry, process, process->name, USER_PROCESS_PRIORITY, -1,
+      process->address_space, process);
+  if (process->thread_id < 0) {
+    last_spawn_error = "cannot create initial process thread";
+    vmm_destroy_address_space(process->address_space);
+    process->address_space = 0;
+    process_node_free(process);
+    return -1;
+  }
+  klogf(KLOG_OK, "process: pid=%u name=%s entry=0x%llx cr3=0x%llx",
+        process->pid, process->name, process->entry, process->address_space);
+  return (int32_t)process->pid;
 }
 
-struct process *process_current(void){
-    struct thread *thread=scheduler_current_thread();
-    return thread ? thread->process : 0;
+int32_t process_spawn_module(const char *path, const char *command_line) {
+  MUTEX_SCOPE(&process_mutex);
+  last_spawn_error = "unknown process load failure";
+  const char *module_path = path;
+  if (!path) {
+    last_spawn_error = "process path is null";
+    klog(KLOG_ERROR, "process: spawn requested with no path");
+    return -1;
+  }
+
+  const char *name = path;
+  for (const char *cursor = path; *cursor; cursor++) {
+    if (*cursor == '/' && cursor[1])
+      name = cursor + 1;
+  }
+
+  /* Initramfs files already reside in kernel-readable memory. Loading the
+     ELF directly avoids allocating a VFS handle and a second contiguous
+     copy of the executable during the memory-constrained boot phase. */
+  const void *initramfs_image = 0;
+  uint32_t initramfs_size = 0;
+  if (initramfs_find(path, &initramfs_image, &initramfs_size))
+    return process_spawn_elf(initramfs_image, initramfs_size, name,
+                             command_line);
+  if (program_alias_resolve(path, &module_path) &&
+      initramfs_find(module_path, &initramfs_image, &initramfs_size))
+    return process_spawn_elf(initramfs_image, initramfs_size, name,
+                             command_line);
+
+  int32_t fd = vfs_open(path);
+  const char *used_path = (fd >= 0) ? path : 0;
+  if (fd < 0 && module_path && module_path != path) {
+    fd = vfs_open(module_path);
+    if (fd >= 0)
+      used_path = module_path;
+  }
+  if (fd < 0) {
+    last_spawn_error = fd == FS_ERROR_NO_SPACE
+                           ? "VFS cannot allocate a file handle"
+                           : "executable not found in initramfs or VFS";
+    klogf(KLOG_ERROR, "process: cannot open %s (vfs=%d, root=%s)", path, fd,
+          vfs_root_device_name());
+    return -1;
+  }
+  {
+    struct file_stat_info st = {0};
+    uint64_t blob_size = 0;
+    if (used_path && vfs_stat(used_path, &st) >= 0)
+      blob_size = st.size;
+    if (!blob_size || blob_size > 64ULL * 1024ULL * 1024ULL) {
+      last_spawn_error = "invalid executable size in initramfs";
+      klogf(KLOG_ERROR, "process: invalid size for %s: %llu", used_path,
+            (unsigned long long)blob_size);
+      vfs_close(fd);
+      return -1;
+    }
+    uint64_t pages = (blob_size + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+    uint64_t phys = pmm_allocate_contiguous(pages);
+    if (phys) {
+      uint8_t *vbuf = (uint8_t *)pmm_physical_to_virtual(phys);
+      uint64_t done = 0;
+      int32_t failed = 0;
+      while (done < blob_size) {
+        uint64_t left = blob_size - done;
+        uint32_t want = left > 1048576 ? 1048576 : (uint32_t)left;
+        int32_t got = vfs_read(fd, vbuf + done, want);
+        if (got <= 0) {
+          last_spawn_error = "short read from initramfs";
+          klogf(KLOG_ERROR, "process: read %s failed at %llu/%llu (vfs=%d)",
+                used_path, (unsigned long long)done,
+                (unsigned long long)blob_size, got);
+          failed = 1;
+          break;
+        }
+        done += (uint64_t)got;
+      }
+      vfs_close(fd);
+      if (!failed) {
+        int32_t pid = process_spawn_elf(vbuf, done, name, command_line);
+        pmm_free_contiguous(phys, pages);
+        if (pid < 0)
+          klogf(KLOG_ERROR, "process: ELF load failed for %s (%llu bytes)",
+                used_path, (unsigned long long)done);
+        return pid;
+      }
+      pmm_free_contiguous(phys, pages);
+      return -1;
+    }
+    klogf(KLOG_ERROR, "process: cannot allocate %llu pages for %s",
+          (unsigned long long)pages, used_path);
+    last_spawn_error = "cannot allocate executable read buffer";
+    vfs_close(fd);
+  }
+  return -1;
 }
 
-int32_t process_current_pid(void){
-    struct process *process=process_current();
-    return process ? (int32_t)process->pid : 0;
-}
-
-int32_t process_parent_pid(uint32_t pid){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_find_by_pid(pid);
-    if(!process) return -1;
-    return (int32_t)process->parent_pid;
-}
-
-bool process_current_is_user(void){
-    struct thread *thread=scheduler_current_thread();
-    return thread && thread->user_mode;
-}
-
-bool process_has_capability(uint32_t capability){
-    struct process *process=process_current();
-    return !process || (process->capabilities&capability)==capability;
-}
-
-uint64_t process_current_address_space(void){
-    struct process *process=process_current();
-    return process ? process->address_space : vmm_kernel_address_space();
-}
-
-uint64_t process_heap_grow(uint64_t size){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process || !process_current_is_user()) return 0;
-    if(!size) return process->heap_break;
-    if(size>process->heap_limit-process->heap_break) return 0;
-    uint64_t previous_break=process->heap_break;
-    uint64_t requested_break=previous_break+size;
-    uint64_t requested_mapping=(requested_break+PMM_PAGE_SIZE-1)
-        &~(PMM_PAGE_SIZE-1);
-    uint64_t need_pages=(requested_mapping>process->heap_mapped_end)
-        ? (requested_mapping-process->heap_mapped_end+PMM_PAGE_SIZE-1)/PMM_PAGE_SIZE : 0;
-    if(need_pages && !oom_gate_try_charge_user(process->pid,need_pages)){
-        klogf(KLOG_WARN,"oom: heap grow denied pid=%u pages=%llu",
-            process->pid,(unsigned long long)need_pages);
+int32_t process_wait(uint32_t pid, int32_t *status, bool nohang) {
+  if (!pid)
+    return -1;
+  for (;;) {
+    bool exiting = false;
+    {
+      MUTEX_SCOPE(&process_mutex);
+      struct process *target = process_find_by_pid(pid);
+      if (!target)
+        return -1;
+      int32_t caller = process_current_pid();
+      if (caller > 0 && target->parent_pid != (uint32_t)caller)
+        return -1;
+      if (target->state == PROCESS_EXITED &&
+          scheduler_thread_stopped(target->thread_id)) {
+        if (status)
+          *status = target->exit_code;
+        int exiting_tid = target->thread_id;
+        vmm_destroy_address_space(target->address_space);
+        target->address_space = 0;
+        scheduler_free_thread_by_id(exiting_tid);
+        process_node_free(target);
+        return (int32_t)pid;
+      }
+      if (nohang)
         return 0;
+      int32_t waiter = scheduler_current_tid();
+      if (waiter < 0 ||
+          (target->waiter_thread_id >= 0 && target->waiter_thread_id != waiter))
+        return -1;
+      target->waiter_thread_id = waiter;
+      exiting = target->state == PROCESS_EXITED;
     }
-    uint64_t mapped_pages=0;
-    while(process->heap_mapped_end<requested_mapping){
-        if(!vmm_map_new_pages(process->address_space,
-                              process->heap_mapped_end,1,
-                              VMM_PAGE_USER|VMM_PAGE_WRITABLE|VMM_PAGE_NX)){
-            if(mapped_pages<need_pages) oom_gate_release_user(process->pid,need_pages-mapped_pages);
-            klogf(KLOG_WARN,"oom: heap map denied pid=%u",process->pid);
-            return 0;
-        }
-        process->heap_mapped_end+=PMM_PAGE_SIZE;
-        mapped_pages++;
-    }
-    process->heap_break=requested_break;
-    return previous_break;
+    if (exiting)
+      scheduler_sleep(1);
+    else
+      scheduler_block();
+  }
 }
 
-void process_exit_current(int32_t status){
-    mutex_lock(&process_mutex);
-    struct process *process=process_current();
-    if(process){
-        if(process->pid==1) kernel_panic("PID 1 exited");
-        process->exit_code=status;
-        process->runtime_ticks=scheduler_thread_runtime_ticks(
-            process->thread_id);
-        process->state=PROCESS_EXITED;
-        for(struct process *child=process_list;child;child=child->next){
-            if(child->state!=PROCESS_FREE && child->parent_pid==process->pid){
-                child->parent_pid=1;
-                child->waiter_thread_id=-1;
-            }
-        }
-        window_manager_unregister(process->pid);
-        gop_console_release(process->pid);
-        for(uint32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
-            if(process->descriptors[fd]>=VFS_FD_BASE){
-                (void)vfs_close(process->descriptors[fd]);
-                process->descriptors[fd]=-1;
-            }
-        }
-        klogf(KLOG_INFO,"process: pid=%u exited status=%d",process->pid,status);
-        if(process->waiter_thread_id>=0)
-            scheduler_unblock(process->waiter_thread_id);
+struct process *process_current(void) {
+  struct thread *thread = scheduler_current_thread();
+  return thread ? thread->process : 0;
+}
+
+int32_t process_current_pid(void) {
+  struct process *process = process_current();
+  return process ? (int32_t)process->pid : 0;
+}
+
+int32_t process_parent_pid(uint32_t pid) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_find_by_pid(pid);
+  if (!process)
+    return -1;
+  return (int32_t)process->parent_pid;
+}
+
+bool process_current_is_user(void) {
+  struct thread *thread = scheduler_current_thread();
+  return thread && thread->user_mode;
+}
+
+bool process_has_capability(uint32_t capability) {
+  struct process *process = process_current();
+  return !process || (process->capabilities & capability) == capability;
+}
+
+uint64_t process_current_address_space(void) {
+  struct process *process = process_current();
+  return process ? process->address_space : vmm_kernel_address_space();
+}
+
+uint64_t process_heap_grow(uint64_t size) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return 0;
+  if (!size)
+    return process->heap_break;
+  if (size > process->heap_limit - process->heap_break)
+    return 0;
+  uint64_t previous_break = process->heap_break;
+  uint64_t requested_break = previous_break + size;
+  uint64_t requested_mapping =
+      (requested_break + PMM_PAGE_SIZE - 1) & ~(PMM_PAGE_SIZE - 1);
+  uint64_t need_pages =
+      (requested_mapping > process->heap_mapped_end)
+          ? (requested_mapping - process->heap_mapped_end + PMM_PAGE_SIZE - 1) /
+                PMM_PAGE_SIZE
+          : 0;
+  if (need_pages && !oom_gate_try_charge_user(process->pid, need_pages)) {
+    klogf(KLOG_WARN, "oom: heap grow denied pid=%u pages=%llu", process->pid,
+          (unsigned long long)need_pages);
+    return 0;
+  }
+  uint64_t mapped_pages = 0;
+  while (process->heap_mapped_end < requested_mapping) {
+    if (!vmm_map_new_pages(process->address_space, process->heap_mapped_end, 1,
+                           VMM_PAGE_USER | VMM_PAGE_WRITABLE | VMM_PAGE_NX)) {
+      if (mapped_pages < need_pages)
+        oom_gate_release_user(process->pid, need_pages - mapped_pages);
+      klogf(KLOG_WARN, "oom: heap map denied pid=%u", process->pid);
+      return 0;
     }
-    mutex_unlock(&process_mutex);
-    scheduler_exit();
-    __builtin_unreachable();
+    process->heap_mapped_end += PMM_PAGE_SIZE;
+    mapped_pages++;
+  }
+  process->heap_break = requested_break;
+  return previous_break;
+}
+
+void process_exit_current(int32_t status) {
+  mutex_lock(&process_mutex);
+  struct process *process = process_current();
+  if (process) {
+    if (process->pid == 1)
+      kernel_panic("PID 1 exited");
+    process->exit_code = status;
+    process->runtime_ticks = scheduler_thread_runtime_ticks(process->thread_id);
+    process->state = PROCESS_EXITED;
+    for (struct process *child = process_list; child; child = child->next) {
+      if (child->state != PROCESS_FREE && child->parent_pid == process->pid) {
+        child->parent_pid = 1;
+        child->waiter_thread_id = -1;
+      }
+    }
+    window_manager_unregister(process->pid);
+    gop_console_release(process->pid);
+    for (uint32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
+      if (process->descriptors[fd] >= VFS_FD_BASE) {
+        (void)vfs_close(process->descriptors[fd]);
+        process->descriptors[fd] = -1;
+      }
+    }
+    klogf(KLOG_INFO, "process: pid=%u exited status=%d", process->pid, status);
+    if (process->waiter_thread_id >= 0)
+      scheduler_unblock(process->waiter_thread_id);
+  }
+  mutex_unlock(&process_mutex);
+  scheduler_exit();
+  __builtin_unreachable();
 }
 
 int32_t process_monitor_list_page(struct process_monitor_info *entries,
-                                  uint32_t capacity, uint32_t offset){
-    MUTEX_SCOPE(&process_mutex);
-    uint64_t now=timer_ticks();
-    uint64_t elapsed=now-process_sample_tick;
-    uint32_t count=0;
-    for(struct process *process=process_list;process;process=process->next){
-        if(process->state==PROCESS_FREE) continue;
-        uint64_t runtime=process->state==PROCESS_EXITED
-            ? process->runtime_ticks
-            : scheduler_thread_runtime_ticks(process->thread_id);
-        if(count>=offset && count-offset<capacity){
-            struct process_monitor_info *entry=&entries[count-offset];
-            memset(entry,0,sizeof(*entry));
-            entry->pid=process->pid;
-            entry->parent_pid=process->parent_pid;
-            entry->state=(uint32_t)process->state;
-            entry->exit_code=process->exit_code;
-            entry->runtime_ms=runtime;
-            entry->resident_bytes=vmm_user_page_count(process->address_space)
-                *PMM_PAGE_SIZE;
-            uint64_t delta=runtime-process->sampled_runtime_ticks;
-            entry->cpu_percent=elapsed
-                ? (uint32_t)((delta*100)/elapsed) : 0;
-            if(entry->cpu_percent>100) entry->cpu_percent=100;
-            strncpy(entry->name,process->name,sizeof(entry->name)-1);
-        }
-        process->sampled_runtime_ticks=runtime;
-        count++;
+                                  uint32_t capacity, uint32_t offset) {
+  MUTEX_SCOPE(&process_mutex);
+  uint64_t now = timer_ticks();
+  uint64_t elapsed = now - process_sample_tick;
+  uint32_t count = 0;
+  for (struct process *process = process_list; process;
+       process = process->next) {
+    if (process->state == PROCESS_FREE)
+      continue;
+    uint64_t runtime = process->state == PROCESS_EXITED
+                           ? process->runtime_ticks
+                           : scheduler_thread_runtime_ticks(process->thread_id);
+    if (count >= offset && count - offset < capacity) {
+      struct process_monitor_info *entry = &entries[count - offset];
+      memset(entry, 0, sizeof(*entry));
+      entry->pid = process->pid;
+      entry->parent_pid = process->parent_pid;
+      entry->state = (uint32_t)process->state;
+      entry->exit_code = process->exit_code;
+      entry->runtime_ms = runtime;
+      entry->resident_bytes =
+          vmm_user_page_count(process->address_space) * PMM_PAGE_SIZE;
+      uint64_t delta = runtime - process->sampled_runtime_ticks;
+      entry->cpu_percent = elapsed ? (uint32_t)((delta * 100) / elapsed) : 0;
+      if (entry->cpu_percent > 100)
+        entry->cpu_percent = 100;
+      strncpy(entry->name, process->name, sizeof(entry->name) - 1);
     }
-    process_sample_tick=now;
-    return (int32_t)count;
+    process->sampled_runtime_ticks = runtime;
+    count++;
+  }
+  process_sample_tick = now;
+  return (int32_t)count;
 }
 
 int32_t process_monitor_list(struct process_monitor_info *entries,
-                             uint32_t capacity){
-    return process_monitor_list_page(entries,capacity,0);
+                             uint32_t capacity) {
+  return process_monitor_list_page(entries, capacity, 0);
 }
 
-int32_t process_fd_install(int32_t kernel_descriptor){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process) return kernel_descriptor;
-    for(int32_t fd=3;fd<PROCESS_FD_COUNT;fd++){
-        if(process->descriptors[fd]<0){
-            process->descriptors[fd]=kernel_descriptor;
-            return fd;
-        }
+int32_t process_fd_install(int32_t kernel_descriptor) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process)
+    return kernel_descriptor;
+  for (int32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
+    if (process->descriptors[fd] < 0) {
+      process->descriptors[fd] = kernel_descriptor;
+      return fd;
     }
+  }
+  return -1;
+}
+
+int32_t process_fd_resolve(int32_t descriptor) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process)
+    return descriptor;
+  if (descriptor < 0 || descriptor >= PROCESS_FD_COUNT)
     return -1;
+  return process->descriptors[descriptor];
 }
 
-int32_t process_fd_resolve(int32_t descriptor){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process) return descriptor;
-    if(descriptor<0 || descriptor>=PROCESS_FD_COUNT) return -1;
-    return process->descriptors[descriptor];
+int32_t process_fd_close(int32_t descriptor) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process)
+    return vfs_close(descriptor);
+  if (descriptor < 3 || descriptor >= PROCESS_FD_COUNT ||
+      process->descriptors[descriptor] < VFS_FD_BASE)
+    return -1;
+  int32_t result = vfs_close(process->descriptors[descriptor]);
+  process->descriptors[descriptor] = -1;
+  return result;
 }
 
-int32_t process_fd_close(int32_t descriptor){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process) return vfs_close(descriptor);
-    if(descriptor<3 || descriptor>=PROCESS_FD_COUNT
-       || process->descriptors[descriptor]<VFS_FD_BASE) return -1;
-    int32_t result=vfs_close(process->descriptors[descriptor]);
-    process->descriptors[descriptor]=-1;
-    return result;
+bool process_user_buffer(const void *buffer, uint64_t size, bool writable) {
+  if (size == 0)
+    return true;
+  if (!process_current_is_user())
+    return buffer != NULL;
+  return buffer &&
+         vmm_user_range_accessible(process_current_address_space(),
+                                   (uint64_t)(uintptr_t)buffer, size, writable);
 }
 
-bool process_user_buffer(const void *buffer, uint64_t size, bool writable){
-    if(size==0) return true;
-    if(!process_current_is_user()) return buffer != NULL;
-    return buffer && vmm_user_range_accessible(process_current_address_space(),
-        (uint64_t)(uintptr_t)buffer,size,writable);
-}
-
-bool process_user_string(const char *text, uint64_t capacity){
-    if(!process_current_is_user()) return text!=0;
-    if(!text || !capacity) return false;
-    for(uint64_t index=0;index<capacity;index++){
-        if(!process_user_buffer(text+index,1,false)) return false;
-        if(text[index]=='\0') return true;
-    }
+bool process_user_string(const char *text, uint64_t capacity) {
+  if (!process_current_is_user())
+    return text != 0;
+  if (!text || !capacity)
     return false;
+  for (uint64_t index = 0; index < capacity; index++) {
+    if (!process_user_buffer(text + index, 1, false))
+      return false;
+    if (text[index] == '\0')
+      return true;
+  }
+  return false;
 }
 
-int32_t process_command_line(char *buffer, uint32_t capacity){
-    struct process *process=process_current();
-    if(!process || !buffer || !capacity) return -1;
-    uint32_t length=(uint32_t)strlen(process->command_line);
-    if(length+1>capacity) return -1;
-    memcpy(buffer,process->command_line,length+1);
-    return (int32_t)length;
+int32_t process_command_line(char *buffer, uint32_t capacity) {
+  struct process *process = process_current();
+  if (!process || !buffer || !capacity)
+    return -1;
+  uint32_t length = (uint32_t)strlen(process->command_line);
+  if (length + 1 > capacity)
+    return -1;
+  memcpy(buffer, process->command_line, length + 1);
+  return (int32_t)length;
 }
 
-int32_t process_name(char *buffer, uint32_t capacity){
-    struct process *process=process_current();
-    if(!process || !buffer || !capacity) return -1;
-    uint32_t length=(uint32_t)strlen(process->name);
-    if(length+1>capacity) return -1;
-    memcpy(buffer,process->name,length+1);
-    return (int32_t)length;
+int32_t process_name(char *buffer, uint32_t capacity) {
+  struct process *process = process_current();
+  if (!process || !buffer || !capacity)
+    return -1;
+  uint32_t length = (uint32_t)strlen(process->name);
+  if (length + 1 > capacity)
+    return -1;
+  memcpy(buffer, process->name, length + 1);
+  return (int32_t)length;
 }
 
 int32_t process_environment_get(const char *name, char *buffer,
-                                uint32_t capacity){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process || !environment_name_valid(name) || !buffer || !capacity)
-        return -1;
-    int32_t slot=environment_find(process,name);
-    if(slot<0) return -1;
-    uint32_t length=(uint32_t)strlen(process->environment[slot].value);
-    if(length+1>capacity) return -1;
-    memcpy(buffer,process->environment[slot].value,length+1);
-    return (int32_t)length;
+                                uint32_t capacity) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !environment_name_valid(name) || !buffer || !capacity)
+    return -1;
+  int32_t slot = environment_find(process, name);
+  if (slot < 0)
+    return -1;
+  uint32_t length = (uint32_t)strlen(process->environment[slot].value);
+  if (length + 1 > capacity)
+    return -1;
+  memcpy(buffer, process->environment[slot].value, length + 1);
+  return (int32_t)length;
 }
 
-int32_t process_environment_set(const char *name, const char *value){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process || !environment_name_valid(name) || !value
-       || strlen(value)>=PROCESS_ENVIRONMENT_VALUE_CAPACITY) return -1;
-    int32_t slot=environment_find(process,name);
-    if(slot<0){
-        for(uint32_t index=0;index<PROCESS_ENVIRONMENT_COUNT;index++){
-            if(!process->environment[index].used){
-                slot=(int32_t)index;
-                break;
-            }
-        }
+int32_t process_environment_set(const char *name, const char *value) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !environment_name_valid(name) || !value ||
+      strlen(value) >= PROCESS_ENVIRONMENT_VALUE_CAPACITY)
+    return -1;
+  int32_t slot = environment_find(process, name);
+  if (slot < 0) {
+    for (uint32_t index = 0; index < PROCESS_ENVIRONMENT_COUNT; index++) {
+      if (!process->environment[index].used) {
+        slot = (int32_t)index;
+        break;
+      }
     }
-    if(slot<0) return -1;
-    environment_put(process,name,value);
-    return 0;
+  }
+  if (slot < 0)
+    return -1;
+  environment_put(process, name, value);
+  return 0;
 }
 
-int32_t process_environment_unset(const char *name){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process || !environment_name_valid(name)) return -1;
-    int32_t slot=environment_find(process,name);
-    if(slot<0) return -1;
-    memset(&process->environment[slot],0,sizeof(process->environment[slot]));
-    return 0;
+int32_t process_environment_unset(const char *name) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !environment_name_valid(name))
+    return -1;
+  int32_t slot = environment_find(process, name);
+  if (slot < 0)
+    return -1;
+  memset(&process->environment[slot], 0, sizeof(process->environment[slot]));
+  return 0;
 }
 
 int32_t process_environment_list(struct process_environment_entry *entries,
-                                 uint32_t capacity){
-    MUTEX_SCOPE(&process_mutex);
-    struct process *process=process_current();
-    if(!process || (!entries && capacity)) return -1;
-    uint32_t count=0;
-    for(uint32_t index=0;index<PROCESS_ENVIRONMENT_COUNT;index++){
-        if(!process->environment[index].used) continue;
-        if(count<capacity) entries[count]=process->environment[index];
-        count++;
-    }
-    return (int32_t)count;
+                                 uint32_t capacity) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || (!entries && capacity))
+    return -1;
+  uint32_t count = 0;
+  for (uint32_t index = 0; index < PROCESS_ENVIRONMENT_COUNT; index++) {
+    if (!process->environment[index].used)
+      continue;
+    if (count < capacity)
+      entries[count] = process->environment[index];
+    count++;
+  }
+  return (int32_t)count;
 }
 
-bool process_set_affinity(uint32_t pid, int16_t core){
-    MUTEX_SCOPE(&process_mutex);
-    for(struct process *p=process_list;p;p=p->next){
-        if(p->pid==pid && (p->state==PROCESS_READY || p->state==PROCESS_RUNNING)){
-            scheduler_set_affinity(p->thread_id,core);
-            return true;
-        }
+bool process_set_affinity(uint32_t pid, int16_t core) {
+  MUTEX_SCOPE(&process_mutex);
+  for (struct process *p = process_list; p; p = p->next) {
+    if (p->pid == pid &&
+        (p->state == PROCESS_READY || p->state == PROCESS_RUNNING)) {
+      scheduler_set_affinity(p->thread_id, core);
+      return true;
     }
-    return false;
+  }
+  return false;
 }

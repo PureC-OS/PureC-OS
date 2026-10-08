@@ -1,6 +1,6 @@
 #pragma once
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 #define SMP_RESCHEDULE_VECTOR 0xF0
 #define SMP_TIMER_VECTOR 0xF1
 #define SMP_SPURIOUS_VECTOR 0xFF
