@@ -2,9 +2,9 @@
 
 #include <stdint.h>
 
-#define STORAGE_DEVICE_NAME_CAPACITY   9
-#define STORAGE_MODEL_CAPACITY        41
-#define STORAGE_SERIAL_CAPACITY       21
+#define STORAGE_DEVICE_NAME_CAPACITY 9
+#define STORAGE_MODEL_CAPACITY 41
+#define STORAGE_SERIAL_CAPACITY 21
 #define STORAGE_CONTROLLER_NAME_CAPACITY 8
 
 #define STORAGE_CONTROLLER_AHCI 1
@@ -12,11 +12,12 @@
 #define STORAGE_CONTROLLER_XHCI 3
 #define STORAGE_CONTROLLER_EHCI 4
 #define STORAGE_TRANSPORT_ATA_PIO 1
-#define STORAGE_TRANSPORT_AHCI    2
+#define STORAGE_TRANSPORT_AHCI 2
 #define STORAGE_TRANSPORT_USB_MSC 3
 #define STORAGE_TRANSPORT_USB_EHCI 4
 
-struct storage_device_info {
+struct storage_device_info
+{
     char name[STORAGE_DEVICE_NAME_CAPACITY];
     char model[STORAGE_MODEL_CAPACITY];
     char serial[STORAGE_SERIAL_CAPACITY];
@@ -32,7 +33,8 @@ struct storage_device_info {
     uint8_t operational;
 };
 
-struct storage_controller_info {
+struct storage_controller_info
+{
     char name[STORAGE_CONTROLLER_NAME_CAPACITY];
     uint64_t register_base;
     uint16_t vendor_id;

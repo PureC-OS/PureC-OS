@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include "storage_types.h"
 
-struct ahci_probe_stats {
+struct ahci_probe_stats
+{
     uint32_t controllers;
     uint32_t implemented_ports;
     uint32_t sata_ports;

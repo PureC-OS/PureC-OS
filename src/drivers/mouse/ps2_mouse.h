@@ -2,7 +2,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-struct mouse_state {
+struct mouse_state
+{
     int32_t x, y;
     int32_t dx, dy;
     uint8_t buttons;
@@ -10,7 +11,8 @@ struct mouse_state {
     int32_t wheel;
 };
 
-struct mouse_debug_state {
+struct mouse_debug_state
+{
     uint32_t irq_count;
     uint32_t poll_count;
     uint32_t packet_count;

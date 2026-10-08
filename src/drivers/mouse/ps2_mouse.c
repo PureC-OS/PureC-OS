@@ -9,234 +9,309 @@
 #include "../../gfx/compositor.h"
 #include <stdint.h>
 
-#define PS2_DATA   0x60
+#define PS2_DATA 0x60
 #define PS2_STATUS 0x64
-#define PS2_CMD    0x64
+#define PS2_CMD 0x64
 #define PS2_STATUS_OUTPUT_FULL 0x01
-#define PS2_STATUS_AUX_DATA    0x20
+#define PS2_STATUS_AUX_DATA 0x20
 
-static inline void outb(uint16_t p, uint8_t v){ __asm__ volatile("outb %0,%1"::"a"(v),"Nd"(p)); }
-static inline uint8_t inb(uint16_t p){ uint8_t r; __asm__ volatile("inb %1,%0":"=a"(r):"Nd"(p)); return r; }
-static inline void io_wait(void){ outb(0x80,0); }
+static inline void outb(uint16_t p, uint8_t v) { __asm__ volatile("outb %0,%1" ::"a"(v), "Nd"(p)); }
+static inline uint8_t inb(uint16_t p)
+{
+    uint8_t r;
+    __asm__ volatile("inb %1,%0" : "=a"(r) : "Nd"(p));
+    return r;
+}
+static inline void io_wait(void) { outb(0x80, 0); }
 
-static bool ps2_wait_input(void){
-    for(int i=0;i<100000;i++){ if(!(inb(PS2_STATUS)&2)) return true; __asm__ volatile("pause"); }
+static bool ps2_wait_input(void)
+{
+    for (int i = 0; i < 100000; i++)
+    {
+        if (!(inb(PS2_STATUS) & 2))
+            return true;
+        __asm__ volatile("pause");
+    }
     return false;
 }
-static bool ps2_wait_output(void){
-    for(int i=0;i<100000;i++){ if(inb(PS2_STATUS)&1) return true; __asm__ volatile("pause"); }
+static bool ps2_wait_output(void)
+{
+    for (int i = 0; i < 100000; i++)
+    {
+        if (inb(PS2_STATUS) & 1)
+            return true;
+        __asm__ volatile("pause");
+    }
     return false;
 }
 
-static bool ps2_write_cmd(uint8_t cmd){
-    if(!ps2_wait_input()) return false;
+static bool ps2_write_cmd(uint8_t cmd)
+{
+    if (!ps2_wait_input())
+        return false;
     outb(PS2_CMD, cmd);
     return true;
 }
-static bool ps2_write_data(uint8_t data){
-    if(!ps2_wait_input()) return false;
+static bool ps2_write_data(uint8_t data)
+{
+    if (!ps2_wait_input())
+        return false;
     outb(PS2_DATA, data);
     return true;
 }
-static bool ps2_read_data_timeout(uint8_t *out){
-    if(!ps2_wait_output()) return false;
-    *out=inb(PS2_DATA);
+static bool ps2_read_data_timeout(uint8_t *out)
+{
+    if (!ps2_wait_output())
+        return false;
+    *out = inb(PS2_DATA);
     return true;
 }
-static uint8_t ps2_read_data(void){
-    uint8_t v=0;
+static uint8_t ps2_read_data(void)
+{
+    uint8_t v = 0;
     (void)ps2_read_data_timeout(&v);
     return v;
 }
-static bool mouse_write(uint8_t data){
-    if(!ps2_write_cmd(0xD4)) return false;
-    if(!ps2_write_data(data)) return false;
+static bool mouse_write(uint8_t data)
+{
+    if (!ps2_write_cmd(0xD4))
+        return false;
+    if (!ps2_write_data(data))
+        return false;
     return true;
 }
-static uint8_t mouse_read_ack(void){
+static uint8_t mouse_read_ack(void)
+{
     uint8_t c = 0xFF;
-    for(int tries=0; tries<10; tries++){
-        if(ps2_read_data_timeout(&c)) break;
-        for(volatile int d=0; d<10000; d++) __asm__ volatile("pause");
+    for (int tries = 0; tries < 10; tries++)
+    {
+        if (ps2_read_data_timeout(&c))
+            break;
+        for (volatile int d = 0; d < 10000; d++)
+            __asm__ volatile("pause");
     }
     return c;
 }
 
-static struct mouse_state state = {.x=400,.y=300,.buttons=0};
-static int32_t bound_w=1280, bound_h=800;
+static struct mouse_state state = {.x = 400, .y = 300, .buttons = 0};
+static int32_t bound_w = 1280, bound_h = 800;
 static uint8_t packet[4];
-static int pkt_idx=0;
-static int pkt_size=3;
-static int32_t accel_x=0, accel_y=0;
-static bool has_mouse=false;
-static int32_t old_x=400, old_y=300;
-static bool first_draw=true;
-static bool packet_seen=false;
+static int pkt_idx = 0;
+static int pkt_size = 3;
+static int32_t accel_x = 0, accel_y = 0;
+static bool has_mouse = false;
+static int32_t old_x = 400, old_y = 300;
+static bool first_draw = true;
+static bool packet_seen = false;
 static volatile uint32_t framebuffer_update_depth;
 static volatile struct mouse_debug_state debug_state;
 static volatile bool mouse_ui_pending;
 
 #define CURS_W 32
 #define CURS_H 32
-static uint32_t bg_buf[CURS_W*CURS_H];
+static uint32_t bg_buf[CURS_W * CURS_H];
 static uint32_t cursor_color = 0xFFFFFF;
 static uint32_t cursor_border = 0x000000;
 static bool debug_overlay_enabled = false;
 
-static void draw_cursor(int32_t x,int32_t y);
+static void draw_cursor(int32_t x, int32_t y);
 static void refresh_mouse_ui(void);
 
 static void mouse_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
-                          uint32_t color, void *ctx){
+                          uint32_t color, void *ctx)
+{
     (void)ctx;
-    if(w && h) gop_draw_rect(x, y, w, h, color);
+    if (w && h)
+        gop_draw_rect(x, y, w, h, color);
 }
 
 static void mouse_text_opaque(uint32_t x, uint32_t y, const char *text,
-                              uint32_t fg, uint32_t bg){
-    if(!text || !*text) return;
+                              uint32_t fg, uint32_t bg)
+{
+    if (!text || !*text)
+        return;
     gfx_draw_text_opaque(text, x, y, fg, bg, 8,
                          GFX_FONT_CLASSIC, mouse_rect_cb, 0);
 }
 
-static void draw_hex(uint32_t x, uint32_t y, uint32_t value, int digits){
+static void draw_hex(uint32_t x, uint32_t y, uint32_t value, int digits)
+{
     char text[9];
-    const char *hex="0123456789ABCDEF";
-    for(int i=digits-1;i>=0;i--){ text[i]=hex[value&0xF]; value>>=4; }
-    text[digits]=0;
+    const char *hex = "0123456789ABCDEF";
+    for (int i = digits - 1; i >= 0; i--)
+    {
+        text[i] = hex[value & 0xF];
+        value >>= 4;
+    }
+    text[digits] = 0;
     mouse_text_opaque(x, y, text, 0xCDD6F4, 0x313244);
 }
 
-static void draw_debug_overlay(void){
-    if(!debug_overlay_enabled) return;
-    if(!gop_is_available()) return;
-    const uint32_t x=12, y=38, bg=0x313244;
-    struct usb_mouse_info usb=usb_mouse_get_info();
+static void draw_debug_overlay(void)
+{
+    if (!debug_overlay_enabled)
+        return;
+    if (!gop_is_available())
+        return;
+    const uint32_t x = 12, y = 38, bg = 0x313244;
+    struct usb_mouse_info usb = usb_mouse_get_info();
     gop_draw_rect(x, y, 380, 84, bg);
-    mouse_text_opaque(x+6, y+5, "MOUSE DEBUG", 0x89DCEB, bg);
-    mouse_text_opaque(x+6, y+17, "INIT EN IF MIM SIM", 0xCDD6F4, bg);
-    draw_hex(x+6,   y+27, debug_state.initialized, 2);
-    draw_hex(x+46,  y+27, debug_state.enabled, 2);
-    draw_hex(x+76,  y+27, debug_state.interrupts_enabled, 2);
-    draw_hex(x+106, y+27, inb(0x21), 2);
-    draw_hex(x+146, y+27, inb(0xA1), 2);
-    mouse_text_opaque(x+6, y+39, "IRQ      POLL     PKT", 0xCDD6F4, bg);
-    draw_hex(x+6,   y+49, debug_state.irq_count, 8);
-    draw_hex(x+86,  y+49, debug_state.poll_count, 8);
-    draw_hex(x+166, y+49, debug_state.packet_count, 8);
-    mouse_text_opaque(x+6, y+61, "X    Y    USB REPORTS", 0xCDD6F4, bg);
-    draw_hex(x+6,   y+71, (uint32_t)state.x, 4);
-    draw_hex(x+54,  y+71, (uint32_t)state.y, 4);
-    draw_hex(x+102, y+71, usb.connected, 2);
-    draw_hex(x+142, y+71, usb.reports, 8);
+    mouse_text_opaque(x + 6, y + 5, "MOUSE DEBUG", 0x89DCEB, bg);
+    mouse_text_opaque(x + 6, y + 17, "INIT EN IF MIM SIM", 0xCDD6F4, bg);
+    draw_hex(x + 6, y + 27, debug_state.initialized, 2);
+    draw_hex(x + 46, y + 27, debug_state.enabled, 2);
+    draw_hex(x + 76, y + 27, debug_state.interrupts_enabled, 2);
+    draw_hex(x + 106, y + 27, inb(0x21), 2);
+    draw_hex(x + 146, y + 27, inb(0xA1), 2);
+    mouse_text_opaque(x + 6, y + 39, "IRQ      POLL     PKT", 0xCDD6F4, bg);
+    draw_hex(x + 6, y + 49, debug_state.irq_count, 8);
+    draw_hex(x + 86, y + 49, debug_state.poll_count, 8);
+    draw_hex(x + 166, y + 49, debug_state.packet_count, 8);
+    mouse_text_opaque(x + 6, y + 61, "X    Y    USB REPORTS", 0xCDD6F4, bg);
+    draw_hex(x + 6, y + 71, (uint32_t)state.x, 4);
+    draw_hex(x + 54, y + 71, (uint32_t)state.y, 4);
+    draw_hex(x + 102, y + 71, usb.connected, 2);
+    draw_hex(x + 142, y + 71, usb.reports, 8);
 }
 
-static void save_bg(int32_t x,int32_t y){
-    for(int dy=0;dy<CURS_H;dy++) for(int dx=0;dx<CURS_W;dx++)
-        bg_buf[dy*CURS_W+dx] = gop_get_pixel((uint32_t)(x+dx), (uint32_t)(y+dy));
+static void save_bg(int32_t x, int32_t y)
+{
+    for (int dy = 0; dy < CURS_H; dy++)
+        for (int dx = 0; dx < CURS_W; dx++)
+            bg_buf[dy * CURS_W + dx] = gop_get_pixel((uint32_t)(x + dx), (uint32_t)(y + dy));
 }
 
-static void restore_bg(int32_t x,int32_t y){
-    for(int dy=0;dy<CURS_H;dy++) for(int dx=0;dx<CURS_W;dx++)
-        gop_put_pixel((uint32_t)(x+dx), (uint32_t)(y+dy), bg_buf[dy*CURS_W+dx]);
+static void restore_bg(int32_t x, int32_t y)
+{
+    for (int dy = 0; dy < CURS_H; dy++)
+        for (int dx = 0; dx < CURS_W; dx++)
+            gop_put_pixel((uint32_t)(x + dx), (uint32_t)(y + dy), bg_buf[dy * CURS_W + dx]);
 }
 
-void mouse_set_bounds(int32_t w,int32_t h){
-    bound_w=w;
-    bound_h=h;
-    if(state.x>=w) state.x=w-1;
-    if(state.y>=h) state.y=h-1;
+void mouse_set_bounds(int32_t w, int32_t h)
+{
+    bound_w = w;
+    bound_h = h;
+    if (state.x >= w)
+        state.x = w - 1;
+    if (state.y >= h)
+        state.y = h - 1;
 }
 
-struct mouse_state mouse_get_state(void){
+struct mouse_state mouse_get_state(void)
+{
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    struct mouse_state snapshot=state;
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    struct mouse_state snapshot = state;
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
     return snapshot;
 }
-struct mouse_debug_state mouse_get_debug_state(void){
+struct mouse_debug_state mouse_get_debug_state(void)
+{
     return *(const struct mouse_debug_state *)&debug_state;
 }
 
-void mouse_set_debug_overlay(bool enabled){
-    if(enabled==debug_overlay_enabled) return;
-    if(gop_is_available() && !first_draw){
-        if(gop_has_backbuffer())
+void mouse_set_debug_overlay(bool enabled)
+{
+    if (enabled == debug_overlay_enabled)
+        return;
+    if (gop_is_available() && !first_draw)
+    {
+        if (gop_has_backbuffer())
             gop_copy_back_to_front(old_x, old_y, CURS_W, CURS_H);
         else
-            restore_bg(old_x,old_y);
+            restore_bg(old_x, old_y);
     }
-    debug_overlay_enabled=enabled;
-    first_draw=true;
+    debug_overlay_enabled = enabled;
+    first_draw = true;
 }
-bool mouse_get_debug_overlay(void){ return debug_overlay_enabled; }
+bool mouse_get_debug_overlay(void) { return debug_overlay_enabled; }
 
-void mouse_redraw(void){
+void mouse_redraw(void)
+{
     mouse_begin_framebuffer_update();
-    if(debug_overlay_enabled) draw_debug_overlay();
+    if (debug_overlay_enabled)
+        draw_debug_overlay();
     mouse_end_framebuffer_update();
 }
 
-void mouse_flush_pending(void){
+void mouse_flush_pending(void)
+{
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    bool pending=mouse_ui_pending;
-    mouse_ui_pending=false;
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
-    if(pending) refresh_mouse_ui();
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    bool pending = mouse_ui_pending;
+    mouse_ui_pending = false;
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
+    if (pending)
+        refresh_mouse_ui();
 }
 
-void mouse_begin_framebuffer_update(void){
+void mouse_begin_framebuffer_update(void)
+{
     gop_begin_batch();
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    debug_state.interrupts_enabled=(flags&(1ULL<<9))!=0;
-    if(framebuffer_update_depth==0){
-        if(!gop_has_backbuffer()){
-            if(gop_is_available() && !first_draw) restore_bg(old_x,old_y);
-            first_draw=true;
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    debug_state.interrupts_enabled = (flags & (1ULL << 9)) != 0;
+    if (framebuffer_update_depth == 0)
+    {
+        if (!gop_has_backbuffer())
+        {
+            if (gop_is_available() && !first_draw)
+                restore_bg(old_x, old_y);
+            first_draw = true;
         }
     }
     framebuffer_update_depth++;
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
 }
 
-void mouse_end_framebuffer_update(void){
+void mouse_end_framebuffer_update(void)
+{
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    bool outermost=false;
-    if(framebuffer_update_depth){
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    bool outermost = false;
+    if (framebuffer_update_depth)
+    {
         framebuffer_update_depth--;
-        if(framebuffer_update_depth==0) outermost=true;
+        if (framebuffer_update_depth == 0)
+            outermost = true;
     }
 
     gop_end_batch();
-    if(outermost)
-        draw_cursor(state.x,state.y);
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    if (outermost)
+        draw_cursor(state.x, state.y);
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
 }
 
-void mouse_end_framebuffer_update_keep(void){
+void mouse_end_framebuffer_update_keep(void)
+{
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    if(framebuffer_update_depth)
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    if (framebuffer_update_depth)
         framebuffer_update_depth--;
     gop_end_batch_keep();
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
 }
 
-static inline bool cursor_inside(int dx, int dy){
-    if(dy < 12 && dx <= (11 - dy)) return true;
-    if(dy >= 9 && dy < 16 && dx >= 2 && dx <= 4) return true;
+static inline bool cursor_inside(int dx, int dy)
+{
+    if (dy < 12 && dx <= (11 - dy))
+        return true;
+    if (dy >= 9 && dy < 16 && dx >= 2 && dx <= 4)
+        return true;
     return false;
-
 }
 
-static inline uint32_t cursor_pixel(int dx, int dy){
-    bool on_left   = (dx == 0);
-    bool on_top    = (dy == 0);
-    bool on_diag   = (dy < 12 && dx == (11 - dy));
+static inline uint32_t cursor_pixel(int dx, int dy)
+{
+    bool on_left = (dx == 0);
+    bool on_top = (dy == 0);
+    bool on_diag = (dy < 12 && dx == (11 - dy));
     bool on_tail_l = (dy >= 9 && dy < 32 && dx == 2);
     bool on_tail_r = (dy >= 9 && dy < 32 && dx == 4);
     bool on_tail_t = (dy == 15 && dx >= 2 && dx <= 4);
@@ -245,89 +320,118 @@ static inline uint32_t cursor_pixel(int dx, int dy){
     return border ? cursor_border : cursor_color;
 }
 
-static void draw_cursor(int32_t x,int32_t y){
-    if(!gop_is_available()){
+static void draw_cursor(int32_t x, int32_t y)
+{
+    if (!gop_is_available())
+    {
         int tx = x / 8;
         int ty = y / 16;
         int otx = old_x / 8;
         int oty = old_y / 16;
-        volatile uint16_t *vga = (volatile uint16_t*)(uintptr_t)0xB8000;
-        if(!first_draw){
-            if(otx>=0 && otx<80 && oty>=0 && oty<25) vga[oty*80+otx] = (0x0F<<8)|' ';
-            if(tx>=0 && tx<80 && ty>=0 && ty<25) vga[ty*80+tx] = (0x8F<<8)|0xDB;
-        } else {
-            if(tx>=0 && tx<80 && ty>=0 && ty<25) vga[ty*80+tx] = (0x8F<<8)|0xDB;
+        volatile uint16_t *vga = (volatile uint16_t *)(uintptr_t)0xB8000;
+        if (!first_draw)
+        {
+            if (otx >= 0 && otx < 80 && oty >= 0 && oty < 25)
+                vga[oty * 80 + otx] = (0x0F << 8) | ' ';
+            if (tx >= 0 && tx < 80 && ty >= 0 && ty < 25)
+                vga[ty * 80 + tx] = (0x8F << 8) | 0xDB;
         }
-        old_x=x; old_y=y;
-        first_draw=false;
+        else
+        {
+            if (tx >= 0 && tx < 80 && ty >= 0 && ty < 25)
+                vga[ty * 80 + tx] = (0x8F << 8) | 0xDB;
+        }
+        old_x = x;
+        old_y = y;
+        first_draw = false;
         return;
     }
-    if(gop_has_backbuffer()){
-        first_draw=false;
-        old_x=x; old_y=y;
+    if (gop_has_backbuffer())
+    {
+        first_draw = false;
+        old_x = x;
+        old_y = y;
         compositor_cursor_move(x, y);
         return;
     }
-    if(!first_draw){
+    if (!first_draw)
+    {
         restore_bg(old_x, old_y);
     }
     save_bg(x, y);
-    first_draw=false;
-    for(int dy=0;dy<CURS_H;dy++){
-        for(int dx=0;dx<CURS_W;dx++){
-            if(cursor_inside(dx,dy)){
-                gop_put_pixel((uint32_t)(x+dx), (uint32_t)(y+dy),
-                              cursor_pixel(dx,dy));
+    first_draw = false;
+    for (int dy = 0; dy < CURS_H; dy++)
+    {
+        for (int dx = 0; dx < CURS_W; dx++)
+        {
+            if (cursor_inside(dx, dy))
+            {
+                gop_put_pixel((uint32_t)(x + dx), (uint32_t)(y + dy),
+                              cursor_pixel(dx, dy));
             }
         }
     }
-    old_x=x; old_y=y;
+    old_x = x;
+    old_y = y;
 }
 
-static bool process_mouse_byte(uint8_t data){
-    debug_state.last_byte=data;
+static bool process_mouse_byte(uint8_t data)
+{
+    debug_state.last_byte = data;
 
-    if(pkt_idx==0 && (data & 0x08)==0){
+    if (pkt_idx == 0 && (data & 0x08) == 0)
+    {
         return false;
     }
     packet[pkt_idx++] = data;
-    if(pkt_idx==pkt_size){
+    if (pkt_idx == pkt_size)
+    {
         uint8_t b0 = packet[0];
         int8_t dx = (int8_t)packet[1];
         int8_t dy = (int8_t)packet[2];
-        if(b0 & 0x40) dx = 0;
-        if(b0 & 0x80) dy = 0;
+        if (b0 & 0x40)
+            dx = 0;
+        if (b0 & 0x80)
+            dy = 0;
         int32_t scroll = 0;
-        if(pkt_size==4){
+        if (pkt_size == 4)
+        {
             int32_t z = packet[3] & 0x0F;
-            if(z & 0x08) z -= 16;
+            if (z & 0x08)
+                z -= 16;
             scroll = z;
         }
-        mouse_handle_relative(b0&0x07,dx,(int8_t)-dy);
-        if(scroll){
+        mouse_handle_relative(b0 & 0x07, dx, (int8_t)-dy);
+        if (scroll)
+        {
             uint64_t flags;
-            __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+            __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
             state.wheel += -scroll;
-            if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+            if (flags & (1ULL << 9))
+                __asm__ volatile("sti" ::: "memory");
         }
         debug_state.packet_count++;
 
-        if(!packet_seen){
-            packet_seen=true;
+        if (!packet_seen)
+        {
+            packet_seen = true;
             klog(KLOG_INFO, "psmouse: packets active, mouse moving");
         }
 
-        pkt_idx=0;
+        pkt_idx = 0;
         return true;
     }
     return false;
 }
 
-static int32_t accelerate_axis(int32_t delta, int32_t magnitude, int32_t *remainder){
+static int32_t accelerate_axis(int32_t delta, int32_t magnitude, int32_t *remainder)
+{
     int32_t gain = 256;
-    if(magnitude > 3){
+    if (magnitude > 3)
+    {
         gain += (magnitude - 3) * 48;
-        if(gain > 768) gain = 768;
+        if (gain > 768)
+            gain = 768;
     }
     int32_t scaled = delta * gain + *remainder;
     int32_t whole = scaled / 256;
@@ -335,37 +439,48 @@ static int32_t accelerate_axis(int32_t delta, int32_t magnitude, int32_t *remain
     return whole;
 }
 
-void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy){
+void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy)
+{
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
     int32_t adx = dx < 0 ? -(int32_t)dx : (int32_t)dx;
     int32_t ady = dy < 0 ? -(int32_t)dy : (int32_t)dy;
     int32_t magnitude = adx > ady ? adx : ady;
     int32_t mx = accelerate_axis(dx, magnitude, &accel_x);
     int32_t my = accelerate_axis(dy, magnitude, &accel_y);
-    state.dx=mx;
-    state.dy=my;
-    state.x+=mx;
-    state.y+=my;
-    if(state.x<0) state.x=0;
-    if(state.y<0) state.y=0;
-    if(state.x>=bound_w) state.x=bound_w-1;
-    if(state.y>=bound_h) state.y=bound_h-1;
-    state.buttons=buttons&0x07;
-    state.has_data=true;
-    mouse_ui_pending=true;
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    state.dx = mx;
+    state.dy = my;
+    state.x += mx;
+    state.y += my;
+    if (state.x < 0)
+        state.x = 0;
+    if (state.y < 0)
+        state.y = 0;
+    if (state.x >= bound_w)
+        state.x = bound_w - 1;
+    if (state.y >= bound_h)
+        state.y = bound_h - 1;
+    state.buttons = buttons & 0x07;
+    state.has_data = true;
+    mouse_ui_pending = true;
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
 }
 
-static void refresh_mouse_ui(void){
-    if(framebuffer_update_depth) return;
-    if(!gop_is_available()){
+static void refresh_mouse_ui(void)
+{
+    if (framebuffer_update_depth)
+        return;
+    if (!gop_is_available())
+    {
         draw_cursor(state.x, state.y);
         return;
     }
-    if(gop_has_backbuffer()){
-        first_draw=true;
-        if(debug_overlay_enabled){
+    if (gop_has_backbuffer())
+    {
+        first_draw = true;
+        if (debug_overlay_enabled)
+        {
             gop_begin_batch();
             draw_debug_overlay();
             gop_end_batch();
@@ -373,150 +488,186 @@ static void refresh_mouse_ui(void){
         draw_cursor(state.x, state.y);
         return;
     }
-    if(!first_draw) restore_bg(old_x, old_y);
-    first_draw=true;
-    if(debug_overlay_enabled) draw_debug_overlay();
+    if (!first_draw)
+        restore_bg(old_x, old_y);
+    first_draw = true;
+    if (debug_overlay_enabled)
+        draw_debug_overlay();
     draw_cursor(state.x, state.y);
 }
 
-void ps2_mouse_handler(void){
+void ps2_mouse_handler(void)
+{
     uint8_t status = inb(PS2_STATUS);
-    debug_state.controller_status=status;
+    debug_state.controller_status = status;
     debug_state.irq_count++;
-    if((status & (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA))
-        == (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA)){
+    if ((status & (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA)) == (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA))
+    {
         (void)process_mouse_byte(inb(PS2_DATA));
     }
 }
 
-void ps2_mouse_poll(void){
+void ps2_mouse_poll(void)
+{
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
-    debug_state.interrupts_enabled=(flags & (1ULL<<9)) != 0;
-    uint8_t status=inb(PS2_STATUS);
-    debug_state.controller_status=status;
-    if((status & (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA))
-        == (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA)){
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    debug_state.interrupts_enabled = (flags & (1ULL << 9)) != 0;
+    uint8_t status = inb(PS2_STATUS);
+    debug_state.controller_status = status;
+    if ((status & (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA)) == (PS2_STATUS_OUTPUT_FULL | PS2_STATUS_AUX_DATA))
+    {
         debug_state.poll_count++;
         (void)process_mouse_byte(inb(PS2_DATA));
     }
-    if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
 }
 
-void ps2_mouse_init(void){
+void ps2_mouse_init(void)
+{
     klog(KLOG_INFO, "psmouse: initializing PS/2 mouse (Linux psmouse style)");
 
     uint8_t probe_status = inb(PS2_STATUS);
-    if(probe_status == 0xFF){
+    if (probe_status == 0xFF)
+    {
         klog(KLOG_WARN, "psmouse: no 8042 controller (status 0xFF) – PS/2 disabled, using USB mouse only");
-        debug_state.initialized=true;
-        debug_state.enabled=false;
+        debug_state.initialized = true;
+        debug_state.enabled = false;
         goto ps2_init_done;
     }
 
-    if(!ps2_write_cmd(0xA8)){
+    if (!ps2_write_cmd(0xA8))
+    {
         klog(KLOG_WARN, "psmouse: 8042 not responding to 0xA8");
         goto ps2_init_no_mouse;
     }
     io_wait();
-    if(!ps2_write_cmd(0x20)){
+    if (!ps2_write_cmd(0x20))
+    {
         klog(KLOG_WARN, "psmouse: 8042 not responding to read cmd byte");
         goto ps2_init_no_mouse;
     }
     uint8_t status;
-    if(!ps2_read_data_timeout(&status)){
+    if (!ps2_read_data_timeout(&status))
+    {
         klog(KLOG_WARN, "psmouse: 8042 no command byte reply – PS/2 disabled");
         goto ps2_init_no_mouse;
     }
     klogf(KLOG_DEBUG, "psmouse: command byte=0x%x", status);
     status |= 0x02;
     status &= ~0x20;
-    if(!ps2_write_cmd(0x60) || !ps2_write_data(status)){
+    if (!ps2_write_cmd(0x60) || !ps2_write_data(status))
+    {
         klog(KLOG_WARN, "psmouse: 8042 failed to write command byte");
         goto ps2_init_no_mouse;
     }
     io_wait();
 
-    if(!mouse_write(0xFF)){
+    if (!mouse_write(0xFF))
+    {
         klog(KLOG_WARN, "psmouse: mouse_write 0xFF failed – no PS/2 mouse");
         goto ps2_init_no_mouse;
     }
     uint8_t ack = mouse_read_ack();
-    debug_state.reset_ack=ack;
-    if(ack==0xFA){
-        uint8_t bat=0xFF, id=0xFF;
+    debug_state.reset_ack = ack;
+    if (ack == 0xFA)
+    {
+        uint8_t bat = 0xFF, id = 0xFF;
         bool has_bat = ps2_read_data_timeout(&bat);
         bool has_id = ps2_read_data_timeout(&id);
-        (void)has_bat; (void)has_id;
+        (void)has_bat;
+        (void)has_id;
         klog(KLOG_OK, "psmouse: reset OK (BAT 0xAA)");
-    } else {
+    }
+    else
+    {
         klogf(KLOG_WARN, "psmouse: reset ack=0x%x (no mouse or not PS/2)", ack);
     }
-    if(mouse_write(0xF6)) (void)mouse_read_ack();
+    if (mouse_write(0xF6))
+        (void)mouse_read_ack();
     {
-        static const uint8_t magic[3]={200,100,80};
-        bool magic_ok=true;
-        for(int i=0;i<3 && magic_ok;i++){
-            magic_ok = mouse_write(0xF3) && mouse_read_ack()==0xFA
-                    && mouse_write(magic[i]) && mouse_read_ack()==0xFA;
+        static const uint8_t magic[3] = {200, 100, 80};
+        bool magic_ok = true;
+        for (int i = 0; i < 3 && magic_ok; i++)
+        {
+            magic_ok = mouse_write(0xF3) && mouse_read_ack() == 0xFA && mouse_write(magic[i]) && mouse_read_ack() == 0xFA;
         }
-        if(magic_ok && mouse_write(0xF2) && mouse_read_ack()==0xFA){
-            uint8_t id=0xFF;
-            if(ps2_read_data_timeout(&id) && id==3){
-                pkt_size=4;
+        if (magic_ok && mouse_write(0xF2) && mouse_read_ack() == 0xFA)
+        {
+            uint8_t id = 0xFF;
+            if (ps2_read_data_timeout(&id) && id == 3)
+            {
+                pkt_size = 4;
                 klog(KLOG_OK, "psmouse: IntelliMouse wheel detected");
             }
         }
-        if(mouse_write(0xF3) && mouse_read_ack()==0xFA
-           && mouse_write(100)) (void)mouse_read_ack();
+        if (mouse_write(0xF3) && mouse_read_ack() == 0xFA && mouse_write(100))
+            (void)mouse_read_ack();
     }
     bool en_ok = false;
-    if(mouse_write(0xF4)){
+    if (mouse_write(0xF4))
+    {
         uint8_t ack2 = mouse_read_ack();
-        debug_state.enable_ack=ack2;
-        if(ack2==0xFA){
-            has_mouse=true;
-            debug_state.enabled=true;
-            en_ok=true;
+        debug_state.enable_ack = ack2;
+        if (ack2 == 0xFA)
+        {
+            has_mouse = true;
+            debug_state.enabled = true;
+            en_ok = true;
             klog(KLOG_OK, "psmouse: enabled, IRQ12 active");
-        } else {
+        }
+        else
+        {
             klogf(KLOG_WARN, "psmouse: enable failed ack=0x%x – PS/2 mouse not present", ack2);
         }
-    } else {
+    }
+    else
+    {
         klog(KLOG_WARN, "psmouse: mouse_write 0xF4 failed");
     }
-    if(!en_ok){
+    if (!en_ok)
+    {
     ps2_init_no_mouse:
-        debug_state.enabled=false;
-        has_mouse=false;
+        debug_state.enabled = false;
+        has_mouse = false;
         klog(KLOG_INFO, "psmouse: PS/2 mouse not detected – USB mouse will be used if present");
     }
-    if(has_mouse || debug_state.enabled){
+    if (has_mouse || debug_state.enabled)
+    {
         uint8_t m1 = inb(0x21);
         uint8_t m2 = inb(0xA1);
-        m1 &= ~(1<<2);
-        m2 &= ~(1<<4);
+        m1 &= ~(1 << 2);
+        m2 &= ~(1 << 4);
         outb(0x21, m1);
         outb(0xA1, m2);
         klog(KLOG_DEBUG, "psmouse: PIC unmasked IRQ2+IRQ12");
-    } else {
+    }
+    else
+    {
         klog(KLOG_DEBUG, "psmouse: PIC IRQ12 left masked (no PS/2 mouse)");
     }
 
 ps2_init_done:
 
-    if(gop_is_available()){
+    if (gop_is_available())
+    {
         bound_w = gop_get_width();
         bound_h = gop_get_height();
-        if(bound_w==0) bound_w=1280;
-        if(bound_h==0) bound_h=800;
-    } else {
-        bound_w = 80*8; bound_h = 25*16;
+        if (bound_w == 0)
+            bound_w = 1280;
+        if (bound_h == 0)
+            bound_h = 800;
     }
-    state.x = bound_w/2;
-    state.y = bound_h/2;
-    old_x = state.x; old_y = state.y;
-    debug_state.initialized=true;
+    else
+    {
+        bound_w = 80 * 8;
+        bound_h = 25 * 16;
+    }
+    state.x = bound_w / 2;
+    state.y = bound_h / 2;
+    old_x = state.x;
+    old_y = state.y;
+    debug_state.initialized = true;
     mouse_redraw();
-    pkt_idx=0;
+    pkt_idx = 0;
 }

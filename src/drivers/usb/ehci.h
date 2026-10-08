@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include "../storage/storage_types.h"
 
-struct ehci_probe_stats {
+struct ehci_probe_stats
+{
     uint32_t controllers;
     uint32_t connected_ports;
     uint32_t high_speed_ports;
