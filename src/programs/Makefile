@@ -146,6 +146,22 @@ $(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -std=c++20 -fno-exceptions -fno-rtti
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
 
+$(LIB_DIR)/libpurec.so:
+	$(MAKE) -C $(ROOT_DIR)/src/libc
+
+ifdef PUREC_DYNAMIC
+TARGETS += $(PROGRAM_DIR)/echo-dyn
+PIE_LD_SCRIPT := $(ROOT_DIR)/linker-userspace-pie.ld
+
+$(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(PIE_LD_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) $(PIE_LINK_FLAGS) -T $(PIE_LD_SCRIPT) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so
+
+$(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/echo/echo.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_SO_CFLAGS) -c $< -o $@
+endif
+
 $(LIBPUREGUI) $(LIBPGUIW):
 	$(MAKE) -C $(ROOT_DIR)/src/libgui
 

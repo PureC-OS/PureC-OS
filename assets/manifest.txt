@@ -114,6 +114,7 @@
 
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
+/lib/libpurec.so /lib/libpurec.so - 0 bin/lib/libpurec.so
 /lib/libpurefs.a /lib/libpurefs.a /lib/libpur~2.a 1 bin/lib/libpurefs.a
 /lib/libpuregui.a /lib/libpuregui.a /lib/libpur~1.a 1 bin/lib/libpuregui.a
 /lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
