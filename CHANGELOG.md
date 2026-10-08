@@ -1,5 +1,46 @@
 # Changelog
 
+## V1.2.24 V1.2.26 — .so формат (ET_DYN): юзерспейс, kmod, tcc-рантайм
+
+### Адресное пространство и стандарты линковки
+- Linux-like расклад юзера: legacy ET_EXEC `0x400000`, PIE `0x555555554000`,
+  регион `.so` `0x600000000000+` (шаг 256МиБ); стек, куча, `USER_TOP` без изменений.
+- Ядро остаётся static (`-fno-pic`), юзерспейс и модули — PIC.
+- `PROVIDE` без референса символ не эмитит (поэтому пропадал `_kernel_end`) —
+  якоря `.ksyms` теперь обычными присваиваниями.
+
+### Лоадер юзерспейса (`elf.c`, `process.c`)
+- `ET_DYN` + слайд базы, `PT_DYNAMIC`, `RELATIVE/GLOB_DAT/JUMP_SLOT/64`,
+  резолв по `DT_HASH` (GLOBAL в приоритете, weak-undef в `0`).
+- `DT_NEEDED`-очередь из `/lib` (initramfs/VFS, дедуп, лимит 8); куча стартует
+  после верхней границы всех объектов. `ET_EXEC` идёт старым путём 1-в-1.
+
+### Тулчейн
+- `mk/toolchain.mk`: `USER_SO_CFLAGS`, `SO/PIE_LINK_FLAGS`, `KMOD_SO_CFLAGS`
+  (`-fPIC -mcmodel=small`: `kernel`-модель с PIC несовместима в GCC),
+  `KMOD_SO_LINK`, `mk/kmod-so.ld`, `src/libc/userspace-so.ld`,
+  `linker-userspace-pie.ld` (`PHDRS` + `SIZEOF_HEADERS` против
+  `PHDR not covered by LOAD`).
+- `libpurec.so` (`SONAME`, SYSV `HASH`, без `TEXTREL`), пилот `echo-dyn`
+  (`PUREC_DYNAMIC=1`, `NEEDED libpurec.so`); проверено реальным прогоном
+  обоих файлов через лоадер (GOT сошёлся).
+- Починен `ROOT_DIR` у `82543gc` (5 уровней вместо 4 — модуль не собирался).
+
+### kmod `.so` (замена `LD -r`)
+- `.ksyms`-секция в ядре + `mk/ksyms.py` (1308 символов, сортировка + бинарный
+  поиск, проверка `magic`); патч в рецепте линка ядра.
+- `src/kernel/module/kmod_so.c`: маппинг ET_DYN в higher-half (бамп от
+  `__ksyms_end`), резолв kernel-first + self, `vmm_protect_page` для W^X,
+  доступ к образу только через трансляцию, `kmod_get`.
+- `.so`-таргеты 6 ин-три модулей (e1000, 82543gc, pcnet, ar9285, ext2,
+  i2c_hid_touchpad); все undef-символы покрыты таблицей ядра; `devman`
+  soft-probe `.so` (только лог, поведение не меняет).
+
+### tcc
+- Собран `libtcc1.a` (7 объектов из `tcc/lib`) в `/lib/tcc` + манифест:
+  фиксит `tcc: error: file 'libtcc1.a' not found`. ISO собирается,
+  `libtcc1.a` есть в ISO и initramfs.
+
 ## V1.2.22 v1.2.26 — OOM, планировщик, SMP, консоли, тесты
 
 ### OOM-подсистема (`src/mm/oom/`, только ядро решает)
