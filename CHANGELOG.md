@@ -1,5 +1,55 @@
 # Changelog
 
+## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода
+
+### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
+- Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка
+  `-DLUA_ANSI` без `LUA_USE_POSIX`/`LUA_USE_DLOPEN` (ISO C фолбэки Lua:
+  `popen` unsupported, `fseek/ftell`, `tmpnam`, `system`, no-op inspectstat).
+- v1 открывает `base/package/coroutine/table/io/os/string/utf8/debug`
+  через свой `linit-purec.c`; библиотека `math` исключена (нужен полный
+  libm — soft-fp, v2). `lmathlib.c` и оригинальный `linit.c` завендорены
+  для будущего.
+- Линковка `crt0.o` + `libpurec.a` через `linker-userspace.ld` (обычный
+  hosted `main()`); static ELF64, 0 undefined symbols.
+- Манифесты (`assets/manifest.txt`, `manifest-new.txt`): optional-запись
+  `/bin/program/lua`; ISO собирается, boot smoke PASS.
+
+### Hosted libc ради порта
+- Новый `hosted/locale.h` + `src/libc/locale.c`: только локаль C
+  (`decimal_point "."`, `setlocale` всегда `"C"`); `locale.o` в `libpurec.a/.so`.
+- `signal.h`: недостающий ISO C `sig_atomic_t` (требует `lstate.h`).
+- `stdio.h`: `SEEK_*`, `_IONBF/_IOLBF/_IOFBF`, декларации
+  `freopen/tmpfile/tmpnam`; `stdio.c`: `freopen` (close+open,
+  text==binary), `tmpfile/tmpnam` — стабы `ENOSYS/NULL`.
+- `stdlib.h/c`: стаб `system()` (NULL → 0, иначе −1, шелла нет).
+- `string.h/c`: `strcoll()` как `strcmp` (C-локаль).
+- `time.h/c`: `difftime()` как разность; убран устаревший коммент про
+  «нет SSE в юзерспейсе» (юзерспейс SSE может, FPU-стейт ядро держит).
+- `math.h/c`: `trunc/floor/ceil/fmod/modf/frexp/sqrt/pow` без вызовов libm
+  (только `CVTTSD2SI/CVTSI2SD/DIVSD/SQRTSD` + битовые трюки, линкуется под
+  `-ffreestanding`); `pow` точен на целых степенях `[-64,64]` + `x^0.5`
+  через `sqrt`, общий дробный `pow` — NaN (лимит v1); гарды `INFINITY/NAN`
+  от `float.h`.
+
+### Эхо ввода в REPL (`purec_lua_readline.[ch]`)
+- Было: терминал эхует ввод шелла сам, а ребёнок на сыром `SYS_GETCHAR`
+  эха не получает — ввод вслепую, backspace падал в буфер буквально и
+  ломал строку (`syntax error`).
+- Стало: свой `lua_readline` через официальный хук (форс-инклуд `-include`
+  в `LUA_OBJECTS`), зеркалит шелл: посимвольное эхо с `fflush` (stdout
+  line-buffered), стирание backspace через `'\b'` (консоль `gop.c` его
+  стирает), CR/LF, фильтр контролов, кап `LUA_MAXINPUT` без переполнений,
+  все выходы NUL-терминируют.
+- `SYS_GETCHAR` EOF не возвращает никогда — выход из REPL через `os.exit()`
+  или закрытие окна (Ctrl-D нет), зафиксировано в `lua/README.md`.
+- Проверено живьём в PureC Terminal: ввод виден, опечатка правится,
+  `print("Hi")` печатает `Hi`.
+
+### Известные лимиты v1
+- Нет библиотеки `math`; дробный `pow` (кроме `0.5`) — NaN.
+- `io.popen/io.tmpfile/os.execute/os.tmpname` — graceful error; локаль C.
+
 ## V1.2.24 V1.2.26 — .so формат (ET_DYN): юзерспейс, kmod, tcc-рантайм
 
 ### Адресное пространство и стандарты линковки
