@@ -241,6 +241,11 @@ git clone https://github.com/PureC-OS/PureC-OS.git
 cd PureC-OS
 ```
 
+use the Python script for the build:
+
+```bash
+python purec.py
+```
 
 ---
 
