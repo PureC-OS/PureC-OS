@@ -390,7 +390,15 @@ $(OBJ_DIR)/tcc/.patched: $(ROOT_DIR)/mk/tcc/purec-target.patch
 	fi
 	@touch $@
 
-$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DIR)/tcc/.patched
+TCC_STATIC_MARK := TCC_PUREC_STATIC_DEFAULT
+$(OBJ_DIR)/tcc/.patched-static: $(ROOT_DIR)/mk/tcc/purec-static.patch $(OBJ_DIR)/tcc/.patched
+	@mkdir -p $(@D)
+	if ! grep -qF "$(TCC_STATIC_MARK)" $(ROOT_DIR)/tcc/libtcc.c 2>/dev/null; then \
+		patch --forward -p1 -d $(ROOT_DIR)/tcc < $(ROOT_DIR)/mk/tcc/purec-static.patch; \
+	fi
+	@touch $@
+
+$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DIR)/tcc/.patched $(OBJ_DIR)/tcc/.patched-static
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -c $< -o $@
 
