@@ -54,7 +54,8 @@ LUA_SOURCES := \
 	lua/ltablib.c \
 	lua/lutf8lib.c \
 	lua/loadlib.c \
-	lua/lua.c
+	lua/lua.c \
+	lua/purec_lua_readline.c
 GENERAL_SOURCES := \
 	installer/main.c \
 	installer/progress.c \
@@ -180,7 +181,7 @@ hexedit: $(PROGRAM_DIR)/hexedit
 
 $(GENERAL_OBJECTS): PRIVATE_CFLAGS :=
 $(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -std=c++20 -fno-exceptions -fno-rtti
-$(LUA_OBJECTS): PRIVATE_CFLAGS := -DLUA_ANSI -I$(ROOT_DIR)/src/libc/include/hosted
+$(LUA_OBJECTS): PRIVATE_CFLAGS := -DLUA_ANSI -I$(ROOT_DIR)/src/libc/include/hosted -include $(ROOT_DIR)/src/programs/lua/purec_lua_readline.h
 
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc

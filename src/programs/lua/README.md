@@ -33,6 +33,17 @@ In PureC OS terminal: `/bin/program/lua` (REPL), or
 `/bin/program/lua script.lua`. `os.exit`, `print`, files via `io`,
 `os.time/clock/date`, `getenv` work.
 
+## REPL input echo (PureC quirk)
+
+The PureC terminal echoes shell input itself, but a child reading raw
+`SYS_GETCHAR` gets no echo, and backspace would land in the buffer
+literally. So the REPL does not use upstream `fgets`-based
+`lua_readline`; instead `purec_lua_readline.[ch]` (wired via `-include`,
+see `src/programs/Makefile`) provide an echoing line reader that
+mirrors the shell: printable echo, backspace erase, CR/LF handling,
+`LUA_MAXINPUT` cap. Exit with `os.exit()` or by closing the terminal
+(`SYS_GETCHAR` never returns EOF, so there is no Ctrl-D).
+
 ## v2 roadmap
 
 - Full `lmathlib` (soft-fp `sin/cos/tan/asin/acos/atan/log/exp/...`)
