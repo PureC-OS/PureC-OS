@@ -14,7 +14,8 @@
 #define EXT2_DESCRIPTOR_BASE 3
 #define EXT2_NAME_MAX 255
 
-struct ext2_volume {
+struct ext2_volume
+{
     uint32_t partition_lba;
     uint32_t block_size;
     uint32_t blocks_per_group;
@@ -28,7 +29,8 @@ struct ext2_volume {
     bool mounted;
 };
 
-struct ext2_handle {
+struct ext2_handle
+{
     bool used;
     uint32_t inode;
     uint32_t size;

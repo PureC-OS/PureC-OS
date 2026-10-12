@@ -1,8 +1,8 @@
 #pragma once
 
+#include "types/fs_types.h"
 #include <stdbool.h>
 #include <stdint.h>
-#include "types/fs_types.h"
 
 #define INITRAMFS_BOOT_PATH "/boot/initramfs.cpio"
 #define INITRAMFS_ESP_ALIAS "/boot/initra~1.cpi"

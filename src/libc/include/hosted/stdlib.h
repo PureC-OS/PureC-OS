@@ -32,5 +32,6 @@ int rand(void);
 void srand(unsigned int seed);
 char *getenv(const char *name);
 char *realpath(const char *path, char *resolved);
+int system(const char *cmd);
 void exit(int status);
 void abort(void);

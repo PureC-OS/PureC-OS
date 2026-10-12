@@ -1,53 +1,55 @@
 #pragma once
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #define SCHEDULER_STACK_PAGES 4
-#define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES*4096u)
+#define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES * 4096u)
 #define SCHEDULER_TIME_SLICE_MS 5
 
 struct process;
 
 enum thread_state {
-    THREAD_FREE = 0,
-    THREAD_READY = 1,
-    THREAD_RUNNING = 2,
-    THREAD_BLOCKED = 3,
-    THREAD_TERMINATED = 4
+  THREAD_FREE = 0,
+  THREAD_READY = 1,
+  THREAD_RUNNING = 2,
+  THREAD_BLOCKED = 3,
+  THREAD_TERMINATED = 4
 };
 
 struct thread {
-    uint64_t rsp;
-    void (*entry)(void *arg);
-    void *arg;
-    enum thread_state state;
-    uint8_t priority;
-    int16_t affinity;
-    bool affinity_auto;
-    uint32_t id;
-    char name[32];
-    uint32_t ticks_remaining;
-    uint64_t runtime_ticks;
-    uint64_t wake_tick;
-    uint64_t address_space;
-    struct process *process;
-    bool user_mode;
-    bool idle;
-    bool kernel_only;
-    bool wake_pending;
-    int16_t running_cpu;
-    uint32_t cpu_mask;
-    uint64_t migrations;
-    struct thread *next;
-    struct thread *hnext;
-    uint64_t node_phys;
-    uint64_t kstack_phys;
-    uint8_t *kstack;
-    uint8_t fpu_state[512] __attribute__((aligned(16)));
+  uint64_t rsp;
+  void (*entry)(void *arg);
+  void *arg;
+  enum thread_state state;
+  uint8_t priority;
+  int16_t affinity;
+  bool affinity_auto;
+  uint32_t id;
+  char name[32];
+  uint32_t ticks_remaining;
+  uint64_t runtime_ticks;
+  uint64_t wake_tick;
+  uint64_t address_space;
+  struct process *process;
+  bool user_mode;
+  bool idle;
+  bool kernel_only;
+  bool wake_pending;
+  int16_t running_cpu;
+  uint32_t cpu_mask;
+  uint64_t migrations;
+  struct thread *next;
+  struct thread *hnext;
+  uint64_t node_phys;
+  uint64_t kstack_phys;
+  uint8_t *kstack;
+  uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
 
 void scheduler_init(void);
-int scheduler_create_thread(void (*entry)(void *arg), void *arg, const char *name, uint8_t priority, int16_t affinity);
+int scheduler_create_thread(void (*entry)(void *arg), void *arg,
+                            const char *name, uint8_t priority,
+                            int16_t affinity);
 int scheduler_create_user_thread(void (*entry)(void *arg), void *arg,
                                  const char *name, uint8_t priority,
                                  int16_t affinity, uint64_t address_space,

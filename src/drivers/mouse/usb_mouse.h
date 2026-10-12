@@ -3,7 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-struct usb_mouse_info {
+struct usb_mouse_info
+{
     uint32_t reports;
     uint16_t vendor_id;
     uint16_t product_id;

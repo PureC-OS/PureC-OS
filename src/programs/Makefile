@@ -19,6 +19,43 @@ PLAIN_SOURCES := \
 	system/commands.c \
 	system/filesystem.c \
 	system/system.c
+# Lua 5.4 port (v1: REPL without math lib; see lua/README.md).
+# Excluded: lmathlib.c (needs full libm, v2), linit.c (upstream, all
+# libs; we build linit-purec.c instead), luac.c (bytecode compiler).
+LUA_SOURCES := \
+	lua/lapi.c \
+	lua/lcode.c \
+	lua/lctype.c \
+	lua/ldebug.c \
+	lua/ldo.c \
+	lua/ldump.c \
+	lua/lfunc.c \
+	lua/lgc.c \
+	lua/linit-purec.c \
+	lua/llex.c \
+	lua/lmem.c \
+	lua/lobject.c \
+	lua/lopcodes.c \
+	lua/lparser.c \
+	lua/lstate.c \
+	lua/lstring.c \
+	lua/ltable.c \
+	lua/ltm.c \
+	lua/lundump.c \
+	lua/lvm.c \
+	lua/lzio.c \
+	lua/lauxlib.c \
+	lua/lbaselib.c \
+	lua/lcorolib.c \
+	lua/ldblib.c \
+	lua/liolib.c \
+	lua/loslib.c \
+	lua/lstrlib.c \
+	lua/ltablib.c \
+	lua/lutf8lib.c \
+	lua/loadlib.c \
+	lua/lua.c \
+	lua/purec_lua_readline.c
 GENERAL_SOURCES := \
 	installer/main.c \
 	installer/progress.c \
@@ -85,6 +122,7 @@ GENERAL_CPP_SOURCES := \
 PLAIN_OBJECTS := $(PLAIN_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_OBJECTS := $(GENERAL_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
+LUA_OBJECTS := $(LUA_SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
 	$(PROGRAM_DIR)/installer \
@@ -126,7 +164,8 @@ TARGETS := \
 	$(PROGRAM_DIR)/reboot \
 	$(PROGRAM_DIR)/poweroff \
 	$(PROGRAM_DIR)/shutdown \
-	$(PROGRAM_DIR)/halt
+	$(PROGRAM_DIR)/halt \
+	$(PROGRAM_DIR)/lua
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -138,13 +177,30 @@ endif
 all: $(TARGETS)
 hexedit: $(PROGRAM_DIR)/hexedit
 
--include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
+-include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(LUA_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
 
 $(GENERAL_OBJECTS): PRIVATE_CFLAGS :=
 $(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -std=c++20 -fno-exceptions -fno-rtti
+$(LUA_OBJECTS): PRIVATE_CFLAGS := -DLUA_ANSI -I$(ROOT_DIR)/src/libc/include/hosted -include $(ROOT_DIR)/src/programs/lua/purec_lua_readline.h
 
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
+
+$(LIB_DIR)/libpurec.so:
+	$(MAKE) -C $(ROOT_DIR)/src/libc
+
+ifdef PUREC_DYNAMIC
+TARGETS += $(PROGRAM_DIR)/echo-dyn
+PIE_LD_SCRIPT := $(ROOT_DIR)/linker-userspace-pie.ld
+
+$(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(PIE_LD_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) $(PIE_LINK_FLAGS) -T $(PIE_LD_SCRIPT) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so
+
+$(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/echo/echo.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_SO_CFLAGS) -c $< -o $@
+endif
 
 $(LIBPUREGUI) $(LIBPGUIW):
 	$(MAKE) -C $(ROOT_DIR)/src/libgui
@@ -338,9 +394,31 @@ $(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DI
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -c $< -o $@
 
-$(PROGRAM_DIR)/tcc: $(OBJ_DIR)/tcc/tcc.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/tcc: $(OBJ_DIR)/tcc/tcc.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LIB_DIR)/tcc/libtcc1.a $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/tcc/tcc.o $(LIBPUREC)
+
+TCCRT_DIR := $(ROOT_DIR)/tcc/lib
+TCCRT_OBJ_DIR := $(OBJ_DIR)/tcc/rt
+TCCRT_LIB := $(LIB_DIR)/tcc/libtcc1.a
+TCCRT_OBJECTS := $(TCCRT_OBJ_DIR)/libtcc1.o $(TCCRT_OBJ_DIR)/alloca.o \
+	$(TCCRT_OBJ_DIR)/alloca-bt.o $(TCCRT_OBJ_DIR)/stdatomic.o \
+	$(TCCRT_OBJ_DIR)/atomic.o $(TCCRT_OBJ_DIR)/builtin.o \
+	$(TCCRT_OBJ_DIR)/va_list.o
+
+-include $(TCCRT_OBJECTS:.o=.d)
+
+$(TCCRT_OBJ_DIR)/%.o: $(TCCRT_DIR)/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -c $< -o $@
+
+$(TCCRT_OBJ_DIR)/%.o: $(TCCRT_DIR)/%.S
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -c $< -o $@
+
+$(TCCRT_LIB): $(TCCRT_OBJECTS)
+	@mkdir -p $(@D)
+	$(AR) rcs $@ $^
 endif
 
 # Hosted demo: standard main() + crt0 + hosted headers (TCC migration
@@ -352,3 +430,8 @@ $(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
 $(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)
+
+# Lua 5.4 REPL (v1, no math lib). Hosted main() via crt0.o, same as hello.
+$(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(LUA_OBJECTS) $(LIBPUREC)

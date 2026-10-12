@@ -4,8 +4,9 @@
 #include <stdint.h>
 #include "../storage/storage_types.h"
 
-enum xhci_probe_error {
-    XHCI_PROBE_OK=0,
+enum xhci_probe_error
+{
+    XHCI_PROBE_OK = 0,
     XHCI_PROBE_MMIO,
     XHCI_PROBE_CAPABILITY,
     XHCI_PROBE_BIOS_HANDOFF,
@@ -29,7 +30,8 @@ enum xhci_probe_error {
     XHCI_PROBE_SCSI
 };
 
-struct xhci_probe_stats {
+struct xhci_probe_stats
+{
     uint32_t controllers;
     uint32_t connected_ports;
     uint32_t addressed_devices;

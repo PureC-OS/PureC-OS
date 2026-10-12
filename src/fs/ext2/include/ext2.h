@@ -26,7 +26,8 @@ int32_t ext2_format_device(const char *device_name, const char *serial_confirmat
 int32_t ext2_format_device_force(const char *device_name, const char *serial_confirmation);
 bool ext2_mount_specific(const char *device);
 
-struct ext2_module_ops {
+struct ext2_module_ops
+{
     uint32_t version;
     bool (*init)(void);
     bool (*is_mounted)(void);

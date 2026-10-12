@@ -28,6 +28,10 @@ clock_t clock(void) {
     return (clock_t)time_uptime_ms(); // CLOCKS_PER_SEC == 1000
 }
 
+double difftime(time_t end, time_t start) {
+    return (double)(end - start);
+}
+
 int gettimeofday(struct timeval *tv, void *tz) {
     if (!tv) {
         errno = EINVAL;

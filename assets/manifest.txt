@@ -91,6 +91,7 @@
 /bin/program/burn /bin/program/burn - 0 bin/programs/burn
 /bin/program/eat /bin/program/eat - 0 bin/programs/eat
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
+/bin/program/lua /bin/program/lua - 0 bin/programs/lua
 /bin/program/pl /bin/program/pl - 0 bin/programs/pl
 
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
@@ -114,6 +115,7 @@
 
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
+/lib/libpurec.so /lib/libpurec.so - 0 bin/lib/libpurec.so
 /lib/libpurefs.a /lib/libpurefs.a /lib/libpur~2.a 1 bin/lib/libpurefs.a
 /lib/libpuregui.a /lib/libpuregui.a /lib/libpur~1.a 1 bin/lib/libpuregui.a
 /lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
@@ -143,6 +145,7 @@
 /include/sys/mman.h /include/sys/mman.h - 1 src/libc/include/hosted/sys/mman.h
 /include/sys/ucontext.h /include/sys/ucontext.h - 1 src/libc/include/hosted/sys/ucontext.h
 /lib/crt0.o /lib/crt0.o - 1 bin/lib/crt0.o
+/lib/tcc/libtcc1.a /lib/tcc/libtcc1.a - 0 bin/lib/tcc/libtcc1.a
 /lib/tcc/include/float.h /lib/tcc/include/float.h - 0 tcc/include/float.h
 /lib/tcc/include/stdarg.h /lib/tcc/include/stdarg.h - 0 tcc/include/stdarg.h
 /lib/tcc/include/stdbool.h /lib/tcc/include/stdbool.h - 0 tcc/include/stdbool.h

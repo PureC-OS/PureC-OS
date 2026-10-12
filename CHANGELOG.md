@@ -1,5 +1,96 @@
 # Changelog
 
+## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода
+
+### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
+- Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка
+  `-DLUA_ANSI` без `LUA_USE_POSIX`/`LUA_USE_DLOPEN` (ISO C фолбэки Lua:
+  `popen` unsupported, `fseek/ftell`, `tmpnam`, `system`, no-op inspectstat).
+- v1 открывает `base/package/coroutine/table/io/os/string/utf8/debug`
+  через свой `linit-purec.c`; библиотека `math` исключена (нужен полный
+  libm — soft-fp, v2). `lmathlib.c` и оригинальный `linit.c` завендорены
+  для будущего.
+- Линковка `crt0.o` + `libpurec.a` через `linker-userspace.ld` (обычный
+  hosted `main()`); static ELF64, 0 undefined symbols.
+- Манифесты (`assets/manifest.txt`, `manifest-new.txt`): optional-запись
+  `/bin/program/lua`; ISO собирается, boot smoke PASS.
+
+### Hosted libc ради порта
+- Новый `hosted/locale.h` + `src/libc/locale.c`: только локаль C
+  (`decimal_point "."`, `setlocale` всегда `"C"`); `locale.o` в `libpurec.a/.so`.
+- `signal.h`: недостающий ISO C `sig_atomic_t` (требует `lstate.h`).
+- `stdio.h`: `SEEK_*`, `_IONBF/_IOLBF/_IOFBF`, декларации
+  `freopen/tmpfile/tmpnam`; `stdio.c`: `freopen` (close+open,
+  text==binary), `tmpfile/tmpnam` — стабы `ENOSYS/NULL`.
+- `stdlib.h/c`: стаб `system()` (NULL → 0, иначе −1, шелла нет).
+- `string.h/c`: `strcoll()` как `strcmp` (C-локаль).
+- `time.h/c`: `difftime()` как разность; убран устаревший коммент про
+  «нет SSE в юзерспейсе» (юзерспейс SSE может, FPU-стейт ядро держит).
+- `math.h/c`: `trunc/floor/ceil/fmod/modf/frexp/sqrt/pow` без вызовов libm
+  (только `CVTTSD2SI/CVTSI2SD/DIVSD/SQRTSD` + битовые трюки, линкуется под
+  `-ffreestanding`); `pow` точен на целых степенях `[-64,64]` + `x^0.5`
+  через `sqrt`, общий дробный `pow` — NaN (лимит v1); гарды `INFINITY/NAN`
+  от `float.h`.
+
+### Эхо ввода в REPL (`purec_lua_readline.[ch]`)
+- Было: терминал эхует ввод шелла сам, а ребёнок на сыром `SYS_GETCHAR`
+  эха не получает — ввод вслепую, backspace падал в буфер буквально и
+  ломал строку (`syntax error`).
+- Стало: свой `lua_readline` через официальный хук (форс-инклуд `-include`
+  в `LUA_OBJECTS`), зеркалит шелл: посимвольное эхо с `fflush` (stdout
+  line-buffered), стирание backspace через `'\b'` (консоль `gop.c` его
+  стирает), CR/LF, фильтр контролов, кап `LUA_MAXINPUT` без переполнений,
+  все выходы NUL-терминируют.
+- `SYS_GETCHAR` EOF не возвращает никогда — выход из REPL через `os.exit()`
+  или закрытие окна (Ctrl-D нет), зафиксировано в `lua/README.md`.
+- Проверено живьём в PureC Terminal: ввод виден, опечатка правится,
+  `print("Hi")` печатает `Hi`.
+
+### Известные лимиты v1
+- Нет библиотеки `math`; дробный `pow` (кроме `0.5`) — NaN.
+- `io.popen/io.tmpfile/os.execute/os.tmpname` — graceful error; локаль C.
+
+## V1.2.24 V1.2.26 — .so формат (ET_DYN): юзерспейс, kmod, tcc-рантайм
+
+### Адресное пространство и стандарты линковки
+- Linux-like расклад юзера: legacy ET_EXEC `0x400000`, PIE `0x555555554000`,
+  регион `.so` `0x600000000000+` (шаг 256МиБ); стек, куча, `USER_TOP` без изменений.
+- Ядро остаётся static (`-fno-pic`), юзерспейс и модули — PIC.
+- `PROVIDE` без референса символ не эмитит (поэтому пропадал `_kernel_end`) —
+  якоря `.ksyms` теперь обычными присваиваниями.
+
+### Лоадер юзерспейса (`elf.c`, `process.c`)
+- `ET_DYN` + слайд базы, `PT_DYNAMIC`, `RELATIVE/GLOB_DAT/JUMP_SLOT/64`,
+  резолв по `DT_HASH` (GLOBAL в приоритете, weak-undef в `0`).
+- `DT_NEEDED`-очередь из `/lib` (initramfs/VFS, дедуп, лимит 8); куча стартует
+  после верхней границы всех объектов. `ET_EXEC` идёт старым путём 1-в-1.
+
+### Тулчейн
+- `mk/toolchain.mk`: `USER_SO_CFLAGS`, `SO/PIE_LINK_FLAGS`, `KMOD_SO_CFLAGS`
+  (`-fPIC -mcmodel=small`: `kernel`-модель с PIC несовместима в GCC),
+  `KMOD_SO_LINK`, `mk/kmod-so.ld`, `src/libc/userspace-so.ld`,
+  `linker-userspace-pie.ld` (`PHDRS` + `SIZEOF_HEADERS` против
+  `PHDR not covered by LOAD`).
+- `libpurec.so` (`SONAME`, SYSV `HASH`, без `TEXTREL`), пилот `echo-dyn`
+  (`PUREC_DYNAMIC=1`, `NEEDED libpurec.so`); проверено реальным прогоном
+  обоих файлов через лоадер (GOT сошёлся).
+- Починен `ROOT_DIR` у `82543gc` (5 уровней вместо 4 — модуль не собирался).
+
+### kmod `.so` (замена `LD -r`)
+- `.ksyms`-секция в ядре + `mk/ksyms.py` (1308 символов, сортировка + бинарный
+  поиск, проверка `magic`); патч в рецепте линка ядра.
+- `src/kernel/module/kmod_so.c`: маппинг ET_DYN в higher-half (бамп от
+  `__ksyms_end`), резолв kernel-first + self, `vmm_protect_page` для W^X,
+  доступ к образу только через трансляцию, `kmod_get`.
+- `.so`-таргеты 6 ин-три модулей (e1000, 82543gc, pcnet, ar9285, ext2,
+  i2c_hid_touchpad); все undef-символы покрыты таблицей ядра; `devman`
+  soft-probe `.so` (только лог, поведение не меняет).
+
+### tcc
+- Собран `libtcc1.a` (7 объектов из `tcc/lib`) в `/lib/tcc` + манифест:
+  фиксит `tcc: error: file 'libtcc1.a' not found`. ISO собирается,
+  `libtcc1.a` есть в ISO и initramfs.
+
 ## V1.2.22 v1.2.26 — OOM, планировщик, SMP, консоли, тесты
 
 ### OOM-подсистема (`src/mm/oom/`, только ядро решает)

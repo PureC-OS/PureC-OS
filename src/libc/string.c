@@ -64,6 +64,11 @@ int strcmp(const char *left, const char *right) {
     return (unsigned char)*left - (unsigned char)*right;
 }
 
+int strcoll(const char *left, const char *right) {
+    // C locale: collation == byte order.
+    return strcmp(left, right);
+}
+
 int strncmp(const char *left, const char *right, size_t count) {
     for (size_t i = 0; i < count; i++) {
         unsigned char l = (unsigned char)left[i];

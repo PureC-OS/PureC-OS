@@ -91,8 +91,6 @@ void timer_sleep(uint32_t milliseconds){
     uint64_t start=tsc_milliseconds();
     while(tsc_milliseconds()-start<milliseconds){
         uint64_t before=read_tsc();
-        /* Never enable IRQs inside a caller's critical section. Before the
-           scheduler starts, the configured PIT still wakes interruptible HLT. */
         if(flags&(1ULL<<9)) __asm__ volatile("hlt":::"memory");
         else __asm__ volatile("pause":::"memory");
         __atomic_fetch_add(&idle_tsc,read_tsc()-before,__ATOMIC_RELAXED);

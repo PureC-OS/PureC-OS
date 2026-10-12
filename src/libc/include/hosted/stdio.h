@@ -20,6 +20,16 @@
 #define TMP_MAX 10000
 #define L_tmpnam 64
 
+#ifndef SEEK_SET
+#define SEEK_SET 0
+#define SEEK_CUR 1
+#define SEEK_END 2
+#endif
+
+#define _IONBF 0
+#define _IOLBF 1
+#define _IOFBF 2
+
 typedef struct file_impl FILE;
 
 extern FILE *stdin;
@@ -27,6 +37,9 @@ extern FILE *stdout;
 extern FILE *stderr;
 
 FILE *fopen(const char *path, const char *mode);
+FILE *freopen(const char *filename, const char *mode, FILE *stream);
+FILE *tmpfile(void);
+char *tmpnam(char *s);
 FILE *fdopen(int fd, const char *mode);
 int fclose(FILE *stream);
 int fflush(FILE *stream);

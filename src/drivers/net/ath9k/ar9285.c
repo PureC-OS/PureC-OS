@@ -76,7 +76,8 @@
 #define AR9285_TX_RING 4
 #define AR9285_RX_RING 8
 
-struct ar_tx_desc {
+struct ar_tx_desc
+{
     uint32_t link;
     uint32_t buf;
     uint16_t len;
@@ -85,7 +86,8 @@ struct ar_tx_desc {
     uint32_t reserved[3];
 };
 
-struct ar_rx_desc {
+struct ar_rx_desc
+{
     uint32_t link;
     uint32_t buf;
     uint32_t status;
@@ -93,7 +95,8 @@ struct ar_rx_desc {
     uint32_t reserved[4];
 };
 
-struct ar9285_device {
+struct ar9285_device
+{
     volatile uint8_t *regs;
     struct pci_device_info pci;
     struct net_device net;
@@ -129,18 +132,22 @@ struct ar9285_device {
 
 static struct ar9285_device adapter;
 
-static uint32_t ar_reg_read(uint32_t offset) {
+static uint32_t ar_reg_read(uint32_t offset)
+{
     return *(volatile uint32_t *)(adapter.regs + offset);
 }
 
-static void ar_reg_write(uint32_t offset, uint32_t value) {
+static void ar_reg_write(uint32_t offset, uint32_t value)
+{
     *(volatile uint32_t *)(adapter.regs + offset) = value;
 }
 
-static bool ar_wake_mac(void) {
+static bool ar_wake_mac(void)
+{
 
     ar_reg_write(AR_MAC_SLEEP, 0);
-    for (uint32_t i = 0; i < AR9285_POLL_TIMEOUT; i++) {
+    for (uint32_t i = 0; i < AR9285_POLL_TIMEOUT; i++)
+    {
         if ((ar_reg_read(AR_MAC_SLEEP) & AR_MAC_SLEEP_MAC_ASLEEP) == 0)
             return true;
         __asm__ volatile("pause");
@@ -148,7 +155,8 @@ static bool ar_wake_mac(void) {
     return false;
 }
 
-static bool ar_read_srev(uint8_t *version, uint8_t *rev) {
+static bool ar_read_srev(uint8_t *version, uint8_t *rev)
+{
     uint32_t srev = ar_reg_read(AR_SREV);
     if (srev == 0 || srev == 0xFFFFFFFFU)
         return false;
@@ -157,7 +165,8 @@ static bool ar_read_srev(uint8_t *version, uint8_t *rev) {
     return true;
 }
 
-static bool ar_read_mac(uint8_t mac[6]) {
+static bool ar_read_mac(uint8_t mac[6])
+{
     uint32_t lo = ar_reg_read(AR_STA_ID0);
     uint32_t hi = ar_reg_read(AR_STA_ID1) & AR_STA_ID1_SADH_MASK;
     if (lo == 0xFFFFFFFFU)
@@ -170,7 +179,8 @@ static bool ar_read_mac(uint8_t mac[6]) {
     mac[5] = (uint8_t)(hi >> 8);
     bool all_zero = true;
     bool all_ff = true;
-    for (uint8_t i = 0; i < 6; i++) {
+    for (uint8_t i = 0; i < 6; i++)
+    {
         if (mac[i])
             all_zero = false;
         if (mac[i] != 0xFF)
@@ -180,7 +190,8 @@ static bool ar_read_mac(uint8_t mac[6]) {
     return !all_zero && !all_ff;
 }
 
-static void ar_program_sta(const uint8_t mac[6]) {
+static void ar_program_sta(const uint8_t mac[6])
+{
     uint32_t lo = (uint32_t)mac[0] | ((uint32_t)mac[1] << 8) |
                   ((uint32_t)mac[2] << 16) | ((uint32_t)mac[3] << 24);
     uint32_t hi = ar_reg_read(AR_STA_ID1) & ~AR_STA_ID1_SADH_MASK;
@@ -191,7 +202,8 @@ static void ar_program_sta(const uint8_t mac[6]) {
     ar_reg_write(AR_STA_ID1, hi);
 }
 
-static void ar_program_bssid(const uint8_t bssid[6], uint16_t aid) {
+static void ar_program_bssid(const uint8_t bssid[6], uint16_t aid)
+{
     uint32_t lo = (uint32_t)bssid[0] | ((uint32_t)bssid[1] << 8) |
                   ((uint32_t)bssid[2] << 16) | ((uint32_t)bssid[3] << 24);
     uint32_t hi = (uint32_t)bssid[4] | ((uint32_t)bssid[5] << 8);
@@ -200,10 +212,13 @@ static void ar_program_bssid(const uint8_t bssid[6], uint16_t aid) {
     ar_reg_write(AR_BSS_ID1, hi);
 }
 
-static void ar_release_dma(void) {
-    if (adapter.tx_ring_phys) {
+static void ar_release_dma(void)
+{
+    if (adapter.tx_ring_phys)
+    {
 
-        for (uint32_t i = 0; i < AR9285_TX_RING; i++) {
+        for (uint32_t i = 0; i < AR9285_TX_RING; i++)
+        {
             if (adapter.tx_buf_phys[i])
                 pmm_free_page(adapter.tx_buf_phys[i]);
             adapter.tx_buf_phys[i] = 0;
@@ -213,8 +228,10 @@ static void ar_release_dma(void) {
         adapter.tx_ring_phys = 0;
         adapter.tx_ring = NULL;
     }
-    if (adapter.rx_ring_phys) {
-        for (uint32_t i = 0; i < AR9285_RX_RING; i++) {
+    if (adapter.rx_ring_phys)
+    {
+        for (uint32_t i = 0; i < AR9285_RX_RING; i++)
+        {
             if (adapter.rx_buf_phys[i])
                 pmm_free_page(adapter.rx_buf_phys[i]);
             adapter.rx_buf_phys[i] = 0;
@@ -228,27 +245,32 @@ static void ar_release_dma(void) {
     adapter.rx_ready = false;
 }
 
-static bool ar_tx_init(void) {
+static bool ar_tx_init(void)
+{
     adapter.tx_ring_phys = pmm_allocate_page();
     if (!adapter.tx_ring_phys)
         return false;
     adapter.tx_ring =
         (struct ar_tx_desc *)pmm_physical_to_virtual(adapter.tx_ring_phys);
-    if (!adapter.tx_ring) {
+    if (!adapter.tx_ring)
+    {
         pmm_free_page(adapter.tx_ring_phys);
         adapter.tx_ring_phys = 0;
         return false;
     }
     memset(adapter.tx_ring, 0, sizeof(struct ar_tx_desc) * AR9285_TX_RING);
-    for (uint32_t i = 0; i < AR9285_TX_RING; i++) {
+    for (uint32_t i = 0; i < AR9285_TX_RING; i++)
+    {
         uint64_t bp = pmm_allocate_page();
-        if (!bp) {
+        if (!bp)
+        {
             ar_release_dma();
             return false;
         }
         adapter.tx_buf_phys[i] = bp;
         adapter.tx_bufs[i] = (uint8_t *)pmm_physical_to_virtual(bp);
-        if (!adapter.tx_bufs[i]) {
+        if (!adapter.tx_bufs[i])
+        {
             ar_release_dma();
             return false;
         }
@@ -268,27 +290,32 @@ static bool ar_tx_init(void) {
     return true;
 }
 
-static bool ar_rx_init(void) {
+static bool ar_rx_init(void)
+{
     adapter.rx_ring_phys = pmm_allocate_page();
     if (!adapter.rx_ring_phys)
         return false;
     adapter.rx_ring =
         (struct ar_rx_desc *)pmm_physical_to_virtual(adapter.rx_ring_phys);
-    if (!adapter.rx_ring) {
+    if (!adapter.rx_ring)
+    {
         pmm_free_page(adapter.rx_ring_phys);
         adapter.rx_ring_phys = 0;
         return false;
     }
     memset(adapter.rx_ring, 0, sizeof(struct ar_rx_desc) * AR9285_RX_RING);
-    for (uint32_t i = 0; i < AR9285_RX_RING; i++) {
+    for (uint32_t i = 0; i < AR9285_RX_RING; i++)
+    {
         uint64_t bp = pmm_allocate_page();
-        if (!bp) {
+        if (!bp)
+        {
             ar_release_dma();
             return false;
         }
         adapter.rx_buf_phys[i] = bp;
         adapter.rx_bufs[i] = (uint8_t *)pmm_physical_to_virtual(bp);
-        if (!adapter.rx_bufs[i]) {
+        if (!adapter.rx_bufs[i])
+        {
             ar_release_dma();
             return false;
         }
@@ -308,7 +335,8 @@ static bool ar_rx_init(void) {
     return true;
 }
 
-static bool ar_tx_mgmt(const uint8_t *frame, uint16_t len) {
+static bool ar_tx_mgmt(const uint8_t *frame, uint16_t len)
+{
     struct ar9285_device *dev = &adapter;
     if (!dev->initialized || !dev->tx_ready || !dev->tx_ring || !frame || !len)
         return false;
@@ -327,9 +355,11 @@ static bool ar_tx_mgmt(const uint8_t *frame, uint16_t len) {
     ar_reg_write(AR_QTXDP(AR9285_MGMT_Q), (uint32_t)desc_phys);
     dev->tx_next = (uint16_t)((idx + 1) % AR9285_TX_RING);
 
-    for (uint32_t i = 0; i < 5000; i++) {
+    for (uint32_t i = 0; i < 5000; i++)
+    {
         uint32_t s0 = ar_reg_read(AR_ISR_S0);
-        if (s0 & (1U << AR9285_MGMT_Q)) {
+        if (s0 & (1U << AR9285_MGMT_Q))
+        {
             ar_reg_write(AR_ISR_S0, (1U << AR9285_MGMT_Q));
             return true;
         }
@@ -340,13 +370,15 @@ static bool ar_tx_mgmt(const uint8_t *frame, uint16_t len) {
     return true;
 }
 
-static bool ar_mlme_tx(void *ctx, const uint8_t *frame, uint16_t len) {
+static bool ar_mlme_tx(void *ctx, const uint8_t *frame, uint16_t len)
+{
     (void)ctx;
     klogf(KLOG_DEBUG, "ar9285: MLME TX mgmt len=%u", (uint32_t)len);
     return ar_tx_mgmt(frame, len);
 }
 
-static void ar_mlme_associated(void *ctx) {
+static void ar_mlme_associated(void *ctx)
+{
     struct ar9285_device *dev = (struct ar9285_device *)ctx;
     if (!dev)
         dev = &adapter;
@@ -363,7 +395,8 @@ static void ar_mlme_associated(void *ctx) {
                           dev->target_channel, WIFI_SECURITY_OPEN);
 }
 
-static void ar_mlme_failed(void *ctx) {
+static void ar_mlme_failed(void *ctx)
+{
     struct ar9285_device *dev = (struct ar9285_device *)ctx;
     if (!dev)
         dev = &adapter;
@@ -377,7 +410,8 @@ static void ar_mlme_failed(void *ctx) {
 #define AR9285_SCAN_TIMEOUT_MS 4000U
 #define AR9285_SCAN_RSSI_DEFAULT (-60)
 
-static void ar_scan_stop_locked(struct ar9285_device *dev, bool report_done) {
+static void ar_scan_stop_locked(struct ar9285_device *dev, bool report_done)
+{
     if (!dev || !dev->scan_active)
         return;
     dev->scan_active = false;
@@ -386,12 +420,13 @@ static void ar_scan_stop_locked(struct ar9285_device *dev, bool report_done) {
 }
 
 static void ar_handle_scan_frame(struct ar9285_device *dev, const uint8_t *frame,
-                                  uint16_t len) {
+                                 uint16_t len)
+{
     struct dot11_bss bss;
     if (!dot11_parse_bss(frame, len, &bss))
         return;
     if (!bss.ssid_len || !bss.ssid[0])
-        return; /* hidden: BSSID unknown to userspace, skip for now */
+        return;
     struct wifi_network net;
     memset(&net, 0, sizeof(net));
     memcpy(net.ssid, bss.ssid, sizeof(net.ssid) - 1);
@@ -402,7 +437,8 @@ static void ar_handle_scan_frame(struct ar9285_device *dev, const uint8_t *frame
         net.security = WIFI_SECURITY_WPA2;
     else
         net.security = WIFI_SECURITY_OPEN;
-    if (wifi_report_scan_result(&net)) {
+    if (wifi_report_scan_result(&net))
+    {
         klogf(KLOG_DEBUG, "ar9285: scan hit '%s' chan=%u sec=%u bssid=%02x:%02x:%02x:%02x:%02x:%02x",
               net.ssid, net.channel, net.security,
               net.bssid[0], net.bssid[1], net.bssid[2],
@@ -411,13 +447,15 @@ static void ar_handle_scan_frame(struct ar9285_device *dev, const uint8_t *frame
     (void)dev;
 }
 
-static void ar_rx_poll(uint64_t now_ms) {
+static void ar_rx_poll(uint64_t now_ms)
+{
     struct ar9285_device *dev = &adapter;
     if (!dev->initialized || !dev->rx_ready || !dev->rx_ring)
         return;
     if (!dev->mlme_active && !dev->scan_active)
         return;
-    for (uint32_t n = 0; n < AR9285_RX_RING; n++) {
+    for (uint32_t n = 0; n < AR9285_RX_RING; n++)
+    {
         uint16_t idx = dev->rx_next;
         volatile struct ar_rx_desc *d = &dev->rx_ring[idx];
         __atomic_thread_fence(__ATOMIC_ACQUIRE);
@@ -425,7 +463,8 @@ static void ar_rx_poll(uint64_t now_ms) {
         uint32_t len = d->len;
         if (!len)
             break;
-        if (len < 24 || len > DOT11_MGMT_MAX) {
+        if (len < 24 || len > DOT11_MGMT_MAX)
+        {
             d->len = 0;
             d->status = 0;
             __atomic_thread_fence(__ATOMIC_RELEASE);
@@ -438,25 +477,30 @@ static void ar_rx_poll(uint64_t now_ms) {
         d->status = 0;
         __atomic_thread_fence(__ATOMIC_RELEASE);
         dev->rx_next = (uint16_t)((idx + 1) % AR9285_RX_RING);
-        if (dev->mlme_active) {
+        if (dev->mlme_active)
+        {
             (void)dot11_mlme_input(&dev->mlme, tmp, (uint16_t)len, now_ms);
             if (dev->mlme.state == DOT11_MLME_ASSOCIATED ||
                 dev->mlme.state == DOT11_MLME_FAILED)
                 return;
-        } else if (dev->scan_active) {
+        }
+        else if (dev->scan_active)
+        {
             ar_handle_scan_frame(dev, tmp, (uint16_t)len);
         }
     }
 }
 
-static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length) {
+static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length)
+{
     struct ar9285_device *dev = context;
     (void)frame;
     (void)length;
     if (!dev || !dev->initialized)
         return false;
 
-    if (!dev->data_path_warned) {
+    if (!dev->data_path_warned)
+    {
         dev->data_path_warned = true;
         klog(KLOG_WARN, "ar9285: data TX pending phase 2b (need 802.11 data encap)");
     }
@@ -464,7 +508,8 @@ static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length
     return false;
 }
 
-static void ar9285_poll(void *context, uint32_t budget) {
+static void ar9285_poll(void *context, uint32_t budget)
+{
     (void)context;
     (void)budget;
 
@@ -473,7 +518,8 @@ static void ar9285_poll(void *context, uint32_t budget) {
         ar_reg_write(AR_ISR_S1, s1);
 }
 
-static bool ar9285_link_up(void *context) {
+static bool ar9285_link_up(void *context)
+{
     struct ar9285_device *dev = context;
     return dev && dev->initialized &&
            dev->mlme_active && dev->mlme.state == DOT11_MLME_ASSOCIATED;
@@ -485,25 +531,27 @@ static const struct net_device_ops ar9285_net_ops = {
     .link_up = ar9285_link_up,
 };
 
-static bool ar9285_wifi_scan(void *context) {
+static bool ar9285_wifi_scan(void *context)
+{
     struct ar9285_device *dev = context;
     if (!dev || !dev->initialized)
         return false;
-    if (dev->mlme_active) {
+    if (dev->mlme_active)
+    {
         klog(KLOG_INFO, "ar9285: scan deferred while associating");
         return false;
     }
     if (dev->scan_active)
         return true;
-    if (!dev->rx_ready) {
+    if (!dev->rx_ready)
+    {
         klog(KLOG_WARN, "ar9285: scan impossible, RX ring not ready");
         return false;
     }
     dev->scan_active = true;
     dev->scan_start_ms = timer_ticks();
-    /* Active solicitation: wildcard probe request to trigger probe responses
-       in addition to passive beacon listening. Failure is non-fatal. */
-    if (dev->tx_ready) {
+    if (dev->tx_ready)
+    {
         static const uint8_t b_rates[] = {0x82, 0x84, 0x8B, 0x96};
         uint8_t probe[DOT11_MGMT_MAX];
         uint16_t plen = dot11b_build_probe_req(dev->net.mac, NULL, 0,
@@ -516,17 +564,20 @@ static bool ar9285_wifi_scan(void *context) {
     return true;
 }
 
-static const struct wifi_network *ar_find_cached(const char *ssid) {
+static const struct wifi_network *ar_find_cached(const char *ssid)
+{
     static struct wifi_network buf[WIFI_SCAN_MAX];
     uint32_t n = wifi_get_scan_results(buf, WIFI_SCAN_MAX);
-    for (uint32_t i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < n; i++)
+    {
         if (strcmp(buf[i].ssid, ssid) == 0)
             return &buf[i];
     }
     return NULL;
 }
 
-static bool ar9285_wifi_connect(void *context, const char *ssid, const char *password) {
+static bool ar9285_wifi_connect(void *context, const char *ssid, const char *password)
+{
     struct ar9285_device *dev = context;
     (void)password;
     if (!dev || !dev->initialized || !ssid || !ssid[0])
@@ -534,7 +585,8 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     ar_scan_stop_locked(dev, false);
     if (dev->mlme_active &&
         (dev->mlme.state == DOT11_MLME_AUTH_SENT ||
-         dev->mlme.state == DOT11_MLME_ASSOC_SENT)) {
+         dev->mlme.state == DOT11_MLME_ASSOC_SENT))
+    {
         klog(KLOG_WARN, "ar9285: assoc already in progress");
         return true;
     }
@@ -546,24 +598,30 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     uint8_t bssid[6] = {0};
     uint8_t channel = 0;
     uint8_t security = WIFI_SECURITY_OPEN;
-    if (cached) {
+    if (cached)
+    {
         memcpy(bssid, cached->bssid, 6);
         channel = cached->channel;
         security = cached->security;
-    } else {
+    }
+    else
+    {
         klogf(KLOG_WARN, "ar9285: SSID '%s' not in scan cache (hidden?) — need BSSID, aborting", ssid);
         return false;
     }
-    if (dot11_addr_is_zero(bssid)) {
+    if (dot11_addr_is_zero(bssid))
+    {
         klogf(KLOG_ERROR, "ar9285: no BSSID for '%s', assoc impossible", ssid);
         return false;
     }
-    if (security != WIFI_SECURITY_OPEN) {
+    if (security != WIFI_SECURITY_OPEN)
+    {
         klogf(KLOG_WARN, "ar9285: '%s' security=%u not open — WPA pending phase 2b, aborting",
               ssid, security);
         return false;
     }
-    if (!dev->tx_ready || !dev->rx_ready) {
+    if (!dev->tx_ready || !dev->rx_ready)
+    {
         klog(KLOG_ERROR, "ar9285: TX/RX rings not ready, assoc impossible");
         return false;
     }
@@ -581,7 +639,8 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     dot11_mlme_init(&dev->mlme, dev->net.mac, ar_mlme_tx, dev,
                     ar_mlme_associated, ar_mlme_failed, dev);
     dev->mlme_active = true;
-    if (!dot11_mlme_start_open(&dev->mlme, ssid, bssid, dev->target_channel, now)) {
+    if (!dot11_mlme_start_open(&dev->mlme, ssid, bssid, dev->target_channel, now))
+    {
         klogf(KLOG_ERROR, "ar9285: MLME start failed reason=%u", dev->mlme.fail_reason);
         dev->mlme_active = false;
         return false;
@@ -590,7 +649,8 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     return true;
 }
 
-static bool ar9285_wifi_disconnect(void *context) {
+static bool ar9285_wifi_disconnect(void *context)
+{
     struct ar9285_device *dev = context;
     if (!dev)
         return false;
@@ -607,13 +667,15 @@ static bool ar9285_wifi_disconnect(void *context) {
     return true;
 }
 
-static void ar9285_wifi_poll(void *context, uint64_t now_ms) {
+static void ar9285_wifi_poll(void *context, uint64_t now_ms)
+{
     struct ar9285_device *dev = context;
     if (!dev || !dev->initialized)
         return;
     ar_rx_poll(now_ms);
     if (dev->scan_active &&
-        (now_ms - dev->scan_start_ms >= AR9285_SCAN_TIMEOUT_MS)) {
+        (now_ms - dev->scan_start_ms >= AR9285_SCAN_TIMEOUT_MS))
+    {
         klog(KLOG_INFO, "ar9285: scan window elapsed, reporting results");
         ar_scan_stop_locked(dev, true);
     }
@@ -621,13 +683,15 @@ static void ar9285_wifi_poll(void *context, uint64_t now_ms) {
         return;
     uint8_t before = dev->mlme.state;
     dot11_mlme_poll(&dev->mlme, now_ms);
-    if (before != dev->mlme.state) {
+    if (before != dev->mlme.state)
+    {
         klogf(KLOG_DEBUG, "ar9285: MLME state %u -> %u retries=%u", before,
               dev->mlme.state, dev->mlme.retries);
     }
 }
 
-static bool ar9285_wifi_is_connected(void *context) {
+static bool ar9285_wifi_is_connected(void *context)
+{
     struct ar9285_device *dev = context;
     return dev && dev->initialized && dev->mlme_active &&
            dev->mlme.state == DOT11_MLME_ASSOCIATED;
@@ -641,7 +705,8 @@ static const struct wifi_ops ar9285_wifi_ops = {
     .is_connected = ar9285_wifi_is_connected,
 };
 
-static void find_adapter(const struct pci_device_info *device, void *context) {
+static void find_adapter(const struct pci_device_info *device, void *context)
+{
     struct ar9285_device *result = context;
     if (result->found)
         return;
@@ -651,11 +716,13 @@ static void find_adapter(const struct pci_device_info *device, void *context) {
     result->found = true;
 }
 
-bool ar9285_present(void) {
+bool ar9285_present(void)
+{
     return adapter.found;
 }
 
-bool ar9285_init(void) {
+bool ar9285_init(void)
+{
     memset(&adapter, 0, sizeof(adapter));
     pci_enumerate(find_adapter, &adapter);
     if (!adapter.found)
@@ -664,38 +731,44 @@ bool ar9285_init(void) {
     klogf(KLOG_INFO, "ar9285: found 168C:002B at %02x:%02x.%u",
           adapter.pci.bus, adapter.pci.slot, adapter.pci.function);
 
-    if (!pci_update_command(&adapter.pci, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER, 0)) {
+    if (!pci_update_command(&adapter.pci, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER, 0))
+    {
         klog(KLOG_ERROR, "ar9285: failed to enable PCI MEM+BM");
         return false;
     }
 
     uint64_t bar = pci_read_bar(adapter.pci.bus, adapter.pci.slot, adapter.pci.function, 0);
-    if (!bar || bar == 0xFFFFFFFFULL) {
+    if (!bar || bar == 0xFFFFFFFFULL)
+    {
         klog(KLOG_ERROR, "ar9285: invalid BAR0");
         return false;
     }
 
     adapter.regs = mmio_map(bar, AR9285_MMIO_SIZE);
-    if (!adapter.regs) {
+    if (!adapter.regs)
+    {
         klog(KLOG_ERROR, "ar9285: cannot map MMIO BAR0");
         return false;
     }
 
-    if (!ar_wake_mac()) {
+    if (!ar_wake_mac())
+    {
         klog(KLOG_ERROR, "ar9285: MAC sleep wake timed out");
         return false;
     }
 
     uint8_t version = 0;
     uint8_t rev = 0;
-    if (!ar_read_srev(&version, &rev)) {
+    if (!ar_read_srev(&version, &rev))
+    {
         klog(KLOG_ERROR, "ar9285: unreadable SREV");
         return false;
     }
     adapter.mac_version = version;
     adapter.mac_rev = rev;
     klogf(KLOG_INFO, "ar9285: SREV version=0x%x rev=%u", version, rev);
-    if (version != AR_SREV_VERSION_9285) {
+    if (version != AR_SREV_VERSION_9285)
+    {
         klogf(KLOG_ERROR, "ar9285: unexpected silicon version 0x%x (want 0x%x)", version,
               AR_SREV_VERSION_9285);
         return false;
@@ -704,7 +777,8 @@ bool ar9285_init(void) {
     ar_reg_write(AR_IMR, 0);
     (void)ar_reg_read(AR_ISR);
 
-    if (!ar_read_mac(adapter.net.mac)) {
+    if (!ar_read_mac(adapter.net.mac))
+    {
         klog(KLOG_WARN, "ar9285: invalid STA_ID MAC, using placeholder 02:00:00:00:00:01");
         adapter.net.mac[0] = 0x02;
         adapter.net.mac[1] = 0x00;
@@ -725,23 +799,28 @@ bool ar9285_init(void) {
         klog(KLOG_WARN, "ar9285: TX ring init failed (assoc will refuse, phase1 net kept)");
     else
         klog(KLOG_INFO, "ar9285: TX mgmt ring ready (Q8)");
-    if (!ar_rx_init()) {
+    if (!ar_rx_init())
+    {
         klog(KLOG_WARN, "ar9285: RX ring init failed (assoc will refuse, phase1 net kept)");
         ar_release_dma();
-    } else {
+    }
+    else
+    {
         klog(KLOG_INFO, "ar9285: RX mgmt ring ready");
     }
     klogf(KLOG_DEBUG, "ar9285: RX_FILTER=0x%08x TXCFG=0x%08x RXCFG=0x%08x (RF/BB pending phase 2b)",
           ar_reg_read(AR_RX_FILTER), ar_reg_read(AR_TXCFG), ar_reg_read(AR_RXCFG));
 
-    if (!net_device_register(&adapter.net)) {
+    if (!net_device_register(&adapter.net))
+    {
         klog(KLOG_ERROR, "ar9285: net_device_register failed");
         ar_release_dma();
         adapter.initialized = false;
         return false;
     }
 
-    if (!wifi_device_register(&adapter.net, &ar9285_wifi_ops, &adapter, "wlan0")) {
+    if (!wifi_device_register(&adapter.net, &ar9285_wifi_ops, &adapter, "wlan0"))
+    {
         klog(KLOG_ERROR, "ar9285: wifi_device_register failed");
         ar_release_dma();
         adapter.initialized = false;

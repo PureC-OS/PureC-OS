@@ -8,46 +8,46 @@
 #define PROCESS_ENVIRONMENT_COUNT 16
 #define PROCESS_ENVIRONMENT_NAME_CAPACITY 32
 #define PROCESS_ENVIRONMENT_VALUE_CAPACITY 128
-#define PROCESS_CAP_STORAGE_ADMIN (1U<<0)
+#define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
 
 struct process_environment_entry {
-    bool used;
-    char name[PROCESS_ENVIRONMENT_NAME_CAPACITY];
-    char value[PROCESS_ENVIRONMENT_VALUE_CAPACITY];
+  bool used;
+  char name[PROCESS_ENVIRONMENT_NAME_CAPACITY];
+  char value[PROCESS_ENVIRONMENT_VALUE_CAPACITY];
 };
 
 enum process_state {
-    PROCESS_FREE=0,
-    PROCESS_READY,
-    PROCESS_RUNNING,
-    PROCESS_EXITED,
-    PROCESS_LOADING
+  PROCESS_FREE = 0,
+  PROCESS_READY,
+  PROCESS_RUNNING,
+  PROCESS_EXITED,
+  PROCESS_LOADING
 };
 
 struct process {
-    uint32_t pid;
-    uint32_t parent_pid;
-    enum process_state state;
-    int32_t exit_code;
-    uint64_t address_space;
-    uint64_t entry;
-    uint64_t user_stack_top;
-    uint64_t heap_base;
-    uint64_t heap_break;
-    uint64_t heap_mapped_end;
-    uint64_t heap_limit;
-    int32_t thread_id;
-    int32_t waiter_thread_id;
-    uint64_t runtime_ticks;
-    uint64_t sampled_runtime_ticks;
-    uint32_t capabilities;
-    int32_t descriptors[PROCESS_FD_COUNT];
-    char command_line[PROCESS_COMMAND_LINE_CAPACITY];
-    struct process_environment_entry environment[PROCESS_ENVIRONMENT_COUNT];
-    char name[32];
-    struct process *next;
-    struct process *hnext;
-    uint64_t node_phys;
+  uint32_t pid;
+  uint32_t parent_pid;
+  enum process_state state;
+  int32_t exit_code;
+  uint64_t address_space;
+  uint64_t entry;
+  uint64_t user_stack_top;
+  uint64_t heap_base;
+  uint64_t heap_break;
+  uint64_t heap_mapped_end;
+  uint64_t heap_limit;
+  int32_t thread_id;
+  int32_t waiter_thread_id;
+  uint64_t runtime_ticks;
+  uint64_t sampled_runtime_ticks;
+  uint32_t capabilities;
+  int32_t descriptors[PROCESS_FD_COUNT];
+  char command_line[PROCESS_COMMAND_LINE_CAPACITY];
+  struct process_environment_entry environment[PROCESS_ENVIRONMENT_COUNT];
+  char name[32];
+  struct process *next;
+  struct process *hnext;
+  uint64_t node_phys;
 };
 
 void process_init(void);
