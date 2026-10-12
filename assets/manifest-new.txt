@@ -63,6 +63,7 @@
 /bin/program/login /bin/program/login - 0 bin/programs/login
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
+/bin/program/lua /bin/program/lua - 0 bin/programs/lua
 /bin/program/pl /bin/program/pl - 0 bin/programs/pl
 /bin/program/files.desktop /bin/program/files.desktop /bin/program/FILES.DES 0 src/userspace/desktop_entries/files.desktop
 /bin/program/monitor.desktop /bin/program/monitor.desktop /bin/program/MONITOR.DES 0 src/userspace/desktop_entries/monitor.desktop

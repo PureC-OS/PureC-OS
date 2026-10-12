@@ -19,6 +19,42 @@ PLAIN_SOURCES := \
 	system/commands.c \
 	system/filesystem.c \
 	system/system.c
+# Lua 5.4 port (v1: REPL without math lib; see lua/README.md).
+# Excluded: lmathlib.c (needs full libm, v2), linit.c (upstream, all
+# libs; we build linit-purec.c instead), luac.c (bytecode compiler).
+LUA_SOURCES := \
+	lua/lapi.c \
+	lua/lcode.c \
+	lua/lctype.c \
+	lua/ldebug.c \
+	lua/ldo.c \
+	lua/ldump.c \
+	lua/lfunc.c \
+	lua/lgc.c \
+	lua/linit-purec.c \
+	lua/llex.c \
+	lua/lmem.c \
+	lua/lobject.c \
+	lua/lopcodes.c \
+	lua/lparser.c \
+	lua/lstate.c \
+	lua/lstring.c \
+	lua/ltable.c \
+	lua/ltm.c \
+	lua/lundump.c \
+	lua/lvm.c \
+	lua/lzio.c \
+	lua/lauxlib.c \
+	lua/lbaselib.c \
+	lua/lcorolib.c \
+	lua/ldblib.c \
+	lua/liolib.c \
+	lua/loslib.c \
+	lua/lstrlib.c \
+	lua/ltablib.c \
+	lua/lutf8lib.c \
+	lua/loadlib.c \
+	lua/lua.c
 GENERAL_SOURCES := \
 	installer/main.c \
 	installer/progress.c \
@@ -85,6 +121,7 @@ GENERAL_CPP_SOURCES := \
 PLAIN_OBJECTS := $(PLAIN_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_OBJECTS := $(GENERAL_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
+LUA_OBJECTS := $(LUA_SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
 	$(PROGRAM_DIR)/installer \
@@ -126,7 +163,8 @@ TARGETS := \
 	$(PROGRAM_DIR)/reboot \
 	$(PROGRAM_DIR)/poweroff \
 	$(PROGRAM_DIR)/shutdown \
-	$(PROGRAM_DIR)/halt
+	$(PROGRAM_DIR)/halt \
+	$(PROGRAM_DIR)/lua
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -138,10 +176,11 @@ endif
 all: $(TARGETS)
 hexedit: $(PROGRAM_DIR)/hexedit
 
--include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
+-include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(LUA_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
 
 $(GENERAL_OBJECTS): PRIVATE_CFLAGS :=
 $(GENERAL_CPP_OBJECTS): PRIVATE_CXXFLAGS := -std=c++20 -fno-exceptions -fno-rtti
+$(LUA_OBJECTS): PRIVATE_CFLAGS := -DLUA_ANSI -I$(ROOT_DIR)/src/libc/include/hosted
 
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
@@ -390,3 +429,8 @@ $(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
 $(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)
+
+# Lua 5.4 REPL (v1, no math lib). Hosted main() via crt0.o, same as hello.
+$(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(LUA_OBJECTS) $(LIBPUREC)

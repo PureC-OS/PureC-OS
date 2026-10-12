@@ -23,9 +23,7 @@ struct tm {
 
 time_t time(time_t *result);
 clock_t clock(void);
-// NOTE: no difftime() — it returns double, and userspace forbids SSE
-// (-mgeneral-regs-only, kernel keeps no FPU state). Same reason strtod
-// is deferred to the soft-float experiment.
+double difftime(time_t end, time_t start);
 time_t mktime(struct tm *parts);
 struct tm *gmtime(const time_t *value);
 struct tm *localtime(const time_t *value);

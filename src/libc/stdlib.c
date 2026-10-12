@@ -420,6 +420,12 @@ char *getenv(const char *name) {
     return value;
 }
 
+int system(const char *cmd) {
+    // No shell on PureC OS: NULL probe returns 0, any command fails.
+    (void)cmd;
+    return (cmd == 0) ? 0 : -1;
+}
+
 void exit(int status) {
     extern int fflush(void *stream);
     fflush(0);

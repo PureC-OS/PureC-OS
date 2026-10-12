@@ -212,6 +212,29 @@ int fclose(FILE *stream) {
     return result;
 }
 
+FILE *freopen(const char *filename, const char *mode, FILE *stream) {
+    // No text/binary distinction ("b" ignored in fopen), so reopen is
+    // close + open. NULL filename keeps the stream (C standard).
+    if (!mode || !stream) { errno = EINVAL; return 0; }
+    if (!filename) return stream;
+    if (stream != stdin && stream != stdout && stream != stderr)
+        fclose(stream);
+    return fopen(filename, mode);
+}
+
+FILE *tmpfile(void) {
+    // No temp-file support on PureC VFS yet.
+    errno = ENOSYS;
+    return 0;
+}
+
+char *tmpnam(char *s) {
+    // No temp names yet; callers (Lua loslib) treat NULL as error.
+    (void)s;
+    errno = ENOSYS;
+    return 0;
+}
+
 // ---- positioning ----
 
 int fseek(FILE *stream, long offset, int origin) {

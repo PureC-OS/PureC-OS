@@ -91,6 +91,7 @@
 /bin/program/burn /bin/program/burn - 0 bin/programs/burn
 /bin/program/eat /bin/program/eat - 0 bin/programs/eat
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
+/bin/program/lua /bin/program/lua - 0 bin/programs/lua
 /bin/program/pl /bin/program/pl - 0 bin/programs/pl
 
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
