@@ -167,6 +167,15 @@
   (реализовано чисто через purec-libxcrypt https://github.com/PureC-OS/libxcrypt)
 - [ ] добавыть в install созданыя юзеров которые будут добавляться в /home/username | priority:normal
 
+## SO / линковка / адресное пространство
+
+- [/] Ревизия стандартов линковки ядра (linker-limine.ld, toolchain.mk, MOD_CFLAGS) | priority:high
+- [ ] Спецификация формата .so для PureC-OS (ET_DYN, PT_DYNAMIC, baselib) | priority:high
+- [ ] Ревизия адресного пространства ядра (higher-half, USER_TOP, ELF_USER_MIN/MAX) | priority:high
+- [ ] Расширить elf.c: ET_DYN + PT_DYNAMIC + RELA (R_X86_64_RELATIVE/GLOB_DAT/JUMP_SLOT) | priority:normal
+- [ ] Toolchain под .so: -fPIC/-pie/-shared, userspace.ld + libpurec.so, kmod LD -r сохранить | priority:normal
+- [x] tcc: собрать libtcc1.a в /lib/tcc + манифест (фикс file libtcc1.a not found) | priority:high
+
 ## SO формат (ET_DYN)
 
 - [x] Ревизия стандартов линковки ядра (ядро static, юзер PIC) | priority:high
@@ -179,11 +188,3 @@
 - [ ] SYS_dlopen/dlclose/dlsym + настоящий dlfcn вместо стабов | priority:normal
 - [ ] Миграция всех программ на PIE + QEMU boot-тест echo-dyn c libpurec.so | priority:normal
 - [ ] Cutover драйверов на .so (вызов init из модуля, уход от builtin-дублей) | priority:normal
-
-## SO / линковка / адресное пространство
-
-- [/] Ревизия стандартов линковки ядра (linker-limine.ld, toolchain.mk, MOD_CFLAGS) | priority:high
-- [ ] Спецификация формата .so для PureC-OS (ET_DYN, PT_DYNAMIC, baselib) | priority:high
-- [ ] Ревизия адресного пространства ядра (higher-half, USER_TOP, ELF_USER_MIN/MAX) | priority:high
-- [ ] Расширить elf.c: ET_DYN + PT_DYNAMIC + RELA (R_X86_64_RELATIVE/GLOB_DAT/JUMP_SLOT) | priority:normal
-- [ ] Toolchain под .so: -fPIC/-pie/-shared, userspace.ld + libpurec.so, kmod LD -r сохранить | priority:normal
