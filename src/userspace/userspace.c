@@ -66,6 +66,7 @@ static int32_t  dragged_icon = -1;
 static int32_t  icon_drag_offset_x;
 static int32_t  icon_drag_offset_y;
 static bool     icon_drag_moved;
+static uint64_t last_drag_ms;
 static char     persistent_log_buffer[PERSISTENT_LOG_CHUNK];
 static void redraw_scene(void);
 static void redraw_managed_scene(uint32_t excluded_pid);
@@ -431,7 +432,17 @@ static void handle_desktop_mouse(void){
         consumed = desktop_apps_handle_mouse(
             mouse.x, mouse.y, mouse.buttons, pressed, released,
             desktop_width, desktop_height, &app_redraw);
-        redraw = redraw || app_redraw;
+        if(app_redraw){
+            if((mouse.buttons & 1) && !pressed && !released){
+                uint64_t now = timer_ticks();
+                if(now - last_drag_ms >= 16){
+                    last_drag_ms = now;
+                    redraw = true;
+                }
+            } else {
+                redraw = true;
+            }
+        }
     }
     if(pressed && !consumed){
         uint32_t count = desktop_entries_count();
@@ -463,7 +474,11 @@ static void handle_desktop_mouse(void){
                 icon_drag_moved = true;
                 desktop_entries_set_position((uint32_t)dragged_icon,
                                              (uint32_t)next_x, (uint32_t)next_y);
-                redraw_managed_scene(0);
+                uint64_t now = timer_ticks();
+                if(now - last_drag_ms >= 16){
+                    last_drag_ms = now;
+                    redraw_managed_scene(0);
+                }
             }
         }
     }
@@ -476,6 +491,10 @@ static void handle_desktop_mouse(void){
     }
 
     previous_mouse_buttons = mouse.buttons;
+    if(released){
+        last_drag_ms = 0;
+        redraw = true;
+    }
     if(redraw) redraw_managed_scene(0);
 }
 
