@@ -1,6 +1,6 @@
 # Changelog
 
-## V1.2.28 — Планировщик QoS, драг 60fps, порт MicroPython
+## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода, Портирували MicroPython 
 
 ### Планировщик: Apple-style QoS + кванты (`src/kernel/process/scheduler.[ch]`, `src/kernel/core/init.c`)
 - Новый `enum sched_qos`: `IDLE/BACKGROUND/UTILITY/DEFAULT/USER_INITIATED/USER_INTERACTIVE`
@@ -37,7 +37,6 @@
 - Проверено: те же исходники хостом — REPL считает, файлы исполняет, `fact(10)` = 3628800;
   `make test` зелёный, `make kernel` чисто.
 
-## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода
 
 ### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
 - Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка
@@ -86,6 +85,20 @@
 ### Известные лимиты v1
 - Нет библиотеки `math`; дробный `pow` (кроме `0.5`) — NaN.
 - `io.popen/io.tmpfile/os.execute/os.tmpname` — graceful error; локаль C.
+
+
+### TCC наконецто работаеть 
+- Было: TCC не работал в юзерспейсе, а теперь работает.
+  Жаловался на библиотеке и отказывался компилировать файлы
+  Приходилось запускать с флагами
+  
+  ```bash
+  tcc -static /test.c -o /hi -L/lib/tcc
+  /hi
+  ```
+
+- Стало: TCC работает в юзерспейсе, и теперь компилирует файлы без ошибок.
+
 
 ## V1.2.24 V1.2.26 — .so формат (ET_DYN): юзерспейс, kmod, tcc-рантайм
 
