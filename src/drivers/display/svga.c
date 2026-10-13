@@ -427,13 +427,23 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     svga_reg_write(g.io_base, SVGA_REG_HEIGHT, want_h);
     svga_reg_write(g.io_base, SVGA_REG_BPP, want_bpp);
     svga_reg_write(g.io_base, SVGA_REG_ENABLE, 1);
+    uint32_t act_w = svga_reg_read(g.io_base, SVGA_REG_WIDTH);
+    uint32_t act_h = svga_reg_read(g.io_base, SVGA_REG_HEIGHT);
+    uint32_t act_bpp = svga_reg_read(g.io_base, SVGA_REG_BPP);
     uint32_t bpl = svga_reg_read(g.io_base, SVGA_REG_BYTES_PER_LINE);
-    if (!bpl)
-        bpl = want_w * 4;
-    g.width = want_w;
-    g.height = want_h;
+    uint32_t fboff = svga_reg_read(g.io_base, SVGA_REG_FB_OFFSET);
+    klogf(KLOG_WARN, "svga: want %ux%ux%u card %ux%ux%u bpl=%u fboff=0x%x",
+          want_w, want_h, want_bpp, act_w, act_h, act_bpp, bpl, fboff);
+    if (act_w < 64 || act_w > 7680 || act_h < 64 || act_h > 4320 ||
+        act_bpp != 32 || bpl != act_w * 4u) {
+        st_set("svga: bad-geometry");
+        klog(KLOG_WARN, "svga: card geometry mismatch, GOP fallback");
+        return false;
+    }
+    g.width = act_w;
+    g.height = act_h;
     g.pitch_px = bpl / 4;
-    g.bpp = want_bpp;
+    g.bpp = 32;
     g.caps = 0;
 
     if (id >= SVGA_ID_0 + 1)
@@ -461,7 +471,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         klog(KLOG_WARN, "svga: mmio not ready, GOP fallback");
         return false;
     }
-    uint64_t need_fb = (uint64_t)g.height * bpl;
+    uint64_t need_fb = (uint64_t)g.height * bpl + fboff;
     if (need_fb > fb_sz)
         need_fb = fb_sz;
     volatile void *fb = mmio_map(g.fb_phys, need_fb);
@@ -471,7 +481,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         klog(KLOG_WARN, "svga: BAR map failed, GOP fallback");
         return false;
     }
-    g.fb = (volatile uint32_t *)fb;
+    g.fb = (volatile uint32_t *)((uintptr_t)fb + fboff);
     g.fifo = (volatile uint32_t *)fifo;
 
     uint32_t nregs = svga_reg_read(g.io_base, 30);
