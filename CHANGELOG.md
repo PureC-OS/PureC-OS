@@ -64,6 +64,19 @@
 - Ядро при этом работает как было: сетевой стек пока в `net_service_thread`, dual-run,
   поведения не меняли — следующий шаг `netd`-каркас и вынос RX-цикла.
 
+### Системные процессы с PPID 1 (`process_spawn_service`, защита PID 1)
+- Новый `process_spawn_service()`: настоящий `struct process` (PID из общего счётчика,
+  `parent_pid = 1`, состояние RUNNING, имя, капы, окружение от init) + тред ядра через
+  новый `scheduler_create_service_thread()` (kernel AS, `user_mode = false`, без BSP-пина).
+- Переведены: `init-input` + `desktop-keyboard` (QoS INTERACTIVE, без капов) и `net-rx`
+  (QoS UTILITY, `PROCESS_CAP_NET_ADMIN`); `kernel-log` и `qemu-net-test` пока тредами.
+  QoS и `affinity -1` сохранены 1-в-1.
+- В htop теперь видны PID с PPID 1 и живым CPU/TIME (runtime идёт с треда сервиса).
+- PID 1 под защитой со всех сторон: выход паникует (`PID 1 exited`), OOM-селект скипает
+  (`pid == 1`), рип зомби отказывает; другого пути убить процесс (kill-сискола нет).
+- Проверено: `make kernel` чисто без варнингов, `make test` зелёный; валидация буферов
+  и `enter/leave_kernel` идут по `user_mode`, для сервисов поведение как у тредов.
+
 
 ### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
 - Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка

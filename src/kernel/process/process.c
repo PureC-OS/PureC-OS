@@ -631,6 +631,58 @@ int32_t process_spawn_module(const char *path, const char *command_line) {
   return -1;
 }
 
+int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
+                              const char *name, uint8_t priority,
+                              int16_t affinity, uint8_t qos,
+                              uint32_t capabilities) {
+  if (!entry || !name)
+    return -1;
+  MUTEX_SCOPE(&process_mutex);
+  if (!oom_gate_can_spawn()) {
+    last_spawn_error = "out of memory";
+    return -1;
+  }
+  struct process *process = allocate_process();
+  if (!process) {
+    last_spawn_error = "cannot allocate process descriptor";
+    return -1;
+  }
+  process->pid = next_pid++;
+  if (process->pid == 0)
+    process->pid = next_pid++;
+  for (;;) {
+    struct process *hit = process_find_by_pid(process->pid);
+    if (!hit || hit == process)
+      break;
+    process->pid = next_pid++;
+    if (process->pid == 0)
+      process->pid = next_pid++;
+  }
+  phash_insert(process);
+  struct process *init = process_find_by_pid(1);
+  process->parent_pid = init ? 1 : 0;
+  process->state = PROCESS_RUNNING;
+  process->entry = (uint64_t)(uintptr_t)entry;
+  process->address_space = vmm_kernel_address_space();
+  process->capabilities = capabilities;
+  strncpy(process->name, name, sizeof(process->name) - 1);
+  process->name[sizeof(process->name) - 1] = '\0';
+  environment_initialize(process, init);
+  int32_t tid = scheduler_create_service_thread(
+      entry, arg, process->name, priority, affinity, process->address_space,
+      process);
+  if (tid < 0) {
+    last_spawn_error = "cannot create service thread";
+    process_node_free(process);
+    return -1;
+  }
+  process->thread_id = tid;
+  scheduler_set_qos(tid, qos);
+  klogf(KLOG_OK, "process: pid=%u ppid=%u service=%s entry=0x%llx",
+        process->pid, process->parent_pid, process->name, process->entry);
+  return (int32_t)process->pid;
+}
+
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang) {
   if (!pid)
     return -1;
