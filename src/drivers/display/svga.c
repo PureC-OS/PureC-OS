@@ -199,21 +199,27 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         return false;
     }
     uint64_t bar0 = pci_read_bar(g.bus, g.slot, g.func, 0);
+    uint32_t bar0_raw = pci_read_config32(g.bus, g.slot, g.func, 0x10);
     if (!bar0) {
-        klog(KLOG_WARN, "svga: BAR0 empty, GOP fallback");
+        klogf(KLOG_WARN, "svga: BAR0 empty (raw=0x%x) at %02x:%02x.%u, GOP fallback",
+              bar0_raw, g.bus, g.slot, g.func);
         return false;
     }
     g.io_base = (uint16_t)(bar0 & ~0x3ULL);
     if (!g.io_base) {
-        klog(KLOG_WARN, "svga: IO base 0, GOP fallback");
+        klogf(KLOG_WARN, "svga: IO base 0 (bar0=0x%llx raw=0x%x), GOP fallback",
+              (unsigned long long)bar0, bar0_raw);
         return false;
     }
     // version negotiate
     uint32_t id = SVGA_ID_2;
     for (;;) {
         svga_reg_write(g.io_base, SVGA_REG_ID, id);
-        if (svga_reg_read(g.io_base, SVGA_REG_ID) == id)
+        uint32_t back = svga_reg_read(g.io_base, SVGA_REG_ID);
+        if (back == id)
             break;
+        klogf(KLOG_WARN, "svga: ID try 0x%x got 0x%x (io=0x%x pci=%02x:%02x.%u bar0raw=0x%x)",
+              id, back, g.io_base, g.bus, g.slot, g.func, bar0_raw);
         if (id == SVGA_ID_0) {
             klog(KLOG_WARN, "svga: ID negotiate failed, GOP fallback");
             return false;
