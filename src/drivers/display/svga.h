@@ -16,3 +16,4 @@ void svga_update(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 bool svga_fill(uint32_t color, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 bool svga_copy(uint32_t sx, uint32_t sy, uint32_t dx, uint32_t dy, uint32_t w, uint32_t h);
 void svga_sync(void);
+const char *svga_status_line(void);

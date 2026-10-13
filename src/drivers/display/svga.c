@@ -65,6 +65,7 @@ struct svga_dev {
     bool ready;
 };
 static struct svga_dev g;
+static char g_status[160];
 
 struct svga_probe_ctx {
     bool found;
@@ -104,7 +105,7 @@ static void fifo_write_word(uint32_t word) {
     uint32_t max = fifo[SVGA_FIFO_MAX];
     uint32_t min = fifo[SVGA_FIFO_MIN];
     uint32_t stop = fifo[SVGA_FIFO_STOP];
-    // wait for slot: next+4 == stop (modulo) means full
+
     for (int spin = 0; spin < 1000000; spin++) {
         stop = fifo[SVGA_FIFO_STOP];
         uint32_t used;
@@ -115,7 +116,7 @@ static void fifo_write_word(uint32_t word) {
         uint32_t free = (max - min) - used;
         if (free > 4)
             break;
-        // kick device, let it drain
+
         svga_reg_write(g.io_base, SVGA_REG_SYNC, 1);
         while (svga_reg_read(g.io_base, SVGA_REG_BUSY))
             ;
@@ -183,6 +184,69 @@ bool svga_copy(uint32_t sx, uint32_t sy, uint32_t dx, uint32_t dy, uint32_t w, u
     return true;
 }
 
+static void st_app(const char *s) {
+    size_t i = 0;
+    while (g_status[i])
+        i++;
+    while (*s && i + 1 < sizeof(g_status))
+        g_status[i++] = *s++;
+    g_status[i] = 0;
+}
+
+static void st_set(const char *s) {
+    size_t i = 0;
+    while (s[i] && i + 1 < sizeof(g_status)) {
+        g_status[i] = s[i];
+        i++;
+    }
+    g_status[i] = 0;
+}
+
+static void st_hex(uint32_t v) {
+    static const char h[] = "0123456789ABCDEF";
+    size_t i = 0;
+    while (g_status[i])
+        i++;
+    if (i + 11 >= sizeof(g_status))
+        return;
+    g_status[i++] = '0';
+    g_status[i++] = 'x';
+    for (int s = 28; s >= 0; s -= 4)
+        g_status[i++] = h[(v >> s) & 0xF];
+    g_status[i] = 0;
+}
+
+static void st_ok(void) {
+    st_set("svga: ok fb=");
+    st_hex(g.width);
+    {
+        size_t i = 0;
+        while (g_status[i])
+            i++;
+        if (i + 2 < sizeof(g_status)) {
+            g_status[i++] = 'x';
+            g_status[i] = 0;
+        }
+    }
+    st_hex(g.height);
+    {
+        size_t i = 0;
+        while (g_status[i])
+            i++;
+        if (i + 8 < sizeof(g_status)) {
+            const char *t = " caps=";
+            while (*t)
+                g_status[i++] = *t++;
+            g_status[i] = 0;
+        }
+    }
+    st_hex(g.caps);
+}
+
+const char *svga_status_line(void) {
+    return g_status[0] ? g_status : "svga: status empty";
+}
+
 static uint32_t svga_try_ids(uint16_t io, bool log_each, uint8_t bus,
                              uint8_t slot, uint8_t func) {
     uint32_t id = SVGA_ID_2;
@@ -238,7 +302,7 @@ void svga_collect_io_ranges(struct svga_io_used *out, int *n, int cap) {
         int cap;
     } c = {out, n, cap};
     *n = 0;
-    // legacy ISA hole: never go below 0x1000
+
     out[0].base = 0;
     out[0].size = 0x1000;
     *n = 1;
@@ -250,6 +314,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     struct svga_probe_ctx c = {0};
     pci_enumerate(svga_visitor, &c);
     if (!c.found) {
+        st_set("svga: no-dev");
         klog(KLOG_WARN, "svga: 15AD:0405 not found, GOP fallback");
         return false;
     }
@@ -258,6 +323,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     g.func = c.func;
     struct pci_device_info di = {.bus = g.bus, .slot = g.slot, .function = g.func};
     if (!pci_update_command(&di, PCI_COMMAND_IO_SPACE | PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER, 0)) {
+        st_set("svga: no-pci-enable");
         klog(KLOG_WARN, "svga: PCI enable failed, GOP fallback");
         return false;
     }
@@ -271,18 +337,19 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     klogf(KLOG_WARN, "svga: pci=%02x:%02x.%u dev=0x%x cmd=0x%x cls=0x%x bar0=0x%x bar1=0x%x bar2=0x%x",
           g.bus, g.slot, g.func, id_raw, cmd_raw & 0xFFFFu, cls_raw, bar0_raw, bar1_raw, bar2_raw);
     if (!bar0) {
+        st_set("svga: no-bar0");
         klogf(KLOG_WARN, "svga: BAR0 empty (raw=0x%x) at %02x:%02x.%u, GOP fallback",
               bar0_raw, g.bus, g.slot, g.func);
         return false;
     }
     g.io_base = (uint16_t)(bar0 & ~0x3ULL);
     if (!g.io_base) {
+        st_set("svga: no-io");
         klogf(KLOG_WARN, "svga: IO base 0 (bar0=0x%llx raw=0x%x), GOP fallback",
               (unsigned long long)bar0, bar0_raw);
         return false;
     }
-    // version negotiate
-    // self-test: same outl/inl wrappers against PCI config (known-good)
+
     {
         uint32_t expect = pci_read_config32(g.bus, g.slot, g.func, 0x00);
         outl16(0xCF8, (uint32_t)(0x80000000u | ((uint32_t)g.bus << 16) |
@@ -291,10 +358,16 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         klogf(KLOG_WARN, "svga: io selftest cfc=0x%x expect=0x%x %s",
               probe, expect, probe == expect ? "IO_OK" : "IO_BROKEN");
     }
+    {
+        outl16(g.io_base, 15);
+        uint32_t vram_probe = inl16((uint16_t)(g.io_base + 4));
+        klogf(KLOG_WARN, "svga: vram-size-first probe=0x%x", vram_probe);
+        st_set("svga: vram=");
+        st_hex(vram_probe);
+    }
     uint32_t id = svga_try_ids(g.io_base, true, g.bus, g.slot, g.func);
     if (id == 0xFFFFFFFFu) {
-        // IO handler may not track SeaBIOS BAR: relocate BAR0 to a free
-        // address we choose ourselves, then retry. Restore on failure.
+
         uint32_t orig_raw = pci_read_config32(g.bus, g.slot, g.func, 0x10);
         uint64_t iosize = pci_bar_size(g.bus, g.slot, g.func, 0);
         if (iosize < 0x20)
@@ -327,13 +400,17 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
             if (id != 0xFFFFFFFFu) {
                 g.io_base = (uint16_t)cand;
                 klogf(KLOG_OK, "svga: relocated IO works, id=0x%x", id);
+                st_app(" reloc=");
+                st_hex(cand);
             } else {
+                st_app(" reloc=fail");
                 pci_update_command(&di2, 0, PCI_COMMAND_IO_SPACE);
                 pci_write_config32(g.bus, g.slot, g.func, 0x10, orig_raw);
                 pci_update_command(&di2, PCI_COMMAND_IO_SPACE, 0);
             }
         }
         if (id == 0xFFFFFFFFu) {
+            st_app(" negot=fail");
             klog(KLOG_WARN, "svga: ID negotiate failed, GOP fallback");
             return false;
         }
@@ -358,12 +435,13 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     g.pitch_px = bpl / 4;
     g.bpp = want_bpp;
     g.caps = 0;
-    // CAPS valid from ID_1+
+
     if (id >= SVGA_ID_0 + 1)
         g.caps = svga_reg_read(g.io_base, SVGA_REG_CAPS);
     uint64_t fb_sz = svga_reg_read(g.io_base, SVGA_REG_FB_SIZE);
     uint64_t fifo_sz = svga_reg_read(g.io_base, SVGA_REG_MEM_SIZE);
     if (!fb_sz || !fifo_sz) {
+        st_set("svga: no-sizes");
         klog(KLOG_WARN, "svga: zero FB/FIFO size, GOP fallback");
         return false;
     }
@@ -372,12 +450,14 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     uint64_t fb_phys = pci_read_bar(g.bus, g.slot, g.func, 1);
     uint64_t fifo_phys = pci_read_bar(g.bus, g.slot, g.func, 2);
     if (!fb_phys || !fifo_phys) {
+        st_set("svga: no-bar12");
         klog(KLOG_WARN, "svga: BAR1/2 empty, GOP fallback");
         return false;
     }
     g.fb_phys = fb_phys & ~0xFULL;
     g.fifo_phys = fifo_phys & ~0xFULL;
     if (!mmio_is_ready()) {
+        st_set("svga: no-mmio");
         klog(KLOG_WARN, "svga: mmio not ready, GOP fallback");
         return false;
     }
@@ -387,19 +467,21 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     volatile void *fb = mmio_map(g.fb_phys, need_fb);
     volatile void *fifo = mmio_map(g.fifo_phys, fifo_sz);
     if (!fb || !fifo) {
+        st_set("svga: no-map");
         klog(KLOG_WARN, "svga: BAR map failed, GOP fallback");
         return false;
     }
     g.fb = (volatile uint32_t *)fb;
     g.fifo = (volatile uint32_t *)fifo;
-    // fifo init: reserve registers
-    uint32_t nregs = svga_reg_read(g.io_base, 30); // MEM_REGS
+
+    uint32_t nregs = svga_reg_read(g.io_base, 30);
     if (nregs < SVGA_FIFO_NUM_REGS_MIN || nregs > 1024)
-        nregs = 293 * 1; // modern default; clamp
+        nregs = 293 * 1;
     if (nregs > 293)
         nregs = 293;
     uint32_t min = nregs * 4;
     if (min + 10 * 1024 > fifo_sz) {
+        st_set("svga: no-fifo");
         klog(KLOG_WARN, "svga: FIFO too small, GOP fallback");
         return false;
     }
@@ -414,6 +496,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
           (unsigned long long)g.fb_phys, (unsigned long long)(fb_sz / 1024),
           (unsigned long long)g.fifo_phys, (unsigned long long)(fifo_sz / 1024),
           g.caps, g.dev_id);
+    st_ok();
     return true;
 }
 
