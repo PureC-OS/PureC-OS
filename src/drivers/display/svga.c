@@ -92,11 +92,11 @@ bool svga_probe_only(void) {
 
 static uint32_t svga_reg_read(uint16_t io, uint32_t idx) {
     outl16(io, idx);
-    return inl16((uint16_t)(io + 4));
+    return inl16((uint16_t)(io + 1));
 }
 static void svga_reg_write(uint16_t io, uint32_t idx, uint32_t val) {
     outl16(io, idx);
-    outl16((uint16_t)(io + 4), val);
+    outl16((uint16_t)(io + 1), val);
 }
 
 static void fifo_write_word(uint32_t word) {
@@ -360,7 +360,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     }
     {
         outl16(g.io_base, 15);
-        uint32_t vram_probe = inl16((uint16_t)(g.io_base + 4));
+        uint32_t vram_probe = inl16((uint16_t)(g.io_base + 1));
         klogf(KLOG_WARN, "svga: vram-size-first probe=0x%x", vram_probe);
         st_set("svga: vram=");
         st_hex(vram_probe);
