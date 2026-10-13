@@ -388,7 +388,7 @@ def _qemu_base() -> List[str]:
     return ["qemu-system-x86_64", "-cdrom", ISO, "-m", "512M",
             "-enable-kvm", "-boot", "d"]
 
-# ─── 4 debug modes ───────────────────────────────────────────────
+# ─── 6 debug modes ───────────────────────────────────────────────
 def qemu_graphics():
     _header()
     if not _ensure_iso() or not _qemu_ok(): return
@@ -437,6 +437,42 @@ def qemu_log_file():
     if os.path.isfile(LOG_FILE):
         _ok(f"Serial log: {LOG_FILE}")
 
+GPU_LOG_FILE = os.path.join(ROOT, "bin", "qemu-gpu-debug.log")
+
+def qemu_gpu_graphics():
+    _header()
+    if not _ensure_iso() or not _qemu_ok(): return
+    _step("QEMU — GPU (vmware-svga) graphical mode")
+    _run_live(_qemu_base() + ["-vga", "vmware", "-serial", "stdio"], "QEMU GPU (graphics)")
+
+def qemu_gpu_log_file():
+    _header()
+    if not _ensure_iso() or not _qemu_ok(): return
+    os.makedirs(os.path.dirname(GPU_LOG_FILE), exist_ok=True)
+    int_log = GPU_LOG_FILE.replace(".log", "-internal.log")
+    mon_sock = os.path.join(os.path.dirname(GPU_LOG_FILE), "qemu-gpu-mon.sock")
+    try:
+        if os.path.exists(mon_sock): os.unlink(mon_sock)
+    except OSError:
+        pass
+    _step(f"QEMU — GPU (vmware-svga) + logs → file")
+    print(c(C.SUB, f"  Serial : {GPU_LOG_FILE}"))
+    print(c(C.SUB, f"  QEMU   : {int_log}"))
+    print(c(C.SUB, f"  Monitor: {mon_sock}  (при зависании: socat - UNIX-CONNECT:{mon_sock})"))
+    print(c(C.SUB, f"           в мониторе: info registers / info status\n"))
+    _run_live(
+        _qemu_base() + [
+            "-vga", "vmware",
+            "-serial", f"file:{GPU_LOG_FILE}",
+            "-monitor", f"unix:{mon_sock},server,nowait",
+            "-D", int_log,
+            "-d", "int,cpu_reset,guest_errors",
+        ],
+        "QEMU GPU (log → file)",
+    )
+    if os.path.isfile(GPU_LOG_FILE):
+        _ok(f"Serial log: {GPU_LOG_FILE}")
+
 # ─── Debug submenu ───────────────────────────────────────────────
 def cmd_debug():
     while True:
@@ -458,6 +494,8 @@ def cmd_debug():
             ("2", "Run without graphics", "No window — serial in terminal (nographic)", qemu_nographic),
             ("3", "Log → console",        "Graphics + live serial log in TUI box",  qemu_log_console),
             ("4", "Log → file",           f"Graphics + serial & QEMU log → bin/*.log", qemu_log_file),
+            ("5", "GPU graphics",         "QEMU -vga vmware, serial → console",     qemu_gpu_graphics),
+            ("6", "GPU log → file",       f"QEMU -vga vmware, logs → bin/qemu-gpu-*.log", qemu_gpu_log_file),
             ("b", "Back",                 "",                                        None),
         ]
         for key, lab, desc, _ in debug_items:
