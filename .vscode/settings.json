@@ -5,5 +5,6 @@
         "paging.h": "c",
         "timer.h": "c",
         "isr.h": "c"
-    }
+    },
+    "C_Cpp.errorSquiggles": "disabled"
 }
