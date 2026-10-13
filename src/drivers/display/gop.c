@@ -1,5 +1,6 @@
 #include "gop.h"
 #include "vga.h"
+#include "svga.h"
 #include "../../gfx/text.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
@@ -499,6 +500,7 @@ static void gop_present_nolock(void){
                &backbuffer[(uint64_t)y * backbuffer_width + x0],
                (uint64_t)span * sizeof(uint32_t));
     }
+    if(svga_is_available()) svga_update(x0, y0, x1 - x0, y1 - y0);
 }
 
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
@@ -541,6 +543,7 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
                &backbuffer[(uint64_t)(y+row)*backbuffer_width+x],
                (uint64_t)w*sizeof(uint32_t));
     }
+    if(svga_is_available()) svga_update(x, y, w, h);
 }
 
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){

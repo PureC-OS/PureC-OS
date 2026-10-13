@@ -73,6 +73,7 @@ C_SOURCES := \
 	drivers/display/gop.c \
 	gfx/compositor.c \
 	drivers/display/vbe.c \
+	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
 	lib/string.c \
