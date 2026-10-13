@@ -11,6 +11,7 @@
 /bin/program/system/cat /bin/program/system/cat - 1 bin/programs/cat
 /bin/program/system/touch /bin/program/system/touch - 1 bin/programs/touch
 /bin/program/system/mkdir /bin/program/system/mkdir - 1 bin/programs/mkdir
+/bin/program/system/rm /bin/program/system/rm - 1 bin/programs/rm
 /bin/program/system/mkfs /bin/program/system/mkfs - 1 bin/programs/mkfs
 /bin/program/system/pwd /bin/program/system/pwd - 1 bin/programs/pwd
 /bin/program/system/clear /bin/program/system/clear - 1 bin/programs/clear
@@ -29,6 +30,7 @@
 /bin/cat /bin/cat - 1 bin/programs/cat
 /bin/touch /bin/touch - 1 bin/programs/touch
 /bin/mkdir /bin/mkdir - 1 bin/programs/mkdir
+/bin/rm /bin/rm - 1 bin/programs/rm
 /bin/mkfs /bin/mkfs - 1 bin/programs/mkfs
 /bin/pwd /bin/pwd - 1 bin/programs/pwd
 /bin/clear /bin/clear - 1 bin/programs/clear

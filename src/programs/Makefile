@@ -19,9 +19,6 @@ PLAIN_SOURCES := \
 	system/commands.c \
 	system/filesystem.c \
 	system/system.c
-# Lua 5.4 port (v1: REPL without math lib; see lua/README.md).
-# Excluded: lmathlib.c (needs full libm, v2), linit.c (upstream, all
-# libs; we build linit-purec.c instead), luac.c (bytecode compiler).
 LUA_SOURCES := \
 	lua/lapi.c \
 	lua/lcode.c \
@@ -97,6 +94,7 @@ GENERAL_SOURCES := \
 	cat/cat.c \
 	touch/touch.c \
 	mkdir/mkdir.c \
+	rm/rm.c \
 	mkfs/mkfs.c \
 	pwd/pwd.c \
 	clear/clear.c \
@@ -151,6 +149,7 @@ TARGETS := \
 	$(PROGRAM_DIR)/cat \
 	$(PROGRAM_DIR)/touch \
 	$(PROGRAM_DIR)/mkdir \
+	$(PROGRAM_DIR)/rm \
 	$(PROGRAM_DIR)/mkfs \
 	$(PROGRAM_DIR)/pwd \
 	$(PROGRAM_DIR)/clear \
@@ -330,6 +329,10 @@ $(PROGRAM_DIR)/mkdir: $(OBJ_DIR)/mkdir/mkdir.o $(OBJ_DIR)/terminal/path.o $(LIBP
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
+$(PROGRAM_DIR)/rm: $(OBJ_DIR)/rm/rm.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
 $(PROGRAM_DIR)/mkfs: $(OBJ_DIR)/mkfs/mkfs.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
@@ -429,8 +432,6 @@ $(TCCRT_LIB): $(TCCRT_OBJECTS)
 	$(AR) rcs $@ $^
 endif
 
-# Hosted demo: standard main() + crt0 + hosted headers (TCC migration
-# proving ground). Built with the same toolchain, linked against crt0.o.
 $(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
@@ -439,7 +440,6 @@ $(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(L
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)
 
-# Lua 5.4 REPL (v1, no math lib). Hosted main() via crt0.o, same as hello.
 $(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(LUA_OBJECTS) $(LIBPUREC)

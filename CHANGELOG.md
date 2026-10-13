@@ -37,6 +37,17 @@
 - Проверено: те же исходники хостом — REPL считает, файлы исполняет, `fact(10)` = 3628800;
   `make test` зелёный, `make kernel` чисто.
 
+### `rm` с защитой корня (`src/programs/rm/`, `/bin/rm`)
+- Новый бинарь `rm`: файлы, пустые каталоги (`-d`), рекурсия (`-r/-R`), несколько операндов,
+  `-f` (молча пропускает отсутствующие), `-v`, `--`, `--help`.
+- Защита как в GNU: `/` удалять нельзя — `rm /` отвечает `Is a directory`, а `rm -r /`
+  упирается в failsafe (`it is dangerous to operate recursively on '/'`, нужен явный
+  `--no-preserve-root`); `'.'`/`'..'` как операнды всегда отклоняются.
+- Рекурсия идёт через `pf_list_long` батчами с перелистыванием до пустоты; линковка
+  `crt0.o + path.o + libpurefs.a + libpurec.a` (как `touch`/`mkdir`, 0 новых undefined).
+- Манифесты (`/bin/program/system/rm`, `/bin/rm`, required) + строка в `help`.
+- Проверено: сборка чисто, undefined-символы 1-в-1 как у `touch`, `make test` зелёный.
+
 
 ### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
 - Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка
