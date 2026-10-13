@@ -90,6 +90,7 @@
 /bin/program/hello /bin/program/hello - 0 bin/programs/hello
 /bin/program/login /bin/program/login - 0 bin/programs/login
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
+/bin/program/gltest /bin/program/gltest - 0 bin/programs/gltest
 /bin/program/burn /bin/program/burn - 0 bin/programs/burn
 /bin/program/eat /bin/program/eat - 0 bin/programs/eat
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc

@@ -86,9 +86,10 @@ GENERAL_SOURCES := \
 	disks/main.c \
 	devmgr/main.c \
 	logview/main.c \
- 	imgview/main.c \
- 	fputest/main.c \
-	cd/cd.c \
+  	imgview/main.c \
+  	fputest/main.c \
+  	gltest/main.c \
+  	cd/cd.c \
 	help/help.c \
 	ls/ls.c \
 	cat/cat.c \
@@ -140,9 +141,10 @@ TARGETS := \
 	$(PROGRAM_DIR)/devmgr \
 	$(PROGRAM_DIR)/logview \
  	$(PROGRAM_DIR)/hexedit \
- 	$(PROGRAM_DIR)/imgview \
- 	$(PROGRAM_DIR)/hello \
- 	$(PROGRAM_DIR)/fputest \
+  	$(PROGRAM_DIR)/imgview \
+  	$(PROGRAM_DIR)/hello \
+  	$(PROGRAM_DIR)/fputest \
+  	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/cd \
 	$(PROGRAM_DIR)/help \
 	$(PROGRAM_DIR)/ls \
@@ -294,6 +296,10 @@ $(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/gltest: $(OBJ_DIR)/gltest/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
