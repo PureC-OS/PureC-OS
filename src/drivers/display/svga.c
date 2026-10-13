@@ -3,6 +3,7 @@
 #include "../../arch/x86_64/mmio.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
+#include <stdbool.h>
 
 #define SVGA_PCI_VENDOR 0x15ADu
 #define SVGA_PCI_DEVICE 0x0405u
@@ -182,6 +183,68 @@ bool svga_copy(uint32_t sx, uint32_t sy, uint32_t dx, uint32_t dy, uint32_t w, u
     return true;
 }
 
+static uint32_t svga_try_ids(uint16_t io, bool log_each, uint8_t bus,
+                             uint8_t slot, uint8_t func) {
+    uint32_t id = SVGA_ID_2;
+    for (;;) {
+        svga_reg_write(io, SVGA_REG_ID, id);
+        uint32_t back = svga_reg_read(io, SVGA_REG_ID);
+        if (back == id)
+            return id;
+        if (log_each)
+            klogf(KLOG_WARN, "svga: ID try 0x%x got 0x%x (io=0x%x pci=%02x:%02x.%u)",
+                  id, back, io, bus, slot, func);
+        if (id == SVGA_ID_0)
+            return 0xFFFFFFFFu;
+        id--;
+    }
+}
+
+struct svga_io_used {
+    uint64_t base, size;
+};
+
+static void svga_collect_visitor(const struct pci_device_info *d, void *ctx) {
+    struct {
+        struct svga_io_used *out;
+        int *n;
+        int cap;
+    } *c = ctx;
+    if (!d || !c || *c->n >= c->cap)
+        return;
+    for (uint8_t b = 0; b < 6; b++) {
+        uint8_t off = (uint8_t)(0x10 + b * 4);
+        uint32_t raw = pci_read_config32(d->bus, d->slot, d->function, off);
+        if ((raw & 1u) == 0)
+            continue;
+        uint64_t base = raw & ~0x3ULL;
+        if (!base)
+            continue;
+        uint64_t sz = pci_bar_size(d->bus, d->slot, d->function, b);
+        if (!sz || sz > 0x1000)
+            sz = 0x20;
+        c->out[*c->n].base = base;
+        c->out[*c->n].size = sz;
+        (*c->n)++;
+        if (*c->n >= c->cap)
+            return;
+    }
+}
+
+void svga_collect_io_ranges(struct svga_io_used *out, int *n, int cap) {
+    struct {
+        struct svga_io_used *out;
+        int *n;
+        int cap;
+    } c = {out, n, cap};
+    *n = 0;
+    // legacy ISA hole: never go below 0x1000
+    out[0].base = 0;
+    out[0].size = 0x1000;
+    *n = 1;
+    pci_enumerate(svga_collect_visitor, &c);
+}
+
 bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     memset(&g, 0, sizeof(g));
     struct svga_probe_ctx c = {0};
@@ -219,19 +282,61 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         return false;
     }
     // version negotiate
-    uint32_t id = SVGA_ID_2;
-    for (;;) {
-        svga_reg_write(g.io_base, SVGA_REG_ID, id);
-        uint32_t back = svga_reg_read(g.io_base, SVGA_REG_ID);
-        if (back == id)
-            break;
-        klogf(KLOG_WARN, "svga: ID try 0x%x got 0x%x (io=0x%x pci=%02x:%02x.%u bar0raw=0x%x)",
-              id, back, g.io_base, g.bus, g.slot, g.func, bar0_raw);
-        if (id == SVGA_ID_0) {
+    // self-test: same outl/inl wrappers against PCI config (known-good)
+    {
+        uint32_t expect = pci_read_config32(g.bus, g.slot, g.func, 0x00);
+        outl16(0xCF8, (uint32_t)(0x80000000u | ((uint32_t)g.bus << 16) |
+                                 ((uint32_t)g.slot << 11) | ((uint32_t)g.func << 8)));
+        uint32_t probe = inl16(0xCFC);
+        klogf(KLOG_WARN, "svga: io selftest cfc=0x%x expect=0x%x %s",
+              probe, expect, probe == expect ? "IO_OK" : "IO_BROKEN");
+    }
+    uint32_t id = svga_try_ids(g.io_base, true, g.bus, g.slot, g.func);
+    if (id == 0xFFFFFFFFu) {
+        // IO handler may not track SeaBIOS BAR: relocate BAR0 to a free
+        // address we choose ourselves, then retry. Restore on failure.
+        uint32_t orig_raw = pci_read_config32(g.bus, g.slot, g.func, 0x10);
+        uint64_t iosize = pci_bar_size(g.bus, g.slot, g.func, 0);
+        if (iosize < 0x20)
+            iosize = 0x20;
+        struct svga_io_used used[72];
+        int used_n = 0;
+        svga_collect_io_ranges(used, &used_n, 72);
+        uint64_t cand = 0;
+        for (uint64_t a = 0x5000; a + iosize <= 0x10000; a += iosize) {
+            bool clash = false;
+            for (int i = 0; i < used_n; i++) {
+                if (a < used[i].base + used[i].size && used[i].base < a + iosize) {
+                    clash = true;
+                    break;
+                }
+            }
+            if (!clash) {
+                cand = a;
+                break;
+            }
+        }
+        if (cand && cand <= 0xFFFFu) {
+            struct pci_device_info di2 = {.bus = g.bus, .slot = g.slot, .function = g.func};
+            klogf(KLOG_WARN, "svga: retry at relocated IO 0x%x (size 0x%x)",
+                  (unsigned)cand, (unsigned)iosize);
+            pci_update_command(&di2, 0, PCI_COMMAND_IO_SPACE);
+            pci_write_config32(g.bus, g.slot, g.func, 0x10, (uint32_t)cand | 1u);
+            pci_update_command(&di2, PCI_COMMAND_IO_SPACE, 0);
+            id = svga_try_ids((uint16_t)cand, true, g.bus, g.slot, g.func);
+            if (id != 0xFFFFFFFFu) {
+                g.io_base = (uint16_t)cand;
+                klogf(KLOG_OK, "svga: relocated IO works, id=0x%x", id);
+            } else {
+                pci_update_command(&di2, 0, PCI_COMMAND_IO_SPACE);
+                pci_write_config32(g.bus, g.slot, g.func, 0x10, orig_raw);
+                pci_update_command(&di2, PCI_COMMAND_IO_SPACE, 0);
+            }
+        }
+        if (id == 0xFFFFFFFFu) {
             klog(KLOG_WARN, "svga: ID negotiate failed, GOP fallback");
             return false;
         }
-        id--;
     }
     g.dev_id = id;
     if (!want_w)
