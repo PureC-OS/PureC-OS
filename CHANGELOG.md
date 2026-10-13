@@ -1,5 +1,42 @@
 # Changelog
 
+## V1.2.28 — Планировщик QoS, драг 60fps, порт MicroPython
+
+### Планировщик: Apple-style QoS + кванты (`src/kernel/process/scheduler.[ch]`, `src/kernel/core/init.c`)
+- Новый `enum sched_qos`: `IDLE/BACKGROUND/UTILITY/DEFAULT/USER_INITIATED/USER_INTERACTIVE`
+  + поле `qos` в `struct thread`, API `scheduler_set/get_qos()`, `scheduler_qos_quantum()`.
+- Кванты по классу: interactive 2мс, initiated 3мс, default 5мс (= `SCHEDULER_TIME_SLICE_MS`),
+  utility 8мс, background 10мс; `schedule_locked()` выставляет `ticks_remaining` по QoS потока.
+- `pick_next()`: сначала максимальный QoS среди READY/eligible, внутри класса — старый
+  round-robin по курсору. Когда все потоки DEFAULT — поведение 1-в-1 как было.
+- `init-input`/`desktop-keyboard` → `USER_INTERACTIVE`, `net-rx` → `UTILITY`,
+  `kernel-log`/`qemu-net-test` → `BACKGROUND`.
+- Снят жёсткий пин `affinity 0` (BSP) у `init-input`, `desktop-keyboard`, `kernel-log`,
+  `net-rx`, `qemu-net-test` → `affinity -1` (любой CPU). Было: драг окна дёргал только CPU0;
+  стало: нагрузка паралеллится. Syscall-путь через BSP (`scheduler_enter_kernel`) оставлен
+  до аудита общих структур.
+- Проверено: `test-scheduler-cpu`, `test-scheduler-balance`, весь `make test` зелёный.
+
+### Окна: коалесцинг драга до 60fps (`src/userspace/userspace.c`)
+- Было: драг окна/иконки делал полный `redraw_managed_scene` на каждое движение мыши —
+  до 1000 полных перерисовок в секунду в одном потоке, CPU0 до 60%.
+- Стало: позиция обновляется сразу на каждый пакет, тяжёлая перерисовка сцены при зажатой
+  кнопке — не чаще раза в 16мс; курсор живой через `mouse_flush_pending` каждый проход;
+  на отпускании кнопки — принудительный финальный кадр (`last_drag_ms = 0` + redraw).
+
+### Порт MicroPython (`src/programs/micropython/`, `/bin/program/micropython`)
+- Завендорено ядро `py/` + `shared/runtime/pyexec,stdout_helpers` + `shared/readline`
+  + `extmod/{virtpin,modplatform,vfs}.h` + сборочные скрипты `py/*.mk,*.py` (qstr-пайплайн
+  апстрима), конфиг минимального уровня без флоатов (как lua v1 без math).
+- Свои `mpconfigport.h` (куча 256КБ статикой, `alloca` через builtin), `mphalport.[ch]`
+  (stdin/stdout через libc, тики через `clock()`), `main.c` (REPL + `argv[1]` файл,
+  `mp_import_stat`/`mp_lexer_new_from_file` через `fopen`, GC по стеку).
+- Свой Makefile: кросс `x86_64-elf-gcc`, кодген `mpversion/qstrdefs/moduledefs/root_pointers`,
+  линковка `crt0.o + libpurec.a` через `linker-userspace.ld` (как lua); static ELF64 1.1МБ.
+- Хук в `mk/main.mk` (`programs`), optional-записи `/bin/program/micropython` в обоих манифестах.
+- Проверено: те же исходники хостом — REPL считает, файлы исполняет, `fact(10)` = 3628800;
+  `make test` зелёный, `make kernel` чисто.
+
 ## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода
 
 ### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)

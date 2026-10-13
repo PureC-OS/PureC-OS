@@ -122,6 +122,7 @@ libraries:
 
 programs: libraries notepad
 	$(MAKE) -C src/programs
+	$(MAKE) -C src/programs/micropython
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 notepad:
