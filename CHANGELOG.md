@@ -48,6 +48,22 @@
 - Манифесты (`/bin/program/system/rm`, `/bin/rm`, required) + строка в `help`.
 - Проверено: сборка чисто, undefined-символы 1-в-1 как у `touch`, `make test` зелёный.
 
+### IPC для процессной модели сети (`src/kernel/ipc/`, `SYS_IPC_SEND/RECV`)
+- Новый транспорт процесс↔процесс: мейлбоксы в ядре, адресация по PID, копия
+  отправитель→ядро→получатель; пейлоад до 2048 байт (влезает полный ethernet-кадр),
+  глубина 64 сообщения, аллокация ленивая через `oom_slab`.
+- Сисколы `SYS_IPC_SEND 291` (неблокирующий) и `SYS_IPC_RECV 292` (poll или ожидание
+  до `wait_ms` через `scheduler_sleep`); валидация буферов через readable/writable.
+- Доступ только с `PROCESS_CAP_NET_ADMIN` (ядро мимо капа); кап выдаётся по имени
+  процесса (`netd`, `net-rx`, `dhcp`, `dns`) как раньше `STORAGE_ADMIN` для installer.
+- Очередь дренируется при освобождении процесса (`process_node_free`); поиск цели через
+  новый `process_lookup_by_pid`, локи — `process_mutex` + отдельный IPC-спинлок.
+- libc: `pc_ipc_send/pc_ipc_recv` в `runtime.c` + `purec.h`.
+- Хост-тест `tests/ipc_mailbox_test.c` (`make test-ipc`): roundtrip, FIFO, empty/full,
+  лимиты, cap-gate, drain при cleanup, кадр 1514 байт — PASS; весь `make test` зелёный.
+- Ядро при этом работает как было: сетевой стек пока в `net_service_thread`, dual-run,
+  поведения не меняли — следующий шаг `netd`-каркас и вынос RX-цикла.
+
 
 ### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
 - Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка

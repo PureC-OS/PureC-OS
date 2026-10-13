@@ -15,6 +15,7 @@ static mutex_t process_mutex;
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../syscall/syscall.h"
+#include "../ipc/ipc.h"
 #include "elf.h"
 #include "process.h"
 #include "program_alias.h"
@@ -91,6 +92,7 @@ static void process_node_free(struct process *process) {
   if (!process)
     return;
   oom_gate_remove_process(process->pid);
+  ipc_cleanup(process);
   uint64_t phys = process->node_phys;
   struct process **link = &process_list;
   while (*link && *link != process)
@@ -211,6 +213,18 @@ static struct process *process_find_by_pid(uint32_t pid) {
     if (p->state != PROCESS_FREE && p->pid == pid)
       return p;
   return NULL;
+}
+
+struct process *process_lookup_by_pid(uint32_t pid) {
+  return process_find_by_pid(pid);
+}
+
+void process_table_lock(void) {
+  mutex_lock(&process_mutex);
+}
+
+void process_table_unlock(void) {
+  mutex_unlock(&process_mutex);
 }
 
 static bool environment_name_valid(const char *name) {
@@ -503,6 +517,9 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   strncpy(process->name, name ? name : "process", sizeof(process->name) - 1);
   if (name && (strcmp(name, "installer") == 0 || strcmp(name, "disks") == 0))
     process->capabilities |= PROCESS_CAP_STORAGE_ADMIN;
+  if (name && (strcmp(name, "netd") == 0 || strcmp(name, "net-rx") == 0 ||
+               strcmp(name, "dhcp") == 0 || strcmp(name, "dns") == 0))
+    process->capabilities |= PROCESS_CAP_NET_ADMIN;
   process->thread_id = scheduler_create_user_thread(
       user_process_entry, process, process->name, USER_PROCESS_PRIORITY, -1,
       process->address_space, process);

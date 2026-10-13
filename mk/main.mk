@@ -22,8 +22,14 @@ export ROOT_DIR BIN_DIR
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc
 	@echo "All host tests passed"
+
+test-ipc:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
+		tests/ipc_mailbox_test.c -o $(BIN_DIR)/tests/ipc_mailbox_test
+	$(BIN_DIR)/tests/ipc_mailbox_test
 
 test-initramfs:
 	@mkdir -p $(BIN_DIR)/tests

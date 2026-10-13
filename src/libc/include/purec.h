@@ -66,6 +66,8 @@ int32_t pc_directory_list_long(const char *path,
 int32_t pc_file_create(const char *path);
 int32_t pc_directory_create(const char *path);
 int32_t pc_file_delete(const char *path);
+int32_t pc_ipc_send(int32_t dest_pid, const void *buffer, uint32_t size);
+int32_t pc_ipc_recv(void *buffer, uint32_t capacity, uint32_t wait_ms);
 int32_t pc_file_rename(const char *path, const char *new_name);
 int32_t pc_file_move(const char *path, const char *destination_directory);
 bool pc_display_get_info(struct pc_display_info *info);
