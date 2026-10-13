@@ -140,6 +140,32 @@
 - Стало: TCC работает в юзерспейсе, и теперь компилирует файлы без ошибок.
 
 
+### GPU: VMware SVGA II (`src/drivers/display/svga.[ch]`, `src/drivers/pci/pci.[ch]`)
+- Новый драйвер SVGA II (PCI `15AD:0405`): `BAR0=IO` (index/value), `BAR1=FB`,
+  `BAR2=FIFO`; негоциация `ID 0x90000002` с фолбэком, modeset `1024x768x32`
+  с проверкой фактической геометрии карты (`WIDTH/HEIGHT/BPP/BYTES_PER_LINE/FB_OFFSET`,
+  несовпадение — фолбэк в GOP вместо мусора).
+- FIFO: `MIN/MAX/NEXT/STOP`, `CONFIG_DONE`, команды `UPDATE=1`, `RECT_FILL=2`,
+  `RECT_COPY=3` с проверкой `CAPS`; `SYNC/BUSY`, перенос `BAR0` на свободный
+  адрес при молчании BIOS-назначения.
+- Порты строго по спеке/референсу: index `base+0`, value `base+1` (dword).
+- `pci_bar_size()`: проба размера BAR через `0xFFFFFFFF`.
+- Интеграция: `gop` рисует во VRAM через `mmio_map`, показ кадра и композитор
+  (`compositor_present`, курсор, окна) — через `svga_update`; `RECT_FILL/COPY`
+  ускорение при `CAPS`.
+- Загрузчик: пункты `GPU SVGA (video=svga)` / `GOP safe (video=gop)` / fallback;
+  любой отказ GPU — тихий фолбэк в Limine GOP, паники нет.
+- Дебаг-меню (`purec.py`): пункты `5 GPU graphics` / `6 GPU log → file`
+  (QEMU `-vga vmware`, serial в `bin/qemu-gpu-debug.log`).
+- Проверено: QEMU `-vga vmware` — `ID 0x90000002`, `1024x768x32`, `caps=0xe3`,
+  `video: VMware SVGA II active (FIFO UPDATE)`; `make test` зелёный.
+
+### Заморозка
+- Фичи заморожены. Дальше только фиксы багов и стабилизация текущего состава:
+  GPU SVGA II, GOP фолбэк, юзерспейс, сеть, fs. Нового функционала не добавляем
+  до отдельного решения.
+
+
 ## V1.2.24 V1.2.26 — .so формат (ET_DYN): юзерспейс, kmod, tcc-рантайм
 
 ### Адресное пространство и стандарты линковки
