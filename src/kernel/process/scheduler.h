@@ -6,6 +6,15 @@
 #define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES * 4096u)
 #define SCHEDULER_TIME_SLICE_MS 5
 
+enum sched_qos {
+  SCHED_QOS_IDLE = 0,
+  SCHED_QOS_BACKGROUND = 1,
+  SCHED_QOS_UTILITY = 2,
+  SCHED_QOS_DEFAULT = 3,
+  SCHED_QOS_USER_INITIATED = 4,
+  SCHED_QOS_USER_INTERACTIVE = 5
+};
+
 struct process;
 
 enum thread_state {
@@ -22,6 +31,7 @@ struct thread {
   void *arg;
   enum thread_state state;
   uint8_t priority;
+  uint8_t qos;
   int16_t affinity;
   bool affinity_auto;
   uint32_t id;
@@ -72,6 +82,9 @@ uint64_t scheduler_idle_ticks(void);
 bool scheduler_cpu_ticks(uint32_t id, uint64_t *total, uint64_t *idle);
 void scheduler_set_affinity(int tid, int16_t core);
 int scheduler_get_core_count(void);
+void scheduler_set_qos(int tid, uint8_t qos);
+uint8_t scheduler_get_qos(int tid);
+uint32_t scheduler_qos_quantum(uint8_t qos);
 
 void scheduler_on_timer_interrupt(void);
 void scheduler_asm_switch(uint64_t *old_rsp, uint64_t *new_rsp);

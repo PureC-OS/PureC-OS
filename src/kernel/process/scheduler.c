@@ -72,6 +72,25 @@ static struct scheduler_cpu *local_scheduler(void) {
     kernel_panic("sched: CPU has no kernel GDT");
   return &cpu_schedulers[id];
 }
+
+uint32_t scheduler_qos_quantum(uint8_t qos) {
+  switch (qos) {
+  case SCHED_QOS_USER_INTERACTIVE:
+    return 2;
+  case SCHED_QOS_USER_INITIATED:
+    return 3;
+  case SCHED_QOS_DEFAULT:
+    return SCHEDULER_TIME_SLICE_MS;
+  case SCHED_QOS_UTILITY:
+    return 8;
+  case SCHED_QOS_BACKGROUND:
+    return 10;
+  case SCHED_QOS_IDLE:
+  default:
+    break;
+  }
+  return SCHEDULER_TIME_SLICE_MS;
+}
 static void thread_trampoline(void);
 static uint64_t create_initial_stack(struct thread *thread);
 static bool kernel_text_address_valid(uint64_t address) {
@@ -227,6 +246,7 @@ void scheduler_init_cpu(void) {
   idle->state = THREAD_RUNNING;
   idle->running_cpu = (int16_t)id;
   idle->affinity = (int16_t)id;
+  idle->qos = SCHED_QOS_IDLE;
   idle->address_space = vmm_kernel_address_space();
   idle->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
   strncpy(idle->name, "idle", sizeof(idle->name) - 1);
@@ -412,6 +432,7 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   t->entry = entry;
   t->arg = arg;
   t->priority = priority > 7 ? 7 : priority;
+  t->qos = SCHED_QOS_DEFAULT;
   t->affinity = affinity;
   t->running_cpu = -1;
   t->kernel_only = user_mode;
@@ -427,6 +448,24 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   spin_unlock_irqrestore(&runqueue_lock, flags);
   smp_reschedule_all();
   return id;
+}
+
+void scheduler_set_qos(int tid, uint8_t qos) {
+  if (qos > SCHED_QOS_USER_INTERACTIVE)
+    return;
+  uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  struct thread *found = (tid >= 0) ? thash_find((uint32_t)tid) : NULL;
+  if (found && found->state != THREAD_FREE)
+    found->qos = qos;
+  spin_unlock_irqrestore(&runqueue_lock, flags);
+}
+
+uint8_t scheduler_get_qos(int tid) {
+  uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  struct thread *found = (tid >= 0) ? thash_find((uint32_t)tid) : NULL;
+  uint8_t qos = found ? found->qos : SCHED_QOS_DEFAULT;
+  spin_unlock_irqrestore(&runqueue_lock, flags);
+  return qos;
 }
 
 int scheduler_create_thread(void (*entry)(void *), void *arg, const char *name,
@@ -552,15 +591,26 @@ static struct thread *pick_next(void) {
   uint32_t id = gdt_current_cpu_id();
   struct scheduler_cpu *cpu = local_scheduler();
   wake_sleeping_threads();
+  uint8_t best = 0;
+  bool have = false;
+  for (struct thread *t = thread_list; t; t = t->next) {
+    if (t->state == THREAD_READY && t->running_cpu == -1 && eligible(t, id)) {
+      if (!have || t->qos > best) {
+        best = t->qos;
+        have = true;
+      }
+    }
+  }
   struct thread *cursor =
       (cpu->cursor && thread_in_list(cpu->cursor)) ? cpu->cursor : NULL;
   struct thread *t = cursor ? cursor->next : thread_list;
   if (!t)
     t = thread_list;
-  if (t) {
+  if (t && have) {
     struct thread *stop = t;
     do {
-      if (t->state == THREAD_READY && t->running_cpu == -1 && eligible(t, id)) {
+      if (t->state == THREAD_READY && t->running_cpu == -1 &&
+          t->qos == best && eligible(t, id)) {
         cpu->cursor = t;
         return t;
       }
@@ -579,7 +629,7 @@ static void schedule_locked(void) {
   struct thread *next = pick_next();
   if (next == prev) {
     prev->state = THREAD_RUNNING;
-    prev->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
+    prev->ticks_remaining = scheduler_qos_quantum(prev->qos);
     spin_unlock(&runqueue_lock);
     return;
   }
@@ -591,7 +641,7 @@ static void schedule_locked(void) {
     next->migrations++;
   next->cpu_mask |= 1U << id;
   next->running_cpu = (int16_t)id;
-  next->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
+  next->ticks_remaining = scheduler_qos_quantum(next->qos);
   cpu->previous = prev;
   cpu->current = next;
   validate_switch_target(prev, next);
