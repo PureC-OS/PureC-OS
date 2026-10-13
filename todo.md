@@ -24,6 +24,8 @@
 - [x] добавыть програму для проверки hdd | priority:normal
 - [x] добавыть програму для проверки процесора | priority:normal
 - [x] расширить функционал htop с полным мониторингом каждого ядра процессора снимать данные с ядра каждего отдельно и делать это в риал тайме | priority:normal
+- [x] Портировать Lua 5.4 REPL (v1, без math): вендор, hosted libc, сборка, манифест | priority:normal
+  - [x] Эхо ввода в REPL (purec_lua_readline): посимвольное эхо + backspace, проверено живьём в терминале | priority:normal
 
 ## Network
 
