@@ -5,7 +5,7 @@ serial: yes
 
 /PureC OS 64-bit (GPU SVGA)
     protocol: limine
-    resolution: 1024x768x32
+    resolution: 1920x1080x32
     kernel_path: boot():/boot/kernel.elf
     cmdline: video=svga
     module_path: boot():/boot/kernel-fallback.elf

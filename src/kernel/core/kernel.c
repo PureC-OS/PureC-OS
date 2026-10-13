@@ -3,6 +3,7 @@
 #include "../../arch/x86_64/mmio.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/svga.h"
+#include "../../drivers/interrupts/timer.h"
 #include "../../drivers/power/power.h"
 #include "../../drivers/serial/serial.h"
 #include "../../fs/vfs.h"
@@ -89,6 +90,16 @@ void kernel_main(struct limine_framebuffer *fb) {
         }
     } else {
         klog(KLOG_INFO, "video: GOP forced by cmdline (video=gop)");
+    }
+    // GPU entry: hold screen so the svga probe lines can be photographed
+    {
+        extern int boot_video_pref_get(void);
+        if (boot_video_pref_get() == 2) {
+            klog(KLOG_WARN, "svga: HOLD 8s — photograph the svga: lines now");
+            uint64_t end = timer_ticks() + 8000;
+            while (timer_ticks() < end)
+                __asm__ volatile("hlt");
+        }
     }
   }
   smp_start_all(smp_response_ptr);
