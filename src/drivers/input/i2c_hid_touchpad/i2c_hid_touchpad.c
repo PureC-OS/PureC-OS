@@ -1,10 +1,3 @@
-/*
- * ELAN/ASUE1411 I2C-HID touchpad module.
- *
- * This file intentionally has no kernel-main dependency: it is built as a
- * relocatable module. A future module loader supplies the unresolved kernel
- * symbols and calls purec_i2c_hid_touchpad_init().
- */
 #include "arch/x86_64/mmio.h"
 #include "drivers/pci/pci.h"
 #include "kernel/diagnostics/klog.h"
@@ -32,7 +25,6 @@ static void find_controller(const struct pci_device_info *pci, void *ctx) {
     state.controller[state.controller_count++] = *pci;
 }
 
-/* Module ABI entry point. The loader must resolve PCI/MMIO/klog symbols. */
 bool purec_i2c_hid_touchpad_init(void) {
     state.controller_count = 0;
     state.ready = false;
