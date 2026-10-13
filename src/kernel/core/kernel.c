@@ -3,6 +3,7 @@
 #include "../../arch/x86_64/mmio.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/svga.h"
+#include "../../drivers/display/vbe.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../drivers/power/power.h"
 #include "../../drivers/serial/serial.h"
@@ -78,6 +79,12 @@ void kernel_main(struct limine_framebuffer *fb) {
   {
     extern int boot_video_pref_get(void);
     int pref = boot_video_pref_get();
+    {
+        extern uint16_t vbe_debug_id(void);
+        uint16_t vid = vbe_debug_id();
+        klogf(KLOG_WARN, "vbe: dispi probe id=0x%x %s", vid,
+              (vid >= 0xB0C0 && vid <= 0xB0C5) ? "VBE_ALIVE" : "VBE_SILENT");
+    }
     if (pref != 1 && mmio_is_ready()) {
         if (svga_init(1024, 768, 32)) {
             if (gop_apply_live(svga_fb_virt(), svga_width(), svga_height(),

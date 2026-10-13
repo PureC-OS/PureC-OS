@@ -47,6 +47,11 @@ static uint16_t vbe_read(uint16_t index){
     return inw(VBE_VALUE_PORT);
 }
 
+uint16_t vbe_debug_id(void){
+    vbe_write(VBE_IDX_ID, VBE_ID5);
+    return vbe_read(VBE_IDX_ID);
+}
+
 bool vbe_is_available(void){
     vbe_write(VBE_IDX_ID, VBE_ID5);
     uint16_t id = vbe_read(VBE_IDX_ID);
