@@ -1,5 +1,6 @@
 #include "compositor.h"
 #include "../drivers/display/gop.h"
+#include "../drivers/display/svga.h"
 #include "../kernel/process/scheduler.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
@@ -570,5 +571,7 @@ bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
   comp_enter(&c);
   present_locked(x0, y0, x1, y1);
   comp_leave(&c);
+  if (x1 > x0 && y1 > y0 && svga_is_available())
+    svga_update(x0, y0, x1 - x0, y1 - y0);
   return true;
 }
