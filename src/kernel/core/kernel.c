@@ -91,7 +91,6 @@ void kernel_main(struct limine_framebuffer *fb) {
     } else {
         klog(KLOG_INFO, "video: GOP forced by cmdline (video=gop)");
     }
-    // GPU entry: hold screen so the svga probe lines can be photographed
     {
         extern int boot_video_pref_get(void);
         if (boot_video_pref_get() == 2) {
