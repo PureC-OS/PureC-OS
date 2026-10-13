@@ -66,7 +66,6 @@
 #define AR_STA_ID1_ADHOC 0x00020000
 #define AR_STA_ID1_BASE_RATE_11B 0x02000000
 
-// GPIO block (read-only dump for RFKILL triage; no writes here).
 #define AR_GPIO_IN_OUT 0x4048
 #define AR_GPIO_OE_OUT 0x404C
 #define AR_GPIO_IN 0x4050
@@ -221,8 +220,6 @@ static void ar_program_bssid(const uint8_t bssid[6], uint16_t aid)
     ar_reg_write(AR_BSS_ID1, hi);
 }
 
-// Read-only RFKILL/GPIO triage for bare-metal (todo: снять rfkill).
-// Only reads; RF switch state is inferred by OS/user from the dump.
 static void ar_rfkill_dump(const char *when)
 {
     uint32_t in_out = ar_reg_read(AR_GPIO_IN_OUT);
@@ -498,8 +495,6 @@ static void ar_rx_poll(uint64_t now_ms)
         d->status = 0;
         __atomic_thread_fence(__ATOMIC_RELEASE);
         dev->rx_next = (uint16_t)((idx + 1) % AR9285_RX_RING);
-        // 802.11 data path (phase 2b): count data frames explicitly so the
-        // bare-metal log shows whether DHCP/IP can flow after assoc.
         if (len >= 24) {
             uint16_t fc = (uint16_t)tmp[0] | ((uint16_t)tmp[1] << 8);
             uint8_t ftype = (uint8_t)((fc >> 2) & 0x3);
@@ -672,7 +667,6 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     ar_program_sta(dev->net.mac);
     ar_program_bssid(bssid, 0);
 
-    // Directed probe helps hidden SSIDs and confirms TX path before AUTH.
     if (dev->tx_ready) {
         static const uint8_t b_rates[] = {0x82, 0x84, 0x8B, 0x96};
         uint8_t probe[DOT11_MGMT_MAX];
@@ -741,8 +735,6 @@ static void ar9285_wifi_poll(void *context, uint64_t now_ms)
               dot11_mlme_state_name(before),
               dot11_mlme_state_name(dev->mlme.state), dev->mlme.retries);
     }
-    // Backend connect timeout: MLME retries 5x500ms internally, but a silent
-    // RF (wrong channel / RFKILL / no beacons) would hang wifi_connect forever.
     if (dev->mlme_active &&
         (dev->mlme.state == DOT11_MLME_AUTH_SENT ||
          dev->mlme.state == DOT11_MLME_AUTH_OK ||

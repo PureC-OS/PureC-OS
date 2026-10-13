@@ -140,21 +140,16 @@ uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_
     return off;
 }
 
-// Reassoc-req shares assoc-req body + current-AP field (6 bytes).
-// Kept for roaming; MLME does not auto-roam yet, driver may use it.
 uint16_t dot11_build_reassoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_cap) {
     if (!m || !out || !m->ssid_len || m->ssid_len > DOT11_SSID_MAX ||
         m->rate_count > DOT11_RATES_MAX)
         return 0;
-    // Build as assoc-req first, then splice current-AP after header.
     uint8_t tmp[DOT11_MGMT_MAX];
     uint16_t base = dot11_build_assoc_req(m, tmp, sizeof(tmp));
     if (!base || base < DOT11_HDR_LEN + 4) return 0;
-    // tmp layout: [hdr 24][cap 2][listen 2][IEs...]. Reassoc inserts 6B current-AP.
     uint16_t ies_len = (uint16_t)(base - (DOT11_HDR_LEN + 4));
     uint16_t need = (uint16_t)(base + 6);
     if (out_cap < need) return 0;
-    // Fix header subtype to REASSOC_REQ.
     tmp[0] = (uint8_t)(DOT11_FC_MAKE(DOT11_FTYPE_MGMT, DOT11_STYPE_REASSOC_REQ) & 0xFF);
     tmp[1] = (uint8_t)((DOT11_FC_MAKE(DOT11_FTYPE_MGMT, DOT11_STYPE_REASSOC_REQ) >> 8) & 0xFF);
     mlme_memcpy(out, tmp, DOT11_HDR_LEN + 4);
@@ -499,8 +494,6 @@ bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
             mlme_fail(m, DOT11_FAIL_UNSUPPORTED_SECURITY, 0);
             return true;
         }
-        // Beacon/profile refresh is valid while waiting for AUTH or ASSOC:
-        // AP may change rates/channel between our AUTH_OK and ASSOC_RESP.
         if ((m->state == DOT11_MLME_AUTH_SENT || m->state == DOT11_MLME_AUTH_OK ||
              m->state == DOT11_MLME_ASSOC_SENT) &&
             !mlme_apply_bss(m, &bss))

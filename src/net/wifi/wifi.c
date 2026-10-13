@@ -342,8 +342,6 @@ void wifi_poll(uint64_t now_ms){
             }
         } else if(mgr.state == WIFI_STATE_CONNECTING &&
                   (now_ms - mgr.connect_start_ms >= WIFI_CONNECT_TIMEOUT_MS)){
-        // Driver never reported success/failure (silent RF). Fail openly so
-        // the settings UI shows an error instead of hanging on Connecting.
         klogf(KLOG_ERROR, "wifi: connect timeout 15s for '%s', reporting failure",
               mgr.target_ssid);
         wifi_notify_connect_failed(-12);
