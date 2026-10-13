@@ -140,8 +140,31 @@ uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_
     return off;
 }
 
+// Reassoc-req shares assoc-req body + current-AP field (6 bytes).
+// Kept for roaming; MLME does not auto-roam yet, driver may use it.
+uint16_t dot11_build_reassoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_cap) {
+    if (!m || !out || !m->ssid_len || m->ssid_len > DOT11_SSID_MAX ||
+        m->rate_count > DOT11_RATES_MAX)
+        return 0;
+    // Build as assoc-req first, then splice current-AP after header.
+    uint8_t tmp[DOT11_MGMT_MAX];
+    uint16_t base = dot11_build_assoc_req(m, tmp, sizeof(tmp));
+    if (!base || base < DOT11_HDR_LEN + 4) return 0;
+    // tmp layout: [hdr 24][cap 2][listen 2][IEs...]. Reassoc inserts 6B current-AP.
+    uint16_t ies_len = (uint16_t)(base - (DOT11_HDR_LEN + 4));
+    uint16_t need = (uint16_t)(base + 6);
+    if (out_cap < need) return 0;
+    // Fix header subtype to REASSOC_REQ.
+    tmp[0] = (uint8_t)(DOT11_FC_MAKE(DOT11_FTYPE_MGMT, DOT11_STYPE_REASSOC_REQ) & 0xFF);
+    tmp[1] = (uint8_t)((DOT11_FC_MAKE(DOT11_FTYPE_MGMT, DOT11_STYPE_REASSOC_REQ) >> 8) & 0xFF);
+    mlme_memcpy(out, tmp, DOT11_HDR_LEN + 4);
+    mlme_memcpy(out + DOT11_HDR_LEN + 4, m->ap, DOT11_ADDR_LEN);
+    mlme_memcpy(out + DOT11_HDR_LEN + 10, tmp + DOT11_HDR_LEN + 4, ies_len);
+    return need;
+}
+
 uint16_t dot11_build_disassoc(struct dot11_mlme *m, uint16_t reason,
-                              uint8_t *out, uint16_t out_cap) {
+                               uint8_t *out, uint16_t out_cap) {
     if (!m || !out || out_cap < DOT11_HDR_LEN + 2 || dot11_addr_is_zero(m->ap)) return 0;
     uint16_t off = build_hdr(out, out_cap, DOT11_STYPE_DISASSOC,
                              m->ap, m->self, m->ap, next_seq(m));
@@ -378,6 +401,33 @@ uint8_t dot11_mlme_state(const struct dot11_mlme *m) {
     return m ? m->state : DOT11_MLME_IDLE;
 }
 
+const char *dot11_mlme_state_name(uint8_t state) {
+    switch (state) {
+    case DOT11_MLME_IDLE: return "IDLE";
+    case DOT11_MLME_AUTH_SENT: return "AUTH_SENT";
+    case DOT11_MLME_AUTH_OK: return "AUTH_OK";
+    case DOT11_MLME_ASSOC_SENT: return "ASSOC_SENT";
+    case DOT11_MLME_ASSOCIATED: return "ASSOCIATED";
+    case DOT11_MLME_FAILED: return "FAILED";
+    default: return "UNKNOWN";
+    }
+}
+
+const char *dot11_mlme_fail_name(uint8_t reason) {
+    switch (reason) {
+    case DOT11_FAIL_NONE: return "NONE";
+    case DOT11_FAIL_TIMEOUT: return "TIMEOUT";
+    case DOT11_FAIL_REJECTED: return "REJECTED";
+    case DOT11_FAIL_DEAUTH: return "DEAUTH";
+    case DOT11_FAIL_NO_BSSID: return "NO_BSSID";
+    case DOT11_FAIL_TX: return "TX_FAIL";
+    case DOT11_FAIL_INVALID_RESPONSE: return "BAD_RESP";
+    case DOT11_FAIL_UNSUPPORTED_SECURITY: return "WPA_NEED_2B";
+    case DOT11_FAIL_UNSUPPORTED_RATES: return "BAD_RATES";
+    default: return "UNKNOWN";
+    }
+}
+
 void dot11_mlme_poll(struct dot11_mlme *m, uint64_t now_ms) {
     if (!m || (m->state != DOT11_MLME_AUTH_SENT && m->state != DOT11_MLME_ASSOC_SENT))
         return;
@@ -449,7 +499,10 @@ bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
             mlme_fail(m, DOT11_FAIL_UNSUPPORTED_SECURITY, 0);
             return true;
         }
-        if ((m->state == DOT11_MLME_AUTH_SENT || m->state == DOT11_MLME_AUTH_OK) &&
+        // Beacon/profile refresh is valid while waiting for AUTH or ASSOC:
+        // AP may change rates/channel between our AUTH_OK and ASSOC_RESP.
+        if ((m->state == DOT11_MLME_AUTH_SENT || m->state == DOT11_MLME_AUTH_OK ||
+             m->state == DOT11_MLME_ASSOC_SENT) &&
             !mlme_apply_bss(m, &bss))
             mlme_fail(m, DOT11_FAIL_UNSUPPORTED_RATES, 0);
         return true;

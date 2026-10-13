@@ -66,6 +66,11 @@
 #define AR_STA_ID1_ADHOC 0x00020000
 #define AR_STA_ID1_BASE_RATE_11B 0x02000000
 
+// GPIO block (read-only dump for RFKILL triage; no writes here).
+#define AR_GPIO_IN_OUT 0x4048
+#define AR_GPIO_OE_OUT 0x404C
+#define AR_GPIO_IN 0x4050
+
 #define AR_BSS_ID0 0x8008
 #define AR_BSS_ID1 0x800C
 #define AR_BSS_ID1_AID 0x07FF0000
@@ -125,6 +130,10 @@ struct ar9285_device
     struct dot11_mlme mlme;
     bool mlme_active;
     bool data_path_warned;
+    uint64_t connect_start_ms;
+    uint32_t data_rx_seen;
+    uint32_t data_rx_dropped;
+    bool rfkill_warned;
 
     bool scan_active;
     uint64_t scan_start_ms;
@@ -210,6 +219,17 @@ static void ar_program_bssid(const uint8_t bssid[6], uint16_t aid)
     hi |= ((uint32_t)(aid & 0x07FF) << AR_BSS_ID1_AID_S);
     ar_reg_write(AR_BSS_ID0, lo);
     ar_reg_write(AR_BSS_ID1, hi);
+}
+
+// Read-only RFKILL/GPIO triage for bare-metal (todo: снять rfkill).
+// Only reads; RF switch state is inferred by OS/user from the dump.
+static void ar_rfkill_dump(const char *when)
+{
+    uint32_t in_out = ar_reg_read(AR_GPIO_IN_OUT);
+    uint32_t oe = ar_reg_read(AR_GPIO_OE_OUT);
+    uint32_t in = ar_reg_read(AR_GPIO_IN);
+    klogf(KLOG_INFO, "ar9285: gpio %s in_out=0x%08x oe=0x%08x in=0x%08x (check HW RF switch if assoc times out)",
+          when ? when : "?", in_out, oe, in);
 }
 
 static void ar_release_dma(void)
@@ -402,8 +422,9 @@ static void ar_mlme_failed(void *ctx)
         dev = &adapter;
     dev->mlme_active = false;
     int32_t err = -10 - (int32_t)dev->mlme.fail_reason;
-    klogf(KLOG_ERROR, "ar9285: assoc failed reason=%u status=%u",
-          dev->mlme.fail_reason, dev->mlme.last_status);
+    klogf(KLOG_ERROR, "ar9285: assoc failed %s status=%u aid=%u (err=%d)",
+          dot11_mlme_fail_name(dev->mlme.fail_reason),
+          dev->mlme.last_status, dev->mlme.aid, err);
     wifi_notify_connect_failed(err);
 }
 
@@ -477,6 +498,22 @@ static void ar_rx_poll(uint64_t now_ms)
         d->status = 0;
         __atomic_thread_fence(__ATOMIC_RELEASE);
         dev->rx_next = (uint16_t)((idx + 1) % AR9285_RX_RING);
+        // 802.11 data path (phase 2b): count data frames explicitly so the
+        // bare-metal log shows whether DHCP/IP can flow after assoc.
+        if (len >= 24) {
+            uint16_t fc = (uint16_t)tmp[0] | ((uint16_t)tmp[1] << 8);
+            uint8_t ftype = (uint8_t)((fc >> 2) & 0x3);
+            if (ftype == DOT11_FTYPE_DATA) {
+                dev->data_rx_seen++;
+                dev->data_rx_dropped++;
+                dev->net.stats.rx_dropped++;
+                if (dev->data_rx_seen <= 3) {
+                    klogf(KLOG_INFO, "ar9285: data RX #%u len=%u (no 802.11->eth decap yet, phase 2b)",
+                          dev->data_rx_seen, (uint32_t)len);
+                }
+                continue;
+            }
+        }
         if (dev->mlme_active)
         {
             (void)dot11_mlme_input(&dev->mlme, tmp, (uint16_t)len, now_ms);
@@ -635,10 +672,25 @@ static bool ar9285_wifi_connect(void *context, const char *ssid, const char *pas
     ar_program_sta(dev->net.mac);
     ar_program_bssid(bssid, 0);
 
+    // Directed probe helps hidden SSIDs and confirms TX path before AUTH.
+    if (dev->tx_ready) {
+        static const uint8_t b_rates[] = {0x82, 0x84, 0x8B, 0x96};
+        uint8_t probe[DOT11_MGMT_MAX];
+        uint32_t slen = 0;
+        while (ssid[slen] && slen < DOT11_SSID_MAX) slen++;
+        uint16_t plen = dot11b_build_probe_req(dev->net.mac, ssid, (uint8_t)slen,
+                                               b_rates, sizeof(b_rates),
+                                               probe, sizeof(probe));
+        if (plen) (void)ar_tx_mgmt(probe, plen);
+    }
+
     uint64_t now = timer_ticks();
     dot11_mlme_init(&dev->mlme, dev->net.mac, ar_mlme_tx, dev,
                     ar_mlme_associated, ar_mlme_failed, dev);
     dev->mlme_active = true;
+    dev->connect_start_ms = now;
+    dev->data_rx_seen = 0;
+    dev->data_rx_dropped = 0;
     if (!dot11_mlme_start_open(&dev->mlme, ssid, bssid, dev->target_channel, now))
     {
         klogf(KLOG_ERROR, "ar9285: MLME start failed reason=%u", dev->mlme.fail_reason);
@@ -685,8 +737,25 @@ static void ar9285_wifi_poll(void *context, uint64_t now_ms)
     dot11_mlme_poll(&dev->mlme, now_ms);
     if (before != dev->mlme.state)
     {
-        klogf(KLOG_DEBUG, "ar9285: MLME state %u -> %u retries=%u", before,
-              dev->mlme.state, dev->mlme.retries);
+        klogf(KLOG_DEBUG, "ar9285: MLME %s -> %s retries=%u",
+              dot11_mlme_state_name(before),
+              dot11_mlme_state_name(dev->mlme.state), dev->mlme.retries);
+    }
+    // Backend connect timeout: MLME retries 5x500ms internally, but a silent
+    // RF (wrong channel / RFKILL / no beacons) would hang wifi_connect forever.
+    if (dev->mlme_active &&
+        (dev->mlme.state == DOT11_MLME_AUTH_SENT ||
+         dev->mlme.state == DOT11_MLME_AUTH_OK ||
+         dev->mlme.state == DOT11_MLME_ASSOC_SENT) &&
+        (now_ms - dev->connect_start_ms >= 10000ULL))
+    {
+        ar_rfkill_dump("connect-timeout");
+        klogf(KLOG_ERROR, "ar9285: assoc timeout 10s state=%s fail=%s (check channel/RF switch/open-net)",
+              dot11_mlme_state_name(dev->mlme.state),
+              dot11_mlme_fail_name(dev->mlme.fail_reason));
+        dot11_mlme_stop(&dev->mlme);
+        dev->mlme_active = false;
+        wifi_notify_connect_failed(-11);
     }
 }
 
@@ -767,6 +836,7 @@ bool ar9285_init(void)
     adapter.mac_version = version;
     adapter.mac_rev = rev;
     klogf(KLOG_INFO, "ar9285: SREV version=0x%x rev=%u", version, rev);
+    ar_rfkill_dump("init");
     if (version != AR_SREV_VERSION_9285)
     {
         klogf(KLOG_ERROR, "ar9285: unexpected silicon version 0x%x (want 0x%x)", version,

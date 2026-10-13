@@ -145,12 +145,16 @@ uint8_t dot11_mlme_state(const struct dot11_mlme *m);
 void dot11_mlme_poll(struct dot11_mlme *m, uint64_t now_ms);
 
 bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
-                      uint64_t now_ms);
+                       uint64_t now_ms);
+
+const char *dot11_mlme_state_name(uint8_t state);
+const char *dot11_mlme_fail_name(uint8_t reason);
 
 uint16_t dot11_build_auth_req(const uint8_t sa[DOT11_ADDR_LEN],
                               const uint8_t bssid[DOT11_ADDR_LEN],
                               uint16_t seq_num, uint8_t *out, uint16_t out_cap);
 uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_cap);
+uint16_t dot11_build_reassoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_cap);
 uint16_t dot11_build_disassoc(struct dot11_mlme *m, uint16_t reason,
                               uint8_t *out, uint16_t out_cap);
 bool dot11_parse_auth_resp(const uint8_t *frame, uint16_t len,

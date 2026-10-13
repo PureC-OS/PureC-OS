@@ -9,6 +9,7 @@
 
 #define WIFI_SCAN_INTERVAL_MS 5000ULL
 #define WIFI_SCAN_TIMEOUT_MS 4000ULL
+#define WIFI_CONNECT_TIMEOUT_MS 15000ULL
 
 #define WIFI_MAX_DEVICES 2
 
@@ -339,7 +340,19 @@ void wifi_poll(uint64_t now_ms){
             if(mgr.state == WIFI_STATE_CONNECTING){
                 wifi_notify_connected(mgr.target_ssid, mgr.target_bssid, -45, mgr.target_channel, mgr.target_security);
             }
+        } else if(mgr.state == WIFI_STATE_CONNECTING &&
+                  (now_ms - mgr.connect_start_ms >= WIFI_CONNECT_TIMEOUT_MS)){
+        // Driver never reported success/failure (silent RF). Fail openly so
+        // the settings UI shows an error instead of hanging on Connecting.
+        klogf(KLOG_ERROR, "wifi: connect timeout 15s for '%s', reporting failure",
+              mgr.target_ssid);
+        wifi_notify_connect_failed(-12);
         }
+    } else if(mgr.connecting && mgr.state == WIFI_STATE_CONNECTING &&
+              (now_ms - mgr.connect_start_ms >= WIFI_CONNECT_TIMEOUT_MS)){
+        klogf(KLOG_ERROR, "wifi: connect timeout 15s for '%s' (no driver poll), reporting failure",
+              mgr.target_ssid);
+        wifi_notify_connect_failed(-12);
     }
 
     if(mgr.state == WIFI_STATE_FAILED && !mgr.connecting){
