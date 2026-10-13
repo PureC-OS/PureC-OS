@@ -200,6 +200,13 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     }
     uint64_t bar0 = pci_read_bar(g.bus, g.slot, g.func, 0);
     uint32_t bar0_raw = pci_read_config32(g.bus, g.slot, g.func, 0x10);
+    uint32_t id_raw = pci_read_config32(g.bus, g.slot, g.func, 0x00);
+    uint32_t cmd_raw = pci_read_config32(g.bus, g.slot, g.func, 0x04);
+    uint32_t cls_raw = pci_read_config32(g.bus, g.slot, g.func, 0x08);
+    uint32_t bar1_raw = pci_read_config32(g.bus, g.slot, g.func, 0x14);
+    uint32_t bar2_raw = pci_read_config32(g.bus, g.slot, g.func, 0x18);
+    klogf(KLOG_INFO, "svga: pci=%02x:%02x.%u dev=0x%x cmd=0x%x cls=0x%x bar0=0x%x bar1=0x%x bar2=0x%x",
+          g.bus, g.slot, g.func, id_raw, cmd_raw & 0xFFFFu, cls_raw, bar0_raw, bar1_raw, bar2_raw);
     if (!bar0) {
         klogf(KLOG_WARN, "svga: BAR0 empty (raw=0x%x) at %02x:%02x.%u, GOP fallback",
               bar0_raw, g.bus, g.slot, g.func);
