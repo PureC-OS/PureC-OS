@@ -139,6 +139,12 @@ test-qemu-network-pcnet:
 	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
 	python3 tests/qemu_network.py --iso "$(ISO_IMAGE)" --driver pcnet
 
+test-qemu-panic:
+	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
+	python3 tests/qemu_panic_test.py --iso "$(ISO_IMAGE)" \
+		--log "$(BIN_DIR)/tests/qemu-panic.log" \
+		--shot "$(BIN_DIR)/tests/qemu-panic-shot.ppm"
+
 all: iso
 
 libraries:
