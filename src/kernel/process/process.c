@@ -15,6 +15,7 @@ static mutex_t process_mutex;
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../syscall/syscall.h"
+#include "../ipc/ipc.h"
 #include "elf.h"
 #include "process.h"
 #include "program_alias.h"
@@ -91,6 +92,7 @@ static void process_node_free(struct process *process) {
   if (!process)
     return;
   oom_gate_remove_process(process->pid);
+  ipc_cleanup(process);
   uint64_t phys = process->node_phys;
   struct process **link = &process_list;
   while (*link && *link != process)
@@ -211,6 +213,18 @@ static struct process *process_find_by_pid(uint32_t pid) {
     if (p->state != PROCESS_FREE && p->pid == pid)
       return p;
   return NULL;
+}
+
+struct process *process_lookup_by_pid(uint32_t pid) {
+  return process_find_by_pid(pid);
+}
+
+void process_table_lock(void) {
+  mutex_lock(&process_mutex);
+}
+
+void process_table_unlock(void) {
+  mutex_unlock(&process_mutex);
 }
 
 static bool environment_name_valid(const char *name) {
@@ -503,6 +517,9 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   strncpy(process->name, name ? name : "process", sizeof(process->name) - 1);
   if (name && (strcmp(name, "installer") == 0 || strcmp(name, "disks") == 0))
     process->capabilities |= PROCESS_CAP_STORAGE_ADMIN;
+  if (name && (strcmp(name, "netd") == 0 || strcmp(name, "net-rx") == 0 ||
+               strcmp(name, "dhcp") == 0 || strcmp(name, "dns") == 0))
+    process->capabilities |= PROCESS_CAP_NET_ADMIN;
   process->thread_id = scheduler_create_user_thread(
       user_process_entry, process, process->name, USER_PROCESS_PRIORITY, -1,
       process->address_space, process);
@@ -612,6 +629,58 @@ int32_t process_spawn_module(const char *path, const char *command_line) {
     vfs_close(fd);
   }
   return -1;
+}
+
+int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
+                              const char *name, uint8_t priority,
+                              int16_t affinity, uint8_t qos,
+                              uint32_t capabilities) {
+  if (!entry || !name)
+    return -1;
+  MUTEX_SCOPE(&process_mutex);
+  if (!oom_gate_can_spawn()) {
+    last_spawn_error = "out of memory";
+    return -1;
+  }
+  struct process *process = allocate_process();
+  if (!process) {
+    last_spawn_error = "cannot allocate process descriptor";
+    return -1;
+  }
+  process->pid = next_pid++;
+  if (process->pid == 0)
+    process->pid = next_pid++;
+  for (;;) {
+    struct process *hit = process_find_by_pid(process->pid);
+    if (!hit || hit == process)
+      break;
+    process->pid = next_pid++;
+    if (process->pid == 0)
+      process->pid = next_pid++;
+  }
+  phash_insert(process);
+  struct process *init = process_find_by_pid(1);
+  process->parent_pid = init ? 1 : 0;
+  process->state = PROCESS_RUNNING;
+  process->entry = (uint64_t)(uintptr_t)entry;
+  process->address_space = vmm_kernel_address_space();
+  process->capabilities = capabilities;
+  strncpy(process->name, name, sizeof(process->name) - 1);
+  process->name[sizeof(process->name) - 1] = '\0';
+  environment_initialize(process, init);
+  int32_t tid = scheduler_create_service_thread(
+      entry, arg, process->name, priority, affinity, process->address_space,
+      process);
+  if (tid < 0) {
+    last_spawn_error = "cannot create service thread";
+    process_node_free(process);
+    return -1;
+  }
+  process->thread_id = tid;
+  scheduler_set_qos(tid, qos);
+  klogf(KLOG_OK, "process: pid=%u ppid=%u service=%s entry=0x%llx",
+        process->pid, process->parent_pid, process->name, process->entry);
+  return (int32_t)process->pid;
 }
 
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang) {

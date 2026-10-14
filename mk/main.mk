@@ -16,14 +16,20 @@ export ROOT_DIR BIN_DIR
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad clean help \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path \
-	test-initramfs test-dot11 test-devman test-qemu-network test-qemu-network-e1000 \
+	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode
 	@echo "All host tests passed"
+
+test-ipc:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
+		tests/ipc_mailbox_test.c -o $(BIN_DIR)/tests/ipc_mailbox_test
+	$(BIN_DIR)/tests/ipc_mailbox_test
 
 test-initramfs:
 	@mkdir -p $(BIN_DIR)/tests
@@ -97,6 +103,27 @@ test-devman:
 		tests/devman_match_test.c -o $(BIN_DIR)/tests/devman_match_test
 	$(BIN_DIR)/tests/devman_match_test
 
+test-ksym:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/src/kernel/diagnostics \
+		tests/ksym_resolve_test.c src/kernel/diagnostics/ksym.c \
+		-o $(BIN_DIR)/tests/ksym_resolve_test
+	$(BIN_DIR)/tests/ksym_resolve_test
+
+test-qr-encode:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/src/kernel/diagnostics \
+		tests/qr_encode_test.c src/kernel/diagnostics/qr.c \
+		-o $(BIN_DIR)/tests/qr_encode_test
+	$(BIN_DIR)/tests/qr_encode_test
+
+test-qr-decode:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/src \
+		tests/qr_dump.c src/kernel/diagnostics/qr.c \
+		-o $(BIN_DIR)/tests/qr_dump
+	python3 tests/qr_decode_test.py --tool $(BIN_DIR)/tests/qr_dump $(QR_DECODE_ARGS)
+
 test-qemu-network: test-qemu-network-e1000 test-qemu-network-8254xgc test-qemu-network-pcnet
 	@echo "All QEMU wired-network tests passed"
 
@@ -122,6 +149,7 @@ libraries:
 
 programs: libraries notepad
 	$(MAKE) -C src/programs
+	$(MAKE) -C src/programs/micropython
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 notepad:
@@ -173,6 +201,7 @@ iso: kernel programs
 	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
+	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
 	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
 	for mod in ext2 crypt acpi e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
@@ -220,6 +249,9 @@ help:
 	@echo "  make test           run all host tests"
 	@echo "  make test-cpu       run host CPU discovery tests"
 	@echo "  make test-dot11     run 802.11 association tests"
+	@echo "  make test-ksym       run kernel symbol resolver tests"
+	@echo "  make test-qr-encode  run QR encoder unit tests"
+	@echo "  make test-qr-decode  run QR encode/decode round-trip test"
 	@echo "  make test-qemu-network  test each wired NIC in a separate QEMU VM"
 	@echo "  make clean          remove build artefacts"
 	@echo ""

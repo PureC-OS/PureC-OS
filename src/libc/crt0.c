@@ -60,8 +60,7 @@ static void crt0_build_environ(void) {
 void _start(void) {
     crt0_build_environ();
     int argc = 0;
-    // argv[0] is the program name when the kernel provides it.
-    if (pc_get_process_name(crt0_program, sizeof(crt0_program)) >= 0
+    if (pc_get_process_name(crt0_program, 32) >= 0
         && crt0_program[0]) {
         crt0_argv[argc++] = crt0_program;
     }

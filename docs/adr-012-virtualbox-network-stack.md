@@ -96,8 +96,8 @@ verification, DHCP lease renewal and DNS CNAME chasing.
 
 ## Wi-Fi consequence
 
-An IEEE 802.11 MAC/authentication stack is deliberately postponed until a
-specific physical chipset is selected. That work additionally requires scan,
-association, authentication, encryption/key management and radio-specific
-firmware handling; none of those operations can be tested against VirtualBox's
+Scan, association and 802.11b are implemented and host-tested
+(`src/net/802.11/`, `make test-dot11`); authentication, encryption/key
+management, radio firmware handling and the AR9285 driver (rfkill) are still
+pending, and none of those operations can be tested against VirtualBox's
 Ethernet devices.

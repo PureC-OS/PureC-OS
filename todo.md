@@ -24,6 +24,8 @@
 - [x] добавыть програму для проверки hdd | priority:normal
 - [x] добавыть програму для проверки процесора | priority:normal
 - [x] расширить функционал htop с полным мониторингом каждого ядра процессора снимать данные с ядра каждего отдельно и делать это в риал тайме | priority:normal
+- [x] Портировать Lua 5.4 REPL (v1, без math): вендор, hosted libc, сборка, манифест | priority:normal
+  - [x] Эхо ввода в REPL (purec_lua_readline): посимвольное эхо + backspace, проверено живьём в терминале | priority:normal
 
 ## Network
 
@@ -151,6 +153,9 @@
     - [ ] добавить поддержку жёстких ссылок | priority:normal
     - [ ] добавить поддержку символических ссылок | priority:normal
     - [ ] добавить журналирование для ext3 | priority:normal
+- [ ] Нужно добавить TmpFS в Ram | priority:normal
+  - [ ] TmpFS должна быть по умолчанию в /tmp | priority:normal
+  
 - [ ] доделать ext2 | priority:normal
   - [ ] на bare metal когда ставишь ОС на ext2 диск она поставилась но как только делаешь персонализацию ядро падает в kernel panic и файловая система перестает открыватся | priority:high
   - [ ] нужно разобраться почему это происходит | priority:normal

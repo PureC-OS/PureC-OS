@@ -11,7 +11,6 @@ PureC OS is a simple 64-bit operating system written in C and x86_64 assembly la
 - Implemented USB drivers
 - User Programs In Ring 3
 - purec Syscall ~100
-- Started porting TCC to PureC OS
 - There is Login Screen and Login Gate (Ring-3) [This is for the future]
 
 ---
@@ -241,6 +240,11 @@ git clone https://github.com/PureC-OS/PureC-OS.git
 cd PureC-OS
 ```
 
+use the Python script for the build:
+
+```bash
+python purec.py
+```
 
 ---
 

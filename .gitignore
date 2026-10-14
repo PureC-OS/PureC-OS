@@ -16,3 +16,4 @@ lang/Cargo.lock
 *target/
 *.VSCodeCounter/
 *.pyc
+kernel.map

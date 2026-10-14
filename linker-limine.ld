@@ -26,7 +26,7 @@ SECTIONS
         BYTE(0)
         . = ALIGN(8);
         __ksyms_area = .;
-        . = . + 98304;
+        . = . + 4096 * 64 + 64;
         __ksyms_end = .;
     }
     _kernel_end = .;

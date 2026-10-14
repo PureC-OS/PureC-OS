@@ -1,5 +1,6 @@
 #include "compositor.h"
 #include "../drivers/display/gop.h"
+#include "../drivers/display/svga.h"
 #include "../kernel/process/scheduler.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
@@ -43,6 +44,7 @@ static struct comp_window windows[COMP_MAX_WINDOWS];
 static struct comp_window *zorder[COMP_MAX_WINDOWS];
 static uint32_t zcount;
 static volatile bool comp_lock;
+static volatile bool comp_off;
 static uint32_t line_buffer[COMP_CHUNK];
 static int32_t cursor_x = -1000;
 static int32_t cursor_y = -1000;
@@ -564,11 +566,19 @@ void compositor_cursor_show(bool visible) {
 }
 
 bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
+  if (comp_off)
+    return false;
   if (!gop_has_backbuffer())
     return false;
   struct comp_ctx c;
   comp_enter(&c);
   present_locked(x0, y0, x1, y1);
   comp_leave(&c);
+  if (x1 > x0 && y1 > y0 && svga_is_available())
+    svga_update(x0, y0, x1 - x0, y1 - y0);
   return true;
+}
+
+void compositor_panic_disable(void) {
+  comp_off = true;
 }

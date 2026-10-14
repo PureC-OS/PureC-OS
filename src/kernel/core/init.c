@@ -36,16 +36,31 @@ void init_process_start(void) {
   boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
                        "init and desktop ready, starting scheduler");
 
-  scheduler_create_thread(userspace_input_thread, 0, "init-input", 1, 0);
-  scheduler_create_thread(userspace_keyboard_thread, 0, "desktop-keyboard", 1,
-                          0);
-  scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, 0);
-  if (scheduler_create_thread(net_service_thread, 0, "net-rx", 2, 0) < 0)
-    klog(KLOG_WARN, "net: failed to create polling thread");
-  if (qemu_network_test_requested() &&
-      scheduler_create_thread(qemu_network_test_thread, 0, "qemu-net-test", 3,
-                              0) < 0)
-    klog(KLOG_ERROR, "[NETTEST] RESULT FAIL stage=thread status=-1");
+  int32_t input_pid = process_spawn_service(
+      userspace_input_thread, 0, "init-input", 1, -1,
+      SCHED_QOS_USER_INTERACTIVE, 0);
+  int32_t kbd_pid = process_spawn_service(
+      userspace_keyboard_thread, 0, "desktop-keyboard", 1, -1,
+      SCHED_QOS_USER_INTERACTIVE, 0);
+  if (input_pid < 0 || kbd_pid < 0)
+    klog(KLOG_WARN, "sched: failed to start input service processes");
+  int32_t log_tid =
+      scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, -1);
+  if (log_tid >= 0)
+    scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
+  int32_t net_pid = process_spawn_service(net_service_thread, 0, "net-rx", 2,
+                                          -1, SCHED_QOS_UTILITY,
+                                          PROCESS_CAP_NET_ADMIN);
+  if (net_pid < 0)
+    klog(KLOG_WARN, "net: failed to create service process");
+  if (qemu_network_test_requested()) {
+    int t = scheduler_create_thread(qemu_network_test_thread, 0,
+                                    "qemu-net-test", 3, -1);
+    if (t < 0)
+      klog(KLOG_ERROR, "[NETTEST] RESULT FAIL stage=thread status=-1");
+    else
+      scheduler_set_qos(t, SCHED_QOS_BACKGROUND);
+  }
   klog(KLOG_OK, "sched: init threads created, starting scheduler");
   smp_selftest_start();
   serial_write_string("[SCHED] start\n");

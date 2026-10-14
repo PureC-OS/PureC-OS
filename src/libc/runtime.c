@@ -255,6 +255,16 @@ int32_t pc_file_delete(const char *path){
         (uint64_t)(uintptr_t)path,0,0);
 }
 
+int32_t pc_ipc_send(int32_t dest_pid, const void *buffer, uint32_t size){
+    return (int32_t)pc_syscall(SYS_IPC_SEND,
+        (uint64_t)(uint32_t)dest_pid,(uint64_t)(uintptr_t)buffer,size);
+}
+
+int32_t pc_ipc_recv(void *buffer, uint32_t capacity, uint32_t wait_ms){
+    return (int32_t)pc_syscall(SYS_IPC_RECV,
+        (uint64_t)(uintptr_t)buffer,capacity,wait_ms);
+}
+
 int32_t pc_file_rename(const char *path, const char *new_name){
     return (int32_t)pc_syscall(SYS_FILE_RENAME,
         (uint64_t)(uintptr_t)path,(uint64_t)(uintptr_t)new_name,0);

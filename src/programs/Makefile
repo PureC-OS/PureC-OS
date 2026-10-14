@@ -19,9 +19,6 @@ PLAIN_SOURCES := \
 	system/commands.c \
 	system/filesystem.c \
 	system/system.c
-# Lua 5.4 port (v1: REPL without math lib; see lua/README.md).
-# Excluded: lmathlib.c (needs full libm, v2), linit.c (upstream, all
-# libs; we build linit-purec.c instead), luac.c (bytecode compiler).
 LUA_SOURCES := \
 	lua/lapi.c \
 	lua/lcode.c \
@@ -89,14 +86,16 @@ GENERAL_SOURCES := \
 	disks/main.c \
 	devmgr/main.c \
 	logview/main.c \
- 	imgview/main.c \
- 	fputest/main.c \
-	cd/cd.c \
+  	imgview/main.c \
+  	fputest/main.c \
+  	gltest/main.c \
+  	cd/cd.c \
 	help/help.c \
 	ls/ls.c \
 	cat/cat.c \
 	touch/touch.c \
 	mkdir/mkdir.c \
+	rm/rm.c \
 	mkfs/mkfs.c \
 	pwd/pwd.c \
 	clear/clear.c \
@@ -142,15 +141,17 @@ TARGETS := \
 	$(PROGRAM_DIR)/devmgr \
 	$(PROGRAM_DIR)/logview \
  	$(PROGRAM_DIR)/hexedit \
- 	$(PROGRAM_DIR)/imgview \
- 	$(PROGRAM_DIR)/hello \
- 	$(PROGRAM_DIR)/fputest \
+  	$(PROGRAM_DIR)/imgview \
+  	$(PROGRAM_DIR)/hello \
+  	$(PROGRAM_DIR)/fputest \
+  	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/cd \
 	$(PROGRAM_DIR)/help \
 	$(PROGRAM_DIR)/ls \
 	$(PROGRAM_DIR)/cat \
 	$(PROGRAM_DIR)/touch \
 	$(PROGRAM_DIR)/mkdir \
+	$(PROGRAM_DIR)/rm \
 	$(PROGRAM_DIR)/mkfs \
 	$(PROGRAM_DIR)/pwd \
 	$(PROGRAM_DIR)/clear \
@@ -298,6 +299,10 @@ $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
+$(PROGRAM_DIR)/gltest: $(OBJ_DIR)/gltest/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
 $(PROGRAM_DIR)/burn: $(OBJ_DIR)/burn/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
@@ -327,6 +332,10 @@ $(PROGRAM_DIR)/touch: $(OBJ_DIR)/touch/touch.o $(OBJ_DIR)/terminal/path.o $(LIBP
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/mkdir: $(OBJ_DIR)/mkdir/mkdir.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/rm: $(OBJ_DIR)/rm/rm.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
@@ -390,7 +399,15 @@ $(OBJ_DIR)/tcc/.patched: $(ROOT_DIR)/mk/tcc/purec-target.patch
 	fi
 	@touch $@
 
-$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DIR)/tcc/.patched
+TCC_STATIC_MARK := TCC_PUREC_STATIC_DEFAULT
+$(OBJ_DIR)/tcc/.patched-static: $(ROOT_DIR)/mk/tcc/purec-static.patch $(OBJ_DIR)/tcc/.patched
+	@mkdir -p $(@D)
+	if ! grep -qF "$(TCC_STATIC_MARK)" $(ROOT_DIR)/tcc/libtcc.c 2>/dev/null; then \
+		patch --forward -p1 -d $(ROOT_DIR)/tcc < $(ROOT_DIR)/mk/tcc/purec-static.patch; \
+	fi
+	@touch $@
+
+$(OBJ_DIR)/tcc/tcc.o: $(ROOT_DIR)/tcc/tcc.c $(ROOT_DIR)/mk/tcc/config.h $(OBJ_DIR)/tcc/.patched $(OBJ_DIR)/tcc/.patched-static
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/tcc -I$(ROOT_DIR)/mk/tcc -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -c $< -o $@
 
@@ -421,8 +438,6 @@ $(TCCRT_LIB): $(TCCRT_OBJECTS)
 	$(AR) rcs $@ $^
 endif
 
-# Hosted demo: standard main() + crt0 + hosted headers (TCC migration
-# proving ground). Built with the same toolchain, linked against crt0.o.
 $(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
@@ -431,7 +446,6 @@ $(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(L
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)
 
-# Lua 5.4 REPL (v1, no math lib). Hosted main() via crt0.o, same as hello.
 $(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(LUA_OBJECTS) $(LIBPUREC)

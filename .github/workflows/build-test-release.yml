@@ -38,15 +38,25 @@ jobs:
       - name: Run host unit tests
         run: make test
 
+      - name: Install QR decode test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zbar-tools
+          python3 -m pip install --quiet --break-system-packages pillow
+
+      - name: Run QR decode round-trip test
+        run: make test-qr-decode QR_DECODE_ARGS=--strict
+
       - name: Validate scripts and whitespace
         run: |
-          python3 -m py_compile tests/qemu_smoke.py tests/qemu_network.py
+          python3 -m py_compile tests/qemu_smoke.py tests/qemu_network.py tests/qr_decode_test.py mk/build_db.py mk/ksyms.py
           bash -n .github/scripts/build-cross-toolchain.sh
           bash -n .github/scripts/install-limine.sh
           git diff --check
 
   build-iso:
     name: Build bootable ISO
+    if: github.event_name != 'pull_request'
     needs: host-tests
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -108,11 +118,16 @@ jobs:
         run: |
           test -s bin/purec_limine.iso
           test -s bin/kernel/kernel-limine.elf
+          test -s bin/kernel/kernel.map
+          test -s db/builds.db
           file bin/purec_limine.iso bin/kernel/kernel-limine.elf
           x86_64-elf-readelf -h bin/kernel/kernel-limine.elf
+          head -n 2 bin/kernel/kernel.map
           mkdir -p release_assets
           cp bin/purec_limine.iso release_assets/PureC-OS.iso
           cp bin/kernel/kernel-limine.elf release_assets/kernel-limine.elf
+          cp bin/kernel/kernel.map release_assets/kernel.map
+          cp db/builds.db release_assets/builds.db
           printf '%s\n' \
             "version=${RELEASE_SERIES}.${GITHUB_RUN_NUMBER}" \
             "commit=${GITHUB_SHA}" \
@@ -120,7 +135,7 @@ jobs:
             "toolchain=x86_64-elf-gcc-14.1.0 binutils-2.42" \
             > release_assets/build-info.txt
           cd release_assets
-          sha256sum PureC-OS.iso kernel-limine.elf build-info.txt > SHA256SUMS.txt
+          sha256sum PureC-OS.iso kernel-limine.elf kernel.map builds.db build-info.txt > SHA256SUMS.txt
 
       - name: Upload boot artifacts
         uses: actions/upload-artifact@v4
@@ -132,6 +147,7 @@ jobs:
 
   qemu-smoke:
     name: QEMU smoke test (${{ matrix.cpus }} CPU)
+    if: github.event_name != 'pull_request'
     needs: build-iso
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -173,6 +189,7 @@ jobs:
 
   qemu-network:
     name: QEMU network test (${{ matrix.driver }})
+    if: github.event_name != 'pull_request'
     needs: build-iso
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -249,6 +266,8 @@ jobs:
           files: |
             dist/PureC-OS.iso
             dist/kernel-limine.elf
+            dist/kernel.map
+            dist/builds.db
             dist/build-info.txt
             dist/SHA256SUMS.txt
           draft: false

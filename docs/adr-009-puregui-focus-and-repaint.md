@@ -58,8 +58,8 @@ focus, explicit repaint, minimize or actual window movement.
 ### Negative
 
 - The registry is bounded to eight PureGUI windows.
-- Rendering remains direct-to-framebuffer and is less efficient than surface
-  composition.
+- Rendering goes through compositor surfaces, which beats direct-to-framebuffer
+  drawing; the registry path stays as fallback.
 - A client that does not service events can miss a restoration after the
   bounded repaint timeout.
 
@@ -71,8 +71,8 @@ keyboard races and simultaneous window dragging.
 **Redraw every window on every mouse movement** was rejected because it caused
 the visible flicker and unnecessary full-window rendering reported here.
 
-**Introduce off-screen compositor surfaces immediately** was deferred; the
-registry defines focus and repaint contracts that a compositor can later use.
+**Introduce off-screen compositor surfaces immediately** was implemented; the
+registry defines focus and repaint contracts that the compositor uses.
 
 ## References
 

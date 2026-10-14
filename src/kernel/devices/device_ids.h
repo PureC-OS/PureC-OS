@@ -87,3 +87,7 @@ static const struct devman_pci_id DEVMAN_ID_EHCI[] = {
 static const struct devman_pci_id DEVMAN_ID_HDA[] = {
     {DEVMAN_ANY_VENDOR, DEVMAN_ANY_DEVICE, 0x04, 0x03, DEVMAN_ANY_PROGIF},
 };
+
+static const struct devman_pci_id DEVMAN_ID_VMWARE_SVGA[] = {
+    {0x15AD, 0x0405, DEVMAN_ANY_CLASS, DEVMAN_ANY_SUBCLASS, DEVMAN_ANY_PROGIF},
+};

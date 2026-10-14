@@ -34,6 +34,7 @@
 /bin/program/system/cat /bin/program/system/cat - 1 bin/programs/cat
 /bin/program/system/touch /bin/program/system/touch - 1 bin/programs/touch
 /bin/program/system/mkdir /bin/program/system/mkdir - 1 bin/programs/mkdir
+/bin/program/system/rm /bin/program/system/rm - 1 bin/programs/rm
 /bin/program/system/mkfs /bin/program/system/mkfs - 1 bin/programs/mkfs
 /bin/program/system/pwd /bin/program/system/pwd - 1 bin/programs/pwd
 /bin/program/system/clear /bin/program/system/clear - 1 bin/programs/clear
@@ -52,6 +53,7 @@
 /bin/cat /bin/cat - 1 bin/programs/cat
 /bin/touch /bin/touch - 1 bin/programs/touch
 /bin/mkdir /bin/mkdir - 1 bin/programs/mkdir
+/bin/rm /bin/rm - 1 bin/programs/rm
 /bin/mkfs /bin/mkfs - 1 bin/programs/mkfs
 /bin/pwd /bin/pwd - 1 bin/programs/pwd
 /bin/clear /bin/clear - 1 bin/programs/clear
@@ -88,10 +90,12 @@
 /bin/program/hello /bin/program/hello - 0 bin/programs/hello
 /bin/program/login /bin/program/login - 0 bin/programs/login
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
+/bin/program/gltest /bin/program/gltest - 0 bin/programs/gltest
 /bin/program/burn /bin/program/burn - 0 bin/programs/burn
 /bin/program/eat /bin/program/eat - 0 bin/programs/eat
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
 /bin/program/lua /bin/program/lua - 0 bin/programs/lua
+/bin/program/micropython /bin/program/micropython - 0 bin/programs/micropython
 /bin/program/pl /bin/program/pl - 0 bin/programs/pl
 
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---

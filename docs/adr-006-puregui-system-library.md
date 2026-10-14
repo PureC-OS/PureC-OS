@@ -33,7 +33,8 @@ PureGUI routes keyboard input to one focused window while allowing multiple
 registered ring-3 windows. Version 2 added title-bar collapse/restore and
 version 3 adds focus and coordinated repaint events.
 Rendering still uses the existing framebuffer syscalls; the public API does
-not expose that backend so a future compositor can replace it without changing
+not expose that backend. Window contents go through the kernel compositor
+(`src/gfx/compositor.c`), which replaced the backend without changing
 application source.
 
 ## Consequences
@@ -46,7 +47,7 @@ application source.
 
 ### Negative
 
-- Windows use coordinated repaint rather than independent composited surfaces.
+- Windows draw into composited surfaces; coordinated repaint is kept as fallback.
 - Static linking duplicates the small client runtime in each application.
 - Text uses the current fixed-width system font.
 
@@ -58,8 +59,9 @@ application source.
 - The packaged library version is `V1.0.2`; it adds managed focus and ordered
   restoration of multiple ring-3 windows.
 - ADR-007 replaces solid-color cleanup with desktop-owned scene restoration.
-- PureGUI and its applications are compiled with `-mgeneral-regs-only` until
-  the kernel provides per-process SIMD/FPU context management.
+- PureGUI and its applications are compiled with `-mgeneral-regs-only`; the kernel
+  already provides per-process SIMD/FPU context management
+  (`src/arch/x86_64/fpu/fpu.c`).
 
 ## Alternatives Considered
 
@@ -69,5 +71,5 @@ runtime dependencies are disproportionate to the current kernel.
 **Put widgets in the kernel** was rejected because widget policy does not need
 kernel privilege and would make the syscall ABI difficult to evolve.
 
-**Build a compositor first** was deferred until processes can share surfaces
-and receive routed input events.
+**Build a compositor first** was implemented after processes learned to share
+surfaces and receive routed input events (`src/gfx/compositor.c`).

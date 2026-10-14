@@ -1,6 +1,129 @@
 # Changelog
 
-## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода
+## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода, Портирували MicroPython
+
+### kernel.map и Build UUID (`src/kernel/Makefile`, `linker-limine.ld`, `mk/toolchain.mk`)
+- Ядро генерирует `bin/kernel/kernel.map` (`nm -n`, шапка `# build <uuid> <time>`)
+  и `kernel-limine.ld.map` (`-Map`); `kernel.map` едет в ISO как `/boot/kernel.map`.
+- Каждая сборка получает уникальный UUID (`/proc/sys/kernel/random/uuid` + UTC-штамп),
+  вшитый в ядро через генерируемый `build_stamp.c`.
+- `KERNEL_CFLAGS`: `-fno-omit-frame-pointer` (достоверный unwinding) и
+  `-ffile-prefix-map/-fdebug-prefix-map` (`__FILE__` вида `src/...`, без хостовых путей).
+
+### Паника: символы, origin, стек (`src/kernel/diagnostics/`)
+- Новый panic-safe резолвер `ksym.c`: адрес → `имя+смещение` по встроенной `.ksyms`.
+- Таблица расширена до глобалов + статиков + локалок (`nm -n`, CAP 4096, `.ksyms`
+  в линкере `4096*64+64`); константы синхронны в `ksyms.py`, `kmod_so.c`, `ksym.c`.
+- `Call Trace` печатает `#N [<addr>] символ+0x...`, `RIP sym`, дамп 32 qword от RSP,
+  статус `ksyms: ready/MISSING`.
+- `kernel_panic`/`kernel_panic_exception` — макросы с `__FILE__/__LINE__/__func__`:
+  паника печатает `at src/.../console.c:329 exec_line()`; хост-тесты не тронуты
+  (`PUREC_HOST_TEST`-гард).
+- Композит отключается в панике (`compositor_panic_disable`): окна и курсор
+  больше не перекрывают текст.
+
+### QR-код в панике (`qr.c`, `panic_qr.c`)
+- Свой freestanding QR-кодер (byte mode, EC-L, версии 1–25, все 8 масок с пенальти,
+  без аллокаций); по пути пойман и починен баг порядка коэффициентов в Риде-Соломоне.
+- Под паникой рисуется QR на `issues/new?title=Kernel panic <UUID>&body=<дамп>`:
+  Build, причина, origin, RIP, до 8 кадров, стадия загрузки. Скан с телефона
+  открывает предзаполненный ишью на GitHub. Бюджет URL 1200 символов с урезанием
+  кадров; без GOP или на мелком экране — пропуск с пометкой в логе.
+
+### База сборок (`mk/build_db.py`, `db/builds.db`)
+- Хостовый SQLite: `uuid ↔ built_at + kernel_map + git_rev`. Пишется при каждой
+  линковке ядра, в ядро и ISO не попадает. По UUID с экрана паники:
+  `python3 mk/build_db.py lookup --db db/builds.db <uuid>`.
+
+### Тесты и CI
+- `tests/ksym_resolve_test.c` (`make test-ksym`): exact/nearest/miss, битая magic,
+  `count 0/>cap` — PASS.
+- `tests/qr_encode_test.c` (`make test-qr-encode`): границы версий (17/18 байт →
+  V1/V2, 300 → V11, 1273 → V25, 1300 — отказ), finder/timing/dark, BCH format,
+  детерминизм — PASS.
+- `tests/qr_decode_test.py` + `tests/qr_dump.c` (`make test-qr-decode`,
+  `QR_DECODE_ARGS=--strict`): round-trip через zbarimg (текст, URL 923 байта,
+  байты 1–255) — PASS.
+- CI: убран `pull_request`-триггер — тяжёлый пайплайн больше не дублируется
+  при мерже веток, запуск один, на пуш в `main`. В `host-tests` добавлены
+  QR-decode (`zbar-tools` + `pillow`) и `py_compile` новых скриптов; в артефакты
+  релиза добавлены `kernel.map` и `builds.db` (+ SHA256).
+
+### Планировщик: Apple-style QoS + кванты (`src/kernel/process/scheduler.[ch]`, `src/kernel/core/init.c`)
+- Новый `enum sched_qos`: `IDLE/BACKGROUND/UTILITY/DEFAULT/USER_INITIATED/USER_INTERACTIVE`
+  + поле `qos` в `struct thread`, API `scheduler_set/get_qos()`, `scheduler_qos_quantum()`.
+- Кванты по классу: interactive 2мс, initiated 3мс, default 5мс (= `SCHEDULER_TIME_SLICE_MS`),
+  utility 8мс, background 10мс; `schedule_locked()` выставляет `ticks_remaining` по QoS потока.
+- `pick_next()`: сначала максимальный QoS среди READY/eligible, внутри класса — старый
+  round-robin по курсору. Когда все потоки DEFAULT — поведение 1-в-1 как было.
+- `init-input`/`desktop-keyboard` → `USER_INTERACTIVE`, `net-rx` → `UTILITY`,
+  `kernel-log`/`qemu-net-test` → `BACKGROUND`.
+- Снят жёсткий пин `affinity 0` (BSP) у `init-input`, `desktop-keyboard`, `kernel-log`,
+  `net-rx`, `qemu-net-test` → `affinity -1` (любой CPU). Было: драг окна дёргал только CPU0;
+  стало: нагрузка паралеллится. Syscall-путь через BSP (`scheduler_enter_kernel`) оставлен
+  до аудита общих структур.
+- Проверено: `test-scheduler-cpu`, `test-scheduler-balance`, весь `make test` зелёный.
+
+### Окна: коалесцинг драга до 60fps (`src/userspace/userspace.c`)
+- Было: драг окна/иконки делал полный `redraw_managed_scene` на каждое движение мыши —
+  до 1000 полных перерисовок в секунду в одном потоке, CPU0 до 60%.
+- Стало: позиция обновляется сразу на каждый пакет, тяжёлая перерисовка сцены при зажатой
+  кнопке — не чаще раза в 16мс; курсор живой через `mouse_flush_pending` каждый проход;
+  на отпускании кнопки — принудительный финальный кадр (`last_drag_ms = 0` + redraw).
+
+### Порт MicroPython (`src/programs/micropython/`, `/bin/program/micropython`)
+- Завендорено ядро `py/` + `shared/runtime/pyexec,stdout_helpers` + `shared/readline`
+  + `extmod/{virtpin,modplatform,vfs}.h` + сборочные скрипты `py/*.mk,*.py` (qstr-пайплайн
+  апстрима), конфиг минимального уровня без флоатов (как lua v1 без math).
+- Свои `mpconfigport.h` (куча 256КБ статикой, `alloca` через builtin), `mphalport.[ch]`
+  (stdin/stdout через libc, тики через `clock()`), `main.c` (REPL + `argv[1]` файл,
+  `mp_import_stat`/`mp_lexer_new_from_file` через `fopen`, GC по стеку).
+- Свой Makefile: кросс `x86_64-elf-gcc`, кодген `mpversion/qstrdefs/moduledefs/root_pointers`,
+  линковка `crt0.o + libpurec.a` через `linker-userspace.ld` (как lua); static ELF64 1.1МБ.
+- Хук в `mk/main.mk` (`programs`), optional-записи `/bin/program/micropython` в обоих манифестах.
+- Проверено: те же исходники хостом — REPL считает, файлы исполняет, `fact(10)` = 3628800;
+  `make test` зелёный, `make kernel` чисто.
+
+### `rm` с защитой корня (`src/programs/rm/`, `/bin/rm`)
+- Новый бинарь `rm`: файлы, пустые каталоги (`-d`), рекурсия (`-r/-R`), несколько операндов,
+  `-f` (молча пропускает отсутствующие), `-v`, `--`, `--help`.
+- Защита как в GNU: `/` удалять нельзя — `rm /` отвечает `Is a directory`, а `rm -r /`
+  упирается в failsafe (`it is dangerous to operate recursively on '/'`, нужен явный
+  `--no-preserve-root`); `'.'`/`'..'` как операнды всегда отклоняются.
+- Рекурсия идёт через `pf_list_long` батчами с перелистыванием до пустоты; линковка
+  `crt0.o + path.o + libpurefs.a + libpurec.a` (как `touch`/`mkdir`, 0 новых undefined).
+- Манифесты (`/bin/program/system/rm`, `/bin/rm`, required) + строка в `help`.
+- Проверено: сборка чисто, undefined-символы 1-в-1 как у `touch`, `make test` зелёный.
+
+### IPC для процессной модели сети (`src/kernel/ipc/`, `SYS_IPC_SEND/RECV`)
+- Новый транспорт процесс↔процесс: мейлбоксы в ядре, адресация по PID, копия
+  отправитель→ядро→получатель; пейлоад до 2048 байт (влезает полный ethernet-кадр),
+  глубина 64 сообщения, аллокация ленивая через `oom_slab`.
+- Сисколы `SYS_IPC_SEND 291` (неблокирующий) и `SYS_IPC_RECV 292` (poll или ожидание
+  до `wait_ms` через `scheduler_sleep`); валидация буферов через readable/writable.
+- Доступ только с `PROCESS_CAP_NET_ADMIN` (ядро мимо капа); кап выдаётся по имени
+  процесса (`netd`, `net-rx`, `dhcp`, `dns`) как раньше `STORAGE_ADMIN` для installer.
+- Очередь дренируется при освобождении процесса (`process_node_free`); поиск цели через
+  новый `process_lookup_by_pid`, локи — `process_mutex` + отдельный IPC-спинлок.
+- libc: `pc_ipc_send/pc_ipc_recv` в `runtime.c` + `purec.h`.
+- Хост-тест `tests/ipc_mailbox_test.c` (`make test-ipc`): roundtrip, FIFO, empty/full,
+  лимиты, cap-gate, drain при cleanup, кадр 1514 байт — PASS; весь `make test` зелёный.
+- Ядро при этом работает как было: сетевой стек пока в `net_service_thread`, dual-run,
+  поведения не меняли — следующий шаг `netd`-каркас и вынос RX-цикла.
+
+### Системные процессы с PPID 1 (`process_spawn_service`, защита PID 1)
+- Новый `process_spawn_service()`: настоящий `struct process` (PID из общего счётчика,
+  `parent_pid = 1`, состояние RUNNING, имя, капы, окружение от init) + тред ядра через
+  новый `scheduler_create_service_thread()` (kernel AS, `user_mode = false`, без BSP-пина).
+- Переведены: `init-input` + `desktop-keyboard` (QoS INTERACTIVE, без капов) и `net-rx`
+  (QoS UTILITY, `PROCESS_CAP_NET_ADMIN`); `kernel-log` и `qemu-net-test` пока тредами.
+  QoS и `affinity -1` сохранены 1-в-1.
+- В htop теперь видны PID с PPID 1 и живым CPU/TIME (runtime идёт с треда сервиса).
+- PID 1 под защитой со всех сторон: выход паникует (`PID 1 exited`), OOM-селект скипает
+  (`pid == 1`), рип зомби отказывает; другого пути убить процесс (kill-сискола нет).
+- Проверено: `make kernel` чисто без варнингов, `make test` зелёный; валидация буферов
+  и `enter/leave_kernel` идут по `user_mode`, для сервисов поведение как у тредов.
+
 
 ### Порт Lua 5.4.8 (`src/programs/lua/`, `/bin/program/lua`)
 - Завендорен Lua 5.4.8 (ядро + библиотеки + REPL `lua.c`), сборка
@@ -49,6 +172,46 @@
 ### Известные лимиты v1
 - Нет библиотеки `math`; дробный `pow` (кроме `0.5`) — NaN.
 - `io.popen/io.tmpfile/os.execute/os.tmpname` — graceful error; локаль C.
+
+
+### TCC наконецто работаеть 
+- Было: TCC не работал в юзерспейсе, а теперь работает.
+  Жаловался на библиотеке и отказывался компилировать файлы
+  Приходилось запускать с флагами
+  
+  ```bash
+  tcc -static /test.c -o /hi -L/lib/tcc
+  /hi
+  ```
+
+- Стало: TCC работает в юзерспейсе, и теперь компилирует файлы без ошибок.
+
+
+### GPU: VMware SVGA II (`src/drivers/display/svga.[ch]`, `src/drivers/pci/pci.[ch]`)
+- Новый драйвер SVGA II (PCI `15AD:0405`): `BAR0=IO` (index/value), `BAR1=FB`,
+  `BAR2=FIFO`; негоциация `ID 0x90000002` с фолбэком, modeset `1024x768x32`
+  с проверкой фактической геометрии карты (`WIDTH/HEIGHT/BPP/BYTES_PER_LINE/FB_OFFSET`,
+  несовпадение — фолбэк в GOP вместо мусора).
+- FIFO: `MIN/MAX/NEXT/STOP`, `CONFIG_DONE`, команды `UPDATE=1`, `RECT_FILL=2`,
+  `RECT_COPY=3` с проверкой `CAPS`; `SYNC/BUSY`, перенос `BAR0` на свободный
+  адрес при молчании BIOS-назначения.
+- Порты строго по спеке/референсу: index `base+0`, value `base+1` (dword).
+- `pci_bar_size()`: проба размера BAR через `0xFFFFFFFF`.
+- Интеграция: `gop` рисует во VRAM через `mmio_map`, показ кадра и композитор
+  (`compositor_present`, курсор, окна) — через `svga_update`; `RECT_FILL/COPY`
+  ускорение при `CAPS`.
+- Загрузчик: пункты `GPU SVGA (video=svga)` / `GOP safe (video=gop)` / fallback;
+  любой отказ GPU — тихий фолбэк в Limine GOP, паники нет.
+- Дебаг-меню (`purec.py`): пункты `5 GPU graphics` / `6 GPU log → file`
+  (QEMU `-vga vmware`, serial в `bin/qemu-gpu-debug.log`).
+- Проверено: QEMU `-vga vmware` — `ID 0x90000002`, `1024x768x32`, `caps=0xe3`,
+  `video: VMware SVGA II active (FIFO UPDATE)`; `make test` зелёный.
+
+### Заморозка
+- Фичи заморожены. Дальше только фиксы багов и стабилизация текущего состава:
+  GPU SVGA II, GOP фолбэк, юзерспейс, сеть, fs. Нового функционала не добавляем
+  до отдельного решения.
+
 
 ## V1.2.24 V1.2.26 — .so формат (ET_DYN): юзерспейс, kmod, tcc-рантайм
 

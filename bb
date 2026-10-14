@@ -1,0 +1,14 @@
+/PureC OS 64-bit (GPU SVGA)
+    protocol: limine
+    resolution: 1920x1080x32
+    kernel_path: boot():/boot/kernel.elf
+    cmdline: video=svga
+    module_path: boot():/boot/kernel-fallback.elf
+    module_path: boot():/EFI/BOOT/BOOTX64.EFI
+@MODULES@
+    module_path: boot():/bin/modules/ext2.elf
+    module_path: boot():/bin/modules/ext2.ko
+    module_path: boot():/bin/modules/crypt.elf
+    module_path: boot():/bin/modules/crypt.ko
+    module_path: boot():/bin/modules/acpi.elf
+    module_path: boot():/bin/modules/acpi.ko
