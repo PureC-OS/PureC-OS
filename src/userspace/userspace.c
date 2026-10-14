@@ -700,10 +700,6 @@ void userspace_run(void){
             (void)desktop_apps_handle_key(c);
         desktop_apps_update();
         if(bottom_panel_needs_redraw()) redraw_managed_scene(0);
-
-        __asm__ volatile("pause");
-        for(volatile uint32_t wait = 0; wait < 10000; wait++){
-            __asm__ volatile("nop");
-        }
+        scheduler_sleep(1);
     }
 }

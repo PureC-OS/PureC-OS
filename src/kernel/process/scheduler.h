@@ -48,6 +48,7 @@ struct thread {
   int16_t running_cpu;
   uint32_t cpu_mask;
   uint64_t migrations;
+  uint32_t sched_hunger;
   struct thread *next;
   struct thread *hnext;
   uint64_t node_phys;

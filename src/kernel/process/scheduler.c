@@ -616,6 +616,22 @@ static struct thread *pick_next(void) {
   struct thread *t = cursor ? cursor->next : thread_list;
   if (!t)
     t = thread_list;
+  if (have) {
+    for (struct thread *s = thread_list; s; s = s->next) {
+      if (s->state == THREAD_READY && s->running_cpu == -1 &&
+          eligible(s, id)) {
+        if (s->qos < best) {
+          if (++s->sched_hunger >= 200) {
+            s->sched_hunger = 0;
+            cpu->cursor = s;
+            return s;
+          }
+        } else {
+          s->sched_hunger = 0;
+        }
+      }
+    }
+  }
   if (t && have) {
     struct thread *stop = t;
     do {
