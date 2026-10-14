@@ -204,7 +204,7 @@ static void pqr_draw(int size) {
   int x0 = ((int)w - dim) / 2;
   if (x0 < 0)
     x0 = 0;
-  int y0 = (int)h - dim - 4;
+  int y0 = (int)h - dim - 16;
   if (y0 < 0)
     y0 = 0;
   gop_draw_rect((uint32_t)x0, (uint32_t)y0, (uint32_t)dim, (uint32_t)dim, 0xFFFFFF);

@@ -1,5 +1,6 @@
 #include "panic.h"
 #include "../../drivers/display/gop.h"
+#include "../../gfx/compositor.h"
 #include "../process/scheduler.h"
 #include "../smp/smp.h"
 #include "boot_diag.h"
@@ -72,6 +73,7 @@ static void panic_header(const char *title, const char *file, int line,
   smp_stop_others();
   klog_panic_mode();
   gop_cancel_compose();
+  compositor_panic_disable();
   klog_set_screen_enabled(true);
   klog_clear();
 
