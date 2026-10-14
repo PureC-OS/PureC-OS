@@ -812,7 +812,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
             sizeof(install_serial) - 1);
-    install_fs_type = FS_TYPE_FAT32;
+    install_fs_type = FS_TYPE_EXT2;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",

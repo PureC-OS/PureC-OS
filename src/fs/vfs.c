@@ -26,7 +26,7 @@ enum vfs_handle_type {
   VFS_HANDLE_KLOG
 };
 
-static uint8_t vfs_active_fs = VFS_FS_FAT32;
+static uint8_t vfs_active_fs = VFS_FS_EXT2;
 
 struct kernel_file {
   const char *path;
