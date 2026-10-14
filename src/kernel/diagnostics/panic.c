@@ -6,6 +6,7 @@
 #include "build_stamp.h"
 #include "klog.h"
 #include "ksym.h"
+#include "panic_qr.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -235,6 +236,8 @@ void kernel_panic_at(const char *file, int line, const char *func,
   __asm__ volatile("mov %%rbp, %0" : "=r"(rbp));
   __asm__ volatile("mov %%rsp, %0" : "=r"(rsp));
   panic_call_trace(rbp, rsp);
+  panic_qr_show(reason, file, line, func,
+                (uint64_t)__builtin_return_address(0), rbp);
 
   panic_footer();
   panic_halt();
@@ -292,6 +295,7 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
   }
 
   panic_call_trace(rbp, rsp);
+  panic_qr_show(title, file, line, func, rip, rbp);
   panic_footer();
   panic_halt();
 }
@@ -309,6 +313,7 @@ void kernel_panic_manual_at(const char *file, int line, const char *func,
   else
     panic_rip_sym(rip);
   panic_call_trace(rbp, rsp);
+  panic_qr_show(reason, file, line, func, rip, rbp);
   panic_footer();
   panic_halt();
 }

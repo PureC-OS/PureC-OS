@@ -82,6 +82,8 @@ C_SOURCES := \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \
 	kernel/diagnostics/ksym.c \
+	kernel/diagnostics/qr.c \
+	kernel/diagnostics/panic_qr.c \
 	kernel/diagnostics/panic.c \
 	drivers/input/keyboard.c \
 	drivers/pci/pci.c \
