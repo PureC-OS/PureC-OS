@@ -187,7 +187,7 @@ $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	$(LD) -T $(LINKER_SCRIPT) -Map=$(KERNEL_LD_MAP) -o $@ $(OBJECTS)
 	@$(CROSS)nm -n --defined-only $@ | python3 $(ROOT_DIR)/mk/ksyms.py $@
 	@{ echo "# PureC-OS kernel.map"; echo "# build $(BUILD_UUID) $(BUILD_DATE)"; $(CROSS)nm -n --defined-only $@; } > $(KERNEL_MAP)
-	@python3 $(ROOT_DIR)/mk/build_db.py record --db $(BIN_DIR)/builds.db --uuid "$(BUILD_UUID)" --time "$(BUILD_DATE)" --map "$(KERNEL_MAP)"
+	@python3 $(ROOT_DIR)/mk/build_db.py record --db $(ROOT_DIR)/db/builds.db --uuid "$(BUILD_UUID)" --time "$(BUILD_DATE)" --map "$(KERNEL_MAP)"
 	@echo "kernel.map: $$(wc -l < $(KERNEL_MAP)) symbols -> $(KERNEL_MAP)"
 	@echo "ld map: $(KERNEL_LD_MAP)"
 	@if [ ! -f $(FALLBACK) ]; then cp $@ $(FALLBACK); fi
