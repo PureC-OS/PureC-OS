@@ -4,8 +4,10 @@
 #include "../smp/smp.h"
 #include "boot_diag.h"
 #include "klog.h"
+#include "ksym.h"
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 static volatile bool panic_active = false;
 
@@ -73,6 +75,10 @@ static void panic_header(const char *title) {
        "===========================================================");
   klogf(KLOG_ERROR, "Boot stage: %02u  %s",
         (unsigned int)boot_diag_current_stage(), boot_diag_current_detail());
+  if (ksym_ready())
+    klog(KLOG_ERROR, "ksyms: ready (kernel.map embedded in .ksyms)");
+  else
+    klog(KLOG_ERROR, "ksyms: MISSING — backtrace will show raw addresses");
 }
 
 static void panic_thread_info(void) {
@@ -81,8 +87,8 @@ static void panic_thread_info(void) {
     klog(KLOG_ERROR, "CPU:  <none>  (scheduler not running)");
     return;
   }
-  klogf(KLOG_ERROR, "CPU:  tid=%-4u  name=%-16s  state=%u", t->id,
-        t->name[0] ? t->name : "?", (unsigned int)t->state);
+  klogf(KLOG_ERROR, "CPU:  tid=%u  state=%u", (unsigned int)t->id,
+        (unsigned int)t->state);
   klogf(KLOG_ERROR, "      rsp=0x%016llx  entry=%p", (unsigned long long)t->rsp,
         t->entry);
 }
@@ -99,11 +105,31 @@ static void panic_ctrl_regs(void) {
         (unsigned long long)cr4);
 }
 
+static void __attribute__((unused)) panic_addr_sym(uint64_t addr) {
+  const char *name = 0;
+  uint64_t off = 0;
+  if (ksym_resolve(addr, &name, &off))
+    klogf(KLOG_ERROR, "  [<%016llx>] %s+0x%llx", (unsigned long long)addr,
+          name, (unsigned long long)off);
+  else
+    klogf(KLOG_ERROR, "  [<%016llx>] ??", (unsigned long long)addr);
+}
+
+static void panic_rip_sym(uint64_t rip) {
+  const char *name = 0;
+  uint64_t off = 0;
+  if (ksym_resolve(rip, &name, &off))
+    klogf(KLOG_ERROR, "RIP sym: %s+0x%llx", name, (unsigned long long)off);
+  else
+    klog(KLOG_ERROR, "RIP sym: ?? (address not in kernel.map)");
+}
+
 static void panic_gp_regs(const struct panic_registers *r, uint64_t rip,
                           uint64_t rsp, uint64_t rflags) {
   klog(KLOG_ERROR, "");
   klogf(KLOG_ERROR, "RIP: %016llx  RSP: %016llx", (unsigned long long)rip,
         (unsigned long long)rsp);
+  panic_rip_sym(rip);
   klogf(KLOG_ERROR, "RFLAGS: %016llx", (unsigned long long)rflags);
   klog(KLOG_ERROR, "");
   klogf(KLOG_ERROR, "RAX: %016llx  RBX: %016llx", (unsigned long long)r->rax,
@@ -123,45 +149,82 @@ static void panic_gp_regs(const struct panic_registers *r, uint64_t rip,
         (unsigned long long)r->r15);
 }
 
-static void panic_call_trace(uint64_t rbp) {
+static bool panic_is_kernel_addr(uint64_t a) {
+  return a >= 0xffff800000000000ULL;
+}
+
+static void panic_stack_dump(uint64_t rsp) {
   klog(KLOG_ERROR, "");
-  klog(KLOG_ERROR, "Call Trace:");
+  klog(KLOG_ERROR, "Stack dump (32 qwords from RSP):");
+  if (!panic_is_kernel_addr(rsp)) {
+    klog(KLOG_ERROR, "  (RSP not in kernel half — skip)");
+    return;
+  }
+  volatile uint64_t *sp = (volatile uint64_t *)(uintptr_t)rsp;
+  for (int i = 0; i < 32; i += 4) {
+    klogf(KLOG_ERROR, "  rsp+%u: %016llx %016llx %016llx %016llx",
+          (unsigned int)(i * 8), (unsigned long long)sp[i],
+          (unsigned long long)sp[i + 1], (unsigned long long)sp[i + 2],
+          (unsigned long long)sp[i + 3]);
+  }
+}
+
+static void panic_call_trace(uint64_t rbp, uint64_t rsp) {
+  klog(KLOG_ERROR, "");
+  klog(KLOG_ERROR, "Call Trace (kernel.map via .ksyms):");
 
   int depth = 0;
-  const int MAX_DEPTH = 20;
+  const int max_depth = 24;
+  int printed = 0;
 
-  while (depth < MAX_DEPTH && rbp >= 0xffff800000000000ULL) {
+  while (depth < max_depth && panic_is_kernel_addr(rbp)) {
     volatile uint64_t *frame = (volatile uint64_t *)(uintptr_t)rbp;
-    uint64_t ret_addr = frame[1];
     uint64_t next_rbp = frame[0];
+    uint64_t ret_addr = frame[1];
 
-    if (ret_addr >= 0xffffffff80000000ULL)
-      klogf(KLOG_ERROR, "  [<%016llx>]", (unsigned long long)ret_addr);
+    if (ret_addr >= 0xffffffff80000000ULL) {
+      const char *name = 0;
+      uint64_t off = 0;
+      if (ksym_resolve(ret_addr, &name, &off))
+        klogf(KLOG_ERROR, "  #%u [<%016llx>] %s+0x%llx", (unsigned int)printed,
+              (unsigned long long)ret_addr, name, (unsigned long long)off);
+      else
+        klogf(KLOG_ERROR, "  #%u [<%016llx>] ??", (unsigned int)printed,
+              (unsigned long long)ret_addr);
+      printed++;
+    }
 
     if (next_rbp == 0 || next_rbp <= rbp)
+      break;
+    if (!panic_is_kernel_addr(next_rbp))
       break;
     rbp = next_rbp;
     depth++;
   }
 
-  if (depth == 0)
-    klog(KLOG_ERROR,
-         "  (no frame pointers — compiled without -fno-omit-frame-pointer?)");
+  if (printed == 0) {
+    klog(KLOG_ERROR, "  (empty — no kernel return addresses found)");
+    klog(KLOG_ERROR, "  (no frame pointers — check -fno-omit-frame-pointer?)");
+  }
+
+  panic_stack_dump(rsp);
 }
 
 static void panic_footer(void) {
   klog(KLOG_ERROR, "");
   klog(KLOG_ERROR, "========================CPU HALTED=======================");
-  klog(KLOG_ERROR, "Please photograph this screen or open Issues on GitHub.");
+  klog(KLOG_ERROR, "Attach kernel.map line for RIP + top of Call Trace.");
   klog(KLOG_ERROR, "https://github.com/PureC-OS/PureC-OS/issues/new");
 }
+
 void kernel_panic(const char *reason) {
   panic_header(reason);
   panic_ctrl_regs();
   panic_thread_info();
-  uint64_t rbp;
+  uint64_t rbp, rsp;
   __asm__ volatile("mov %%rbp, %0" : "=r"(rbp));
-  panic_call_trace(rbp);
+  __asm__ volatile("mov %%rsp, %0" : "=r"(rsp));
+  panic_call_trace(rbp, rsp);
 
   panic_footer();
   panic_halt();
@@ -205,10 +268,18 @@ void kernel_panic_exception(uint64_t vector, uint64_t error_code, uint64_t rip,
   panic_ctrl_regs();
   panic_thread_info();
 
-  if (regs)
-    panic_gp_regs(regs, rip, 0 /* rsp from thread */, rflags);
+  uint64_t rsp = 0;
+  uint64_t rbp = 0;
+  if (regs) {
+    struct thread *t = scheduler_current_thread();
+    rsp = t ? t->rsp : 0;
+    rbp = regs->rbp;
+    panic_gp_regs(regs, rip, rsp, rflags);
+  } else {
+    panic_rip_sym(rip);
+  }
 
-  panic_call_trace(regs ? regs->rbp : 0);
+  panic_call_trace(rbp, rsp);
   panic_footer();
   panic_halt();
 }
@@ -222,7 +293,9 @@ void kernel_panic_manual(const char *reason, uint64_t rip, uint64_t rsp,
   panic_thread_info();
   if (regs)
     panic_gp_regs(regs, rip, rsp, 0);
-  panic_call_trace(rbp);
+  else
+    panic_rip_sym(rip);
+  panic_call_trace(rbp, rsp);
   panic_footer();
   panic_halt();
 }

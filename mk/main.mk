@@ -180,6 +180,7 @@ iso: kernel programs
 	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
+	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
 	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
 	for mod in ext2 crypt acpi e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \

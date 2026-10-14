@@ -4,6 +4,8 @@ OBJ_DIR := $(BIN_DIR)/obj/kernel
 KERNEL_DIR := $(BIN_DIR)/kernel
 TARGET := $(KERNEL_DIR)/kernel-limine.elf
 FALLBACK := $(KERNEL_DIR)/kernel-fallback.elf
+KERNEL_MAP := $(KERNEL_DIR)/kernel.map
+KERNEL_LD_MAP := $(KERNEL_DIR)/kernel-limine.ld.map
 LINKER_SCRIPT := $(ROOT_DIR)/linker-limine.ld
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 CRYPT_REPO ?= https://github.com/PureC-OS/libxcrypt.git
@@ -79,6 +81,7 @@ C_SOURCES := \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \
+	kernel/diagnostics/ksym.c \
 	kernel/diagnostics/panic.c \
 	drivers/input/keyboard.c \
 	drivers/pci/pci.c \
@@ -175,8 +178,11 @@ acpi-fetch:
 $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	@if [ -f $@ ]; then cp $@ $(FALLBACK); fi
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(OBJECTS)
+	$(LD) -T $(LINKER_SCRIPT) -Map=$(KERNEL_LD_MAP) -o $@ $(OBJECTS)
 	@$(CROSS)nm -g --defined-only $@ | python3 $(ROOT_DIR)/mk/ksyms.py $@
+	@$(CROSS)nm -n --defined-only $@ > $(KERNEL_MAP)
+	@echo "kernel.map: $$(wc -l < $(KERNEL_MAP)) symbols -> $(KERNEL_MAP)"
+	@echo "ld map: $(KERNEL_LD_MAP)"
 	@if [ ! -f $(FALLBACK) ]; then cp $@ $(FALLBACK); fi
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
