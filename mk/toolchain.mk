@@ -22,5 +22,7 @@ KMOD_SO_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fPIC \
 KMOD_SO_LDSCRIPT := $(ROOT_DIR)/mk/kmod-so.ld
 KMOD_SO_LINK := -shared --hash-style=sysv -z noexecstack -T $(ROOT_DIR)/mk/kmod-so.ld
 KERNEL_CFLAGS := $(COMMON_CFLAGS) -mcmodel=kernel -mgeneral-regs-only \
-	-fno-omit-frame-pointer
+	-fno-omit-frame-pointer \
+	-ffile-prefix-map=$(ROOT_DIR)/src/=src/ \
+	-fdebug-prefix-map=$(ROOT_DIR)/src/=src/
 KERNEL_CXXFLAGS := $(KERNEL_CFLAGS) -std=c++20 -fno-exceptions -fno-rtti

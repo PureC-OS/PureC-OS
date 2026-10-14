@@ -3,6 +3,7 @@
 #include "../process/scheduler.h"
 #include "../smp/smp.h"
 #include "boot_diag.h"
+#include "build_stamp.h"
 #include "klog.h"
 #include "ksym.h"
 #include <stdbool.h>
@@ -55,7 +56,14 @@ static __attribute__((noreturn)) void panic_halt(void) {
     __asm__ volatile("cli; hlt");
 }
 
-static void panic_header(const char *title) {
+static void panic_origin(const char *file, int line, const char *func) {
+  klogf(KLOG_ERROR, "at %s:%d %s()", file ? file : "?", line,
+        func ? func : "?");
+  klogf(KLOG_ERROR, "Build %s %s", kernel_build_uuid, kernel_build_time);
+}
+
+static void panic_header(const char *title, const char *file, int line,
+                         const char *func) {
   __asm__ volatile("cli");
   if (panic_active)
     panic_halt();
@@ -71,6 +79,7 @@ static void panic_header(const char *title) {
        "========================Kernel Panic=======================");
   klog(KLOG_ERROR, "PureC OS   kernel BUG at          ");
   klogf(KLOG_ERROR, "  %s", title ? title : "unknown fatal error");
+  panic_origin(file, line, func);
   klog(KLOG_ERROR,
        "===========================================================");
   klogf(KLOG_ERROR, "Boot stage: %02u  %s",
@@ -217,8 +226,9 @@ static void panic_footer(void) {
   klog(KLOG_ERROR, "https://github.com/PureC-OS/PureC-OS/issues/new");
 }
 
-void kernel_panic(const char *reason) {
-  panic_header(reason);
+void kernel_panic_at(const char *file, int line, const char *func,
+                     const char *reason) {
+  panic_header(reason, file, line, func);
   panic_ctrl_regs();
   panic_thread_info();
   uint64_t rbp, rsp;
@@ -230,9 +240,11 @@ void kernel_panic(const char *reason) {
   panic_halt();
 }
 
-void kernel_panic_exception(uint64_t vector, uint64_t error_code, uint64_t rip,
-                            uint64_t cs, uint64_t rflags, uint64_t cr2,
-                            const struct panic_registers *regs) {
+void kernel_panic_exception_at(const char *file, int line, const char *func,
+                               uint64_t vector, uint64_t error_code,
+                               uint64_t rip, uint64_t cs, uint64_t rflags,
+                               uint64_t cr2,
+                               const struct panic_registers *regs) {
   char title[64];
   const char *name = exception_name(vector);
   {
@@ -250,7 +262,7 @@ void kernel_panic_exception(uint64_t vector, uint64_t error_code, uint64_t rip,
     *p = '\0';
   }
 
-  panic_header(title);
+  panic_header(title, file, line, func);
 
   klogf(KLOG_ERROR, "error_code: 0x%016llx  CS: 0x%04llx",
         (unsigned long long)error_code, (unsigned long long)cs);
@@ -284,9 +296,10 @@ void kernel_panic_exception(uint64_t vector, uint64_t error_code, uint64_t rip,
   panic_halt();
 }
 
-void kernel_panic_manual(const char *reason, uint64_t rip, uint64_t rsp,
-                         uint64_t rbp, const struct panic_registers *regs) {
-  panic_header(reason);
+void kernel_panic_manual_at(const char *file, int line, const char *func,
+                            const char *reason, uint64_t rip, uint64_t rsp,
+                            uint64_t rbp, const struct panic_registers *regs) {
+  panic_header(reason, file, line, func);
   klog(KLOG_ERROR, "[manual panic — triggered by kernel code]");
   klog(KLOG_ERROR, "");
   panic_ctrl_regs();

@@ -155,9 +155,15 @@ ASM_SOURCES := \
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPP_OBJECTS := $(CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(CRYPT_OBJECTS) $(ACPI_OBJECTS)
+GEN_DIR := $(OBJ_DIR)/generated
+GEN_STAMP := $(GEN_DIR)/build_stamp.c
+GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(CRYPT_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
 
-.PHONY: all crypt-fetch acpi-fetch
+BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+.PHONY: all crypt-fetch acpi-fetch force
 all: crypt-fetch acpi-fetch $(TARGET)
 	@if [ ! -f $(FALLBACK) ]; then cp $(TARGET) $(FALLBACK); fi
 
@@ -173,17 +179,25 @@ acpi-fetch:
 		git clone $(ACPI_REPO) $(ACPI_DIR); \
 	fi
 
--include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d)
+-include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d) $(GEN_STAMP_OBJ:.o=.d)
 
 $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	@if [ -f $@ ]; then cp $@ $(FALLBACK); fi
 	$(LD) -T $(LINKER_SCRIPT) -Map=$(KERNEL_LD_MAP) -o $@ $(OBJECTS)
-	@$(CROSS)nm -g --defined-only $@ | python3 $(ROOT_DIR)/mk/ksyms.py $@
-	@$(CROSS)nm -n --defined-only $@ > $(KERNEL_MAP)
+	@$(CROSS)nm -n --defined-only $@ | python3 $(ROOT_DIR)/mk/ksyms.py $@
+	@{ echo "# PureC-OS kernel.map"; echo "# build $(BUILD_UUID) $(BUILD_DATE)"; $(CROSS)nm -n --defined-only $@; } > $(KERNEL_MAP)
 	@echo "kernel.map: $$(wc -l < $(KERNEL_MAP)) symbols -> $(KERNEL_MAP)"
 	@echo "ld map: $(KERNEL_LD_MAP)"
 	@if [ ! -f $(FALLBACK) ]; then cp $@ $(FALLBACK); fi
+
+$(GEN_STAMP): force
+	@mkdir -p $(@D)
+	@printf 'const char kernel_build_uuid[] = "%s";\nconst char kernel_build_time[] = "%s";\n' "$(BUILD_UUID)" "$(BUILD_DATE)" > $@
+
+$(GEN_STAMP_OBJ): $(GEN_STAMP)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
 	@mkdir -p $(@D)

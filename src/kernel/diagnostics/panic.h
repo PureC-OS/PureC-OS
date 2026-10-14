@@ -6,15 +6,27 @@ struct panic_registers {
   uint64_t rbp, rdi, rsi, rdx, rcx, rbx, rax;
 };
 
+#ifdef PUREC_HOST_TEST
 __attribute__((noreturn)) void kernel_panic(const char *reason);
-__attribute__((noreturn)) void
-kernel_panic_exception(uint64_t vector, uint64_t error_code, uint64_t rip,
-                       uint64_t cs, uint64_t rflags, uint64_t cr2,
-                       const struct panic_registers *regs);
+#else
+__attribute__((noreturn)) void kernel_panic_at(const char *file, int line,
+                                               const char *func,
+                                               const char *reason);
+__attribute__((noreturn)) void kernel_panic_exception_at(
+    const char *file, int line, const char *func, uint64_t vector,
+    uint64_t error_code, uint64_t rip, uint64_t cs, uint64_t rflags,
+    uint64_t cr2, const struct panic_registers *regs);
+__attribute__((noreturn)) void kernel_panic_manual_at(
+    const char *file, int line, const char *func, const char *reason,
+    uint64_t rip, uint64_t rsp, uint64_t rbp,
+    const struct panic_registers *regs);
 
-__attribute__((noreturn)) void
-kernel_panic_manual(const char *reason, uint64_t rip, uint64_t rsp,
-                    uint64_t rbp, const struct panic_registers *regs);
+#define kernel_panic(reason)                                                   \
+  kernel_panic_at(__FILE__, __LINE__, __func__, (reason))
+#define kernel_panic_exception(vector, error_code, rip, cs, rflags, cr2, regs) \
+  kernel_panic_exception_at(__FILE__, __LINE__, __func__, (vector),            \
+                            (error_code), (rip), (cs), (rflags), (cr2), (regs))
+#endif
 
 #define KERNEL_PANIC_HERE(reason)                                              \
   do {                                                                         \
@@ -38,5 +50,6 @@ kernel_panic_manual(const char *reason, uint64_t rip, uint64_t rsp,
     __asm__ volatile("mov %%r14, %0" : "=m"(__pr.r14)::"memory");              \
     __asm__ volatile("mov %%r15, %0" : "=m"(__pr.r15)::"memory");              \
     __pr.rbp = __rbp;                                                          \
-    kernel_panic_manual((reason), __rip, __rsp, __rbp, &__pr);                 \
+    kernel_panic_manual_at(__FILE__, __LINE__, __func__, (reason), __rip,      \
+                           __rsp, __rbp, &__pr);                               \
   } while (0)
