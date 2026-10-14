@@ -1,6 +1,53 @@
 # Changelog
 
-## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода, Портирували MicroPython 
+## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода, Портирували MicroPython
+
+### kernel.map и Build UUID (`src/kernel/Makefile`, `linker-limine.ld`, `mk/toolchain.mk`)
+- Ядро генерирует `bin/kernel/kernel.map` (`nm -n`, шапка `# build <uuid> <time>`)
+  и `kernel-limine.ld.map` (`-Map`); `kernel.map` едет в ISO как `/boot/kernel.map`.
+- Каждая сборка получает уникальный UUID (`/proc/sys/kernel/random/uuid` + UTC-штамп),
+  вшитый в ядро через генерируемый `build_stamp.c`.
+- `KERNEL_CFLAGS`: `-fno-omit-frame-pointer` (достоверный unwinding) и
+  `-ffile-prefix-map/-fdebug-prefix-map` (`__FILE__` вида `src/...`, без хостовых путей).
+
+### Паника: символы, origin, стек (`src/kernel/diagnostics/`)
+- Новый panic-safe резолвер `ksym.c`: адрес → `имя+смещение` по встроенной `.ksyms`.
+- Таблица расширена до глобалов + статиков + локалок (`nm -n`, CAP 4096, `.ksyms`
+  в линкере `4096*64+64`); константы синхронны в `ksyms.py`, `kmod_so.c`, `ksym.c`.
+- `Call Trace` печатает `#N [<addr>] символ+0x...`, `RIP sym`, дамп 32 qword от RSP,
+  статус `ksyms: ready/MISSING`.
+- `kernel_panic`/`kernel_panic_exception` — макросы с `__FILE__/__LINE__/__func__`:
+  паника печатает `at src/.../console.c:329 exec_line()`; хост-тесты не тронуты
+  (`PUREC_HOST_TEST`-гард).
+- Композит отключается в панике (`compositor_panic_disable`): окна и курсор
+  больше не перекрывают текст.
+
+### QR-код в панике (`qr.c`, `panic_qr.c`)
+- Свой freestanding QR-кодер (byte mode, EC-L, версии 1–25, все 8 масок с пенальти,
+  без аллокаций); по пути пойман и починен баг порядка коэффициентов в Риде-Соломоне.
+- Под паникой рисуется QR на `issues/new?title=Kernel panic <UUID>&body=<дамп>`:
+  Build, причина, origin, RIP, до 8 кадров, стадия загрузки. Скан с телефона
+  открывает предзаполненный ишью на GitHub. Бюджет URL 1200 символов с урезанием
+  кадров; без GOP или на мелком экране — пропуск с пометкой в логе.
+
+### База сборок (`mk/build_db.py`, `db/builds.db`)
+- Хостовый SQLite: `uuid ↔ built_at + kernel_map + git_rev`. Пишется при каждой
+  линковке ядра, в ядро и ISO не попадает. По UUID с экрана паники:
+  `python3 mk/build_db.py lookup --db db/builds.db <uuid>`.
+
+### Тесты и CI
+- `tests/ksym_resolve_test.c` (`make test-ksym`): exact/nearest/miss, битая magic,
+  `count 0/>cap` — PASS.
+- `tests/qr_encode_test.c` (`make test-qr-encode`): границы версий (17/18 байт →
+  V1/V2, 300 → V11, 1273 → V25, 1300 — отказ), finder/timing/dark, BCH format,
+  детерминизм — PASS.
+- `tests/qr_decode_test.py` + `tests/qr_dump.c` (`make test-qr-decode`,
+  `QR_DECODE_ARGS=--strict`): round-trip через zbarimg (текст, URL 923 байта,
+  байты 1–255) — PASS.
+- CI: убран `pull_request`-триггер — тяжёлый пайплайн больше не дублируется
+  при мерже веток, запуск один, на пуш в `main`. В `host-tests` добавлены
+  QR-decode (`zbar-tools` + `pillow`) и `py_compile` новых скриптов; в артефакты
+  релиза добавлены `kernel.map` и `builds.db` (+ SHA256).
 
 ### Планировщик: Apple-style QoS + кванты (`src/kernel/process/scheduler.[ch]`, `src/kernel/core/init.c`)
 - Новый `enum sched_qos`: `IDLE/BACKGROUND/UTILITY/DEFAULT/USER_INITIATED/USER_INTERACTIVE`

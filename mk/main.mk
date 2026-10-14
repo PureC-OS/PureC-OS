@@ -16,13 +16,13 @@ export ROOT_DIR BIN_DIR
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad clean help \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path \
-	test-initramfs test-dot11 test-devman test-qemu-network test-qemu-network-e1000 \
+	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode
 	@echo "All host tests passed"
 
 test-ipc:
@@ -102,6 +102,27 @@ test-devman:
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
 		tests/devman_match_test.c -o $(BIN_DIR)/tests/devman_match_test
 	$(BIN_DIR)/tests/devman_match_test
+
+test-ksym:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/src/kernel/diagnostics \
+		tests/ksym_resolve_test.c src/kernel/diagnostics/ksym.c \
+		-o $(BIN_DIR)/tests/ksym_resolve_test
+	$(BIN_DIR)/tests/ksym_resolve_test
+
+test-qr-encode:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/src/kernel/diagnostics \
+		tests/qr_encode_test.c src/kernel/diagnostics/qr.c \
+		-o $(BIN_DIR)/tests/qr_encode_test
+	$(BIN_DIR)/tests/qr_encode_test
+
+test-qr-decode:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/src \
+		tests/qr_dump.c src/kernel/diagnostics/qr.c \
+		-o $(BIN_DIR)/tests/qr_dump
+	python3 tests/qr_decode_test.py --tool $(BIN_DIR)/tests/qr_dump $(QR_DECODE_ARGS)
 
 test-qemu-network: test-qemu-network-e1000 test-qemu-network-8254xgc test-qemu-network-pcnet
 	@echo "All QEMU wired-network tests passed"
@@ -228,6 +249,9 @@ help:
 	@echo "  make test           run all host tests"
 	@echo "  make test-cpu       run host CPU discovery tests"
 	@echo "  make test-dot11     run 802.11 association tests"
+	@echo "  make test-ksym       run kernel symbol resolver tests"
+	@echo "  make test-qr-encode  run QR encoder unit tests"
+	@echo "  make test-qr-decode  run QR encode/decode round-trip test"
 	@echo "  make test-qemu-network  test each wired NIC in a separate QEMU VM"
 	@echo "  make clean          remove build artefacts"
 	@echo ""

@@ -30,12 +30,13 @@ Positive:
 - A future ring3 userspace loader can keep the same API boundary.
 
 Negative:
-- The UI code is still linked into the kernel image until process/address-space
-  loading exists.
+- The UI code is still linked into the kernel image; process and address-space
+  loading already exists (`src/kernel/process/elf.c`, `process_spawn`), only the
+  unlinking of `src/userspace` objects from `kernel-limine.elf` is pending.
 - The syscall layer currently trusts pointers because this OS does not yet have
   user pointer validation.
 
 ## Follow-up
 Move keyboard, mouse, filesystem and power access behind similar userspace API
-modules. After that, introduce a small ELF/program loader and stop linking
-`src/userspace` objects into `kernel-limine.elf`.
+modules. The small ELF/program loader already exists; the remaining step is to
+stop linking `src/userspace` objects into `kernel-limine.elf`.

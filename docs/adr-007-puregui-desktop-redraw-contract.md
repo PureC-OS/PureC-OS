@@ -12,8 +12,10 @@ the top bar, desktop icons, native windows and overlays. A correct move,
 minimize, close or return from a full-screen child must restore the current
 desktop scene before the external window is drawn again.
 
-The current system supports one foreground ring-3 GUI application and has no
-compositor or shared application surfaces.
+The current system supports multiple ring-3 GUI windows through the kernel
+compositor (`src/gfx/compositor.c`), which owns off-screen application surfaces.
+The redraw contract below stays in force as the fallback path and for
+transitions the compositor does not cover.
 
 ## Decision
 
@@ -36,7 +38,7 @@ longer guesses which color or system components occupied the old rectangle.
 - Moving a PureGUI window preserves the top bar, icons and native windows.
 - Restoration always uses current desktop state instead of stale pixels.
 - Kernel buffer validation remains enabled during redraw coordination.
-- The contract can later be implemented by a compositor without changing the
+- The contract is also implemented by the compositor without changing the
   PureGUI application API.
 
 ### Negative
@@ -44,8 +46,8 @@ longer guesses which color or system components occupied the old rectangle.
 - A move redraws the full desktop and can cost more than dirty-rectangle
   composition.
 - The requesting application can wait up to one desktop polling interval.
-- Ring-3 windows are restored in z-order through the window registry, but they
-  still draw directly rather than owning compositor surfaces.
+- Ring-3 windows are restored in z-order through the window registry and own
+  compositor surfaces; the coordinated path above remains for transitions.
 
 ### Neutral
 
@@ -61,8 +63,8 @@ icons.
 **Save and restore framebuffer pixels** was rejected because snapshots become
 stale when clocks, audio overlays or native windows change behind the client.
 
-**Introduce a compositor immediately** was deferred because shared surfaces,
-z-order ownership and routed input are larger than this compatibility fix.
+**Introduce a compositor immediately** was implemented once shared surfaces,
+z-order ownership and routed input existed (`src/gfx/compositor.c`).
 
 ## References
 

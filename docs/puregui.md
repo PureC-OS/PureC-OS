@@ -88,8 +88,10 @@ drawing operations. Applications must pair every `pg_window_begin` with
 `pg_window_end`.
 
 PureGUI applications must currently be compiled with `-mgeneral-regs-only`.
-The kernel does not yet initialize and context-switch SIMD/FPU state for ring-3
-processes; emitting SSE instructions otherwise terminates a process with the
+The kernel initializes FXSR/SSE at boot and context-switches SIMD/FPU state per
+thread with eager save/restore on every switch (`src/arch/x86_64/fpu/fpu.c`,
+`src/kernel/process/scheduler.c:253,445,658,662`), so ring-3 processes may emit
+SSE instructions; a faulting instruction still terminates the process with the
 `#UD` exception.
 
 ## Widgets contract
@@ -108,7 +110,8 @@ processes; emitting SSE instructions otherwise terminates a process with the
   the top bar, icons, native windows and overlays.
 - Minimize currently collapses a window to its title bar; a system taskbar is
   not implemented yet.
-- There are no off-screen compositor surfaces; restoration uses ordered
-  application repaint events.
+- Windows draw into per-window off-screen compositor surfaces
+  (`src/gfx/compositor.c`); restoration composites them in z-order, ordered
+  application repaint events are kept as a fallback.
 - Mouse and keyboard events come from the current system input syscalls.
 - Text uses the fixed-width kernel font.
