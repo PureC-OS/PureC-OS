@@ -38,6 +38,27 @@ jobs:
       - name: Run host unit tests
         run: make test
 
+      - name: Validate scripts and whitespace
+        run: |
+          python3 -m py_compile tests/qemu_smoke.py tests/qemu_network.py tests/qr_decode_test.py mk/build_db.py mk/ksyms.py
+          bash -n .github/scripts/build-cross-toolchain.sh
+          bash -n .github/scripts/install-limine.sh
+          git diff --check
+
+  panic-qr-tests:
+    name: Panic and QR tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run kernel symbol resolver tests
+        run: make test-ksym
+
+      - name: Run QR encoder unit tests
+        run: make test-qr-encode
+
       - name: Install QR decode test dependencies
         run: |
           sudo apt-get update
@@ -47,17 +68,12 @@ jobs:
       - name: Run QR decode round-trip test
         run: make test-qr-decode QR_DECODE_ARGS=--strict
 
-      - name: Validate scripts and whitespace
-        run: |
-          python3 -m py_compile tests/qemu_smoke.py tests/qemu_network.py tests/qr_decode_test.py mk/build_db.py mk/ksyms.py
-          bash -n .github/scripts/build-cross-toolchain.sh
-          bash -n .github/scripts/install-limine.sh
-          git diff --check
-
   build-iso:
     name: Build bootable ISO
     if: github.event_name != 'pull_request'
-    needs: host-tests
+    needs:
+      - host-tests
+      - panic-qr-tests
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -235,6 +251,7 @@ jobs:
     name: Publish release
     needs:
       - host-tests
+      - panic-qr-tests
       - build-iso
       - qemu-smoke
       - qemu-network
