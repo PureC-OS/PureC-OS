@@ -51,7 +51,6 @@ C_SOURCES := \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \
 	kernel/module/kmod_so.c \
-	kernel/ipc/ipc.c \
 	mm/pmm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \
@@ -75,7 +74,6 @@ C_SOURCES := \
 	drivers/display/gop.c \
 	gfx/compositor.c \
 	drivers/display/vbe.c \
-	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
 	lib/string.c \
