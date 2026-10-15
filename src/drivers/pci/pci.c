@@ -158,63 +158,10 @@ bool pci_update_command(const struct pci_device_info *device,
 }
 
 uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t function,
-                       uint8_t bar_index)
-{
-    uint64_t irq_flags = spin_lock_irqsave(&pci_lock);
-    uint64_t result = pci_read_bar_locked(bus, slot, function, bar_index);
-    spin_unlock_irqrestore(&pci_lock, irq_flags);
-    return result;
-}
-
-static uint64_t pci_bar_size_locked(uint8_t bus, uint8_t slot, uint8_t function,
-                                    uint8_t bar_index)
-{
-    if (bar_index >= 6)
-        return 0;
-    uint8_t offset = (uint8_t)(0x10 + bar_index * 4);
-    uint32_t orig_lo = pci_read_config32_locked(bus, slot, function, offset);
-    if (orig_lo == 0 || orig_lo == 0xFFFFFFFFU)
-        return 0;
-    bool is_io = (orig_lo & PCI_BAR_IO) != 0;
-    bool is_64 = !is_io && ((orig_lo & 0x06) == PCI_BAR_MEMORY_64) && bar_index < 5;
-    uint32_t orig_hi = 0;
-    if (is_64)
-        orig_hi = pci_read_config32_locked(bus, slot, function, (uint8_t)(offset + 4));
-    pci_write_config32_locked(bus, slot, function, offset, 0xFFFFFFFFU);
-    if (is_64)
-        pci_write_config32_locked(bus, slot, function, (uint8_t)(offset + 4), 0xFFFFFFFFU);
-    uint32_t mask_lo = pci_read_config32_locked(bus, slot, function, offset);
-    uint32_t mask_hi = 0;
-    if (is_64)
-        mask_hi = pci_read_config32_locked(bus, slot, function, (uint8_t)(offset + 4));
-    pci_write_config32_locked(bus, slot, function, offset, orig_lo);
-    if (is_64)
-        pci_write_config32_locked(bus, slot, function, (uint8_t)(offset + 4), orig_hi);
-    uint64_t size;
-    if (is_io) {
-        uint32_t m = mask_lo & ~0x3U;
-        if (m == 0)
-            return 0;
-        size = (uint64_t)(~m + 1) & 0xFFFFU;
-    } else if (is_64) {
-        uint64_t m = ((uint64_t)mask_hi << 32 | mask_lo) & ~0xFULL;
-        if (m == 0)
-            return 0;
-        size = ~m + 1;
-    } else {
-        uint32_t m = mask_lo & ~0xFU;
-        if (m == 0)
-            return 0;
-        size = (uint64_t)(~m + 1);
-    }
-    return size;
-}
-
-uint64_t pci_bar_size(uint8_t bus, uint8_t slot, uint8_t function,
                       uint8_t bar_index)
 {
     uint64_t irq_flags = spin_lock_irqsave(&pci_lock);
-    uint64_t result = pci_bar_size_locked(bus, slot, function, bar_index);
+    uint64_t result = pci_read_bar_locked(bus, slot, function, bar_index);
     spin_unlock_irqrestore(&pci_lock, irq_flags);
     return result;
 }

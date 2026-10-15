@@ -25,4 +25,3 @@ void compositor_cursor_move(int32_t x, int32_t y);
 void compositor_cursor_show(bool visible);
 
 bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
-void compositor_panic_disable(void);

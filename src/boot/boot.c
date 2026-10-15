@@ -88,29 +88,6 @@ static volatile LIMINE_REQUESTS_END_MARKER;
 
 // for fb/serial access from other units
 struct limine_framebuffer *fb_ptr = 0;
-int boot_video_pref = 0;
-int boot_video_pref_get(void) { return boot_video_pref; }
-static bool cmd_contains(const char *hay, const char *needle) {
-    if (!hay || !needle || !*needle)
-        return false;
-    size_t hn = strlen(hay), nn = strlen(needle);
-    if (nn > hn)
-        return false;
-    for (size_t i = 0; i + nn <= hn; i++) {
-        if (strncmp(hay + i, needle, nn) == 0)
-            return true;
-    }
-    return false;
-}
-static void boot_parse_video_cmdline(const char *cmd) {
-    boot_video_pref = 0;
-    if (!cmd)
-        return;
-    if (cmd_contains(cmd, "video=gop") || cmd_contains(cmd, "nogpu") || cmd_contains(cmd, "video=safe"))
-        boot_video_pref = 1;
-    else if (cmd_contains(cmd, "video=svga") || cmd_contains(cmd, "video=gpu"))
-        boot_video_pref = 2;
-}
 // export memmap request response for kernel use
 struct limine_memmap_response *memmap_response_ptr = 0;
 struct limine_rsdp_response *rsdp_response_ptr = 0;
@@ -269,8 +246,6 @@ void _start(void) {
     // GOP сначала, VGA только если GOP нет
     uint64_t firmware_type=firmware_type_request.response
         ? firmware_type_request.response->firmware_type : UINT64_MAX;
-    if (kernel_file_request.response && kernel_file_request.response->kernel_file)
-        boot_parse_video_cmdline(kernel_file_request.response->kernel_file->cmdline);
     gop_init_from_limine(fb_ptr,firmware_type);
 
     // первичный экран как в Linux: показываем всё по дефолту

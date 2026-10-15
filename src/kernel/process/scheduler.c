@@ -483,16 +483,6 @@ int scheduler_create_user_thread(void (*entry)(void *), void *arg,
                        process, true);
 }
 
-int scheduler_create_service_thread(void (*entry)(void *), void *arg,
-                                    const char *name, uint8_t priority,
-                                    int16_t affinity, uint64_t address_space,
-                                    struct process *process) {
-  if (!process)
-    return -1;
-  return create_thread(entry, arg, name, priority, affinity, address_space,
-                       process, false);
-}
-
 struct thread *scheduler_current_thread(void) {
   uint32_t id = gdt_current_cpu_id();
   return id < CPU_MAX_COUNT ? cpu_schedulers[id].current : NULL;
@@ -616,22 +606,6 @@ static struct thread *pick_next(void) {
   struct thread *t = cursor ? cursor->next : thread_list;
   if (!t)
     t = thread_list;
-  if (have) {
-    for (struct thread *s = thread_list; s; s = s->next) {
-      if (s->state == THREAD_READY && s->running_cpu == -1 &&
-          eligible(s, id)) {
-        if (s->qos < best) {
-          if (++s->sched_hunger >= 200) {
-            s->sched_hunger = 0;
-            cpu->cursor = s;
-            return s;
-          }
-        } else {
-          s->sched_hunger = 0;
-        }
-      }
-    }
-  }
   if (t && have) {
     struct thread *stop = t;
     do {

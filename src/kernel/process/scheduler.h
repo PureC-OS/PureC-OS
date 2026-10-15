@@ -48,7 +48,6 @@ struct thread {
   int16_t running_cpu;
   uint32_t cpu_mask;
   uint64_t migrations;
-  uint32_t sched_hunger;
   struct thread *next;
   struct thread *hnext;
   uint64_t node_phys;
@@ -65,10 +64,6 @@ int scheduler_create_user_thread(void (*entry)(void *arg), void *arg,
                                  const char *name, uint8_t priority,
                                  int16_t affinity, uint64_t address_space,
                                  struct process *process);
-int scheduler_create_service_thread(void (*entry)(void *arg), void *arg,
-                                    const char *name, uint8_t priority,
-                                    int16_t affinity, uint64_t address_space,
-                                    struct process *process);
 void scheduler_yield(void);
 bool scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);

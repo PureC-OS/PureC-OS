@@ -9,15 +9,12 @@
 #define PROCESS_ENVIRONMENT_NAME_CAPACITY 32
 #define PROCESS_ENVIRONMENT_VALUE_CAPACITY 128
 #define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
-#define PROCESS_CAP_NET_ADMIN (1U << 1)
 
 struct process_environment_entry {
   bool used;
   char name[PROCESS_ENVIRONMENT_NAME_CAPACITY];
   char value[PROCESS_ENVIRONMENT_VALUE_CAPACITY];
 };
-
-struct ipc_mbox;
 
 enum process_state {
   PROCESS_FREE = 0,
@@ -51,17 +48,12 @@ struct process {
   struct process *next;
   struct process *hnext;
   uint64_t node_phys;
-  struct ipc_mbox *ipc_mailbox;
 };
 
 void process_init(void);
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line);
 int32_t process_spawn_module(const char *path, const char *command_line);
-int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
-                              const char *name, uint8_t priority,
-                              int16_t affinity, uint8_t qos,
-                              uint32_t capabilities);
 const char *process_last_spawn_error(void);
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
@@ -92,6 +84,3 @@ int32_t process_monitor_list_page(struct process_monitor_info *entries,
                                   uint32_t capacity, uint32_t offset);
 
 bool process_set_affinity(uint32_t pid, int16_t core);
-struct process *process_lookup_by_pid(uint32_t pid);
-void process_table_lock(void);
-void process_table_unlock(void);
