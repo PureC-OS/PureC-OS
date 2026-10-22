@@ -30,6 +30,7 @@
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
+#include "../ipc/ipc.h"
 #include "../process/process.h"
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
@@ -462,6 +463,19 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_unlock();
     return result;
   }
+  case SYS_IPC_SEND: {
+    if (!a1 || !a2 || (uint32_t)a3 > IPC_MAX_PAYLOAD ||
+        !readable((const void *)(uintptr_t)a2, (uint64_t)(uint32_t)a3))
+      return -1;
+    return ipc_send((uint32_t)a1, (const void *)(uintptr_t)a2,
+                    (uint32_t)a3);
+  }
+  case SYS_IPC_RECV: {
+    if (!a1 || !a2 ||
+        !writable((void *)(uintptr_t)a1, (uint64_t)(uint32_t)a2))
+      return -1;
+    return ipc_recv((void *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
+  }
   case SYS_FILE_CREATE: {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
@@ -798,7 +812,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
             sizeof(install_serial) - 1);
-    install_fs_type = FS_TYPE_FAT32;
+    install_fs_type = FS_TYPE_EXT2;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",

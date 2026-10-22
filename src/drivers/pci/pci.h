@@ -29,6 +29,8 @@ void pci_write_config32(uint8_t bus, uint8_t slot, uint8_t function,
 bool pci_update_command(const struct pci_device_info *device,
                         uint16_t set_bits, uint16_t clear_bits);
 uint64_t pci_read_bar(uint8_t bus, uint8_t slot, uint8_t function,
+                       uint8_t bar_index);
+uint64_t pci_bar_size(uint8_t bus, uint8_t slot, uint8_t function,
                       uint8_t bar_index);
 void pci_enumerate(pci_device_visitor visitor, void *context);
 

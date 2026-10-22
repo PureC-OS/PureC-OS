@@ -173,21 +173,8 @@ uint32_t block_device_rescan_usb(void)
         return count;
     }
     uint32_t fixed_count = ata_pio_device_count() + ahci_device_count();
-    uint32_t usb_before = xhci_device_count() + ehci_device_count();
     (void)xhci_rescan(fixed_count);
     (void)ehci_rescan(fixed_count + xhci_device_count());
-    uint32_t result = xhci_device_count() + ehci_device_count();
-    if (result == 0 && (usb_before > 0 || preferred_usb_valid))
-    {
-        klog(KLOG_WARN, "usb: rescan lost storage (had devices before), retrying for spinning drive");
-        uint64_t wait_start = timer_ticks();
-        while (timer_ticks() - wait_start < 500)
-            __asm__ volatile("pause" ::: "memory");
-        (void)xhci_rescan(fixed_count);
-        (void)ehci_rescan(fixed_count + xhci_device_count());
-        result = xhci_device_count() + ehci_device_count();
-        klogf(KLOG_INFO, "usb: rescan retry done, storage devices=%u", result);
-    }
     bool restored_usb = false;
     if (restore_usb)
     {
@@ -219,7 +206,7 @@ uint32_t block_device_rescan_usb(void)
             (void)ehci_select_device(0);
         }
     }
-    result = xhci_device_count() + ehci_device_count();
+    uint32_t result = xhci_device_count() + ehci_device_count();
     usb_rescan_unlock();
     return result;
 }
@@ -231,14 +218,12 @@ void block_device_poll_usb_hotplug(void)
     uint64_t now = timer_ticks();
     if (now < next_hotplug_scan)
         return;
-    next_hotplug_scan = now + 5000;
+    next_hotplug_scan = now + 1000;
     if (!xhci_topology_changed() && !ehci_topology_changed())
         return;
     klog(KLOG_INFO, "usb: port topology changed, rescanning controllers");
-    uint64_t rs = timer_ticks();
     uint32_t count = block_device_rescan_usb();
-    klogf(KLOG_INFO, "usb: hotplug rescan complete in %llums, storage devices=%u",
-          (unsigned long long)(timer_ticks() - rs), count);
+    klogf(KLOG_INFO, "usb: hotplug rescan complete, storage devices=%u", count);
 }
 
 uint32_t block_device_count(void)

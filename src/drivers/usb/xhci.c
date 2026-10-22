@@ -4,7 +4,6 @@
 #include "../storage/storage_probe.h"
 #include "../../arch/x86_64/mmio.h"
 #include "../../kernel/diagnostics/klog.h"
-#include "../interrupts/timer.h"
 #include "../../lib/string.h"
 #include "../mouse/usb_mouse.h"
 
@@ -1575,21 +1574,6 @@ void xhci_poll_mouse(void)
 {
     if (!operational || !doorbells || !runtime)
         return;
-    {
-        static uint64_t stuck_since = 0;
-        bool any_pending = false;
-        for (uint8_t si = 0; si < slot_count; si++)
-            if (devices[si].kind == XHCI_DEVICE_MOUSE && devices[si].interrupt_pending) { any_pending = true; break; }
-        uint64_t now = timer_ticks();
-        if (any_pending) {
-            if (!stuck_since) stuck_since = now;
-            else if (now - stuck_since > 2000) {
-                klogf(KLOG_WARN, "xhci%u: HID interrupt pending stuck >2s ev_idx=%u cycle=%u (replugs clear it?)",
-                      controller_number, event_index, event_cycle);
-                stuck_since = now;
-            }
-        } else stuck_since = 0;
-    }
     for (uint16_t count = 0; count < XHCI_EVENT_ENTRIES && poll_async_event(); count++)
     {
     }

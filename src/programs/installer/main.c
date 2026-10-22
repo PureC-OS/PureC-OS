@@ -13,7 +13,7 @@
 static struct storage_device_info disks[MAX_INSTALL_DISKS];
 static int32_t disk_count;
 static int32_t selected_disk;
-static uint8_t selected_fs = FS_TYPE_FAT32;
+static const uint8_t selected_fs = FS_TYPE_EXT2;
 static struct terminal_window installer_window;
 
 static void clear_console(void) {
@@ -108,22 +108,6 @@ static bool select_disk(void) {
     }
 }
 
-static bool select_fs(void) {
-    char input[32];
-    for (;;) {
-        clear_console();
-        pc_write("Select filesystem\n");
-        print_separator();
-        pc_write("  1) FAT32 (UEFI, default)\n");
-        pc_write("  2) EXT2  (Linux compatible, ext2 module)\n");
-        if (!terminal_window_read_line(&installer_window, "\nFilesystem [1-2, default 1]: ", input, sizeof(input))) return false;
-        if (input[0] == '\0' || pc_strcmp(input, "1") == 0) { selected_fs = FS_TYPE_FAT32; return true; }
-        if (pc_strcmp(input, "2") == 0) { selected_fs = FS_TYPE_EXT2; return true; }
-        pc_write("Invalid choice.\n");
-        if (!wait_for_enter()) return false;
-    }
-}
-
 static bool confirm_erase(void) {
     char input[32];
     const struct storage_device_info *disk = &disks[selected_disk];
@@ -138,8 +122,7 @@ static bool confirm_erase(void) {
     pc_write("\nSize:   ");
     pc_write_u64(disk_size_mib(disk));
     pc_write(" MiB\n");
-    pc_write("FS:     ");
-    pc_write(selected_fs == FS_TYPE_EXT2 ? "ext2\n\n" : "fat32\n\n");
+    pc_write("FS:     ext2 (system), FAT32 ESP kept for UEFI boot\n\n");
     pc_write("WARNING: every partition and file on this disk will be erased.\n");
     if(!terminal_window_read_line(&installer_window,
             "Type ERASE to start, or anything else to cancel: ",
@@ -152,7 +135,7 @@ static bool write_install_config(void) {
     static const char path[] = "/purec/install.cfg";
     char config[96];
     pc_copy(config, "boot=/bin/init\ninstaller=console-ring3\nfilesystem=", sizeof(config));
-    const char *fs = selected_fs == FS_TYPE_EXT2 ? "ext2\n" : "fat32\n";
+    const char *fs = "ext2\n";
     uint32_t len = pc_strlen(config);
     pc_copy(config + len, fs, sizeof(config) - len);
 
@@ -271,7 +254,6 @@ static int installer_main(void) {
             pc_write("Installation cancelled.\n");
             return 0;
         }
-        if (!select_fs()) continue;
         if (!confirm_erase()) {
             continue;
         }

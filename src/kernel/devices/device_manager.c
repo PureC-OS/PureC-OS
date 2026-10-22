@@ -627,6 +627,12 @@ static bool match_hda(const struct device_info *dev, void *ctx) {
                          sizeof(DEVMAN_ID_HDA) / sizeof(DEVMAN_ID_HDA[0]));
 }
 
+static bool match_svga(const struct device_info *dev, void *ctx) {
+  (void)ctx;
+  return match_pci_table(dev, DEVMAN_ID_VMWARE_SVGA,
+                         sizeof(DEVMAN_ID_VMWARE_SVGA) / sizeof(DEVMAN_ID_VMWARE_SVGA[0]));
+}
+
 static int devman_claim_probe(const struct device_info *dev) {
   (void)dev;
   return 0;
@@ -749,6 +755,19 @@ static struct device_driver g_drv_hda = {
     NULL,
 };
 
+static struct device_driver g_drv_svga = {
+    "vmware-svga",
+    DEVICE_TYPE_PCI,
+    CLASS_DISPLAY,
+    match_svga,
+    devman_claim_probe,
+    NULL,
+    DEVMAN_ID_VMWARE_SVGA,
+    sizeof(DEVMAN_ID_VMWARE_SVGA) / sizeof(DEVMAN_ID_VMWARE_SVGA[0]),
+    NULL,
+    NULL,
+};
+
 void devman_register_builtin_drivers(void) {
   if (g_builtin_registered)
     return;
@@ -762,6 +781,7 @@ void devman_register_builtin_drivers(void) {
   devman_register_driver(&g_drv_xhci);
   devman_register_driver(&g_drv_ehci);
   devman_register_driver(&g_drv_hda);
+  devman_register_driver(&g_drv_svga);
   klog(KLOG_INFO, "devman: builtin drivers registered");
 }
 

@@ -483,6 +483,16 @@ int scheduler_create_user_thread(void (*entry)(void *), void *arg,
                        process, true);
 }
 
+int scheduler_create_service_thread(void (*entry)(void *), void *arg,
+                                    const char *name, uint8_t priority,
+                                    int16_t affinity, uint64_t address_space,
+                                    struct process *process) {
+  if (!process)
+    return -1;
+  return create_thread(entry, arg, name, priority, affinity, address_space,
+                       process, false);
+}
+
 struct thread *scheduler_current_thread(void) {
   uint32_t id = gdt_current_cpu_id();
   return id < CPU_MAX_COUNT ? cpu_schedulers[id].current : NULL;
