@@ -182,6 +182,27 @@ static void test_selection(void){
     assert(scheduler_thread_count()==0);
 }
 
+static void test_eevdf_deadline_and_weights(void){
+    reset();
+    executing_cpu=0;
+    int first_id=make_thread(-1);
+    int second_id=make_thread(-1);
+    struct thread *first=scheduler_host_lookup(first_id);
+    struct thread *second=scheduler_host_lookup(second_id);
+    assert(first && second);
+
+    first->ticks_remaining=5;
+    first->virtual_deadline=20;
+    second->ticks_remaining=5;
+    second->virtual_deadline=10;
+    assert(pick_next()==second);
+
+    assert(scheduler_weight(SCHED_QOS_USER_INTERACTIVE) >
+           scheduler_weight(SCHED_QOS_DEFAULT));
+    assert(scheduler_weight(SCHED_QOS_DEFAULT) >
+           scheduler_weight(SCHED_QOS_BACKGROUND));
+}
+
 struct claim_ctx {
     int *index_by_id;
     int max_id;
@@ -257,7 +278,7 @@ static void test_preemption_guard(void){
     assert(cpu->preempt_depth==0);
     assert(!cpu->reschedule_pending);
     assert(cpu->current==t);
-    assert(t->ticks_remaining==SCHEDULER_TIME_SLICE_MS);
+    assert(t->ticks_remaining==SCHEDULER_TARGET_LATENCY_MS);
     mock_ticks=100;
 }
 
@@ -265,6 +286,7 @@ int main(void){
     test_dynamic_growth();
     test_oom();
     test_selection();
+    test_eevdf_deadline_and_weights();
     test_concurrent_claims();
     test_preemption_guard();
     puts("Scheduler dynamic runqueue, affinity, ownership, wakeup and concurrent selection tests passed");

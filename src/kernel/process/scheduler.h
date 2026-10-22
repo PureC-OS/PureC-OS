@@ -5,6 +5,7 @@
 #define SCHEDULER_STACK_PAGES 4
 #define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES * 4096u)
 #define SCHEDULER_TIME_SLICE_MS 5
+#define SCHEDULER_TARGET_LATENCY_MS 20
 
 enum sched_qos {
   SCHED_QOS_IDLE = 0,
@@ -38,6 +39,8 @@ struct thread {
   char name[32];
   uint32_t ticks_remaining;
   uint64_t runtime_ticks;
+  uint64_t virtual_runtime;
+  uint64_t virtual_deadline;
   uint64_t wake_tick;
   uint64_t address_space;
   struct process *process;
