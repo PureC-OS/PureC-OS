@@ -297,9 +297,14 @@ static void redraw_scene(void){
 
 static void redraw_managed_scene(uint32_t excluded_pid){
     (void)excluded_pid;
+    uint64_t rs = timer_ticks();
     mouse_begin_framebuffer_update();
     redraw_scene();
     mouse_end_framebuffer_update();
+    uint64_t held = timer_ticks() - rs;
+    if (held > 500)
+        klogf(KLOG_WARN, "desktop: redraw batch held %llums (disk under batch?)",
+              (unsigned long long)held);
 }
 
 static void flush_deferred_redraw(void){
@@ -318,15 +323,27 @@ static bool service_desktop_redraw(void){
 }
 
 void userspace_redraw_desktop(void){
-    while(__atomic_test_and_set(&desktop_redraw_busy, __ATOMIC_ACQUIRE))
+    uint64_t busy_start = timer_ticks();
+    while(__atomic_test_and_set(&desktop_redraw_busy, __ATOMIC_ACQUIRE)) {
         scheduler_sleep(1);
+        if (timer_ticks() - busy_start > 3000) {
+            klog(KLOG_WARN, "desktop: redraw busy timeout, skipping");
+            return;
+        }
+    }
     desktop_redraw_requester = (uint32_t)process_current_pid();
     uint32_t ticket = __atomic_add_fetch(&desktop_redraw_requested, 1,
                                          __ATOMIC_ACQ_REL);
+    uint64_t start = timer_ticks();
     for(;;){
         uint32_t completed = __atomic_load_n(&desktop_redraw_completed,
                                              __ATOMIC_ACQUIRE);
         if((int32_t)(completed - ticket) >= 0) break;
+        if (timer_ticks() - start > 5000) {
+            klogf(KLOG_WARN, "desktop: redraw wait timeout ticket=%u completed=%u (input thread stuck?)",
+                  ticket, completed);
+            break;
+        }
         scheduler_sleep(1);
     }
     __atomic_clear(&desktop_redraw_busy, __ATOMIC_RELEASE);
