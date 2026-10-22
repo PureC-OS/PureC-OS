@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 #define CPU_MAX_COUNT 16
-#define SMP_TEST_CPU_LIMIT 12
 
 struct limine_smp_response;
 
