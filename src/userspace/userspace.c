@@ -170,26 +170,19 @@ static bool installer_requires_restart(int32_t status){
 }
 
 
-static int32_t detached_program_slot(void){
-    for(uint32_t i = 0; i < WINDOW_MANAGER_CAPACITY; i++){
-        if(detached_programs[i] <= 0) return (int32_t)i;
-    }
-    return -1;
-}
-
 static int32_t userspace_run_detached(const char *path, const char *arguments){
     int32_t *slot = detach_alloc_slot();
-static int32_t userspace_run_detached(const char *path, const char *arguments){
+    if(!slot) return -1;
     int32_t pid = (int32_t)userspace_syscall(
         SYS_EXEC, (uint64_t)path, (uint64_t)arguments, 0);
-    int32_t pid = (int32_t)userspace_syscall(
-        SYS_EXEC, (uint64_t)path, (uint64_t)arguments, 0);
-    return pid;
+    if(pid >= 0) *slot = pid;
     else klogf(KLOG_ERROR, "desktop: exec failed path='%s' rc=%d", path, pid);
     return pid;
 }
-    uint32_t total=detach_slot_total();
+
 static void reap_detached_programs(void){
+    uint32_t total=detach_slot_total();
+    for(uint32_t i=0;i<total;i++){
         int32_t *slot=detach_slot_at(i);
         if(!slot || *slot<=0) continue;
         int32_t status = 0;
