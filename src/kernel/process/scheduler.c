@@ -26,7 +26,6 @@ struct scheduler_cpu {
   struct thread *previous;
   bool initialized;
   bool started;
-  struct thread *cursor;
   uint64_t last_tick;
   uint64_t total_ticks;
   uint64_t idle_ticks;
@@ -77,30 +76,17 @@ static struct scheduler_cpu *local_scheduler(void) {
   return &cpu_schedulers[id];
 }
 
-uint32_t scheduler_qos_quantum(uint8_t qos) {
-  switch (qos) {
-  case SCHED_QOS_USER_INTERACTIVE:
-    return 2;
-  case SCHED_QOS_USER_INITIATED:
-    return 3;
-  case SCHED_QOS_DEFAULT:
-    return SCHEDULER_TIME_SLICE_MS;
-  case SCHED_QOS_UTILITY:
-    return 8;
-  case SCHED_QOS_BACKGROUND:
-    return 10;
-  case SCHED_QOS_IDLE:
-  default:
-    break;
-  }
-  return SCHEDULER_TIME_SLICE_MS;
-}
-
 static uint32_t scheduler_weight(uint8_t qos) {
   static const uint16_t weights[] = {256, 512, 768, 1024, 1536, 2048};
   return qos < sizeof(weights) / sizeof(weights[0])
              ? weights[qos]
              : weights[SCHED_QOS_DEFAULT];
+}
+
+uint32_t scheduler_qos_quantum(uint8_t qos) {
+  uint64_t slice = (uint64_t)SCHEDULER_TARGET_LATENCY_MS *
+                   scheduler_weight(qos) / SCHEDULER_NICE_0_WEIGHT;
+  return slice ? (uint32_t)slice : 1;
 }
 
 static bool thread_on_runqueue(const struct thread *thread) {
@@ -258,9 +244,6 @@ static void finish_switch(void) {
       if (*link) {
         *link = previous->next;
         thread_live_count--;
-        for (unsigned i = 0; i < CPU_MAX_COUNT; i++)
-          if (cpu_schedulers[i].cursor == previous)
-            cpu_schedulers[i].cursor = NULL;
         thash_remove(previous);
         victim = previous;
       }
@@ -304,12 +287,11 @@ void scheduler_init_cpu(void) {
   idle->affinity = (int16_t)id;
   idle->qos = SCHED_QOS_IDLE;
   idle->address_space = vmm_kernel_address_space();
-  idle->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
+  idle->ticks_remaining = 0;
   strncpy(idle->name, "idle", sizeof(idle->name) - 1);
   fpu_thread_init(idle->fpu_state);
   cpu->idle = idle;
   cpu->current = idle;
-  cpu->cursor = NULL;
   cpu->last_tick = timer_ticks();
   cpu->initialized = true;
 }
@@ -431,9 +413,6 @@ void scheduler_free_thread_by_id(int tid) {
     if (*link) {
       *link = victim->next;
       thread_live_count--;
-      for (unsigned i = 0; i < CPU_MAX_COUNT; i++)
-        if (cpu_schedulers[i].cursor == victim)
-          cpu_schedulers[i].cursor = NULL;
       thash_remove(victim);
     } else {
       victim = NULL;
@@ -758,8 +737,6 @@ static struct thread *pick_next(void) {
       best_eligible = t;
   }
   struct thread *next = best_eligible ? best_eligible : best_fallback;
-  if (next)
-    cpu->cursor = next;
   return next ? next : cpu->idle;
 }
 

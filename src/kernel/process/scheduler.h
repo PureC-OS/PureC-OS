@@ -4,7 +4,6 @@
 #include <stdint.h>
 #define SCHEDULER_STACK_PAGES 4
 #define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES * 4096u)
-#define SCHEDULER_TIME_SLICE_MS 5
 #define SCHEDULER_TARGET_LATENCY_MS 20
 
 enum sched_qos {
