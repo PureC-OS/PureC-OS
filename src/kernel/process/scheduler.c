@@ -371,6 +371,8 @@ void scheduler_host_reset(void) {
   thread_list = NULL;
   thread_live_count = 0;
   next_id = 1;
+  active_mask = 0;
+  runqueue_min_vruntime = 0;
   for (unsigned i = 0; i < THASH_SIZE; i++)
     thash_buckets[i] = NULL;
   memset(cpu_schedulers, 0, sizeof(cpu_schedulers));
@@ -645,15 +647,15 @@ static bool eligible(const struct thread *t, uint32_t id) {
   return t->affinity < 0 || t->affinity == (int16_t)id;
 }
 
-static void calculate_cpu_loads(uint32_t loads[CPU_MAX_COUNT],
+static void calculate_cpu_loads(uint64_t loads[CPU_MAX_COUNT],
                                 const struct thread *moving) {
-  memset(loads, 0, sizeof(uint32_t) * CPU_MAX_COUNT);
+  memset(loads, 0, sizeof(uint64_t) * CPU_MAX_COUNT);
   for (uint32_t id = 0; id < cpu_registered_count(); id++) {
     if (!cpu_schedulers[id].started)
       continue;
     struct thread *current = cpu_schedulers[id].current;
     if (current && !current->idle && current != moving)
-      loads[id]++;
+      loads[id] += scheduler_weight(current->qos);
   }
 
   for (struct thread *thread = thread_list; thread; thread = thread->next) {
@@ -662,7 +664,8 @@ static void calculate_cpu_loads(uint32_t loads[CPU_MAX_COUNT],
       continue;
 
     uint32_t least = CPU_MAX_COUNT;
-    uint32_t least_load = UINT32_MAX;
+    uint64_t weight = scheduler_weight(thread->qos);
+    uint64_t least_load = UINT64_MAX;
     for (uint32_t id = 0; id < cpu_registered_count(); id++) {
       if (!cpu_schedulers[id].started || !eligible(thread, id))
         continue;
@@ -673,21 +676,24 @@ static void calculate_cpu_loads(uint32_t loads[CPU_MAX_COUNT],
       }
     }
     if (least < CPU_MAX_COUNT)
-      loads[least]++;
+      loads[least] += weight;
   }
+}
+
+static void enqueue_woken_thread(struct thread *thread) {
+  if (thread->virtual_runtime < runqueue_min_vruntime)
+    thread->virtual_runtime = runqueue_min_vruntime;
+  thread->ticks_remaining = 0;
+  thread->virtual_deadline = 0;
+  thread->wake_tick = 0;
+  thread->state = THREAD_READY;
 }
 
 static void wake_sleeping_threads(void) {
   uint64_t now = timer_ticks();
   for (struct thread *t = thread_list; t; t = t->next) {
-    if (t->state == THREAD_BLOCKED && t->wake_tick && now >= t->wake_tick) {
-      if (t->virtual_runtime < runqueue_min_vruntime)
-        t->virtual_runtime = runqueue_min_vruntime;
-      t->ticks_remaining = 0;
-      t->virtual_deadline = 0;
-      t->state = THREAD_READY;
-      t->wake_tick = 0;
-    }
+    if (t->state == THREAD_BLOCKED && t->wake_tick && now >= t->wake_tick)
+      enqueue_woken_thread(t);
   }
 }
 
@@ -728,6 +734,7 @@ static uint64_t runqueue_avg_vruntime(void) {
 static struct thread *pick_next(void) {
   uint32_t id = gdt_current_cpu_id();
   struct scheduler_cpu *cpu = local_scheduler();
+  update_min_vruntime();
   wake_sleeping_threads();
   update_min_vruntime();
   uint64_t average = runqueue_avg_vruntime();
@@ -905,10 +912,11 @@ void scheduler_unblock(int tid) {
   struct thread *t = (tid >= 0) ? thash_find((uint32_t)tid) : NULL;
   if (t) {
     if (t->state == THREAD_BLOCKED) {
-      t->wake_tick = 0;
-      t->state = THREAD_READY;
-    } else if (t->state == THREAD_RUNNING || t->state == THREAD_READY)
+      update_min_vruntime();
+      enqueue_woken_thread(t);
+    } else if (t->state == THREAD_RUNNING || t->state == THREAD_READY) {
       t->wake_pending = true;
+    }
   }
   spin_unlock_irqrestore(&runqueue_lock, flags);
   smp_reschedule_all();
@@ -996,11 +1004,11 @@ void scheduler_leave_kernel(void) {
   t->kernel_only = false;
   uint32_t here = gdt_current_cpu_id();
   if (t->affinity == -1 || t->affinity_auto) {
-    uint32_t loads[CPU_MAX_COUNT];
+    uint64_t loads[CPU_MAX_COUNT];
     calculate_cpu_loads(loads, t);
     uint32_t target = here;
-    uint32_t local_load = loads[here] + 1;
-    uint32_t target_load = local_load;
+    uint64_t local_load = loads[here] + scheduler_weight(t->qos);
+    uint64_t target_load = local_load;
     for (uint32_t id = 0; id < cpu_registered_count(); id++) {
       if (id == here || !cpu_schedulers[id].started)
         continue;
