@@ -20,3 +20,25 @@ void pic_mask_all(void){
     outb(0x21,0xFF);
     outb(0xA1,0xFF);
 }
+
+void pic_mask_irq(uint8_t irq) {
+    if (irq >= 16)
+        return;
+
+    uint16_t port = irq < 8 ? 0x21 : 0xA1;
+    uint8_t line = irq & 7;
+    outb(port, (uint8_t)(inb(port) | (uint8_t)(1u << line)));
+    if (irq >= 8 && inb(0xA1) == 0xFF)
+        outb(0x21, (uint8_t)(inb(0x21) | (uint8_t)(1u << 2)));
+}
+
+void pic_unmask_irq(uint8_t irq) {
+    if (irq >= 16)
+        return;
+
+    uint16_t port = irq < 8 ? 0x21 : 0xA1;
+    uint8_t line = irq & 7;
+    outb(port, (uint8_t)(inb(port) & (uint8_t)~(1u << line)));
+    if (irq >= 8)
+        outb(0x21, (uint8_t)(inb(0x21) & (uint8_t)~(1u << 2)));
+}

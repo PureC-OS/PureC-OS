@@ -4,6 +4,7 @@
 #include "../../../../kernel/syscall/syscall.h"
 #include "../../../../kernel/diagnostics/panic.h"
 #include "../../../../drivers/interrupts/timer.h"
+#include "../../../../drivers/interrupts/pic.h"
 #include "../../../../kernel/process/scheduler.h"
 #include "../../../../kernel/process/process.h"
 #include "../../../../kernel/diagnostics/klog.h"
@@ -26,6 +27,32 @@ struct idt_ptr {
 
 static struct idt_entry idt[256];
 static struct idt_ptr idtp;
+static struct {
+    void (*handler)(void *);
+    void *ctx;
+} irq_handlers[16];
+
+void idt_set_irq_handler(uint8_t irq, void (*handler)(void *), void *ctx) {
+    if (irq >= 16 || !handler)
+        return;
+    irq_handlers[irq].handler = handler;
+    irq_handlers[irq].ctx = ctx;
+}
+
+void idt_clear_irq_handler(uint8_t irq) {
+    if (irq >= 16)
+        return;
+    irq_handlers[irq].handler = 0;
+    irq_handlers[irq].ctx = 0;
+}
+
+void idt_mask_irq(uint8_t irq) {
+    pic_mask_irq(irq);
+}
+
+void idt_unmask_irq(uint8_t irq) {
+    pic_unmask_irq(irq);
+}
 
 extern void *isr_stub_table[256];
 extern void idt_load(uint64_t);
@@ -62,20 +89,19 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         regs->rax = (uint64_t)ret;
         return;
     }
-    if (vector == 44) { // IRQ12 mouse
-        ps2_mouse_handler();
-        pic_eoi(12);
-        return;
-    }
-    if (vector == 32) { // IRQ0 timer
-        timer_tick();
-        // Acknowledge the PIC before a context switch can suspend this frame.
-        pic_eoi(0);
-        scheduler_on_timer_interrupt();
-        return;
-    }
-    if (vector >= 32 && vector < 48) { // другие IRQ
-        pic_eoi(vector-32);
+    if (vector >= 32 && vector < 48) {
+        uint8_t irq = (uint8_t)(vector - 32);
+        if (irq_handlers[irq].handler)
+            irq_handlers[irq].handler(irq_handlers[irq].ctx);
+        if (irq == 12)
+            ps2_mouse_handler();
+        if (irq == 0) {
+            timer_tick();
+            pic_eoi(irq);
+            scheduler_on_timer_interrupt();
+            return;
+        }
+        pic_eoi(irq);
         return;
     }
     if (vector == 3) {

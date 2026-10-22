@@ -11,7 +11,16 @@ CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
 CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
-ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c
+ACPI_CPPFLAGS := -I$(ACPI_DIR)/AML/uACPI/include
+ACPI_SOURCES := \
+	acpi/src/acpi.c \
+	acpi/src/acpi_s5.c \
+	acpi/src/acpi_power.c \
+	acpi/src/uacpi_glue.c \
+	acpi/src/uacpi_heap.c \
+	acpi/src/acpi_ec.c \
+	acpi/src/acpi_battery.c \
+	$(patsubst $(ACPI_DIR)/%,acpi/%,$(wildcard $(ACPI_DIR)/AML/uACPI/source/*.c))
 ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
@@ -147,7 +156,7 @@ $(OBJ_DIR)/libxcrypt/%.o: $(CRYPT_DIR)/src/%.c
 
 $(OBJ_DIR)/acpi/%.o: $(ACPI_DIR)/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) $(ACPI_CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.cpp
 	@mkdir -p $(@D)
