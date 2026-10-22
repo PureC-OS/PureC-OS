@@ -1,6 +1,7 @@
 #include "scheduler.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
+#include "../../arch/x86_64/idt/include/idt.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../lib/string.h"
 #include "../../mm/oom/oom_slab.h"
@@ -9,6 +10,7 @@
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../smp/cpu.h"
+#include "../smp/lapic.h"
 #include "../smp/smp.h"
 #include "../sync/spinlock.h"
 
@@ -807,8 +809,11 @@ void scheduler_start(void) {
   cpu->last_tick = timer_ticks();
   __atomic_fetch_or(&active_mask, 1U << gdt_current_cpu_id(), __ATOMIC_RELEASE);
   spin_unlock_irqrestore(&runqueue_lock, flags);
-  if (gdt_current_cpu_id() == 0)
+  if (gdt_current_cpu_id() == 0) {
+    if (lapic_start_timer())
+      idt_mask_irq(0);
     smp_release_scheduler();
+  }
   scheduler_yield();
 }
 

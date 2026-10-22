@@ -116,7 +116,7 @@ void smp_ap_main(struct ap_boot_context *context,
 
     while(!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE))
         __asm__ volatile("sti; hlt; cli" ::: "memory");
-    lapic_start_timer();
+    (void)lapic_start_timer();
     scheduler_start();
     scheduler_idle_loop();
 }
