@@ -11,15 +11,52 @@
 #include "smp.h"
 
 struct result {
-  uint32_t ready, done, failed, seen;
+  uint32_t ready, done, failure, seen;
   uint64_t switches;
 };
+
+enum selftest_failure {
+  SELFTEST_FAILURE_NONE,
+  SELFTEST_FAILURE_PREEMPTION,
+  SELFTEST_FAILURE_FPU_PREEMPTION,
+  SELFTEST_FAILURE_MEMORY_ALLOCATION,
+  SELFTEST_FAILURE_MEMORY_MAPPING,
+  SELFTEST_FAILURE_MIGRATION,
+  SELFTEST_FAILURE_FPU_MIGRATION
+};
+
 static struct result results[CPU_MAX_COUNT];
 static uint32_t participants;
 static bool go;
 extern const unsigned char smp_user_elf_start[], smp_user_elf_end[];
 static uint64_t shared_counter;
 static uint32_t peer_progress[CPU_MAX_COUNT];
+
+static void record_failure(struct result *result,
+                           enum selftest_failure failure) {
+  uint32_t expected = SELFTEST_FAILURE_NONE;
+  (void)__atomic_compare_exchange_n(&result->failure, &expected, failure, false,
+                                   __ATOMIC_RELAXED, __ATOMIC_RELAXED);
+}
+
+static const char *failure_message(uint32_t failure) {
+  switch (failure) {
+  case SELFTEST_FAILURE_PREEMPTION:
+    return "smp selftest: preemption peer made no progress";
+  case SELFTEST_FAILURE_FPU_PREEMPTION:
+    return "smp selftest: FPU state lost across preemption";
+  case SELFTEST_FAILURE_MEMORY_ALLOCATION:
+    return "smp selftest: memory allocation failed";
+  case SELFTEST_FAILURE_MEMORY_MAPPING:
+    return "smp selftest: memory mapping verification failed";
+  case SELFTEST_FAILURE_MIGRATION:
+    return "smp selftest: worker did not migrate to target CPU";
+  case SELFTEST_FAILURE_FPU_MIGRATION:
+    return "smp selftest: FPU state lost across migration";
+  default:
+    return "smp selftest: worker failed with unknown reason";
+  }
+}
 
 static void worker(void *argument) {
   uint32_t slot = (uint32_t)(uintptr_t)argument;
@@ -33,7 +70,7 @@ static void worker(void *argument) {
   uint64_t start = timer_ticks();
   while (__atomic_load_n(&peer_progress[slot], __ATOMIC_ACQUIRE) == peer) {
     if (timer_ticks() - start > 250) {
-      r->failed = 1;
+      record_failure(r, SELFTEST_FAILURE_PREEMPTION);
       break;
     }
     __asm__ volatile("pause");
@@ -41,14 +78,14 @@ static void worker(void *argument) {
   uint64_t restored;
   __asm__ volatile("movq %%xmm15,%0" : "=r"(restored));
   if (restored != marker)
-    r->failed = 1;
+    record_failure(r, SELFTEST_FAILURE_FPU_PREEMPTION);
   for (unsigned n = 0; n < 8; n++) {
     uint32_t id = gdt_current_cpu_id();
     r->seen |= 1U << id;
     uint64_t frame = pmm_allocate_page();
     uint64_t space = vmm_create_address_space();
     if (!frame || !space) {
-      r->failed = 1;
+      record_failure(r, SELFTEST_FAILURE_MEMORY_ALLOCATION);
       break;
     }
     uint64_t *page = pmm_physical_to_virtual(frame);
@@ -56,7 +93,7 @@ static void worker(void *argument) {
     if (!vmm_map_page(space, 0x400000, frame,
                       VMM_PAGE_USER | VMM_PAGE_WRITABLE) ||
         vmm_translate(space, 0x400000) != frame || *page != marker + n)
-      r->failed = 1;
+      record_failure(r, SELFTEST_FAILURE_MEMORY_MAPPING);
     vmm_destroy_address_space(space);
     __atomic_fetch_add(&shared_counter, 1, __ATOMIC_RELAXED);
     scheduler_sleep(1);
@@ -72,11 +109,11 @@ static void worker(void *argument) {
   scheduler_set_affinity(scheduler_current_tid(), (int16_t)target);
   scheduler_yield();
   if (gdt_current_cpu_id() != target)
-    r->failed = 1;
+    record_failure(r, SELFTEST_FAILURE_MIGRATION);
   r->seen |= 1U << gdt_current_cpu_id();
   __asm__ volatile("movq %%xmm15,%0" : "=r"(restored));
   if (restored != marker)
-    r->failed = 1;
+    record_failure(r, SELFTEST_FAILURE_FPU_MIGRATION);
   __atomic_store_n(&r->done, 1, __ATOMIC_RELEASE);
 }
 
@@ -119,10 +156,10 @@ static void coordinator(void *unused) {
     if (!(participants & (1U << id)))
       continue;
     klogf(KLOG_INFO,
-          "smp-test: worker=%u CPUs=0x%x preemption/memory/FPU/migration=%s",
-          id, results[id].seen, results[id].failed ? "FAIL" : "PASS");
-    if (results[id].failed)
-      kernel_panic("smp selftest failed");
+          "smp-test: worker=%u CPUs=0x%x failure=%u",
+          id, results[id].seen, results[id].failure);
+    if (results[id].failure)
+      kernel_panic(failure_message(results[id].failure));
   }
   int32_t pids[2];
   unsigned targets[2] = {0, 0};
