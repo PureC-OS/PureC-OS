@@ -590,7 +590,7 @@ void userspace_input_thread(void *arg){
         handle_desktop_mouse();
         desktop_apps_update();
         if(bottom_panel_needs_redraw()) redraw_managed_scene(0);
-        scheduler_sleep(1);
+        scheduler_sleep(4);
     }
 }
 
