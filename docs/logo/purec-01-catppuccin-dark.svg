@@ -1,0 +1,11 @@
+<svg width="400" height="112" viewBox="0 0 400 112" fill="none" xmlns="http://www.w3.org/2000/svg">
+<rect width="400" height="112" rx="16" fill="#181825"/>
+<g transform="translate(24,20)">
+  <rect x="0" y="0" width="72" height="72" rx="18" fill="#CDD6F4"/>
+  <path d="M33 24 C21 24 18 33 18 39 C18 45 21 54 33 54" stroke="#181825" stroke-width="4.8" stroke-linecap="round"/>
+  <path d="M27.5 27.5 L14.5 39 L27.5 50.5" stroke="#89B4FA" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M47.5 27.5 L60.5 39 L47.5 50.5" stroke="#89B4FA" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<text x="116" y="58" font-family="Space Grotesk, Inter, sans-serif" font-weight="800" font-size="38" letter-spacing="-0.04em" fill="#CDD6F4">Pure<tspan fill="#89B4FA">C</tspan></text>
+<text x="116" y="78" font-family="JetBrains Mono, monospace" font-weight="700" font-size="12.5" letter-spacing="0.28em" fill="#9399B2">64-BIT • 0.1.0</text>
+</svg>
