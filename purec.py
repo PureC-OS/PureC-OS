@@ -68,6 +68,9 @@ class Repo:
     desc:  str
 
 REPOS: List[Repo] = [
+    Repo("wolfssl",            "https://github.com/PureC-OS/wolfssl.git",
+         "wolfssl",            "wolfssl/wolfcrypt/src/aes.c",
+         "wolfCrypt / TLS stack"),
     Repo("libxcrypt",          "https://github.com/PureC-OS/libxcrypt.git",
          "libxcrypt",          "libxcrypt/src/sha512.c",
          "SHA-512 / $6$ password hashing"),
