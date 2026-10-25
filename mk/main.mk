@@ -217,7 +217,7 @@ iso: kernel programs
 		"$(ISO_ROOT)/etc/purec" "$(ISO_ROOT)/var/lib/purec" "$(ISO_ROOT)/var/log" \
 		"$(ISO_ROOT)/var/tmp" "$(ISO_ROOT)/tmp" "$(ISO_ROOT)/home/purec" \
 		"$(ISO_ROOT)/root" "$(ISO_ROOT)/dev" "$(ISO_ROOT)/proc" "$(ISO_ROOT)/sys" \
-		"$(ISO_ROOT)/media" "$(ISO_ROOT)/mnt" "$(ISO_ROOT)/opt" "$(ISO_ROOT)/srv" "$(ISO_ROOT)/sbin";
+		"$(ISO_ROOT)/media" "$(ISO_ROOT)/mnt" "$(ISO_ROOT)/opt" "$(ISO_ROOT)/srv" "$(ISO_ROOT)/sbin"; \
 	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
 		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
 	fi; \
