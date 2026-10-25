@@ -107,20 +107,20 @@ static int command_create(const char *name, const char *arguments,
 
 static int command_dmesg(void){
     pc_write("--- kernel log ---\n");
-    int status=print_file("/kernel.log",false);
+    int status=print_file("/var/log/kernel.log",false);
     pc_write("\n--- end kernel log ---\n");
     return status;
 }
 
 static int command_savelog(void){
-    int32_t source=pf_open("/kernel.log");
+    int32_t source=pf_open("/var/log/kernel.log");
     if(source<0){
-        pc_write("savelog: /kernel.log is unavailable\n");
+        pc_write("savelog: /var/log/kernel.log is unavailable\n");
         return 1;
     }
-    if(pf_write_file("/dmesg.txt",0,0)<0){
+    if(pf_write_file("/var/log/dmesg",0,0)<0){
         (void)pf_close(source);
-        pc_write("savelog: cannot create /dmesg.txt\n");
+        pc_write("savelog: cannot create /var/log/dmesg\n");
         return 1;
     }
     uint64_t total=0;
@@ -132,7 +132,7 @@ static int command_savelog(void){
             return 1;
         }
         if(!count) break;
-        int64_t written=pf_append_file("/dmesg.txt",buffer,(uint32_t)count);
+        int64_t written=pf_append_file("/var/log/dmesg",buffer,(uint32_t)count);
         if(written!=count){
             (void)pf_close(source);
             pc_write("savelog: write failed\n");
@@ -143,7 +143,7 @@ static int command_savelog(void){
     (void)pf_close(source);
     pc_write("Saved ");
     pc_write_u64(total);
-    pc_write(" bytes to /dmesg.txt\n");
+    pc_write(" bytes to /var/log/dmesg\n");
     return 0;
 }
 

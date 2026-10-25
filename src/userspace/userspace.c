@@ -41,7 +41,7 @@
 #define ICON_H               72
 #define PERSISTENT_LOG_CHUNK (64 * 1024)
 #define PERSISTENT_LOG_MAX_BYTES 0xFFFFFFFFULL
-#define PERSISTENT_LOG_PATH  "/kernel.log"
+#define PERSISTENT_LOG_PATH  "/var/log/kernel.log"
 
 static void desktop_theme(struct personalization_colors *out){
     personalization_current_colors(out);

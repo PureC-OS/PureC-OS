@@ -136,14 +136,14 @@ static void load_logs(struct logview_state *st){
     st->line_count=0;
     st->filtered_count=0;
     st->scroll_offset=0;
-    const char *paths[]={"/kernel.log","/dmesg.txt","/kernel/dmesg.txt",0};
+    const char *paths[]={"/var/log/kernel.log","/var/log/dmesg",0};
     int32_t fd=-1;
     for(int i=0;paths[i];i++){
         fd=pf_open(paths[i]);
         if(fd>=0) break;
     }
     if(fd<0){
-        pc_copy(st->status,"No log file (/kernel.log)", sizeof(st->status));
+        pc_copy(st->status,"No log file (/var/log/kernel.log)", sizeof(st->status));
         return;
     }
     static char buffer[LOGVIEW_BUFFER_SIZE];

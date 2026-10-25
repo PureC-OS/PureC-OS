@@ -590,14 +590,13 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
     return (int32_t)a;
   }
   if (h->type == VFS_HANDLE_VIRTUAL && h->virt_kind != VIRT_NONE) {
-    // For /dev/zero, return zeros; /dev/null returns 0 (EOF); /dev/random returns random
-    if (h->virt_kind == VIRT_DEV_ZERO) {
+    if (h->virt_kind == VIRT_DEV_ZERO || h->virt_kind == VIRT_DEV_FULL) {
       if (count > VIRT_BUF_SIZE) count = VIRT_BUF_SIZE;
       memset(buffer, 0, count);
       return (int32_t)count;
     }
-    if (h->virt_kind == VIRT_DEV_NULL || h->virt_kind == VIRT_DEV_FULL) {
-      return 0; // EOF for null, ENOSPC for full (handled by write)
+    if (h->virt_kind == VIRT_DEV_NULL) {
+      return 0;
     }
     if (h->virt_kind == VIRT_DEV_RANDOM || h->virt_kind == VIRT_DEV_URANDOM) {
       // Simple pseudo-random
@@ -652,8 +651,6 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
     return FS_ERROR_INVALID;
   if (h->type == VFS_HANDLE_EXT2)
     return ext2_seek(h->backend_descriptor, offset, whence);
-  if (h->type == VFS_HANDLE_FAT32)
-    return fat32_seek(h->backend_descriptor, offset, whence);
   if (h->type == VFS_HANDLE_KLOG) {
     uint64_t total = klog_total_bytes();
     int64_t base = 0;
@@ -794,71 +791,15 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
       be = initramfs_list(path, entries, capacity);
     else if (vfs_active_fs == VFS_FS_EXT2)
       be = ext2_list(path, entries, capacity);
-    else
-      be = fat32_list(path, entries, capacity);
     uint32_t count = be > 0 ? (uint32_t)be : 0;
-    if (count < capacity) {
-      copy_name(entries[count].name, "kernel");
+    const char *virtuals[] = {"dev", "proc", "sys"};
+    for (uint32_t i = 0; i < sizeof(virtuals) / sizeof(virtuals[0]); i++) {
+      if (count >= capacity)
+        break;
+      copy_name(entries[count].name, virtuals[i]);
       entries[count].size = 0;
       entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
       count++;
-    }
-    if (count < capacity) {
-      copy_name(entries[count].name, "dev");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
-      count++;
-    }
-    if (count < capacity) {
-      copy_name(entries[count].name, "proc");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
-      count++;
-    }
-    if (count < capacity) {
-      copy_name(entries[count].name, "sys");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
-      count++;
-    }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "dmesg.txt") == 0)
-          has = true;
-      if (!has) {
-        copy_name(entries[count].name, "dmesg.txt");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "kernel.log") == 0)
-          has = true;
-      if (!has) {
-        copy_name(entries[count].name, "kernel.log");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    return (int32_t)count;
-  }
-  if (path_equals(path, "/kernel")) {
-    uint32_t count = sizeof(kernel_files) / sizeof(kernel_files[0]);
-    if (count > capacity)
-      count = capacity;
-    for (uint32_t i = 0; i < count; i++) {
-      copy_name(entries[i].name, kernel_files[i].name);
-      entries[i].size = (uint32_t)strlen(kernel_files[i].content);
-      entries[i].attributes = 0;
     }
     return (int32_t)count;
   }
@@ -893,71 +834,17 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
       be = initramfs_list_long(path, entries, capacity);
     else if (vfs_active_fs == VFS_FS_EXT2)
       be = ext2_list_long(path, entries, capacity);
-    else
-      be = fat32_list_long(path, entries, capacity);
     uint32_t count = be > 0 ? (uint32_t)be : 0;
-    if (count < capacity) {
-      copy_name_long(entries[count].name, "kernel");
+    const char *virtuals[] = {"dev", "proc", "sys"};
+    for (uint32_t i = 0; i < sizeof(virtuals) / sizeof(virtuals[0]); i++) {
+      if (count >= capacity)
+        break;
+      copy_name_long(entries[count].name, virtuals[i]);
       entries[count].size = 0;
       entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      entries[count].reserved[0] = entries[count].reserved[1] =
+          entries[count].reserved[2] = 0;
       count++;
-    }
-    if (count < capacity) {
-      copy_name_long(entries[count].name, "dev");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
-      count++;
-    }
-    if (count < capacity) {
-      copy_name_long(entries[count].name, "proc");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
-      count++;
-    }
-    if (count < capacity) {
-      copy_name_long(entries[count].name, "sys");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
-      count++;
-    }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "dmesg.txt") == 0)
-          has = true;
-      if (!has) {
-        copy_name_long(entries[count].name, "dmesg.txt");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "kernel.log") == 0)
-          has = true;
-      if (!has) {
-        copy_name_long(entries[count].name, "kernel.log");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    return (int32_t)count;
-  }
-  if (path_equals(path, "/kernel")) {
-    uint32_t count = sizeof(kernel_files) / sizeof(kernel_files[0]);
-    if (count > capacity)
-      count = capacity;
-    for (uint32_t i = 0; i < count; i++) {
-      copy_name_long(entries[i].name, kernel_files[i].name);
-      entries[i].size = (uint32_t)strlen(kernel_files[i].content);
-      entries[i].attributes = 0;
     }
     return (int32_t)count;
   }
@@ -1075,7 +962,7 @@ int32_t vfs_create_directory(const char *path) {
     return FS_ERROR_READ_ONLY;
   if (vfs_active_fs == VFS_FS_EXT2)
     return ext2_create_directory(path);
-  return fat32_create_directory(path);
+  return FS_ERROR_UNSUPPORTED;
 }
 
 int32_t vfs_format_device(const char *device_name,
