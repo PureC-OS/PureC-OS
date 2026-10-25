@@ -2,7 +2,6 @@
 
 #include "../kernel/syscall/syscall.h"
 #include "./ext2/include/ext2.h"
-#include "./fat/include/fat32.h"
 #include "types/fs_types.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -11,7 +10,6 @@
 #define VFS_FD_STDOUT 1
 #define VFS_FD_STDERR 2
 #define VFS_FD_BASE 3
-#define VFS_FS_FAT32 0
 #define VFS_FS_EXT2 1
 #define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
