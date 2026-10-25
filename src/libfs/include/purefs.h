@@ -64,7 +64,6 @@ int32_t pf_list(const char *path, struct pf_entry *entries, uint32_t capacity);
 int32_t pf_list_long(const char *path, struct pf_entry_long *entries, uint32_t capacity);
 int32_t pf_create_dir(const char *path);
 
-#define PF_FS_FAT32 0
 #define PF_FS_EXT2 1
 #define PF_FS_AUTO 255
 

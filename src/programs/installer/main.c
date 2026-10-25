@@ -122,7 +122,7 @@ static bool confirm_erase(void) {
     pc_write("\nSize:   ");
     pc_write_u64(disk_size_mib(disk));
     pc_write(" MiB\n");
-    pc_write("FS:     ext2 (system), FAT32 ESP kept for UEFI boot\n\n");
+    pc_write("FS:     ext2 (system)\n\n");
     pc_write("WARNING: every partition and file on this disk will be erased.\n");
     if(!terminal_window_read_line(&installer_window,
             "Type ERASE to start, or anything else to cancel: ",

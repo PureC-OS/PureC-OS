@@ -3,9 +3,7 @@
 #define MKFS_DEVICE_CAPACITY 12
 #define MKFS_ARGUMENT_CAPACITY 256
 
-/* Поддерживаемые файловые системы — получаем от ядра через макросы */
-#define MKFS_FS_FAT32 FS_TYPE_FAT32  /* 0 */
-#define MKFS_FS_EXT2  FS_TYPE_EXT2   /* 1 */
+#define MKFS_FS_EXT2  FS_TYPE_EXT2
 
 static bool space(char c){
     return c == ' ' || c == '\t';
@@ -27,12 +25,10 @@ static void print_usage(void){
     pc_write("       mkfs --list\n");
     pc_write("\n");
     pc_write("Supported filesystems:\n");
-    pc_write("  fat32   FAT32\n");
     pc_write("  ext2    EXT2\n");
     pc_write("\n");
     pc_write("Examples:\n");
     pc_write("  mkfs --list            show available disks\n");
-    pc_write("  mkfs fat32 sda         format sda as FAT32\n");
     pc_write("  mkfs ext2 sdb          format sdb as EXT2\n");
 }
 
@@ -104,7 +100,6 @@ static int command_list(void){
             default: pc_write("unknown");break;
         }
 
-        /* пометить системный диск */
         if(root_dev[0] && pc_strcmp(d->name, root_dev) == 0){
             pc_write("  [SYSTEM fs=");
             pc_write(current_fs);
@@ -124,15 +119,13 @@ static int command_list(void){
 
 static int command_format(const char *fs_arg, const char *dev_arg){
     uint8_t fs_type;
-    if(pc_strcmp(fs_arg, "fat32") == 0){
-        fs_type = MKFS_FS_FAT32;
-    } else if(pc_strcmp(fs_arg, "ext2") == 0){
+    if(pc_strcmp(fs_arg, "ext2") == 0){
         fs_type = MKFS_FS_EXT2;
     } else {
         pc_write("mkfs: unknown filesystem: ");
         pc_write(fs_arg);
         pc_write("\n");
-        pc_write("      supported: fat32, ext2\n");
+        pc_write("      supported: ext2\n");
         return 1;
     }
 
@@ -142,7 +135,6 @@ static int command_format(const char *fs_arg, const char *dev_arg){
         return 1;
     }
 
-    /* Найти диск и получить serial */
     struct storage_device_info devices[MKFS_DEVICE_CAPACITY];
     int32_t count = pc_list_disks(devices, MKFS_DEVICE_CAPACITY);
     if(count < 0){
@@ -182,9 +174,7 @@ static int command_format(const char *fs_arg, const char *dev_arg){
 
     pc_write("mkfs: formatting ");
     pc_write(dev_arg);
-    pc_write(" as ");
-    pc_write(fs_type == MKFS_FS_EXT2 ? "ext2" : "fat32");
-    pc_write("...\n");
+    pc_write(" as ext2...\n");
 
     int32_t result = pc_format_device_ex(target->name, target->serial, fs_type);
     if(result < 0){
@@ -215,7 +205,6 @@ int mkfs_main(void){
         return command_list();
     }
 
-    /* парсим: mkfs <fs-type> <device> */
     uint32_t fs_len = token_len(cursor);
     char fs_arg[32] = {0};
     if(fs_len >= sizeof(fs_arg)){

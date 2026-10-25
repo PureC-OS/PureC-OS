@@ -49,11 +49,6 @@ int32_t vfs_format_device_force(const char *device_name,
 int32_t vfs_format_device_ex(const char *device_name,
                              const char *serial_confirmation,
                              const char *erase_confirmation, uint8_t fs_type);
-int32_t vfs_format_uefi_device(const char *device_name,
-                               const char *serial_confirmation);
-int32_t vfs_format_uefi_device_progress(const char *device_name,
-                                        const char *serial_confirmation,
-                                        fat32_progress_callback callback);
 int32_t vfs_save_klog_to_device(const char *device, const char *path);
 int32_t vfs_ext2_stat(const char *path, struct ext2_stat_info *out);
 int32_t vfs_ext2_inode(uint32_t ino, struct ext2_stat_info *out);

@@ -143,7 +143,7 @@ static void draw_disks(struct files_app *app, const struct pg_event *event,
         char fs_line[64]={0};
         append(fs_line,sizeof(fs_line),"System file system: ");
         append(fs_line,sizeof(fs_line),app->model.fs_type[0]?app->model.fs_type:"unknown");
-        if(app->model.root_device[0]){ append(fs_line,sizeof(fs_line),"  ("); append(fs_line,sizeof(fs_line),app->model.root_device); append(fs_line,sizeof(fs_line),")"); append(fs_line,sizeof(fs_line)," — boot ESP always FAT32"); }
+        if(app->model.root_device[0]){ append(fs_line,sizeof(fs_line),"  ("); append(fs_line,sizeof(fs_line),app->model.root_device); append(fs_line,sizeof(fs_line),")"); append(fs_line,sizeof(fs_line)," — boot ESP always ext2"); }
         pg_window_text(&app->window,left,top+16,fs_line,app->window.theme.muted_text);
         top += 14;
     }

@@ -648,8 +648,8 @@ void userspace_log_thread(void *arg){
         amount = pending;
         if(amount > remaining) amount = (uint32_t)remaining;
         if(amount == 0){
-            klogf(KLOG_WARN,
-                  "klog-disk: file reached FAT32 limit bytes=%llu path=%s",
+          klogf(KLOG_WARN,
+                "klog-disk: file reached ext2 limit bytes=%llu path=%s",
                   file_size, PERSISTENT_LOG_PATH);
             scheduler_exit();
             return;
