@@ -114,7 +114,6 @@ C_SOURCES := \
 	drivers/storage/storage_probe.c \
 	drivers/usb/xhci.c \
 	drivers/usb/ehci.c \
-	fs/fat/fat32.c \
 	fs/ext2/block.c \
 	fs/ext2/super.c \
 	fs/ext2/inode.c \
