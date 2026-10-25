@@ -773,7 +773,6 @@ int64_t syscall_handler(struct syscall_regs *r) {
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
             sizeof(install_serial) - 1);
-    install_fs_type = FS_TYPE_EXT2;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
@@ -797,7 +796,6 @@ int64_t syscall_handler(struct syscall_regs *r) {
     memset(&install_history, 0, sizeof(install_history));
     strncpy(install_device, req->device, sizeof(install_device) - 1);
     strncpy(install_serial, req->serial, sizeof(install_serial) - 1);
-    install_fs_type = FS_TYPE_EXT2;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
@@ -988,9 +986,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
     r.serial[sizeof(r.serial) - 1] = '\0';
     r.erase[sizeof(r.erase) - 1] = '\0';
     filesystem_syscall_lock();
-    int32_t res = vfs_format_device_ex(
-        r.device, r.serial, r.erase,
-        r.fs_type == FS_TYPE_EXT2 ? VFS_FS_EXT2 : VFS_FS_EXT2);
+    int32_t res = vfs_format_device_ex(r.device, r.serial, r.erase, VFS_FS_EXT2);
     filesystem_syscall_unlock();
     return res;
   }
