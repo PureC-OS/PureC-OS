@@ -247,6 +247,48 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  qemu-panic:
+    name: QEMU panic test (serial + QR)
+    if: github.event_name != 'pull_request'
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout panic test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU and QR decode tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86 zbar-tools
+          python3 -m pip install --quiet --break-system-packages pillow
+
+      - name: Type panic into the shell and verify serial + QR issue URL
+        run: |
+          python3 tests/qemu_panic_test.py \
+            --iso dist/PureC-OS.iso \
+            --timeout 300 \
+            --log "qemu-panic.log" \
+            --shot "qemu-panic-shot.ppm"
+
+      - name: Upload QEMU panic logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-panic-logs
+          path: |
+            qemu-panic.log
+            qemu-panic-shot.ppm
+            qemu-panic-shot.png
+          if-no-files-found: warn
+          retention-days: 14
+
   release:
     name: Publish release
     needs:
@@ -255,6 +297,7 @@ jobs:
       - build-iso
       - qemu-smoke
       - qemu-network
+      - qemu-panic
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' && inputs.publish_release)

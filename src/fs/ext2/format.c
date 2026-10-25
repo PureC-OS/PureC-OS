@@ -237,7 +237,7 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors)
         if (!block_device_write_sectors(part_lba + bmb * 2, blk, 2))
             return -1;
 
-        if (!write_zero_sectors(part_lba + imb * 2, 4))
+        if (!write_zero_sectors(part_lba + imb * 2, (1 + 128) * 2))
             return -1;
     }
 

@@ -1,7 +1,6 @@
 #include "window_manager.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
-#include "../gfx/compositor.h"
 
 struct managed_window {
     uint32_t pid;
@@ -15,64 +14,57 @@ struct wm_chunk {
     struct wm_chunk *next;
 };
 
-#define WM_PER_PAGE (4096u/sizeof(struct managed_window))
+#define WM_PER_PAGE ((4096u - sizeof(struct wm_chunk)) / sizeof(struct managed_window))
 
 static struct wm_chunk *wm_chunks;
-static uint32_t wm_used_count;
 static uint32_t focused_pid;
 static uint32_t next_z_order=1;
 static uint32_t repainting_pid;
 static bool registry_suspended;
 
-static struct managed_window *wm_slot_at(uint32_t n){
-    for(struct wm_chunk *c=wm_chunks;c;c=c->next){
-        struct managed_window *slots=(struct managed_window*)(c+1);
-        if(n<WM_PER_PAGE) return &slots[n];
-        n-=WM_PER_PAGE;
+static struct managed_window *wm_slot_at(uint32_t index){
+    for(struct wm_chunk *chunk=wm_chunks;chunk;chunk=chunk->next){
+        struct managed_window *slots=(struct managed_window *)(chunk+1);
+        if(index<WM_PER_PAGE) return &slots[index];
+        index-=WM_PER_PAGE;
     }
     return 0;
 }
 
 static uint32_t wm_slot_total(void){
     uint32_t total=0;
-    for(struct wm_chunk *c=wm_chunks;c;c=c->next) total+=WM_PER_PAGE;
+    for(struct wm_chunk *chunk=wm_chunks;chunk;chunk=chunk->next)
+        total+=WM_PER_PAGE;
     return total;
 }
 
 static struct managed_window *wm_alloc_slot(void){
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *s=wm_slot_at(n);
-        if(s && !s->used){
-            memset(s,0,sizeof(*s));
-            s->used=true;
-            wm_used_count++;
-            return s;
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *slot=wm_slot_at(index);
+        if(slot && !slot->used){
+            memset(slot,0,sizeof(*slot));
+            slot->used=true;
+            return slot;
         }
     }
-    uint64_t phys=pmm_allocate_page();
-    if(!phys) return 0;
-    struct wm_chunk *c=(struct wm_chunk*)pmm_physical_to_virtual(phys);
-    memset(c,0,4096);
-    c->next=wm_chunks;
-    wm_chunks=c;
-    struct managed_window *s=(struct managed_window*)(c+1);
-    s->used=true;
-    wm_used_count++;
-    return s;
-}
-
-static void wm_free_slot(struct managed_window *s){
-    if(!s || !s->used) return;
-    memset(s,0,sizeof(*s));
-    wm_used_count--;
+    uint64_t physical=pmm_allocate_page();
+    if(!physical) return 0;
+    struct wm_chunk *chunk=(struct wm_chunk *)pmm_physical_to_virtual(physical);
+    memset(chunk,0,4096);
+    chunk->next=wm_chunks;
+    wm_chunks=chunk;
+    struct managed_window *slot=(struct managed_window *)(chunk+1);
+    slot->used=true;
+    return slot;
 }
 
 static struct managed_window *find_window(uint32_t pid){
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *s=wm_slot_at(n);
-        if(s && s->used && s->pid==pid) return s;
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *slot=wm_slot_at(index);
+        if(slot && slot->used && slot->pid==pid)
+            return slot;
     }
     return 0;
 }
@@ -87,8 +79,8 @@ static bool point_inside(int32_t x, int32_t y,
 static struct managed_window *top_window_at(int32_t x, int32_t y){
     struct managed_window *top=0;
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *window=wm_slot_at(n);
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *window=wm_slot_at(index);
         if(!window || !window->used || !point_inside(x,y,&window->frame)) continue;
         if(!top || window->z_order>top->z_order) top=window;
     }
@@ -98,8 +90,8 @@ static struct managed_window *top_window_at(int32_t x, int32_t y){
 static struct managed_window *next_repaint_window(void){
     struct managed_window *next=0;
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *window=wm_slot_at(n);
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *window=wm_slot_at(index);
         if(!window || !window->used || !window->repaint_pending) continue;
         if(!next || window->z_order<next->z_order) next=window;
     }
@@ -110,15 +102,14 @@ bool window_manager_register(uint32_t pid,
                              const struct gui_window_request *request){
     if(!pid || !request || !request->width || !request->height) return false;
     struct managed_window *window=find_window(pid);
-    if(!window) window=wm_alloc_slot();
+    if(!window){
+        window=wm_alloc_slot();
+    }
     if(!window) return false;
     window->pid=pid;
     window->frame=*request;
     window->z_order=next_z_order++;
     focused_pid=pid;
-    (void)compositor_window_create(pid,request->x,request->y,
-                                   request->width,request->height);
-    compositor_window_raise(pid);
     return true;
 }
 
@@ -128,8 +119,6 @@ bool window_manager_update(uint32_t pid,
     if(!window || !request || !request->width || !request->height)
         return false;
     window->frame=*request;
-    (void)compositor_window_update(pid,request->x,request->y,
-                                   request->width,request->height);
     return true;
 }
 
@@ -137,18 +126,17 @@ void window_manager_unregister(uint32_t pid){
     struct managed_window *window=find_window(pid);
     if(!window) return;
     if(repainting_pid==pid) repainting_pid=0;
-    wm_free_slot(window);
-    compositor_window_destroy(pid);
+    memset(window,0,sizeof(*window));
     if(focused_pid!=pid) return;
     focused_pid=0;
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *s=wm_slot_at(n);
-        if(s && s->used
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *slot=wm_slot_at(index);
+        if(slot && slot->used
            && (!focused_pid
-               || s->z_order
+               || slot->z_order
                     >find_window(focused_pid)->z_order))
-            focused_pid=s->pid;
+            focused_pid=slot->pid;
     }
 }
 
@@ -188,7 +176,6 @@ bool window_manager_handle_pointer(int32_t x, int32_t y, bool pressed,
         if(top){
             focused_pid=top->pid;
             top->z_order=next_z_order++;
-            compositor_window_raise(top->pid);
         } else {
             focused_pid=0;
         }
@@ -211,7 +198,6 @@ bool window_manager_focus_pid(uint32_t pid){
     if(!w) return false;
     focused_pid = pid;
     w->z_order = next_z_order++;
-    compositor_window_raise(pid);
     return true;
 }
 
@@ -223,10 +209,12 @@ uint32_t window_manager_list(uint32_t *pids,
     for(;;){
         struct managed_window *best = 0;
         uint32_t total=wm_slot_total();
-        for(uint32_t n=0;n<total;n++){
-            struct managed_window *w=wm_slot_at(n);
-            if(!w || !w->used || w->z_order<=last_z) continue;
-            if(!best || w->z_order<best->z_order) best=w;
+        for(uint32_t index=0;index<total;index++){
+            struct managed_window *window=wm_slot_at(index);
+            if(!window || !window->used || window->z_order<=last_z)
+                continue;
+            if(!best || window->z_order<best->z_order)
+                best=window;
         }
         if(!best) break;
         if(count<capacity){
@@ -246,9 +234,10 @@ void window_manager_set_suspended(bool suspended){
 void window_manager_request_repaint(uint32_t excluded_pid){
     repainting_pid=0;
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *s=wm_slot_at(n);
-        if(s) s->repaint_pending=s->used && s->pid!=excluded_pid;
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *window=wm_slot_at(index);
+        if(window)
+            window->repaint_pending=window->used && window->pid!=excluded_pid;
     }
 }
 
@@ -260,8 +249,8 @@ bool window_manager_repaint_pending(void){
 void window_manager_cancel_repaint(void){
     repainting_pid=0;
     uint32_t total=wm_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        struct managed_window *s=wm_slot_at(n);
-        if(s) s->repaint_pending=false;
+    for(uint32_t index=0;index<total;index++){
+        struct managed_window *window=wm_slot_at(index);
+        if(window) window->repaint_pending=false;
     }
 }

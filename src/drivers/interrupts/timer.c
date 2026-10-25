@@ -1,6 +1,5 @@
 #include "timer.h"
 #include "../../kernel/process/scheduler.h"
-
 #include "../../kernel/diagnostics/klog.h"
 
 #define PIT_INPUT_HZ 1193182U

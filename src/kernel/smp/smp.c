@@ -116,7 +116,7 @@ void smp_ap_main(struct ap_boot_context *context,
 
     while(!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE))
         __asm__ volatile("sti; hlt; cli" ::: "memory");
-    lapic_start_timer();
+    (void)lapic_start_timer();
     scheduler_start();
     scheduler_idle_loop();
 }
@@ -161,7 +161,7 @@ void smp_start_all(struct limine_smp_response *response){
         klog(KLOG_WARN, "smp: LAPIC unavailable; BSP scheduling only");
         return;
     }
-    for(uint32_t id=1; id<cpu_registered_count(); id++){
+    for(uint32_t id=1;id<cpu_registered_count();id++){
         bool ok=smp_start_cpu(response,id,1000);
         klogf(ok ? KLOG_OK : KLOG_WARN,
               "smp: cpu%u lapic=%u %s state=%u",id,cpu_get_info(id)->lapic_id,

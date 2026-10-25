@@ -6,6 +6,6 @@
 #define SMP_SPURIOUS_VECTOR 0xFF
 bool lapic_init(void);
 bool lapic_init_cpu(void);
-void lapic_start_timer(void);
+bool lapic_start_timer(void);
 void lapic_eoi(void);
 bool lapic_send(uint32_t logical_id, uint32_t command);

@@ -47,6 +47,15 @@ int32_t ext2_dir_find(uint32_t dir_ino, const char *name, uint32_t *out_ino, uin
         {
             return -3;
         }
+        if (nl > vol->block_size - off - 8)
+        {
+            return -3;
+        }
+        if (ino != 0 && ino > vol->total_inodes)
+        {
+            offset += rec;
+            continue;
+        }
         if (ino != 0 && nl == nlen && memcmp(e + 8, name, nlen) == 0)
         {
             if (out_ino)
@@ -168,6 +177,15 @@ int32_t ext2_dir_list(uint32_t dir_ino, struct fs_directory_entry *entries, uint
         {
             break;
         }
+        if (rec > vol->block_size - off || nl > vol->block_size - off - 8)
+        {
+            break;
+        }
+        if (ino != 0 && ino > vol->total_inodes)
+        {
+            offset += rec;
+            continue;
+        }
         if (ino != 0)
         {
             if (nl > 0 && nl < FS_DIRECTORY_NAME_CAPACITY)
@@ -244,6 +262,15 @@ int32_t ext2_dir_list_long(uint32_t dir_ino, struct fs_directory_entry_long *ent
         if (rec == 0)
         {
             break;
+        }
+        if (rec > vol->block_size - off || nl > vol->block_size - off - 8)
+        {
+            break;
+        }
+        if (ino != 0 && ino > vol->total_inodes)
+        {
+            offset += rec;
+            continue;
         }
         if (ino != 0)
         {

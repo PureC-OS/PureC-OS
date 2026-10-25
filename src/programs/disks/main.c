@@ -164,7 +164,7 @@ static int disks_main(void) {
     uint32_t w = di.width > 780 ? 760 : di.width - 20;
     uint32_t h = di.height > 600 ? 560 : di.height - 40;
     if (!pg_window_center(&win, "Disks", w, h)) return 1;
-    struct disk_app app = {.selected = -1, .fs_type = FS_TYPE_FAT32, .partition_count = 1};
+    struct disk_app app = {.selected = -1, .fs_type = FS_TYPE_EXT2, .partition_count = 1};
     refresh(&app);
     struct pg_event ev = {0};
     draw(&win, &app, &ev);

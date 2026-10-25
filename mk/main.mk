@@ -7,6 +7,7 @@ ISO_IMAGE           := $(BIN_DIR)/purec_limine.iso
 LIMINE_CONFIG       := $(BIN_DIR)/staged/limine.conf
 
 CRYPT_DIR           := $(ROOT_DIR)/libxcrypt
+WOLFSSL_DIR         := $(ROOT_DIR)/wolfssl
 TCC_DIR             := $(ROOT_DIR)/tcc
 ACPI_DIR            := $(ROOT_DIR)/acpi
 NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
@@ -14,7 +15,7 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad clean help \
+.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
@@ -22,8 +23,13 @@ export ROOT_DIR BIN_DIR
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
+
+test-wolfcrypt:
+	@test -f "$(WOLFSSL_DIR)/wolfcrypt/src/aes.c" || \
+	  { echo "ERROR: wolfssl/ not found. Run: ./purec.py setup"; exit 1; }
+	$(MAKE) -C $(WOLFSSL_DIR) check-crypt
 
 test-ipc:
 	@mkdir -p $(BIN_DIR)/tests
@@ -139,6 +145,12 @@ test-qemu-network-pcnet:
 	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
 	python3 tests/qemu_network.py --iso "$(ISO_IMAGE)" --driver pcnet
 
+test-qemu-panic:
+	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
+	python3 tests/qemu_panic_test.py --iso "$(ISO_IMAGE)" \
+		--log "$(BIN_DIR)/tests/qemu-panic.log" \
+		--shot "$(BIN_DIR)/tests/qemu-panic-shot.ppm"
+
 all: iso
 
 libraries:
@@ -162,6 +174,10 @@ notepad:
 hexedit: libraries
 	$(MAKE) -C src/programs/hexedit
 
+wolf: $(WOLFSSL_DIR)/wolfcrypt/src/aes.c
+	$(MAKE) -C $(WOLFSSL_DIR) module
+	$(MAKE) -C $(WOLFSSL_DIR) lib
+
 
 kernel:
 	@test -f "$(CRYPT_DIR)/src/sha512.c" || \
@@ -176,6 +192,7 @@ kernel:
 	$(MAKE) -C src/drivers/net/ath9k    module
 	$(MAKE) -C $(CRYPT_DIR)             module
 	$(MAKE) -C $(ACPI_DIR)              module
+	$(MAKE) -C $(WOLFSSL_DIR)           module lib
 
 iso: kernel programs
 	@set -eu; \
@@ -203,7 +220,7 @@ iso: kernel programs
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
 	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
-	for mod in ext2 crypt acpi e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
+	for mod in ext2 crypt acpi wolf e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
 			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/bin/modules/$$mod.$$ext" || true; \
@@ -232,6 +249,7 @@ clean:
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
 	$(MAKE) -C src/programs    clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
+	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true
 	rm -rf $(BIN_DIR)/iso_root $(BIN_DIR)/staged
 	@echo "Clean done."
 
@@ -245,6 +263,7 @@ help:
 	@echo "  make programs       build Ring-3 programs"
 	@echo "  make hexedit        build HexEdit"
 	@echo "  make notepad        build PureC Notepad"
+	@echo "  make wolf           build libwolf.a + wolf.ko (wolfSSL port)"
 	@echo "  make iso            assemble ISO image"
 	@echo "  make test           run all host tests"
 	@echo "  make test-cpu       run host CPU discovery tests"

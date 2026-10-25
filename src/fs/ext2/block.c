@@ -161,12 +161,22 @@ static uint32_t ext2_metadata_blocks_per_group(void)
     return 2 + itb;
 }
 
+static uint32_t ext2_group_reserved_blocks(uint32_t group)
+{
+    uint32_t meta = ext2_metadata_blocks_per_group();
+    if (group != 0)
+        return meta;
+    uint32_t bsz = g_vol.block_size ? g_vol.block_size : 1024;
+    uint32_t gd_blocks =
+        (g_vol.groups_count * 32 + bsz - 1) / bsz;
+    return 2 + gd_blocks + meta + 1;
+}
+
 uint32_t ext2_alloc_block(void)
 {
     uint32_t groups = g_vol.groups_count;
     if (groups == 0)
         groups = 1;
-    uint32_t meta = ext2_metadata_blocks_per_group();
     for (uint32_t g = 0; g < groups; g++)
     {
         uint8_t gd[32];
@@ -178,7 +188,7 @@ uint32_t ext2_alloc_block(void)
         uint8_t bmp[4096];
         if (!ext2_read_block(bmb, bmp))
             continue;
-        uint32_t start = (g == 0) ? 135 : meta;
+        uint32_t start = ext2_group_reserved_blocks(g);
         uint32_t end = g_vol.blocks_per_group;
         if (g == groups - 1)
         {
@@ -220,8 +230,7 @@ bool ext2_free_block(uint32_t block)
     if (g >= g_vol.groups_count)
         return false;
     uint32_t off = block % g_vol.blocks_per_group;
-    uint32_t meta = ext2_metadata_blocks_per_group();
-    uint32_t reserved = (g == 0) ? 135 : meta;
+    uint32_t reserved = ext2_group_reserved_blocks(g);
     if (off < reserved)
     {
         klogf(KLOG_WARN, "ext2_free_block: attempt to free reserved block %u", block);

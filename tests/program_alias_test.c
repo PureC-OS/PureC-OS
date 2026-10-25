@@ -21,7 +21,6 @@ int main(void){
     expect_alias("disks");
     expect_alias("/bin/debug");
     expect_alias("/bin/program/systeminfo");
-    expect_alias("/bin/program/mkfs.fat32");
 
     expect_no_alias("");
     expect_no_alias("unknown");

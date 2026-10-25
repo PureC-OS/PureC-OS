@@ -1,6 +1,7 @@
 #include "scheduler.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
+#include "../../arch/x86_64/idt/include/idt.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../lib/string.h"
 #include "../../mm/oom/oom_slab.h"
@@ -9,6 +10,7 @@
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../smp/cpu.h"
+#include "../smp/lapic.h"
 #include "../smp/smp.h"
 #include "../sync/spinlock.h"
 
@@ -24,7 +26,6 @@ struct scheduler_cpu {
   struct thread *previous;
   bool initialized;
   bool started;
-  struct thread *cursor;
   uint64_t last_tick;
   uint64_t total_ticks;
   uint64_t idle_ticks;
@@ -35,6 +36,8 @@ static struct scheduler_cpu cpu_schedulers[CPU_MAX_COUNT];
 static spinlock_t runqueue_lock = SPINLOCK_INIT;
 static uint32_t next_id = 1;
 static uint32_t active_mask;
+static uint64_t runqueue_min_vruntime;
+#define SCHEDULER_NICE_0_WEIGHT 1024ULL
 #define THASH_BITS 8
 #define THASH_SIZE (1u << THASH_BITS)
 static struct thread *thash_buckets[THASH_SIZE];
@@ -73,24 +76,63 @@ static struct scheduler_cpu *local_scheduler(void) {
   return &cpu_schedulers[id];
 }
 
-uint32_t scheduler_qos_quantum(uint8_t qos) {
-  switch (qos) {
-  case SCHED_QOS_USER_INTERACTIVE:
-    return 2;
-  case SCHED_QOS_USER_INITIATED:
-    return 3;
-  case SCHED_QOS_DEFAULT:
-    return SCHEDULER_TIME_SLICE_MS;
-  case SCHED_QOS_UTILITY:
-    return 8;
-  case SCHED_QOS_BACKGROUND:
-    return 10;
-  case SCHED_QOS_IDLE:
-  default:
-    break;
-  }
-  return SCHEDULER_TIME_SLICE_MS;
+static uint32_t scheduler_weight(uint8_t qos) {
+  static const uint16_t weights[] = {256, 512, 768, 1024, 1536, 2048};
+  return qos < sizeof(weights) / sizeof(weights[0])
+             ? weights[qos]
+             : weights[SCHED_QOS_DEFAULT];
 }
+
+uint32_t scheduler_qos_quantum(uint8_t qos) {
+  uint64_t slice = (uint64_t)SCHEDULER_TARGET_LATENCY_MS *
+                   scheduler_weight(qos) / SCHEDULER_NICE_0_WEIGHT;
+  return slice ? (uint32_t)slice : 1;
+}
+
+static bool thread_on_runqueue(const struct thread *thread) {
+  return !thread->idle &&
+         (thread->state == THREAD_READY || thread->state == THREAD_RUNNING);
+}
+
+static uint32_t fair_slice_ms(const struct thread *thread) {
+  uint64_t total_weight = 0;
+  for (const struct thread *candidate = thread_list; candidate;
+       candidate = candidate->next) {
+    if (thread_on_runqueue(candidate))
+      total_weight += scheduler_weight(candidate->qos);
+  }
+  if (!total_weight)
+    return SCHEDULER_TARGET_LATENCY_MS;
+
+  uint64_t slice =
+      (SCHEDULER_TARGET_LATENCY_MS * scheduler_weight(thread->qos)) /
+      total_weight;
+  if (!slice)
+    slice = 1;
+  if (slice > SCHEDULER_TARGET_LATENCY_MS)
+    slice = SCHEDULER_TARGET_LATENCY_MS;
+  return (uint32_t)slice;
+}
+
+static uint64_t virtual_deadline_after(const struct thread *thread,
+                                       uint32_t slice_ms) {
+  uint64_t weight = scheduler_weight(thread->qos);
+  uint64_t delta = ((uint64_t)slice_ms * SCHEDULER_NICE_0_WEIGHT) / weight;
+  if (!delta)
+    delta = 1;
+  return UINT64_MAX - thread->virtual_runtime < delta
+             ? UINT64_MAX
+             : thread->virtual_runtime + delta;
+}
+
+static void ensure_fair_request(struct thread *thread) {
+  if (thread->idle || thread->ticks_remaining)
+    return;
+  thread->ticks_remaining = fair_slice_ms(thread);
+  thread->virtual_deadline =
+      virtual_deadline_after(thread, thread->ticks_remaining);
+}
+
 static void thread_trampoline(void);
 static uint64_t create_initial_stack(struct thread *thread);
 static bool kernel_text_address_valid(uint64_t address) {
@@ -202,9 +244,6 @@ static void finish_switch(void) {
       if (*link) {
         *link = previous->next;
         thread_live_count--;
-        for (unsigned i = 0; i < CPU_MAX_COUNT; i++)
-          if (cpu_schedulers[i].cursor == previous)
-            cpu_schedulers[i].cursor = NULL;
         thash_remove(previous);
         victim = previous;
       }
@@ -248,12 +287,11 @@ void scheduler_init_cpu(void) {
   idle->affinity = (int16_t)id;
   idle->qos = SCHED_QOS_IDLE;
   idle->address_space = vmm_kernel_address_space();
-  idle->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
+  idle->ticks_remaining = 0;
   strncpy(idle->name, "idle", sizeof(idle->name) - 1);
   fpu_thread_init(idle->fpu_state);
   cpu->idle = idle;
   cpu->current = idle;
-  cpu->cursor = NULL;
   cpu->last_tick = timer_ticks();
   cpu->initialized = true;
 }
@@ -263,6 +301,7 @@ void scheduler_init(void) {
     return;
   thread_list = NULL;
   thread_live_count = 0;
+  runqueue_min_vruntime = 0;
   for (unsigned i = 0; i < THASH_SIZE; i++)
     thash_buckets[i] = NULL;
   scheduler_init_cpu();
@@ -314,6 +353,8 @@ void scheduler_host_reset(void) {
   thread_list = NULL;
   thread_live_count = 0;
   next_id = 1;
+  active_mask = 0;
+  runqueue_min_vruntime = 0;
   for (unsigned i = 0; i < THASH_SIZE; i++)
     thash_buckets[i] = NULL;
   memset(cpu_schedulers, 0, sizeof(cpu_schedulers));
@@ -341,13 +382,6 @@ struct thread *scheduler_host_idle(uint32_t id) {
   return &idle_threads[id];
 }
 #endif
-
-static bool thread_in_list(struct thread *t) {
-  for (struct thread *cursor = thread_list; cursor; cursor = cursor->next)
-    if (cursor == t)
-      return true;
-  return false;
-}
 
 static struct thread *alloc_thread(void) {
   for (struct thread *t = thread_list; t; t = t->next) {
@@ -379,9 +413,6 @@ void scheduler_free_thread_by_id(int tid) {
     if (*link) {
       *link = victim->next;
       thread_live_count--;
-      for (unsigned i = 0; i < CPU_MAX_COUNT; i++)
-        if (cpu_schedulers[i].cursor == victim)
-          cpu_schedulers[i].cursor = NULL;
       thash_remove(victim);
     } else {
       victim = NULL;
@@ -436,7 +467,9 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   t->affinity = affinity;
   t->running_cpu = -1;
   t->kernel_only = user_mode;
-  t->ticks_remaining = SCHEDULER_TIME_SLICE_MS;
+  t->ticks_remaining = 0;
+  t->virtual_runtime = runqueue_min_vruntime;
+  t->virtual_deadline = 0;
   t->address_space = address_space ? address_space : vmm_kernel_address_space();
   t->process = process;
   t->user_mode = user_mode;
@@ -455,9 +488,13 @@ void scheduler_set_qos(int tid, uint8_t qos) {
     return;
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   struct thread *found = (tid >= 0) ? thash_find((uint32_t)tid) : NULL;
-  if (found && found->state != THREAD_FREE)
+  if (found && found->state != THREAD_FREE) {
     found->qos = qos;
+    found->ticks_remaining = 0;
+    found->virtual_deadline = 0;
+  }
   spin_unlock_irqrestore(&runqueue_lock, flags);
+  smp_reschedule_all();
 }
 
 uint8_t scheduler_get_qos(int tid) {
@@ -588,49 +625,153 @@ static bool eligible(const struct thread *t, uint32_t id) {
     return id == 0;
   return t->affinity < 0 || t->affinity == (int16_t)id;
 }
+
+static void calculate_cpu_loads(uint64_t loads[CPU_MAX_COUNT],
+                                const struct thread *moving) {
+  memset(loads, 0, sizeof(uint64_t) * CPU_MAX_COUNT);
+  for (uint32_t id = 0; id < cpu_registered_count(); id++) {
+    if (!cpu_schedulers[id].started)
+      continue;
+    struct thread *current = cpu_schedulers[id].current;
+    if (current && !current->idle && current != moving)
+      loads[id] += scheduler_weight(current->qos);
+  }
+
+  for (struct thread *thread = thread_list; thread; thread = thread->next) {
+    if (thread == moving || thread->state != THREAD_READY ||
+        thread->running_cpu != -1)
+      continue;
+
+    uint32_t least = CPU_MAX_COUNT;
+    uint64_t weight = scheduler_weight(thread->qos);
+    uint64_t least_load = UINT64_MAX;
+    for (uint32_t id = 0; id < cpu_registered_count(); id++) {
+      if (!cpu_schedulers[id].started || !eligible(thread, id))
+        continue;
+      if (loads[id] < least_load ||
+          (loads[id] == least_load && id < least)) {
+        least = id;
+        least_load = loads[id];
+      }
+    }
+    if (least < CPU_MAX_COUNT)
+      loads[least] += weight;
+  }
+}
+
+static void enqueue_woken_thread(struct thread *thread) {
+  if (thread->virtual_runtime < runqueue_min_vruntime)
+    thread->virtual_runtime = runqueue_min_vruntime;
+  thread->ticks_remaining = 0;
+  thread->virtual_deadline = 0;
+  thread->wake_tick = 0;
+  thread->state = THREAD_READY;
+}
+
 static void wake_sleeping_threads(void) {
   uint64_t now = timer_ticks();
   for (struct thread *t = thread_list; t; t = t->next) {
-    if (t->state == THREAD_BLOCKED && t->wake_tick && now >= t->wake_tick) {
-      t->state = THREAD_READY;
-      t->wake_tick = 0;
-    }
+    if (t->state == THREAD_BLOCKED && t->wake_tick && now >= t->wake_tick)
+      enqueue_woken_thread(t);
   }
 }
+
+static void update_min_vruntime(void) {
+  uint64_t minimum = UINT64_MAX;
+  for (struct thread *thread = thread_list; thread; thread = thread->next) {
+    if (thread_on_runqueue(thread) && thread->virtual_runtime < minimum)
+      minimum = thread->virtual_runtime;
+  }
+  if (minimum != UINT64_MAX && minimum > runqueue_min_vruntime)
+    runqueue_min_vruntime = minimum;
+}
+
+static uint64_t runqueue_avg_vruntime(void) {
+  uint64_t total_weight = 0;
+  uint64_t weighted_delta = 0;
+  for (struct thread *thread = thread_list; thread; thread = thread->next) {
+    if (!thread_on_runqueue(thread))
+      continue;
+    uint64_t weight = scheduler_weight(thread->qos);
+    uint64_t delta = thread->virtual_runtime > runqueue_min_vruntime
+                         ? thread->virtual_runtime - runqueue_min_vruntime
+                         : 0;
+    if (delta && weight > (UINT64_MAX - weighted_delta) / delta)
+      weighted_delta = UINT64_MAX;
+    else if (weighted_delta != UINT64_MAX)
+      weighted_delta += delta * weight;
+    total_weight += weight;
+  }
+  if (!total_weight)
+    return runqueue_min_vruntime;
+  uint64_t average_delta = weighted_delta / total_weight;
+  return UINT64_MAX - runqueue_min_vruntime < average_delta
+             ? UINT64_MAX
+             : runqueue_min_vruntime + average_delta;
+}
+
 static struct thread *pick_next(void) {
   uint32_t id = gdt_current_cpu_id();
   struct scheduler_cpu *cpu = local_scheduler();
+  update_min_vruntime();
   wake_sleeping_threads();
-  uint8_t best = 0;
-  bool have = false;
+  update_min_vruntime();
+  uint64_t average = runqueue_avg_vruntime();
+  struct thread *best_eligible = NULL;
+  struct thread *best_fallback = NULL;
   for (struct thread *t = thread_list; t; t = t->next) {
-    if (t->state == THREAD_READY && t->running_cpu == -1 && eligible(t, id)) {
-      if (!have || t->qos > best) {
-        best = t->qos;
-        have = true;
-      }
-    }
+    bool current = t == cpu->current;
+    bool selectable =
+        (t->state == THREAD_READY && t->running_cpu == -1) ||
+        (current && (t->state == THREAD_READY || t->state == THREAD_RUNNING));
+    if (!selectable || !eligible(t, id))
+      continue;
+    ensure_fair_request(t);
+    if (!best_fallback || t->virtual_runtime < best_fallback->virtual_runtime ||
+        (t->virtual_runtime == best_fallback->virtual_runtime &&
+         t->virtual_deadline < best_fallback->virtual_deadline))
+      best_fallback = t;
+    if (t->virtual_runtime <= average &&
+        (!best_eligible ||
+         t->virtual_deadline < best_eligible->virtual_deadline))
+      best_eligible = t;
   }
-  struct thread *cursor =
-      (cpu->cursor && thread_in_list(cpu->cursor)) ? cpu->cursor : NULL;
-  struct thread *t = cursor ? cursor->next : thread_list;
-  if (!t)
-    t = thread_list;
-  if (t && have) {
-    struct thread *stop = t;
-    do {
-      if (t->state == THREAD_READY && t->running_cpu == -1 &&
-          t->qos == best && eligible(t, id)) {
-        cpu->cursor = t;
-        return t;
-      }
-      t = t->next ? t->next : thread_list;
-    } while (t != stop);
+  struct thread *next = best_eligible ? best_eligible : best_fallback;
+  return next ? next : cpu->idle;
+}
+
+static void account_current(struct scheduler_cpu *cpu, uint64_t now) {
+  if (!cpu || !cpu->started)
+    return;
+  uint64_t elapsed = now - cpu->last_tick;
+  cpu->last_tick = now;
+  if (!elapsed)
+    return;
+
+  __atomic_fetch_add(&cpu->total_ticks, elapsed, __ATOMIC_RELAXED);
+  struct thread *current = cpu->current;
+  if (!current)
+    return;
+  if (current->idle) {
+    __atomic_fetch_add(&cpu->idle_ticks, elapsed, __ATOMIC_RELAXED);
+    return;
   }
-  if (!cpu->current->idle && cpu->current->state == THREAD_RUNNING &&
-      eligible(cpu->current, id))
-    return cpu->current;
-  return cpu->idle;
+
+  current->runtime_ticks += elapsed;
+  uint64_t weight = scheduler_weight(current->qos);
+  uint64_t delta = elapsed > UINT64_MAX / SCHEDULER_NICE_0_WEIGHT
+                       ? UINT64_MAX
+                       : (elapsed * SCHEDULER_NICE_0_WEIGHT) / weight;
+  if (!delta)
+    delta = 1;
+  current->virtual_runtime =
+      UINT64_MAX - current->virtual_runtime < delta
+          ? UINT64_MAX
+          : current->virtual_runtime + delta;
+  if (elapsed >= current->ticks_remaining)
+    current->ticks_remaining = 0;
+  else
+    current->ticks_remaining -= (uint32_t)elapsed;
 }
 
 static void schedule_locked(void) {
@@ -639,7 +780,6 @@ static void schedule_locked(void) {
   struct thread *next = pick_next();
   if (next == prev) {
     prev->state = THREAD_RUNNING;
-    prev->ticks_remaining = scheduler_qos_quantum(prev->qos);
     spin_unlock(&runqueue_lock);
     return;
   }
@@ -651,7 +791,6 @@ static void schedule_locked(void) {
     next->migrations++;
   next->cpu_mask |= 1U << id;
   next->running_cpu = (int16_t)id;
-  next->ticks_remaining = scheduler_qos_quantum(next->qos);
   cpu->previous = prev;
   cpu->current = next;
   validate_switch_target(prev, next);
@@ -673,6 +812,7 @@ void scheduler_yield(void) {
     return;
   }
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  account_current(cpu, timer_ticks());
   schedule_locked();
   irq_restore(flags);
 }
@@ -719,6 +859,7 @@ void scheduler_sleep(uint32_t milliseconds) {
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return;
   }
+  account_current(local_scheduler(), timer_ticks());
   uint64_t now = timer_ticks();
   t->wake_tick = now + milliseconds;
   if (t->wake_tick < now)
@@ -738,6 +879,7 @@ void scheduler_block(void) {
     spin_unlock_irqrestore(&runqueue_lock, flags);
     return;
   }
+  account_current(local_scheduler(), timer_ticks());
   t->state = THREAD_BLOCKED;
   schedule_locked();
   irq_restore(flags);
@@ -747,10 +889,11 @@ void scheduler_unblock(int tid) {
   struct thread *t = (tid >= 0) ? thash_find((uint32_t)tid) : NULL;
   if (t) {
     if (t->state == THREAD_BLOCKED) {
-      t->wake_tick = 0;
-      t->state = THREAD_READY;
-    } else if (t->state == THREAD_RUNNING || t->state == THREAD_READY)
+      update_min_vruntime();
+      enqueue_woken_thread(t);
+    } else if (t->state == THREAD_RUNNING || t->state == THREAD_READY) {
       t->wake_pending = true;
+    }
   }
   spin_unlock_irqrestore(&runqueue_lock, flags);
   smp_reschedule_all();
@@ -760,6 +903,7 @@ void scheduler_exit(void) {
   struct thread *t = local_scheduler()->current;
   if (t->idle)
     kernel_panic("sched: idle cannot exit");
+  account_current(local_scheduler(), timer_ticks());
   t->state = THREAD_TERMINATED;
   schedule_locked();
   kernel_panic("sched: terminated thread resumed");
@@ -770,22 +914,16 @@ void scheduler_on_timer_interrupt(void) {
   if (!cpu->started)
     return;
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
-  uint64_t now = timer_ticks();
-  uint64_t elapsed = now - cpu->last_tick;
-  cpu->last_tick = now;
-  __atomic_fetch_add(&cpu->total_ticks, elapsed, __ATOMIC_RELAXED);
-  struct thread *t = cpu->current;
-  t->runtime_ticks += elapsed;
-  if (t->idle)
-    __atomic_fetch_add(&cpu->idle_ticks, elapsed, __ATOMIC_RELAXED);
-  if ((elapsed >= t->ticks_remaining || t->idle) && cpu->preempt_depth) {
+  account_current(cpu, timer_ticks());
+  struct thread *current = cpu->current;
+  if ((current->ticks_remaining == 0 || current->idle) &&
+      cpu->preempt_depth) {
     cpu->reschedule_pending = true;
     spin_unlock(&runqueue_lock);
-  } else if (elapsed >= t->ticks_remaining || t->idle) {
+  } else if (current->ticks_remaining == 0 || current->idle) {
     cpu->reschedule_pending = false;
     schedule_locked();
   } else {
-    t->ticks_remaining -= (uint32_t)elapsed;
     spin_unlock(&runqueue_lock);
   }
   irq_restore(flags);
@@ -807,8 +945,11 @@ void scheduler_start(void) {
   cpu->last_tick = timer_ticks();
   __atomic_fetch_or(&active_mask, 1U << gdt_current_cpu_id(), __ATOMIC_RELEASE);
   spin_unlock_irqrestore(&runqueue_lock, flags);
-  if (gdt_current_cpu_id() == 0)
+  if (gdt_current_cpu_id() == 0) {
+    if (lapic_start_timer())
+      idt_mask_irq(0);
     smp_release_scheduler();
+  }
   scheduler_yield();
 }
 
@@ -840,22 +981,21 @@ void scheduler_leave_kernel(void) {
   t->kernel_only = false;
   uint32_t here = gdt_current_cpu_id();
   if (t->affinity == -1 || t->affinity_auto) {
-    int16_t target = -1;
-    for (uint32_t j = 0; j < CPU_MAX_COUNT; j++) {
-      if (j == here)
+    uint64_t loads[CPU_MAX_COUNT];
+    calculate_cpu_loads(loads, t);
+    uint32_t target = here;
+    uint64_t local_load = loads[here] + scheduler_weight(t->qos);
+    uint64_t target_load = local_load;
+    for (uint32_t id = 0; id < cpu_registered_count(); id++) {
+      if (id == here || !cpu_schedulers[id].started)
         continue;
-      if (j >= cpu_registered_count() || !cpu_is_online(j))
-        continue;
-      struct scheduler_cpu *c = &cpu_schedulers[j];
-      if (!c->initialized || !c->started)
-        continue;
-      if (c->current && c->current->idle) {
-        target = (int16_t)j;
-        break;
+      if (loads[id] < target_load) {
+        target = id;
+        target_load = loads[id];
       }
     }
-    if (target >= 0) {
-      t->affinity = target;
+    if (target != here) {
+      t->affinity = (int16_t)target;
       t->affinity_auto = true;
     } else {
       t->affinity = -1;

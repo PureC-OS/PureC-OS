@@ -443,6 +443,9 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy)
 {
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    int32_t old_x = state.x;
+    int32_t old_y = state.y;
+    uint8_t old_buttons = state.buttons;
     int32_t adx = dx < 0 ? -(int32_t)dx : (int32_t)dx;
     int32_t ady = dy < 0 ? -(int32_t)dy : (int32_t)dy;
     int32_t magnitude = adx > ady ? adx : ady;
@@ -462,7 +465,8 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy)
         state.y = bound_h - 1;
     state.buttons = buttons & 0x07;
     state.has_data = true;
-    mouse_ui_pending = true;
+    if (state.x != old_x || state.y != old_y || state.buttons != old_buttons)
+        mouse_ui_pending = true;
     if (flags & (1ULL << 9))
         __asm__ volatile("sti" ::: "memory");
 }

@@ -66,7 +66,6 @@ static int32_t  dragged_icon = -1;
 static int32_t  icon_drag_offset_x;
 static int32_t  icon_drag_offset_y;
 static bool     icon_drag_moved;
-static uint64_t last_drag_ms;
 static char     persistent_log_buffer[PERSISTENT_LOG_CHUNK];
 static void redraw_scene(void);
 static void redraw_managed_scene(uint32_t excluded_pid);
@@ -77,40 +76,40 @@ struct detach_chunk {
     struct detach_chunk *next;
 };
 
-#define DETACH_PER_PAGE (4096u/sizeof(int32_t))
+#define DETACH_PER_PAGE ((4096u - sizeof(struct detach_chunk)) / sizeof(int32_t))
 
 static struct detach_chunk *detach_chunks;
 
-static int32_t *detach_slot_at(uint32_t n){
-    for(struct detach_chunk *c=detach_chunks;c;c=c->next){
-        int32_t *slots=(int32_t*)(c+1);
-        if(n<DETACH_PER_PAGE) return &slots[n];
-        n-=DETACH_PER_PAGE;
+static int32_t *detach_slot_at(uint32_t index){
+    for(struct detach_chunk *chunk=detach_chunks;chunk;chunk=chunk->next){
+        int32_t *slots=(int32_t *)(chunk+1);
+        if(index<DETACH_PER_PAGE) return &slots[index];
+        index-=DETACH_PER_PAGE;
     }
     return 0;
 }
 
 static uint32_t detach_slot_total(void){
     uint32_t total=0;
-    for(struct detach_chunk *c=detach_chunks;c;c=c->next) total+=DETACH_PER_PAGE;
+    for(struct detach_chunk *chunk=detach_chunks;chunk;chunk=chunk->next)
+        total+=DETACH_PER_PAGE;
     return total;
 }
 
 static int32_t *detach_alloc_slot(void){
     uint32_t total=detach_slot_total();
-    for(uint32_t n=0;n<total;n++){
-        int32_t *s=detach_slot_at(n);
-        if(s && *s<=0) return s;
+    for(uint32_t index=0;index<total;index++){
+        int32_t *slot=detach_slot_at(index);
+        if(slot && *slot<=0) return slot;
     }
-    uint64_t phys=pmm_allocate_page();
-    if(!phys) return 0;
-    struct detach_chunk *c=(struct detach_chunk*)pmm_physical_to_virtual(phys);
-    memset(c,0,4096);
-    c->next=detach_chunks;
-    detach_chunks=c;
-    return (int32_t*)(c+1);
+    uint64_t physical=pmm_allocate_page();
+    if(!physical) return 0;
+    struct detach_chunk *chunk=(struct detach_chunk *)pmm_physical_to_virtual(physical);
+    memset(chunk,0,4096);
+    chunk->next=detach_chunks;
+    detach_chunks=chunk;
+    return (int32_t *)(chunk+1);
 }
-
 
 static bool external_program_has_input_focus(void){
     return __atomic_load_n(&external_program_active, __ATOMIC_ACQUIRE);
@@ -183,9 +182,9 @@ static int32_t userspace_run_detached(const char *path, const char *arguments){
 
 static void reap_detached_programs(void){
     uint32_t total=detach_slot_total();
-    for(uint32_t i = 0; i < total; i++){
+    for(uint32_t i=0;i<total;i++){
         int32_t *slot=detach_slot_at(i);
-        if(!slot || *slot <= 0) continue;
+        if(!slot || *slot<=0) continue;
         int32_t status = 0;
         int64_t result = userspace_syscall(SYS_WAIT,
             (uint64_t)*slot, (uint64_t)&status, 1);
@@ -295,10 +294,26 @@ static void redraw_scene(void){
     mouse_end_framebuffer_update();
 }
 
+static void wait_for_managed_repaint(void){
+    for(uint32_t attempt = 0;
+        attempt < 250 && window_manager_repaint_pending(); attempt++)
+        scheduler_sleep(1);
+    if(window_manager_repaint_pending()) window_manager_cancel_repaint();
+}
+
 static void redraw_managed_scene(uint32_t excluded_pid){
-    (void)excluded_pid;
     mouse_begin_framebuffer_update();
+    gop_begin_compose();
     redraw_scene();
+    window_manager_request_repaint(excluded_pid);
+    wait_for_managed_repaint();
+    if(excluded_pid != 0){
+        gop_end_compose_keep();
+        mouse_end_framebuffer_update_keep();
+        gop_defer_present();
+        return;
+    }
+    gop_end_compose();
     mouse_end_framebuffer_update();
 }
 
@@ -432,17 +447,7 @@ static void handle_desktop_mouse(void){
         consumed = desktop_apps_handle_mouse(
             mouse.x, mouse.y, mouse.buttons, pressed, released,
             desktop_width, desktop_height, &app_redraw);
-        if(app_redraw){
-            if((mouse.buttons & 1) && !pressed && !released){
-                uint64_t now = timer_ticks();
-                if(now - last_drag_ms >= 16){
-                    last_drag_ms = now;
-                    redraw = true;
-                }
-            } else {
-                redraw = true;
-            }
-        }
+        redraw = redraw || app_redraw;
     }
     if(pressed && !consumed){
         uint32_t count = desktop_entries_count();
@@ -474,11 +479,7 @@ static void handle_desktop_mouse(void){
                 icon_drag_moved = true;
                 desktop_entries_set_position((uint32_t)dragged_icon,
                                              (uint32_t)next_x, (uint32_t)next_y);
-                uint64_t now = timer_ticks();
-                if(now - last_drag_ms >= 16){
-                    last_drag_ms = now;
-                    redraw_managed_scene(0);
-                }
+                redraw_managed_scene(0);
             }
         }
     }
@@ -491,10 +492,6 @@ static void handle_desktop_mouse(void){
     }
 
     previous_mouse_buttons = mouse.buttons;
-    if(released){
-        last_drag_ms = 0;
-        redraw = true;
-    }
     if(redraw) redraw_managed_scene(0);
 }
 
@@ -590,7 +587,7 @@ void userspace_input_thread(void *arg){
         handle_desktop_mouse();
         desktop_apps_update();
         if(bottom_panel_needs_redraw()) redraw_managed_scene(0);
-        scheduler_sleep(1);
+        scheduler_sleep(4);
     }
 }
 

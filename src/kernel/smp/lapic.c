@@ -84,11 +84,12 @@ bool lapic_init(void) {
   return true;
 }
 
-void lapic_start_timer(void) {
+bool lapic_start_timer(void) {
   if (!ready)
-    return;
+    return false;
   write_reg(0x320, (1U << 17) | SMP_TIMER_VECTOR);
   write_reg(0x380, timer_count);
+  return true;
 }
 void lapic_eoi(void) {
   if (ready)
