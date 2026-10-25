@@ -6,7 +6,7 @@
 void _start(void){
     char arguments[NANO_PATH_CAPACITY];
     if(pc_get_command_line(arguments,sizeof(arguments))<=0){
-        pc_write("usage: /bin/program/nano <file>\n");
+        pc_write("usage: /usr/bin/nano <file>\n");
         pc_exit(2);
     }
     const char *argument=arguments;

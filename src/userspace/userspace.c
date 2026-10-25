@@ -151,14 +151,14 @@ static void draw_desktop_icons(void){
 
 static bool installation_present(void){
     int64_t descriptor = userspace_syscall(
-        SYS_OPEN, (uint64_t)"/purec/install.cfg", 0, 0);
+        SYS_OPEN, (uint64_t)"/etc/purec/install.cfg", 0, 0);
     if(descriptor < 0) return false;
     (void)userspace_syscall(SYS_CLOSE, (uint64_t)descriptor, 0, 0);
     return true;
 }
 
 static void launch_installer(void){
-    (void)userspace_run_detached("/bin/installer", 0);
+    (void)userspace_run_detached("/usr/bin/installer", 0);
 }
 
 static bool installer_requires_restart(int32_t status){
@@ -200,9 +200,9 @@ static void reap_detached_programs(void){
 }
 
 static int32_t userspace_run_program_with_args(const char *path,
-                                               const char *arguments){
+                                                const char *arguments){
     if(!path) return -1;
-    bool supervise_installer = strcmp(path, "/bin/installer") == 0;
+    bool supervise_installer = strcmp(path, "/usr/bin/installer") == 0;
     if(!supervise_installer) return userspace_run_detached(path, arguments);
     if(external_program_has_input_focus()) return -1;
     set_external_program_input_focus(true);
@@ -350,7 +350,7 @@ void userspace_redraw_desktop(void){
 static void launch_entry(const struct desktop_entry *e){
     if(!e) return;
     if(e->exec[0]){
-        if(strcmp(e->exec, "/bin/installer") == 0)
+        if(strcmp(e->exec, "/usr/bin/installer") == 0)
             launch_installer();
         else
             (void)userspace_run_program(e->exec);
@@ -374,7 +374,7 @@ static void service_bottom_panel_actions(void){
                                  builtin, sizeof(builtin)))
         return;
     if(kind == BOTTOM_ACTION_EXEC && path[0]){
-        if(strcmp(path, "/bin/installer") == 0)
+        if(strcmp(path, "/usr/bin/installer") == 0)
             launch_installer();
         else
             (void)userspace_run_program(path);
@@ -557,7 +557,7 @@ void userspace_init(void){
     desktop_entries_set_installer_visible(!installation_present());
     personalization_poll();
     klog_set_screen_enabled(false);
-    (void)userspace_run_detached("/bin/program/login", 0);
+    (void)userspace_run_detached("/usr/bin/login", 0);
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
                          "userspace: initialization complete");
 }

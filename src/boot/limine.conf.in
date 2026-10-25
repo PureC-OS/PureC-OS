@@ -10,12 +10,12 @@ serial: yes
     module_path: boot():/boot/kernel-fallback.elf
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
 @MODULES@
-    module_path: boot():/bin/modules/ext2.elf
-    module_path: boot():/bin/modules/ext2.ko
-    module_path: boot():/bin/modules/crypt.elf
-    module_path: boot():/bin/modules/crypt.ko
-    module_path: boot():/bin/modules/acpi.elf
-    module_path: boot():/bin/modules/acpi.ko
+    module_path: boot():/lib/modules/ext2.elf
+    module_path: boot():/lib/modules/ext2.ko
+    module_path: boot():/lib/modules/crypt.elf
+    module_path: boot():/lib/modules/crypt.ko
+    module_path: boot():/lib/modules/acpi.elf
+    module_path: boot():/lib/modules/acpi.ko
 
 /PureC OS 64-bit (fallback previous image)
     protocol: limine
@@ -23,9 +23,9 @@ serial: yes
     kernel_path: boot():/boot/kernel-fallback.elf
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
 @MODULES@
-    module_path: boot():/bin/modules/ext2.elf
-    module_path: boot():/bin/modules/ext2.ko
-    module_path: boot():/bin/modules/crypt.elf
-    module_path: boot():/bin/modules/crypt.ko
-    module_path: boot():/bin/modules/acpi.elf
-    module_path: boot():/bin/modules/acpi.ko
+    module_path: boot():/lib/modules/ext2.elf
+    module_path: boot():/lib/modules/ext2.ko
+    module_path: boot():/lib/modules/crypt.elf
+    module_path: boot():/lib/modules/crypt.ko
+    module_path: boot():/lib/modules/acpi.elf
+    module_path: boot():/lib/modules/acpi.ko

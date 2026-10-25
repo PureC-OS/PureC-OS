@@ -38,7 +38,7 @@ static uint32_t pg_streq(const char *a, const char *b){
 }
 
 void pg_font_sync(void){
-    int32_t fd=pc_file_open("/config/appear.ini");
+    int32_t fd=pc_file_open("/etc/purec/appear.ini");
     if(fd<0) return;
     char buf[512];
     int32_t n=pc_file_read(fd,buf,sizeof(buf)-1);

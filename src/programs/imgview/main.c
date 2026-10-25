@@ -683,7 +683,7 @@ static void draw_image_view(struct pg_window *window, const struct image_data *i
                 pc_copy(detail + dl, code, sizeof(detail) - dl);
                 pg_window_text(window, 20, 144, detail, 0x00CCAA44);
                 if (g_load_stage == LOAD_STAGE_OPEN)
-                    pg_window_text(window, 20, 168, "No file at this path. Install OS first, then open /demo/*.", 0x00888888);
+                    pg_window_text(window, 20, 168, "No file at this path. Install OS first, then open /usr/share/demo/*.", 0x00888888);
             }
         }
         return;
@@ -750,10 +750,8 @@ void _start(void) {
         // Installed systems carry the BMP under an 8.3 alias path as well;
         // live media may only have the PNG. Try each candidate in order.
         static const char *candidates[] = {
-            "/src/demo/screenshot.bmp",
-            "/demo/screenshot.bmp",
-            "/src/demo/image.png",
-            "/demo/image.png"
+            "/usr/share/demo/screenshot.bmp",
+            "/usr/share/demo/image.png"
         };
         bool ok = false;
         for (uint32_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {

@@ -62,7 +62,7 @@ static int16_t sfx_win_buf[14000];
 static uint32_t sfx_win_len = 0;
 
 static uint32_t sfx_preload(const char *name, int16_t *buffer, uint32_t capacity) {
-    static const char *dirs[] = {"/game/sound/", "/bin/sound/"};
+    static const char *dirs[] = {"/usr/share/sounds/purec/"};
     for (uint32_t d = 0; d < sizeof(dirs)/sizeof(dirs[0]); d++) {
         char path[64];
         uint32_t pos = 0;

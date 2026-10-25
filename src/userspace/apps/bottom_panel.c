@@ -27,10 +27,10 @@ static char pending_builtin[16];
 static uint8_t last_minute = 0xFF;
 
 static const char *quick_exec[4] = {
-    "/bin/program/files",
-    "/bin/program/terminal",
-    "/bin/program/settings",
-    "/bin/program/devmgr"
+    "/usr/bin/files",
+    "/usr/bin/terminal",
+    "/usr/bin/settings",
+    "/usr/bin/devmgr"
 };
 static const char *quick_label[4] = { "FL", "T>", "{ }", "DV" };
 

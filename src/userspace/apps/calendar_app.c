@@ -197,7 +197,7 @@ bool calendar_app_handle_key(char key) {
         parsed.minute = current->minute;
         parsed.second = current->second;
         datetime_service_set(&parsed);
-        message = "Saved to /purec/datetime.cfg";
+        message = "Saved to /var/lib/purec/datetime.cfg";
         editing = false;
         return true;
     }

@@ -82,7 +82,7 @@ static void open_selected(struct files_app *app){
         return;
     }
     const char *viewer = is_image_filename(app->model.entries[app->selected].name)
-        ? "/bin/program/imgview" : "/bin/program/nano";
+        ? "/usr/bin/imgview" : "/usr/bin/nano";
     int32_t pid=pc_exec_with_args(viewer,path);
     if(pid<0){
         set_status(app,"Cannot open viewer");
@@ -147,7 +147,7 @@ static void handle_key(struct files_app *app, int32_t key){
                 set_status(app,"Path is too long"); return;
             }
             if(pc_strlen(path)>=128){ set_status(app,"Path is too long for hexedit"); return; }
-            int32_t pid=pc_exec_with_args("/bin/program/hexedit",path);
+            int32_t pid=pc_exec_with_args("/usr/bin/hexedit",path);
             if(pid<0){ set_status(app,"Cannot open hexedit"); return; }
             int32_t status=0; (void)pc_wait(pid,&status,false);
             pc_desktop_redraw(); refresh(app);
@@ -158,7 +158,7 @@ static void handle_key(struct files_app *app, int32_t key){
 }
 
 static void handle_action(struct files_app *app, struct files_action action){
-    static const char *quick_paths[]={"/bin","/bin/program","/game"};
+    static const char *quick_paths[]={"/usr/bin","/usr/share/applications","/usr/games"};
     switch(action.type){
         case FILES_ACTION_BACK:
             if(app->disk_view) open_path(app,"/");

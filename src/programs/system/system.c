@@ -106,7 +106,7 @@ static int command_font(const char *arguments){
     else if(pc_strcmp(arguments,"bold")==0) pc_copy(want,"bold",sizeof(want));
     char buf[512];
     buf[0]='\0';
-    int32_t fd=pc_file_open("/config/appear.ini");
+    int32_t fd=pc_file_open("/etc/purec/appear.ini");
     int32_t n=0;
     if(fd>=0){
         n=pc_file_read(fd,buf,sizeof(buf)-1);
@@ -174,7 +174,7 @@ static int command_font(const char *arguments){
             }
         }
         *w='\0';
-        if(pc_file_write("/config/appear.ini",out,(uint32_t)(w-out))<0){
+        if(pc_file_write("/etc/purec/appear.ini",out,(uint32_t)(w-out))<0){
             pc_write("font: write failed\n");
             return 1;
         }
@@ -227,8 +227,8 @@ int system_platform_command(const char *name, const char *arguments){
     if(pc_strcmp(name,"systeminfo")==0) return command_systeminfo();
     if(pc_strcmp(name,"htop")==0) return command_htop();
     if(pc_strcmp(name,"font")==0) return command_font(arguments);
-    if(pc_strcmp(name,"snake")==0) return run_program("/bin/snake",arguments);
-    if(pc_strcmp(name,"tetris")==0) return run_program("/bin/tetris",arguments);
+    if(pc_strcmp(name,"snake")==0) return run_program("/usr/games/snake",arguments);
+    if(pc_strcmp(name,"tetris")==0) return run_program("/usr/games/tetris",arguments);
     if(pc_strcmp(name,"mouse")==0) return command_mouse();
     if(pc_strcmp(name,"debug")==0) return command_debug(arguments);
     return -1;

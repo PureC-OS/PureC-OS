@@ -4,7 +4,7 @@
 #include "../../kernel/core/system_info.h"
 #include "../../lib/string.h"
 
-#define DATETIME_PATH "/purec/datetime.cfg"
+#define DATETIME_PATH "/var/lib/purec/datetime.cfg"
 
 static struct desktop_datetime current_datetime = {
     2026,

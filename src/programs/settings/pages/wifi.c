@@ -6,8 +6,8 @@
 #include <stdbool.h>
 #define PAGE_LEFT 198
 #define PAGE_TOP 80
-#define WIFI_INI_PATH "/config/wifi.ini"
-#define WIFI_INI_DIR "/config"
+#define WIFI_INI_PATH "/etc/purec/wifi.ini"
+#define WIFI_INI_DIR "/etc/purec"
 static struct {
     bool initialized;
     struct wifi_status_info status;

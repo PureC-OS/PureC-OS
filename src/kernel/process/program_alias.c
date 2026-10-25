@@ -2,9 +2,9 @@
 #include "../../lib/string.h"
 
 static const char *system_program_names[] = {
-    "disks", "usbscan", "mkfs.fat32", "install", "setup",      "update",
-    "dmesg", "savelog", "uname",      "about",   "systeminfo", "htop",
-    "font",  "snake",   "mouse",      "debug"};
+    "disks", "usbscan", "mkfs", "install", "setup", "update",
+    "dmesg", "savelog", "uname", "about", "systeminfo", "htop",
+    "font", "snake", "mouse", "debug"};
 
 bool program_alias_resolve(const char *requested_path,
                            const char **module_path) {
@@ -22,7 +22,11 @@ bool program_alias_resolve(const char *requested_path,
   if (!name[0])
     return false;
   bool prefix_ok = false;
-  if (strncmp(requested_path, "/bin/program/", 13) == 0)
+  if (strncmp(requested_path, "/usr/bin/", 9) == 0)
+    prefix_ok = true;
+  else if (strncmp(requested_path, "/usr/sbin/", 10) == 0)
+    prefix_ok = true;
+  else if (strncmp(requested_path, "/usr/games/", 11) == 0)
     prefix_ok = true;
   else if (strncmp(requested_path, "/bin/", 5) == 0)
     prefix_ok = true;
@@ -34,7 +38,7 @@ bool program_alias_resolve(const char *requested_path,
        index < sizeof(system_program_names) / sizeof(system_program_names[0]);
        index++) {
     if (strcmp(name, system_program_names[index]) == 0) {
-      *module_path = "/bin/system";
+      *module_path = "/usr/bin/system";
       return true;
     }
   }

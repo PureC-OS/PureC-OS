@@ -114,11 +114,11 @@ void display_page_draw(struct pg_window *window,
     uint32_t status_color=window->theme.muted_text;
     if(!g_have_apply_rc){
         pc_copy(status,
-            "Pick a resolution above, it saves to /config/display.ini",
+            "Pick a resolution above, it saves to /etc/purec/display.ini",
             sizeof(status));
     } else if(g_last_apply_rc==0){
         pc_copy(status,
-            "Applied live and saved to /config/display.ini",
+            "Applied live and saved to /etc/purec/display.ini",
             sizeof(status));
         status_color=window->theme.accent;
     } else if(g_last_apply_rc==-2){

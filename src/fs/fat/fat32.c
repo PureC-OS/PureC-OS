@@ -2693,11 +2693,11 @@ static int32_t verify_installed_file(const char *path, uint32_t expected_size)
 
 static int32_t install_firmware_payload(void)
 {
-    if (payload_mkdir("/bin/firmware") < 0)
+    if (payload_mkdir("/lib/firmware") < 0)
         return FS_ERROR_IO;
-    if (payload_mkdir("/bin/firmware/Intel") < 0)
+    if (payload_mkdir("/lib/firmware/Intel") < 0)
         return FS_ERROR_IO;
-    if (payload_mkdir("/bin/firmware/Intel/wifi") < 0)
+    if (payload_mkdir("/lib/firmware/Intel/wifi") < 0)
         return FS_ERROR_IO;
 
     struct fw_entry
@@ -2708,24 +2708,24 @@ static int32_t install_firmware_payload(void)
         const char *alias_path;
     };
     static const struct fw_entry fw_table[] = {
-        {"/firmware/iwlwifi-so-a0-hr-b0-89.ucode", "iwlwifi-so-a0-hr-b0-89.ucode", "FW000001.UCO", "/bin/firmware/Intel/wifi/FW000001.UCO"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-86.ucode", "iwlwifi-so-a0-hr-b0-86.ucode", "FW000002.UCO", "/bin/firmware/Intel/wifi/FW000002.UCO"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-83.ucode", "iwlwifi-so-a0-hr-b0-83.ucode", "FW000003.UCO", "/bin/firmware/Intel/wifi/FW000003.UCO"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-77.ucode", "iwlwifi-so-a0-hr-b0-77.ucode", "FW000004.UCO", "/bin/firmware/Intel/wifi/FW000004.UCO"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-74.ucode", "iwlwifi-so-a0-hr-b0-74.ucode", "FW000005.UCO", "/bin/firmware/Intel/wifi/FW000005.UCO"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-72.ucode", "iwlwifi-so-a0-hr-b0-72.ucode", "FW000006.UCO", "/bin/firmware/Intel/wifi/FW000006.UCO"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-89.ucode", "iwlwifi-so-a0-gf-a0-89.ucode", "FW000007.UCO", "/bin/firmware/Intel/wifi/FW000007.UCO"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-86.ucode", "iwlwifi-so-a0-gf-a0-86.ucode", "FW000008.UCO", "/bin/firmware/Intel/wifi/FW000008.UCO"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-83.ucode", "iwlwifi-so-a0-gf-a0-83.ucode", "FW000009.UCO", "/bin/firmware/Intel/wifi/FW000009.UCO"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-77.ucode", "iwlwifi-so-a0-gf-a0-77.ucode", "FW000010.UCO", "/bin/firmware/Intel/wifi/FW000010.UCO"},
-        {"/firmware/iwlwifi-so-a0-gf4-a0-89.ucode", "iwlwifi-so-a0-gf4-a0-89.ucode", "FW000011.UCO", "/bin/firmware/Intel/wifi/FW000011.UCO"},
-        {"/firmware/iwlwifi-so-a0-gf4-a0-86.ucode", "iwlwifi-so-a0-gf4-a0-86.ucode", "FW000012.UCO", "/bin/firmware/Intel/wifi/FW000012.UCO"},
-        {"/firmware/iwlwifi-so-a0-jf-b0-77.ucode", "iwlwifi-so-a0-jf-b0-77.ucode", "FW000013.UCO", "/bin/firmware/Intel/wifi/FW000013.UCO"},
-        {"/firmware/iwlwifi-so-a0-jf-b0-72.ucode", "iwlwifi-so-a0-jf-b0-72.ucode", "FW000014.UCO", "/bin/firmware/Intel/wifi/FW000014.UCO"},
-        {"/firmware/iwlwifi-QuZ-a0-hr-b0-77.ucode", "iwlwifi-QuZ-a0-hr-b0-77.ucode", "FW000015.UCO", "/bin/firmware/Intel/wifi/FW000015.UCO"},
-        {"/firmware/iwlwifi-QuZ-a0-hr-b0-74.ucode", "iwlwifi-QuZ-a0-hr-b0-74.ucode", "FW000016.UCO", "/bin/firmware/Intel/wifi/FW000016.UCO"},
-        {"/firmware/iwlwifi-Qu-b0-hr-b0-77.ucode", "iwlwifi-Qu-b0-hr-b0-77.ucode", "FW000017.UCO", "/bin/firmware/Intel/wifi/FW000017.UCO"},
-        {"/firmware/iwlwifi-cc-a0-77.ucode", "iwlwifi-cc-a0-77.ucode", "FW000018.UCO", "/bin/firmware/Intel/wifi/FW000018.UCO"},
+        {"/firmware/iwlwifi-so-a0-hr-b0-89.ucode", "iwlwifi-so-a0-hr-b0-89.ucode", "FW000001.UCO", "/lib/firmware/Intel/wifi/FW000001.UCO"},
+        {"/firmware/iwlwifi-so-a0-hr-b0-86.ucode", "iwlwifi-so-a0-hr-b0-86.ucode", "FW000002.UCO", "/lib/firmware/Intel/wifi/FW000002.UCO"},
+        {"/firmware/iwlwifi-so-a0-hr-b0-83.ucode", "iwlwifi-so-a0-hr-b0-83.ucode", "FW000003.UCO", "/lib/firmware/Intel/wifi/FW000003.UCO"},
+        {"/firmware/iwlwifi-so-a0-hr-b0-77.ucode", "iwlwifi-so-a0-hr-b0-77.ucode", "FW000004.UCO", "/lib/firmware/Intel/wifi/FW000004.UCO"},
+        {"/firmware/iwlwifi-so-a0-hr-b0-74.ucode", "iwlwifi-so-a0-hr-b0-74.ucode", "FW000005.UCO", "/lib/firmware/Intel/wifi/FW000005.UCO"},
+        {"/firmware/iwlwifi-so-a0-hr-b0-72.ucode", "iwlwifi-so-a0-hr-b0-72.ucode", "FW000006.UCO", "/lib/firmware/Intel/wifi/FW000006.UCO"},
+        {"/firmware/iwlwifi-so-a0-gf-a0-89.ucode", "iwlwifi-so-a0-gf-a0-89.ucode", "FW000007.UCO", "/lib/firmware/Intel/wifi/FW000007.UCO"},
+        {"/firmware/iwlwifi-so-a0-gf-a0-86.ucode", "iwlwifi-so-a0-gf-a0-86.ucode", "FW000008.UCO", "/lib/firmware/Intel/wifi/FW000008.UCO"},
+        {"/firmware/iwlwifi-so-a0-gf-a0-83.ucode", "iwlwifi-so-a0-gf-a0-83.ucode", "FW000009.UCO", "/lib/firmware/Intel/wifi/FW000009.UCO"},
+        {"/firmware/iwlwifi-so-a0-gf-a0-77.ucode", "iwlwifi-so-a0-gf-a0-77.ucode", "FW000010.UCO", "/lib/firmware/Intel/wifi/FW000010.UCO"},
+        {"/firmware/iwlwifi-so-a0-gf4-a0-89.ucode", "iwlwifi-so-a0-gf4-a0-89.ucode", "FW000011.UCO", "/lib/firmware/Intel/wifi/FW000011.UCO"},
+        {"/firmware/iwlwifi-so-a0-gf4-a0-86.ucode", "iwlwifi-so-a0-gf4-a0-86.ucode", "FW000012.UCO", "/lib/firmware/Intel/wifi/FW000012.UCO"},
+        {"/firmware/iwlwifi-so-a0-jf-b0-77.ucode", "iwlwifi-so-a0-jf-b0-77.ucode", "FW000013.UCO", "/lib/firmware/Intel/wifi/FW000013.UCO"},
+        {"/firmware/iwlwifi-so-a0-jf-b0-72.ucode", "iwlwifi-so-a0-jf-b0-72.ucode", "FW000014.UCO", "/lib/firmware/Intel/wifi/FW000014.UCO"},
+        {"/firmware/iwlwifi-QuZ-a0-hr-b0-77.ucode", "iwlwifi-QuZ-a0-hr-b0-77.ucode", "FW000015.UCO", "/lib/firmware/Intel/wifi/FW000015.UCO"},
+        {"/firmware/iwlwifi-QuZ-a0-hr-b0-74.ucode", "iwlwifi-QuZ-a0-hr-b0-74.ucode", "FW000016.UCO", "/lib/firmware/Intel/wifi/FW000016.UCO"},
+        {"/firmware/iwlwifi-Qu-b0-hr-b0-77.ucode", "iwlwifi-Qu-b0-hr-b0-77.ucode", "FW000017.UCO", "/lib/firmware/Intel/wifi/FW000017.UCO"},
+        {"/firmware/iwlwifi-cc-a0-77.ucode", "iwlwifi-cc-a0-77.ucode", "FW000018.UCO", "/lib/firmware/Intel/wifi/FW000018.UCO"},
     };
     for (uint32_t i = 0; i < sizeof(fw_table) / sizeof(fw_table[0]); i++)
     {
@@ -2745,7 +2745,7 @@ static int32_t install_firmware_payload(void)
                 klogf(KLOG_WARN, "install: firmware %s bad magic 0x%08x, still copying", fw_table[i].long_name, magic);
             }
         }
-        int32_t st = payload_write_alias("/bin/firmware/Intel/wifi", fw_table[i].long_name, fw_table[i].alias_path, fw_table[i].alias_name, data, sz);
+        int32_t st = payload_write_alias("/lib/firmware/Intel/wifi", fw_table[i].long_name, fw_table[i].alias_path, fw_table[i].alias_name, data, sz);
         if (st < 0)
         {
             klogf(KLOG_WARN, "install: write firmware %s -> %s failed %d, try fallback short", fw_table[i].long_name, fw_table[i].alias_path, st);
@@ -2765,7 +2765,7 @@ static int32_t install_firmware_payload(void)
         else
         {
             char long_path[64];
-            const char *prefix = "/bin/firmware/Intel/wifi/";
+            const char *prefix = "/lib/firmware/Intel/wifi/";
             uint32_t p = 0;
             for (uint32_t k = 0; prefix[k] && p + 1 < sizeof(long_path); k++)
                 long_path[p++] = prefix[k];
@@ -3082,7 +3082,11 @@ static int32_t install_uefi_payload(void)
 {
     static const char *directories[] = {
         "/EFI", "/EFI/BOOT", "/EFI/limine", "/boot", "/boot/limine", "/limine",
-        "/bin", "/bin/program", "/game", "/lib", "/include"};
+        "/bin", "/usr/bin", "/usr/sbin", "/usr/games", "/lib", "/usr/include",
+        "/usr/share/applications", "/usr/share/wallpapers", "/usr/share/sounds/purec",
+        "/usr/share/demo", "/lib/modules", "/lib/firmware", "/etc/purec", "/var/lib/purec",
+        "/var/log", "/tmp", "/home/purec", "/root", "/dev", "/proc", "/sys",
+        "/media", "/mnt", "/opt", "/srv"};
     for (uint8_t index = 0; index < sizeof(directories) / sizeof(directories[0]); index++)
     {
         int32_t status = create_directory_checked(directories[index]);

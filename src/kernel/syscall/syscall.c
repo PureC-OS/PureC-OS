@@ -1155,7 +1155,7 @@ static uint32_t parse_setting_u32(const char *text) {
 }
 
 static void audio_restore_system_settings(void) {
-  int32_t descriptor = vfs_open("/config/settings.ini");
+  int32_t descriptor = vfs_open("/etc/purec/audio.ini");
   if (descriptor < 0) {
     klog(KLOG_INFO, "audio: no saved system settings; detected defaults kept");
     return;
@@ -1252,13 +1252,13 @@ void syscall_init(void) {
       klogf(KLOG_OK, "vfs: root mounted from %s", vfs_root_device_name());
       audio_restore_system_settings();
       {
-        int32_t fd = vfs_open("/purec/install.cfg");
+        int32_t fd = vfs_open("/etc/purec/install.cfg");
         if (fd >= 0) {
           char cfg_buf[512] = {0};
           int32_t r = vfs_read(fd, cfg_buf, sizeof(cfg_buf) - 1);
           (void)vfs_close(fd);
           if (r > 0) {
-            klogf(KLOG_INFO, "config: /purec/install.cfg (%d bytes)", r);
+            klogf(KLOG_INFO, "config: /etc/purec/install.cfg (%d bytes)", r);
             cfg_buf[r] = 0;
             char *p = cfg_buf;
             while (*p) {
@@ -1301,8 +1301,7 @@ void syscall_init(void) {
         }
       }
     } else {
-      klog(KLOG_WARN, "vfs: no PURECOS FAT32 root found (use 'install' or "
-                      "'mkfs.fat32' to create)");
+      klog(KLOG_WARN, "vfs: no ext2 root found (use 'install' to create)");
     }
     boot_diag_checkpoint(BOOT_STAGE_SYSCALLS,
                          "storage and filesystem probe complete");

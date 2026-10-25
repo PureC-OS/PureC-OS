@@ -97,8 +97,8 @@ void settings_app_draw(struct settings_app *app,struct pg_window *window,
         ? "Sound changes are applied and saved immediately"
         : app->tab==1 ? "Destructive disk actions require confirmation"
         : app->tab==2 ? "Wired + Wi-Fi status, DHCP/DNS, ping test"
-        : app->tab==3 ? "Appearance saves to /config/appear.ini, desktop picks it up"
-                      : "Display saves to /config/display.ini, applied without reboot";
+        : app->tab==3 ? "Appearance saves to /etc/purec/appear.ini, desktop picks it up"
+                      : "Display saves to /etc/purec/display.ini, applied without reboot";
     pg_window_text(window,18,footer_y+13,footer,0xBAC2DE);
     pg_window_end(window);
 }

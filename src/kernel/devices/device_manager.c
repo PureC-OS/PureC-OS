@@ -647,7 +647,7 @@ static struct device_driver g_drv_e1000 = {
     NULL,
     DEVMAN_ID_E1000_82540EM,
     sizeof(DEVMAN_ID_E1000_82540EM) / sizeof(DEVMAN_ID_E1000_82540EM[0]),
-    "/bin/modules/e1000.elf",
+    "/lib/modules/e1000.elf",
     NULL,
 };
 
@@ -660,7 +660,7 @@ static struct device_driver g_drv_e1000_gc = {
     NULL,
     DEVMAN_ID_E1000_82543GC,
     sizeof(DEVMAN_ID_E1000_82543GC) / sizeof(DEVMAN_ID_E1000_82543GC[0]),
-    "/bin/modules/e1000_82543gc.elf",
+    "/lib/modules/e1000_82543gc.elf",
     NULL,
 };
 
@@ -673,7 +673,7 @@ static struct device_driver g_drv_pcnet = {
     NULL,
     DEVMAN_ID_PCNET,
     sizeof(DEVMAN_ID_PCNET) / sizeof(DEVMAN_ID_PCNET[0]),
-    "/bin/modules/pcnet_am79c970a.elf",
+    "/lib/modules/pcnet_am79c970a.elf",
     NULL,
 };
 
@@ -686,7 +686,7 @@ static struct device_driver g_drv_ar9285 = {
     NULL,
     DEVMAN_ID_AR9285,
     sizeof(DEVMAN_ID_AR9285) / sizeof(DEVMAN_ID_AR9285[0]),
-    "/bin/modules/ar9285.elf",
+    "/lib/modules/ar9285.elf",
     NULL,
 };
 

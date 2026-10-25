@@ -11,11 +11,13 @@
 #define VFS_FD_STDOUT 1
 #define VFS_FD_STDERR 2
 #define VFS_FD_BASE 3
-
 #define VFS_FS_FAT32 0
 #define VFS_FS_EXT2 1
 #define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
+#define VFS_VIRT_DEV 0x10
+#define VFS_VIRT_PROC 0x11
+#define VFS_VIRT_SYS 0x12
 
 bool vfs_mount_root(void);
 bool vfs_mount_initramfs(void);

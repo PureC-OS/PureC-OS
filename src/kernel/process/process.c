@@ -279,11 +279,11 @@ static void environment_initialize(struct process *process,
            sizeof(process->environment));
     return;
   }
-  environment_put(process, "HOME", "/");
-  environment_put(process, "PWD", "/");
+  environment_put(process, "HOME", "/home/purec");
+  environment_put(process, "PWD", "/home/purec");
   environment_put(process, "USER", "purec");
-  environment_put(process, "SHELL", "/bin/program/terminal");
-  environment_put(process, "PATH", "/bin/program:/bin");
+  environment_put(process, "SHELL", "/usr/bin/terminal");
+  environment_put(process, "PATH", "/usr/bin:/usr/sbin:/usr/games:/bin");
 }
 
 static struct process *allocate_process(void) {

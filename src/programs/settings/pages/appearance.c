@@ -99,7 +99,7 @@ void appearance_page_draw(struct pg_window *window,
         ? appearance->wallpaper : "(solid color)";
     draw_cycle_card(window,appearance,event,card_y,width,
         "Wallpaper",wallpaper_label,
-        "BMP / PNG, stretched. Own: /config/wp.bmp, /config/wp.png",
+        "BMP / PNG, stretched. Own: /etc/purec/wp.bmp, /etc/purec/wp.png",
         &prev,&next);
     if(prev || next){
         uint32_t count=appearance_wallpaper_count();
@@ -114,7 +114,7 @@ void appearance_page_draw(struct pg_window *window,
     /* Font face */
     draw_cycle_card(window,appearance,event,card_y,width,
         "Font",appearance->font,
-        "Bitmap faces. TTF files in /config/fonts are reserved",
+        "Bitmap faces. TTF files in /etc/purec/fonts are reserved",
         &prev,&next);
     if(prev || next){
         uint32_t count=appearance_font_count();
@@ -161,10 +161,10 @@ void appearance_page_draw(struct pg_window *window,
     char status[96];
     uint32_t status_color=window->theme.muted_text;
     if(!g_have_save_rc){
-        pc_copy(status,"Pick a setting above, it saves to /config/appear.ini",
+        pc_copy(status,"Pick a setting above, it saves to /etc/purec/appear.ini",
                 sizeof(status));
     } else if(g_last_save_rc>=0){
-        pc_copy(status,"Saved to /config/appear.ini, desktop applies it live",
+        pc_copy(status,"Saved to /etc/purec/appear.ini, desktop applies it live",
                 sizeof(status));
         status_color=window->theme.accent;
     } else {

@@ -4,7 +4,7 @@
 // saves/restores FPU per thread). Prints PASS/FAIL lines; exit status
 // is the failure count (0 = all good).
 //
-// Build: like any native program (own _start). Run: /bin/program/fputest
+// Build: like any native program (own _start). Run: /usr/bin/fputest
 
 #include "../../libc/include/purec.h"
 #include "../../libc/include/hosted/stdlib.h"

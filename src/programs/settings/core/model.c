@@ -2,8 +2,8 @@
 #include "../../../libfs/include/purefs.h"
 #include "../../../libc/include/purec.h"
 
-#define SETTINGS_DIRECTORY "/config"
-#define SETTINGS_PATH "/config/settings.ini"
+#define SETTINGS_DIRECTORY "/etc/purec"
+#define SETTINGS_PATH "/etc/purec/settings.ini"
 
 static uint32_t parse_u32(const char *text){
     uint32_t value=0;

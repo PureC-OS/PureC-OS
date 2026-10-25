@@ -260,7 +260,7 @@ void desktop_entries_set_position(uint32_t index, uint32_t x, uint32_t y) {
 
 void desktop_entries_set_installer_visible(bool visible) {
     for (uint32_t i = 0; i < g_count; i++) {
-        if (strcmp(g_entries[i].exec, "/bin/installer") == 0) {
+        if (strcmp(g_entries[i].exec, "/usr/bin/installer") == 0) {
             g_entries[i].hidden = !visible;
         }
     }

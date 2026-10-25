@@ -120,9 +120,9 @@ static void draw_sidebar(struct files_app *app, const struct pg_event *event,
     pg_window_rect(&app->window,(struct pg_rect){18,top+87,22,17},0x89B4FA);
     pg_window_text(&app->window,48,top+91,"This PC",app->window.theme.text);
     pg_window_text(&app->window,16,top+137,"QUICK ACCESS",0x7F849C);
-    pg_window_text(&app->window,24,top+164,"/bin",0xCDD6F4);
-    pg_window_text(&app->window,24,top+190,"/bin/program",0xCDD6F4);
-    pg_window_text(&app->window,24,top+216,"/game",0xCDD6F4);
+    pg_window_text(&app->window,24,top+164,"/usr/bin",0xCDD6F4);
+    pg_window_text(&app->window,24,top+190,"/usr/share/applications",0xCDD6F4);
+    pg_window_text(&app->window,24,top+216,"/usr/games",0xCDD6F4);
     if(clicked(&app->window,home,event)) action->type=FILES_ACTION_HOME;
     if(clicked(&app->window,disks,event)) action->type=FILES_ACTION_DISKS;
     struct pg_rect quick={8,top+150,SIDEBAR_WIDTH-16,78};

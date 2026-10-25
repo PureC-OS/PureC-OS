@@ -131,8 +131,8 @@ static bool confirm_erase(void) {
 }
 
 static bool write_install_config(void) {
-    static const char directory[] = "/purec";
-    static const char path[] = "/purec/install.cfg";
+    static const char directory[] = "/etc/purec";
+    static const char path[] = "/etc/purec/install.cfg";
     char config[96];
     pc_copy(config, "boot=/bin/init\ninstaller=console-ring3\nfilesystem=", sizeof(config));
     const char *fs = "ext2\n";
@@ -143,7 +143,7 @@ static bool write_install_config(void) {
     (void)pf_create_file(path);
     int64_t result = pf_write_file(path, config, sizeof(config) - 1);
     if (result < 0) {
-        pc_write("[96%] Cannot write /purec/install.cfg\n");
+        pc_write("[96%] Cannot write /etc/purec/install.cfg\n");
         return false;
     }
     pc_write("[96%] Installation configuration written\n");

@@ -158,11 +158,9 @@ static void change_directory(struct terminal_window *terminal, const char *argum
         pc_write("cd: invalid path\n");
         return;
     }
-    int32_t pid = pc_exec_with_args("/bin/program/system/cd", argument);
-    if(pid < 0) pid = pc_exec_with_args("/bin/program/cd", argument);
-    if(pid < 0) pid = pc_exec_with_args("/bin/cd", argument);
+    int32_t pid = pc_exec_with_args("/usr/bin/cd", argument);
     if(pid < 0){
-        pc_write("cd: /bin/program/system/cd: command not found\n");
+        pc_write("cd: /usr/bin/cd: command not found\n");
         return;
     }
     int32_t status = 0;
@@ -424,7 +422,7 @@ static void execute_program(struct terminal_window *terminal,
         }
         char search_path[PROCESS_ENVIRONMENT_VALUE_LIMIT];
         if(pc_getenv("PATH",search_path,sizeof(search_path))<0){
-            pc_copy(search_path,"/bin/program/system:/bin/program:/bin",sizeof(search_path));
+            pc_copy(search_path,"/usr/bin:/usr/sbin:/usr/games:/bin",sizeof(search_path));
         }
         const char *directory=search_path;
         while(*directory){
@@ -435,22 +433,17 @@ static void execute_program(struct terminal_window *terminal,
                 if(build_program_path(directory,length,name,candidate,
                                       sizeof(candidate))
                    && start_program(terminal,candidate,expanded)>=0) return;
-            } else {
-                char candidate[SHELL_PATH_CAPACITY];
-                if(build_program_path("/bin/program/system",19,name,candidate,
-                                      sizeof(candidate))
-                   && start_program(terminal,candidate,expanded)>=0) return;
             }
             directory+=length;
             if(*directory==':') directory++;
         }
         {
             char candidate[SHELL_PATH_CAPACITY];
-            if(build_program_path("/bin/program/system",19,name,candidate,
-                                  sizeof(candidate))
+            if(build_program_path("/usr/bin",8,name,candidate,sizeof(candidate))
                && start_program(terminal,candidate,expanded)>=0) return;
-            if(build_program_path("/bin/program",12,name,candidate,
-                                  sizeof(candidate))
+            if(build_program_path("/usr/sbin",9,name,candidate,sizeof(candidate))
+               && start_program(terminal,candidate,expanded)>=0) return;
+            if(build_program_path("/usr/games",10,name,candidate,sizeof(candidate))
                && start_program(terminal,candidate,expanded)>=0) return;
             if(build_program_path("/bin",4,name,candidate,sizeof(candidate))
                && start_program(terminal,candidate,expanded)>=0) return;
@@ -491,7 +484,7 @@ int shell_run(struct terminal_window *terminal, const char *initial_command){
     char line[SHELL_LINE_CAPACITY];
     char path_env[PROCESS_ENVIRONMENT_VALUE_LIMIT];
     if(pc_getenv("PATH",path_env,sizeof(path_env))<0){
-        pc_setenv("PATH","/bin/program/system:/bin/program:/bin");
+        pc_setenv("PATH","/usr/bin:/usr/sbin:/usr/games:/bin");
     }
     pc_write("PureC Terminal\n");
     pc_write("Minimal shell: type help. Programs resolve via PATH.\n\n");

@@ -2,8 +2,8 @@
 #include "../../../libfs/include/purefs.h"
 #include "../../../libc/include/purec.h"
 
-#define APPEAR_DIRECTORY "/config"
-#define APPEAR_PATH "/config/appear.ini"
+#define APPEAR_DIRECTORY "/etc/purec"
+#define APPEAR_PATH "/etc/purec/appear.ini"
 
 static void copy_str(char *dst, uint32_t cap, const char *src){
     if(!dst || !cap) return;
@@ -45,11 +45,11 @@ static char *append_u32(char *out, uint32_t value){
     return out;
 }
 
-/* Wallpaper catalogue: /config/wplist.ini (user) wins, then the shipped
- * /demo/wplist.ini, then a compiled fallback. One 8.3 path per line,
+/* Wallpaper catalogue: /etc/purec/wplist.ini (user) wins, then the shipped
+ * /usr/share/wallpapers/wplist.ini, then a compiled fallback. One 8.3 path per line,
  * # comments and empty lines skipped. Index 0 is always "" (solid). */
-#define WP_LIST_USER "/config/wplist.ini"
-#define WP_LIST_SHIPPED "/demo/wplist.ini"
+#define WP_LIST_USER "/etc/purec/wplist.ini"
+#define WP_LIST_SHIPPED "/usr/share/wallpapers/wplist.ini"
 #define WP_LIST_MAX 64
 #define WP_LIST_BUFFER 2048
 
@@ -58,16 +58,14 @@ static uint32_t wp_list_count;
 static bool wp_list_loaded;
 
 static const char *wp_fallback[]={
-    "/walpaper/ducati1.bmp",
-    "/walpaper/bmw2.bmp",
-    "/walpaper/bmw3.bmp",
-    "/walpaper/space1.bmp",
-    "/demo/screenshot.bmp",
-    "/src/demo/screenshot.bmp",
-    "/demo/image.png",
-    "/src/demo/image.png",
-    "/config/wp.bmp",
-    "/config/wp.png",
+    "/usr/share/wallpapers/ducati1.png",
+    "/usr/share/wallpapers/bmw2.png",
+    "/usr/share/wallpapers/bmw3.png",
+    "/usr/share/wallpapers/space1.png",
+    "/usr/share/demo/screenshot.bmp",
+    "/usr/share/demo/image.png",
+    "/etc/purec/wp.bmp",
+    "/etc/purec/wp.png",
 };
 
 static void wp_list_push(const char *line){

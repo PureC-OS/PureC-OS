@@ -84,7 +84,7 @@ bool clock_app_handle_key(char key) {
 
         if (datetime_service_parse(input, &parsed, false)) {
             datetime_service_set(&parsed);
-            message = "Saved to /purec/datetime.cfg";
+            message = "Saved to /var/lib/purec/datetime.cfg";
             editing = false;
         } else {
             message = "Invalid date/time";

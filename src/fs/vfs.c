@@ -14,8 +14,10 @@ static mutex_t vfs_mutex;
 #include "./fat/include/fat32.h"
 #include "initramfs.h"
 #include "vfs.h"
+#include "../kernel/core/system_info.h"
 
 #define VFS_HANDLE_INITIAL 32
+#define VIRT_BUF_SIZE 512
 
 enum vfs_handle_type {
   VFS_HANDLE_NONE,
@@ -23,7 +25,36 @@ enum vfs_handle_type {
   VFS_HANDLE_EXT2,
   VFS_HANDLE_INITRAMFS,
   VFS_HANDLE_KERNEL_FILE,
-  VFS_HANDLE_KLOG
+  VFS_HANDLE_KLOG,
+  VFS_HANDLE_VIRTUAL
+};
+
+enum vfs_virtual_kind {
+  VIRT_NONE = 0,
+  // /dev
+  VIRT_DEV_NULL,
+  VIRT_DEV_ZERO,
+  VIRT_DEV_FULL,
+  VIRT_DEV_RANDOM,
+  VIRT_DEV_URANDOM,
+  VIRT_DEV_CONSOLE,
+  VIRT_DEV_TTY,
+  // /proc
+  VIRT_PROC_VERSION,
+  VIRT_PROC_UPTIME,
+  VIRT_PROC_MEMINFO,
+  VIRT_PROC_CPUINFO,
+  VIRT_PROC_FILESYSTEMS,
+  VIRT_PROC_MOUNTS,
+  VIRT_PROC_CMDLINE,
+  VIRT_PROC_KERNEL_VERSION,
+  VIRT_PROC_KERNEL_PANIC,
+  VIRT_PROC_KERNEL_INIT,
+  VIRT_PROC_KERNEL_ABI,
+  // /sys
+  VIRT_SYS_CLASS_BLOCK,
+  VIRT_SYS_DEVICES,
+  VIRT_SYS_KERNEL_VERSION
 };
 
 static uint8_t vfs_active_fs = VFS_FS_EXT2;
@@ -42,16 +73,18 @@ struct vfs_handle {
   uint32_t position;
   uint64_t klog_cursor;
   bool klog_data_lost;
+  uint8_t virt_kind;
+  char virt_buf[VIRT_BUF_SIZE];
+  uint32_t virt_size;
 };
 
 static const struct kernel_file kernel_files[] = {
-    {"/kernel/version", "version", "PureC OS kernel 1.1.0\n"},
-    {"/kernel/panic", "panic.cfg", "panic-screan=classic\n #panic-screan=qr\n"},
-    {"/kernel/init", "init",
-     "pid1=/bin/init shell=/bin/program/terminal editor=/bin/program/nano\n"},
-    {"/kernel/abi", "abi",
+    {"/proc/version", "version", "PureC OS kernel 1.1.0\n"},
+    {"/proc/panic", "panic.cfg", "panic-screan=classic\n #panic-screan=qr\n"},
+    {"/proc/init", "init", "pid1=/bin/init shell=/usr/bin/terminal editor=/usr/bin/nano\n"},
+    {"/proc/abi", "abi",
      "syscall=int80 process=exec,args,env,wait,exit fd=per-process "
-     "vfs=fat32,ext2\n"}};
+     "vfs=ext2\n"}};
 
 static struct vfs_handle *handles;
 
@@ -76,6 +109,225 @@ static const struct kernel_file *find_kernel_file(const char *path) {
       return &kernel_files[i];
   }
   return 0;
+}
+
+static uint8_t virtual_kind_from_path(const char *path) {
+  if (!path) return VIRT_NONE;
+  if (strcmp(path, "/dev/null") == 0) return VIRT_DEV_NULL;
+  if (strcmp(path, "/dev/zero") == 0) return VIRT_DEV_ZERO;
+  if (strcmp(path, "/dev/full") == 0) return VIRT_DEV_FULL;
+  if (strcmp(path, "/dev/random") == 0) return VIRT_DEV_RANDOM;
+  if (strcmp(path, "/dev/urandom") == 0) return VIRT_DEV_URANDOM;
+  if (strcmp(path, "/dev/console") == 0) return VIRT_DEV_CONSOLE;
+  if (strcmp(path, "/dev/tty") == 0) return VIRT_DEV_TTY;
+  if (strcmp(path, "/proc/version") == 0) return VIRT_PROC_VERSION;
+  if (strcmp(path, "/proc/uptime") == 0) return VIRT_PROC_UPTIME;
+  if (strcmp(path, "/proc/meminfo") == 0) return VIRT_PROC_MEMINFO;
+  if (strcmp(path, "/proc/cpuinfo") == 0) return VIRT_PROC_CPUINFO;
+  if (strcmp(path, "/proc/filesystems") == 0) return VIRT_PROC_FILESYSTEMS;
+  if (strcmp(path, "/proc/mounts") == 0) return VIRT_PROC_MOUNTS;
+  if (strcmp(path, "/proc/cmdline") == 0) return VIRT_PROC_CMDLINE;
+  if (strcmp(path, "/proc/kernel/version") == 0) return VIRT_PROC_KERNEL_VERSION;
+  if (strcmp(path, "/proc/kernel/panic") == 0) return VIRT_PROC_KERNEL_PANIC;
+  if (strcmp(path, "/proc/kernel/init") == 0) return VIRT_PROC_KERNEL_INIT;
+  if (strcmp(path, "/proc/kernel/abi") == 0) return VIRT_PROC_KERNEL_ABI;
+  if (strcmp(path, "/sys/class/block") == 0) return VIRT_SYS_CLASS_BLOCK;
+  if (strcmp(path, "/sys/devices") == 0) return VIRT_SYS_DEVICES;
+  if (strcmp(path, "/sys/kernel/version") == 0) return VIRT_SYS_KERNEL_VERSION;
+  return VIRT_NONE;
+}
+
+static void virtual_file_generate(uint8_t kind, char *buf, uint32_t *out_size) {
+  *out_size = 0;
+  switch (kind) {
+    case VIRT_PROC_VERSION:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE,
+        "PureC OS kernel 1.1.0\n");
+      break;
+    case VIRT_PROC_UPTIME: {
+      uint64_t ms = system_info_uptime_ms();
+      uint64_t s = ms / 1000;
+      uint64_t idle = 0;
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE, "%llu.%02llu %llu.%02llu\n",
+        s / 100, s % 100, idle / 100, idle % 100);
+      break;
+    }
+    case VIRT_PROC_MEMINFO: {
+      uint64_t total = system_info_total_ram_bytes();
+      uint64_t free = system_info_usable_ram_bytes();
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE,
+        "MemTotal: %llu kB\nMemFree: %llu kB\nMemAvailable: %llu kB\n",
+        total / 1024, free / 1024, free / 1024);
+      break;
+    }
+    case VIRT_PROC_CPUINFO: {
+      const char *name = system_info_cpu_name();
+      uint32_t cpus = system_info_logical_processors();
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE,
+        "processor\t: 0\nvendor_id\t: PureC\ncpu family\t: 6\nmodel\t\t: 0\nmodel name\t: %s\ncpu MHz\t\t: %llu\n",
+        name, system_info_tsc_frequency_hz() / 1000000);
+      break;
+    }
+    case VIRT_PROC_FILESYSTEMS:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE,
+        "nodev\tinitramfs\next2\n");
+      break;
+    case VIRT_PROC_MOUNTS:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE,
+        "none / initramfs ro 0 0\n");
+      break;
+    case VIRT_PROC_CMDLINE:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE, "BOOT_IMAGE=/boot/kernel.elf\n");
+      break;
+    case VIRT_PROC_KERNEL_VERSION:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE, "PureC OS kernel 1.1.0\n");
+      break;
+    case VIRT_PROC_KERNEL_PANIC:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE, "panic-screan=classic\n #panic-screan=qr\n");
+      break;
+    case VIRT_PROC_KERNEL_INIT:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE, "pid1=/bin/init shell=/usr/bin/terminal editor=/usr/bin/nano\n");
+      break;
+    case VIRT_PROC_KERNEL_ABI:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE,
+        "syscall=int80 process=exec,args,env,wait,exit fd=per-process vfs=ext2\n");
+      break;
+    case VIRT_SYS_KERNEL_VERSION:
+      *out_size = (uint32_t)snprintf(buf, VIRT_BUF_SIZE, "PureC OS kernel 1.1.0\n");
+      break;
+    default:
+      break;
+  }
+}
+
+static bool is_virtual_dir(const char *path) {
+  return path &&
+    (strcmp(path, "/dev") == 0 || strcmp(path, "/proc") == 0 ||
+     strcmp(path, "/sys") == 0 || strcmp(path, "/proc/kernel") == 0 ||
+     strcmp(path, "/sys/class") == 0);
+}
+
+static int32_t virtual_dir_list(const char *path, struct fs_directory_entry *entries,
+                                uint32_t capacity, bool long_names) {
+  if (!entries || capacity == 0) return FS_ERROR_INVALID;
+  uint32_t count = 0;
+  if (strcmp(path, "/dev") == 0) {
+    const char *devs[] = {"null", "zero", "full", "random", "urandom", "console", "tty"};
+    for (uint32_t i = 0; i < sizeof(devs)/sizeof(devs[0]) && count < capacity; i++) {
+      copy_name(entries[count].name, devs[i]);
+      entries[count].size = 0;
+      entries[count].attributes = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/proc") == 0) {
+    const char *procs[] = {"version", "uptime", "meminfo", "cpuinfo", "filesystems",
+                           "mounts", "cmdline", "kernel"};
+    for (uint32_t i = 0; i < sizeof(procs)/sizeof(procs[0]) && count < capacity; i++) {
+      copy_name(entries[count].name, procs[i]);
+      entries[count].size = (strcmp(procs[i], "kernel") == 0) ? 0 : 1;
+      entries[count].attributes = (strcmp(procs[i], "kernel") == 0) ? FS_ATTRIBUTE_DIRECTORY : 0;
+      count++;
+    }
+  } else if (strcmp(path, "/sys") == 0) {
+    const char *syss[] = {"class", "devices", "kernel"};
+    for (uint32_t i = 0; i < sizeof(syss)/sizeof(syss[0]) && count < capacity; i++) {
+      copy_name(entries[count].name, syss[i]);
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+  } else if (strcmp(path, "/proc/kernel") == 0) {
+    const char *kerns[] = {"version", "panic", "init", "abi"};
+    for (uint32_t i = 0; i < sizeof(kerns)/sizeof(kerns[0]) && count < capacity; i++) {
+      copy_name(entries[count].name, kerns[i]);
+      entries[count].size = 1;
+      entries[count].attributes = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/sys/class") == 0) {
+    if (count < capacity) {
+      copy_name(entries[count].name, "block");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+  } else if (strcmp(path, "/sys/class/block") == 0) {
+    // list block devices dynamically? For now empty
+  } else if (strcmp(path, "/sys/devices") == 0) {
+    // empty for now
+  } else if (strcmp(path, "/sys/kernel") == 0) {
+    if (count < capacity) {
+      copy_name(entries[count].name, "version");
+      entries[count].size = 1;
+      entries[count].attributes = 0;
+      count++;
+    }
+  }
+  return (int32_t)count;
+}
+
+static int32_t virtual_dir_list_long(const char *path,
+                                     struct fs_directory_entry_long *entries,
+                                     uint32_t capacity) {
+  if (!entries || capacity == 0) return FS_ERROR_INVALID;
+  uint32_t count = 0;
+  if (strcmp(path, "/dev") == 0) {
+    const char *devs[] = {"null", "zero", "full", "random", "urandom", "console", "tty"};
+    for (uint32_t i = 0; i < sizeof(devs)/sizeof(devs[0]) && count < capacity; i++) {
+      copy_name_long(entries[count].name, devs[i]);
+      entries[count].size = 0;
+      entries[count].attributes = 0;
+      entries[count].reserved[0] = entries[count].reserved[1] = entries[count].reserved[2] = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/proc") == 0) {
+    const char *procs[] = {"version", "uptime", "meminfo", "cpuinfo", "filesystems",
+                           "mounts", "cmdline", "kernel"};
+    for (uint32_t i = 0; i < sizeof(procs)/sizeof(procs[0]) && count < capacity; i++) {
+      copy_name_long(entries[count].name, procs[i]);
+      entries[count].size = (strcmp(procs[i], "kernel") == 0) ? 0 : 1;
+      entries[count].attributes = (strcmp(procs[i], "kernel") == 0) ? FS_ATTRIBUTE_DIRECTORY : 0;
+      entries[count].reserved[0] = entries[count].reserved[1] = entries[count].reserved[2] = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/sys") == 0) {
+    const char *syss[] = {"class", "devices", "kernel"};
+    for (uint32_t i = 0; i < sizeof(syss)/sizeof(syss[0]) && count < capacity; i++) {
+      copy_name_long(entries[count].name, syss[i]);
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      entries[count].reserved[0] = entries[count].reserved[1] = entries[count].reserved[2] = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/proc/kernel") == 0) {
+    const char *kerns[] = {"version", "panic", "init", "abi"};
+    for (uint32_t i = 0; i < sizeof(kerns)/sizeof(kerns[0]) && count < capacity; i++) {
+      copy_name_long(entries[count].name, kerns[i]);
+      entries[count].size = 1;
+      entries[count].attributes = 0;
+      entries[count].reserved[0] = entries[count].reserved[1] = entries[count].reserved[2] = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/sys/class") == 0) {
+    if (count < capacity) {
+      copy_name_long(entries[count].name, "block");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      entries[count].reserved[0] = entries[count].reserved[1] = entries[count].reserved[2] = 0;
+      count++;
+    }
+  } else if (strcmp(path, "/sys/class/block") == 0) {
+  } else if (strcmp(path, "/sys/devices") == 0) {
+  } else if (strcmp(path, "/sys/kernel") == 0) {
+    if (count < capacity) {
+      copy_name_long(entries[count].name, "version");
+      entries[count].size = 1;
+      entries[count].attributes = 0;
+      entries[count].reserved[0] = entries[count].reserved[1] = entries[count].reserved[2] = 0;
+      count++;
+    }
+  }
+  return (int32_t)count;
 }
 
 static uint32_t handles_capacity;
@@ -212,6 +464,36 @@ int32_t vfs_open(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!path || !path[0])
     return FS_ERROR_INVALID;
+  
+  uint8_t vkind = virtual_kind_from_path(path);
+  if (vkind != VIRT_NONE) {
+    int32_t idx = allocate_handle();
+    if (idx < 0) return idx;
+    struct vfs_handle *h = &handles[idx];
+    h->type = VFS_HANDLE_VIRTUAL;
+    h->virt_kind = vkind;
+    h->backend_descriptor = -1;
+    h->data = h->virt_buf;
+    h->virt_size = 0;
+    virtual_file_generate(vkind, h->virt_buf, &h->virt_size);
+    h->size = h->virt_size;
+    h->position = 0;
+    return VFS_FD_BASE + idx;
+  }
+
+  if (is_virtual_dir(path)) {
+    int32_t idx = allocate_handle();
+    if (idx < 0) return idx;
+    struct vfs_handle *h = &handles[idx];
+    h->type = VFS_HANDLE_VIRTUAL;
+    h->virt_kind = VIRT_NONE; // directory marker
+    h->backend_descriptor = -1;
+    h->data = 0;
+    h->size = 0;
+    h->position = 0;
+    return VFS_FD_BASE + idx;
+  }
+
   const struct kernel_file *kf = find_kernel_file(path);
   int32_t idx = allocate_handle();
   if (idx < 0)
@@ -253,12 +535,12 @@ int32_t vfs_open(const char *path) {
   if (vfs_active_fs == VFS_FS_EXT2)
     be = ext2_open(path);
   else
-    be = fat32_open(path);
+    return FS_ERROR_UNSUPPORTED;
   if (be < 0) {
     memset(h, 0, sizeof(*h));
     return be;
   }
-  h->type = (vfs_active_fs == VFS_FS_EXT2) ? VFS_HANDLE_EXT2 : VFS_HANDLE_FAT32;
+  h->type = VFS_HANDLE_EXT2;
   h->backend_descriptor = be;
   h->data = 0;
   h->size = 0;
@@ -275,12 +557,40 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
     return FS_ERROR_INVALID;
   if (h->type == VFS_HANDLE_EXT2)
     return ext2_read(h->backend_descriptor, buffer, count);
-  if (h->type == VFS_HANDLE_FAT32)
-    return fat32_read(h->backend_descriptor, buffer, count);
   if (h->type == VFS_HANDLE_KLOG) {
     uint32_t a = klog_read_since(&h->klog_cursor, (char *)buffer, count,
                                  &h->klog_data_lost);
     return (int32_t)a;
+  }
+  if (h->type == VFS_HANDLE_VIRTUAL && h->virt_kind != VIRT_NONE) {
+    // For /dev/zero, return zeros; /dev/null returns 0 (EOF); /dev/random returns random
+    if (h->virt_kind == VIRT_DEV_ZERO) {
+      if (count > VIRT_BUF_SIZE) count = VIRT_BUF_SIZE;
+      memset(buffer, 0, count);
+      return (int32_t)count;
+    }
+    if (h->virt_kind == VIRT_DEV_NULL || h->virt_kind == VIRT_DEV_FULL) {
+      return 0; // EOF for null, ENOSPC for full (handled by write)
+    }
+    if (h->virt_kind == VIRT_DEV_RANDOM || h->virt_kind == VIRT_DEV_URANDOM) {
+      // Simple pseudo-random
+      uint8_t *dst = buffer;
+      for (uint32_t i = 0; i < count; i++) {
+        static uint32_t seed = 0x12345678;
+        seed = seed * 1103515245 + 12345;
+        dst[i] = (uint8_t)(seed >> 16);
+      }
+      return (int32_t)count;
+    }
+    // For generated content files, use the pre-generated buffer
+    if (h->position >= h->virt_size)
+      return 0;
+    uint32_t rem = h->virt_size - h->position;
+    uint32_t amt = count < rem ? count : rem;
+    if (amt)
+      memcpy(buffer, h->virt_buf + h->position, amt);
+    h->position += amt;
+    return (int32_t)amt;
   }
   if (h->type != VFS_HANDLE_KERNEL_FILE && h->type != VFS_HANDLE_INITRAMFS)
     return FS_ERROR_INVALID;
@@ -352,6 +662,22 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!path || !path[0] || !out)
     return FS_ERROR_INVALID;
+  
+  uint8_t vkind = virtual_kind_from_path(path);
+  if (vkind != VIRT_NONE) {
+    out->size = 0;
+    out->is_directory = 0;
+    out->reserved = 0;
+    return 0;
+  }
+  
+  if (is_virtual_dir(path)) {
+    out->size = 0;
+    out->is_directory = 1;
+    out->reserved = 0;
+    return 0;
+  }
+
   const struct kernel_file *kf = find_kernel_file(path);
   if (kf) {
     out->size = (uint64_t)strlen(kf->content);
@@ -396,14 +722,8 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
     out->reserved = 0;
     return 0;
   }
-  uint64_t size = 0;
-  bool is_dir = false;
-  int32_t st = fat32_stat(path, &size, &is_dir);
-  if (st < 0)
-    return st;
-  out->size = size;
-  out->is_directory = is_dir ? 1 : 0;
-  out->reserved = 0;
+  return FS_ERROR_UNSUPPORTED;
+}
   return 0;
 }
 
@@ -439,6 +759,9 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
   MUTEX_SCOPE(&vfs_mutex);
   if (!path || !entries || capacity == 0)
     return FS_ERROR_INVALID;
+  if (is_virtual_dir(path)) {
+    return virtual_dir_list(path, entries, capacity, false);
+  }
   if (path_equals(path, "/")) {
     int32_t be = 0;
     if (vfs_active_fs == VFS_FS_INITRAMFS)
@@ -450,6 +773,24 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
     uint32_t count = be > 0 ? (uint32_t)be : 0;
     if (count < capacity) {
       copy_name(entries[count].name, "kernel");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+    if (count < capacity) {
+      copy_name(entries[count].name, "dev");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+    if (count < capacity) {
+      copy_name(entries[count].name, "proc");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+    if (count < capacity) {
+      copy_name(entries[count].name, "sys");
       entries[count].size = 0;
       entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
       count++;
@@ -499,7 +840,7 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
     return initramfs_list(path, entries, capacity);
   if (vfs_active_fs == VFS_FS_EXT2)
     return ext2_list(path, entries, capacity);
-  return fat32_list(path, entries, capacity);
+  return FS_ERROR_UNSUPPORTED;
 }
 
 static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY],
@@ -517,6 +858,9 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
   MUTEX_SCOPE(&vfs_mutex);
   if (!path || !entries || capacity == 0)
     return FS_ERROR_INVALID;
+  if (is_virtual_dir(path)) {
+    return virtual_dir_list_long(path, entries, capacity);
+  }
   if (path_equals(path, "/")) {
     int32_t be = 0;
     if (vfs_active_fs == VFS_FS_INITRAMFS)
@@ -528,6 +872,24 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
     uint32_t count = be > 0 ? (uint32_t)be : 0;
     if (count < capacity) {
       copy_name_long(entries[count].name, "kernel");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+    if (count < capacity) {
+      copy_name_long(entries[count].name, "dev");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+    if (count < capacity) {
+      copy_name_long(entries[count].name, "proc");
+      entries[count].size = 0;
+      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+      count++;
+    }
+    if (count < capacity) {
+      copy_name_long(entries[count].name, "sys");
       entries[count].size = 0;
       entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
       count++;
@@ -577,7 +939,7 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
     return initramfs_list_long(path, entries, capacity);
   if (vfs_active_fs == VFS_FS_EXT2)
     return ext2_list_long(path, entries, capacity);
-  return fat32_list_long(path, entries, capacity);
+  return FS_ERROR_UNSUPPORTED;
 }
 
 int32_t vfs_create_file(const char *path) {
@@ -592,7 +954,7 @@ int32_t vfs_create_file(const char *path) {
     return FS_ERROR_READ_ONLY;
   if (vfs_active_fs == VFS_FS_EXT2)
     return ext2_create_file(path);
-  return fat32_create_file(path);
+  return FS_ERROR_UNSUPPORTED;
 }
 
 static uint32_t raw_log_base_lba;
@@ -605,12 +967,22 @@ int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
   MUTEX_SCOPE(&vfs_mutex);
   if (find_kernel_file(path) || path_equals(path, "/kernel"))
     return FS_ERROR_READ_ONLY;
+  
+  // Handle virtual devices
+  if (strcmp(path, "/dev/null") == 0) {
+    return (int32_t)count; // discard, pretend success
+  }
+  if (strcmp(path, "/dev/zero") == 0 || strcmp(path, "/dev/full") == 0) {
+    return FS_ERROR_NO_SPACE; // /dev/zero can't be written, /dev/full always ENOSPC
+  }
+  if (strcmp(path, "/dev/random") == 0 || strcmp(path, "/dev/urandom") == 0) {
+    return (int32_t)count; // discard
+  }
+  
   if (is_klog_path(path)) {
     if (count == 0)
       raw_log_truncate();
-    int32_t r = (vfs_active_fs == VFS_FS_EXT2)
-                    ? ext2_write_file(path, buffer, count)
-                    : fat32_write_file(path, buffer, count);
+    int32_t r = ext2_write_file(path, buffer, count);
     if (r >= 0) {
       (void)raw_log_write(buffer, count);
       return r;
@@ -628,24 +1000,29 @@ int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
       block_device_flush();
     return ext_result;
   }
-  int32_t fat_result = fat32_write_file(path, buffer, count);
-  if (fat_result >= 0)
-    block_device_flush();
-  return fat_result;
+  return FS_ERROR_UNSUPPORTED;
 }
 
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
   MUTEX_SCOPE(&vfs_mutex);
   if (find_kernel_file(path) || path_equals(path, "/kernel"))
     return FS_ERROR_READ_ONLY;
+  
+  // Handle virtual devices
+  if (strcmp(path, "/dev/null") == 0) {
+    return (int32_t)count;
+  }
+  if (strcmp(path, "/dev/zero") == 0 || strcmp(path, "/dev/full") == 0) {
+    return FS_ERROR_NO_SPACE;
+  }
+  if (strcmp(path, "/dev/random") == 0 || strcmp(path, "/dev/urandom") == 0) {
+    return (int32_t)count;
+  }
+  
   if (is_klog_path(path)) {
-    int32_t r = (vfs_active_fs == VFS_FS_EXT2)
-                    ? ext2_append_file(path, buffer, count)
-                    : fat32_append_file(path, buffer, count);
+    int32_t r = ext2_append_file(path, buffer, count);
     if (r < 0 && !vfs_is_root_mounted())
-      r = (vfs_active_fs == VFS_FS_EXT2)
-              ? ext2_write_file(path, buffer, count)
-              : fat32_write_file(path, buffer, count);
+      r = ext2_write_file(path, buffer, count);
     if (r >= 0) {
       (void)raw_log_write(buffer, count);
       return r;
@@ -661,10 +1038,7 @@ int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
       block_device_flush();
     return ext_result;
   }
-  int32_t fat_append_result = fat32_append_file(path, buffer, count);
-  if (fat_append_result >= 0)
-    block_device_flush();
-  return fat_append_result;
+  return FS_ERROR_UNSUPPORTED;
 }
 
 int32_t vfs_create_directory(const char *path) {
@@ -683,14 +1057,14 @@ int32_t vfs_format_device(const char *device_name,
                           const char *erase_confirmation) {
   MUTEX_SCOPE(&vfs_mutex);
   return vfs_format_device_ex(device_name, serial_confirmation,
-                              erase_confirmation, VFS_FS_FAT32);
+                              erase_confirmation, VFS_FS_EXT2);
 }
 
 int32_t vfs_format_device_force(const char *device_name,
                                 const char *serial_confirmation) {
   MUTEX_SCOPE(&vfs_mutex);
   return vfs_format_device_ex(device_name, serial_confirmation, "ERASE",
-                              VFS_FS_FAT32);
+                              VFS_FS_EXT2);
 }
 
 int32_t vfs_format_device_ex(const char *device_name,
@@ -702,8 +1076,10 @@ int32_t vfs_format_device_ex(const char *device_name,
   if (fs_type == VFS_FS_EXT2)
     return ext2_format_device(device_name, serial_confirmation,
                               erase_confirmation);
-  return fat32_format_device(device_name, serial_confirmation,
-                             erase_confirmation);
+  if (fs_type == VFS_FS_FAT32)
+    return fat32_format_device(device_name, serial_confirmation,
+                               erase_confirmation);
+  return FS_ERROR_UNSUPPORTED;
 }
 
 int32_t vfs_format_uefi_device(const char *device_name,
@@ -833,10 +1209,7 @@ int32_t vfs_save_klog_to_device(const char *device, const char *path) {
     mounted = vfs_is_root_mounted();
   else {
     if (block_device_select((uint32_t)dev_idx)) {
-      if (fat32_mount_specific(device)) {
-        vfs_active_fs = VFS_FS_FAT32;
-        mounted = true;
-      } else if (ext2_mount_specific(device)) {
+      if (ext2_mount_specific(device)) {
         vfs_active_fs = VFS_FS_EXT2;
         mounted = true;
       } else
