@@ -10,3 +10,6 @@
 [submodule "userspace"]
 	path = userspace
 	url = https://github.com/PureC-OS/PureC-OS-Userspace.git
+[submodule "wolfssl"]
+	path = wolfssl
+	url = https://github.com/PureC-OS/wolfssl.git
