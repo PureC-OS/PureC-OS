@@ -11,7 +11,6 @@ static mutex_t vfs_mutex;
 #include "./ext2/include/ext2_dir.h"
 #include "./ext2/include/ext2_inode.h"
 #include "./ext2/include/ext2_types.h"
-#include "./fat/include/fat32.h"
 #include "initramfs.h"
 #include "vfs.h"
 #include "../kernel/core/system_info.h"
@@ -21,7 +20,6 @@ static mutex_t vfs_mutex;
 
 enum vfs_handle_type {
   VFS_HANDLE_NONE,
-  VFS_HANDLE_FAT32,
   VFS_HANDLE_EXT2,
   VFS_HANDLE_INITRAMFS,
   VFS_HANDLE_KERNEL_FILE,
@@ -989,24 +987,7 @@ int32_t vfs_format_device_ex(const char *device_name,
   if (fs_type == VFS_FS_EXT2)
     return ext2_format_device(device_name, serial_confirmation,
                               erase_confirmation);
-  if (fs_type == VFS_FS_FAT32)
-    return fat32_format_device(device_name, serial_confirmation,
-                               erase_confirmation);
   return FS_ERROR_UNSUPPORTED;
-}
-
-int32_t vfs_format_uefi_device(const char *device_name,
-                               const char *serial_confirmation) {
-  MUTEX_SCOPE(&vfs_mutex);
-  return fat32_format_uefi_device(device_name, serial_confirmation);
-}
-
-int32_t vfs_format_uefi_device_progress(const char *device_name,
-                                        const char *serial_confirmation,
-                                        fat32_progress_callback callback) {
-  MUTEX_SCOPE(&vfs_mutex);
-  return fat32_format_uefi_device_progress(device_name, serial_confirmation,
-                                           callback);
 }
 
 static bool raw_log_init(void) {
