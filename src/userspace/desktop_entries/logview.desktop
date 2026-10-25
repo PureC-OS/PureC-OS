@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=Logs
-Exec=/bin/program/logview
-IconColor=0x89B4FA
-IconText=LOG
-Type=Application
