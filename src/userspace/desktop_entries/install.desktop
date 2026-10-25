@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Install
+Exec=/bin/installer
+IconColor=0xCBA6F7
+IconText=OS
+Type=Application

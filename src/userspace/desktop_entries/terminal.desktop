@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Terminal
+Exec=/bin/program/terminal
+IconColor=0x1E1E2E
+IconText=>_
+Type=Application

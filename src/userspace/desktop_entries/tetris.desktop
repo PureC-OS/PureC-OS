@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Tetris
+Exec=/bin/program/tetris
+IconColor=0xF38BA8
+IconText=[]
+Type=Application

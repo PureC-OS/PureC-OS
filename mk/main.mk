@@ -209,15 +209,8 @@ iso: kernel programs
 	fi; \
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
-		"$(ISO_ROOT)/usr/bin" "$(ISO_ROOT)/usr/sbin" "$(ISO_ROOT)/usr/games" \
-		"$(ISO_ROOT)/usr/share/applications" "$(ISO_ROOT)/usr/share/demo" \
-		"$(ISO_ROOT)/usr/share/wallpapers" "$(ISO_ROOT)/usr/share/sounds/purec" \
-		"$(ISO_ROOT)/usr/include" "$(ISO_ROOT)/lib" "$(ISO_ROOT)/lib/modules" \
-		"$(ISO_ROOT)/lib/firmware/Intel/wifi" "$(ISO_ROOT)/lib/tcc/include" \
-		"$(ISO_ROOT)/etc/purec" "$(ISO_ROOT)/var/lib/purec" "$(ISO_ROOT)/var/log" \
-		"$(ISO_ROOT)/var/tmp" "$(ISO_ROOT)/tmp" "$(ISO_ROOT)/home/purec" \
-		"$(ISO_ROOT)/root" "$(ISO_ROOT)/dev" "$(ISO_ROOT)/proc" "$(ISO_ROOT)/sys" \
-		"$(ISO_ROOT)/media" "$(ISO_ROOT)/mnt" "$(ISO_ROOT)/opt" "$(ISO_ROOT)/srv" "$(ISO_ROOT)/sbin"; \
+		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/bin/modules" \
+		"$(ISO_ROOT)/src/demo"; \
 	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
 		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
 	fi; \
@@ -230,10 +223,10 @@ iso: kernel programs
 	for mod in ext2 crypt acpi wolf e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
-			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/lib/modules/$$mod.$$ext" || true; \
+			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/bin/modules/$$mod.$$ext" || true; \
 		done; \
 	done; \
-	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/lib/modules/" 2>/dev/null || true; \
+	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/bin/modules/" 2>/dev/null || true; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys"          "$(ISO_ROOT)/boot/limine/"; \

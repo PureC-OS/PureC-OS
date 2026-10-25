@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Settings
+Exec=/bin/program/settings
+IconColor=0x94E2D5
+IconText={}
+Type=Application

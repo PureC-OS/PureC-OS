@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Notepad
+Exec=/bin/program/notepad
+IconColor=0x9BD39B
+IconText=NP
+Type=Application
