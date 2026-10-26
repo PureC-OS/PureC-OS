@@ -181,6 +181,56 @@ int32_t pc_cpu_core_info(struct cpu_core_info *info){
     return (int32_t)pc_syscall(SYS_CPU_CORE_INFO,(uint64_t)(uintptr_t)info,0,0);
 }
 
+static uint64_t tcp_arg(int32_t handle, uint32_t timeout_ms){
+    return (uint64_t)(uint32_t)handle|((uint64_t)timeout_ms<<32);
+}
+
+int32_t pc_tcp_socket(void){
+    return (int32_t)pc_syscall(SYS_TCP_SOCKET,0,0,0);
+}
+
+int32_t pc_tcp_connect(int32_t handle, uint32_t ipv4, uint16_t port,
+                       uint32_t timeout_ms){
+    return (int32_t)pc_syscall(SYS_TCP_CONNECT,tcp_arg(handle,timeout_ms),
+                               ipv4,port);
+}
+
+int32_t pc_tcp_listen(int32_t handle, uint16_t port, uint8_t backlog){
+    return (int32_t)pc_syscall(SYS_TCP_LISTEN,tcp_arg(handle,0),port,backlog);
+}
+
+int32_t pc_tcp_accept(int32_t handle, uint32_t timeout_ms){
+    return (int32_t)pc_syscall(SYS_TCP_ACCEPT,tcp_arg(handle,timeout_ms),0,0);
+}
+
+int32_t pc_tcp_send(int32_t handle, const void *data, uint32_t length,
+                    uint32_t timeout_ms){
+    if(length && !data) return -1;
+    return (int32_t)pc_syscall(SYS_TCP_SEND,tcp_arg(handle,timeout_ms),
+                               (uint64_t)(uintptr_t)data,length);
+}
+
+int32_t pc_tcp_recv(int32_t handle, void *data, uint32_t length,
+                    uint32_t timeout_ms){
+    if(length && !data) return -1;
+    return (int32_t)pc_syscall(SYS_TCP_RECV,tcp_arg(handle,timeout_ms),
+                               (uint64_t)(uintptr_t)data,length);
+}
+
+int32_t pc_tcp_close(int32_t handle){
+    return (int32_t)pc_syscall(SYS_TCP_CLOSE,tcp_arg(handle,0),0,0);
+}
+
+int32_t pc_tcp_abort(int32_t handle){
+    return (int32_t)pc_syscall(SYS_TCP_ABORT,tcp_arg(handle,0),0,0);
+}
+
+int32_t pc_tcp_info(int32_t handle, struct net_tcp_info *info){
+    if(!info) return -1;
+    return (int32_t)pc_syscall(SYS_TCP_INFO,tcp_arg(handle,0),
+                               (uint64_t)(uintptr_t)info,0);
+}
+
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result){
     if(!target || !result) return -1;

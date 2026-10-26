@@ -4,6 +4,7 @@
 #include "../link/arp.h"
 #include "../network/ipv4.h"
 #include "../transport/udp.h"
+#include "../transport/tcp.h"
 #include "../name/dns.h"
 #include "../config/dhcp.h"
 #include "../diagnostics/icmp.h"
@@ -30,7 +31,7 @@ bool net_service_init(void){
         ready=false;
         return false;
     }
-    if(!ipv4_init() || !udp_init() || !dns_init() || !dhcp_init()
+    if(!ipv4_init() || !udp_init() || !tcp_init() || !dns_init() || !dhcp_init()
        || !icmp_init()){
         klog(KLOG_ERROR,"net: protocol handler table initialization failed");
         ready=false;
@@ -71,6 +72,7 @@ void net_service_thread(void *argument){
         }
         uint64_t now=timer_ticks();
         dhcp_poll(now);
+        tcp_poll(now);
         wifi_poll(now);
         if(now-last_housekeeping>=1000){
             arp_poll(now);

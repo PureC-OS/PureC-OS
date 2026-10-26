@@ -22,6 +22,7 @@
 #include "../../net/core/net_device.h"
 #include "../../net/name/dns.h"
 #include "../../net/network/ipv4.h"
+#include "../../net/transport/tcp.h"
 #include "../../net/wifi/wifi.h"
 #include "../../userspace/display_mode.h"
 #include "../../userspace/userspace.h"
@@ -1089,6 +1090,67 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (a1 && readable_string((const char *)(uintptr_t)a1))
       msg = (const char *)(uintptr_t)a1;
     KERNEL_PANIC_HERE(msg);
+  }
+  case SYS_TCP_SOCKET:
+    return tcp_socket_owned(process_current()->pid);
+  case SYS_TCP_CONNECT:
+  case SYS_TCP_LISTEN:
+  case SYS_TCP_ACCEPT:
+  case SYS_TCP_SEND:
+  case SYS_TCP_RECV:
+  case SYS_TCP_CLOSE:
+  case SYS_TCP_ABORT:
+  case SYS_TCP_INFO: {
+    int32_t handle = (int32_t)(uint32_t)a1;
+    uint32_t timeout_ms = (uint32_t)(a1 >> 32);
+    if (!tcp_is_owner(handle, process_current()->pid))
+      return TCP_ERR_INVALID;
+    switch (n) {
+    case SYS_TCP_CONNECT:
+      return tcp_connect(handle, (uint32_t)a2, (uint16_t)a3, timeout_ms);
+    case SYS_TCP_LISTEN:
+      return tcp_listen(handle, (uint16_t)a2, (uint8_t)a3);
+    case SYS_TCP_ACCEPT:
+      return tcp_accept(handle, timeout_ms);
+    case SYS_TCP_SEND: {
+      uint32_t length = (uint32_t)a3;
+      if (!length)
+        return 0;
+      if (!readable((const void *)(uintptr_t)a2, length))
+        return TCP_ERR_INVALID;
+      return tcp_send(handle, (const void *)(uintptr_t)a2, length, timeout_ms);
+    }
+    case SYS_TCP_RECV: {
+      uint32_t length = (uint32_t)a3;
+      if (!length)
+        return 0;
+      if (!writable((void *)(uintptr_t)a2, length))
+        return TCP_ERR_INVALID;
+      return tcp_receive(handle, (void *)(uintptr_t)a2, length, timeout_ms);
+    }
+    case SYS_TCP_CLOSE:
+      return tcp_close(handle);
+    case SYS_TCP_ABORT:
+      return tcp_abort(handle);
+    default: {
+      struct net_tcp_info *out = (struct net_tcp_info *)(uintptr_t)a2;
+      struct tcp_socket_info info;
+      if (!writable(out, sizeof(*out)))
+        return TCP_ERR_INVALID;
+      if (!tcp_get_info(handle, &info))
+        return TCP_ERR_INVALID;
+      out->state = (uint32_t)info.state;
+      out->local_address = info.local_address;
+      out->remote_address = info.remote_address;
+      out->local_port = info.local_port;
+      out->remote_port = info.remote_port;
+      out->bytes_unread = info.bytes_unread;
+      out->bytes_unsent = info.bytes_unsent;
+      out->cwnd = info.cwnd;
+      out->rto_ms = info.rto_ms;
+      return 0;
+    }
+    }
   }
   case SYS_NET_IF_LIST: {
     struct net_if_info *buffer = (struct net_if_info *)(uintptr_t)a1;

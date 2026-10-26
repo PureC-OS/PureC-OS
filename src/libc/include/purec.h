@@ -47,6 +47,20 @@ int32_t pc_process_list_page(struct process_monitor_info *processes,
 bool pc_cpu_info(struct cpu_monitor_info *info);
 bool pc_memory_info(struct memory_monitor_info *info);
 int32_t pc_cpu_core_info(struct cpu_core_info *info);
+/* TCP sockets (kernel owns the stack; see SYS_TCP_* in syscall.h). Timeouts in
+ * ms: 0 never blocks, 0xFFFFFFFF waits forever. Negative returns are errors. */
+int32_t pc_tcp_socket(void);
+int32_t pc_tcp_connect(int32_t handle, uint32_t ipv4, uint16_t port,
+                       uint32_t timeout_ms);
+int32_t pc_tcp_listen(int32_t handle, uint16_t port, uint8_t backlog);
+int32_t pc_tcp_accept(int32_t handle, uint32_t timeout_ms);
+int32_t pc_tcp_send(int32_t handle, const void *data, uint32_t length,
+                    uint32_t timeout_ms);
+int32_t pc_tcp_recv(int32_t handle, void *data, uint32_t length,
+                    uint32_t timeout_ms);
+int32_t pc_tcp_close(int32_t handle);
+int32_t pc_tcp_abort(int32_t handle);
+int32_t pc_tcp_info(int32_t handle, struct net_tcp_info *info);
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result);
 void *pc_heap_grow(uint64_t size);

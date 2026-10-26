@@ -11,6 +11,7 @@ static mutex_t process_mutex;
 #include "../../mm/oom/oom_victim.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
+#include "../../net/transport/tcp.h"
 #include "../../userspace/window_manager.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
@@ -812,6 +813,7 @@ void process_exit_current(int32_t status) {
     }
     window_manager_unregister(process->pid);
     gop_console_release(process->pid);
+    tcp_release_owner(process->pid);
     for (uint32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
       if (process->descriptors[fd] >= VFS_FD_BASE) {
         (void)vfs_close(process->descriptors[fd]);

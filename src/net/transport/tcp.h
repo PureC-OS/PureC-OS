@@ -62,6 +62,9 @@ struct tcp_socket_info {
 bool tcp_init(void);
 void tcp_poll(uint64_t now_ms);
 int32_t tcp_socket(void);
+int32_t tcp_socket_owned(uint32_t owner);
+bool tcp_is_owner(int32_t handle, uint32_t owner);
+void tcp_release_owner(uint32_t owner);
 int32_t tcp_connect(int32_t handle, uint32_t address, uint16_t port,
                     uint32_t timeout_ms);
 int32_t tcp_listen(int32_t handle, uint16_t port, uint8_t backlog);

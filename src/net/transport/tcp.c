@@ -36,6 +36,7 @@ struct tcp_socket
 {
     bool used;
     bool app_closed;
+    uint32_t owner;
     enum tcp_state state;
     int error;
     struct net_device *device;
@@ -792,6 +793,7 @@ static void receive_segment(const struct ipv4_packet *packet)
         if (!child)
             return;
         child->parent = (int8_t)parent;
+        child->owner = s->owner;
         child->device = packet->device;
         child->local_address = packet->destination;
         child->local_port = destination_port;
@@ -827,7 +829,7 @@ bool tcp_init(void)
     return ipv4_register_handler(IPV4_PROTOCOL_TCP, receive_segment);
 }
 
-static void handle_timeout(struct tcp_socket *s, uint64_t now)
+static void handle_timeout(struct tcp_socket *s)
 {
     if (s->arp_pending && s->arp_tries < TCP_MAX_ARP_RETRIES)
     {
@@ -885,15 +887,50 @@ void tcp_poll(uint64_t now)
             continue;
         }
         if (s->timer_armed && now >= s->timer_deadline)
-            handle_timeout(s, now);
+            handle_timeout(s);
     }
+}
+
+int32_t tcp_socket_owned(uint32_t owner)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_allocate();
+    if (!s)
+        return TCP_ERR_NO_SOCKET;
+    s->owner = owner;
+    return socket_index(s);
 }
 
 int32_t tcp_socket(void)
 {
+    return tcp_socket_owned(0);
+}
+
+bool tcp_is_owner(int32_t handle, uint32_t owner)
+{
     MUTEX_SCOPE(&tcp_lock);
-    struct tcp_socket *s = socket_allocate();
-    return s ? socket_index(s) : TCP_ERR_NO_SOCKET;
+    struct tcp_socket *s = socket_from_handle(handle);
+    return s && s->owner == owner;
+}
+
+static void abort_children(int32_t parent);
+
+void tcp_release_owner(uint32_t owner)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    {
+        struct tcp_socket *s = &sockets[index];
+        if (!s->used || s->owner != owner)
+            continue;
+        if (s->state == TCP_STATE_LISTEN)
+            abort_children((int32_t)index);
+        else if (s->state != TCP_STATE_CLOSED && s->state != TCP_STATE_SYN_SENT
+                 && s->state != TCP_STATE_TIME_WAIT)
+            send_reset(s->device, s->local_address, s->remote_address,
+                       s->local_port, s->remote_port, s->snd_nxt, 0, TCP_FLAG_RST);
+        socket_release(s);
+    }
 }
 
 static bool port_in_use(uint16_t port)
@@ -911,7 +948,7 @@ static uint16_t allocate_ephemeral_port(void)
     for (uint32_t tries = 0; tries <= TCP_EPHEMERAL_LAST - TCP_EPHEMERAL_FIRST; tries++)
     {
         uint16_t port = next_ephemeral++;
-        if (next_ephemeral > TCP_EPHEMERAL_LAST || next_ephemeral < TCP_EPHEMERAL_FIRST)
+        if (next_ephemeral < TCP_EPHEMERAL_FIRST)
             next_ephemeral = TCP_EPHEMERAL_FIRST;
         if (!port_in_use(port))
             return port;

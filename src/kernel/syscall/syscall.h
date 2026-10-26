@@ -100,6 +100,17 @@
 #define SYS_IPC_SEND 291
 #define SYS_IPC_RECV 292
 #define SYS_PANIC_TEST 299
+/* TCP sockets. a1 packs handle (low 32 bits) | timeout_ms << 32 where the
+ * call can block; timeout 0 = never block, 0xFFFFFFFF = wait forever. */
+#define SYS_TCP_SOCKET 300  /* () -> handle */
+#define SYS_TCP_CONNECT 301 /* (handle|timeout<<32, ipv4, port) */
+#define SYS_TCP_LISTEN 302  /* (handle, port, backlog) */
+#define SYS_TCP_ACCEPT 303  /* (handle|timeout<<32) -> new handle */
+#define SYS_TCP_SEND 304    /* (handle|timeout<<32, buf, len) -> bytes */
+#define SYS_TCP_RECV 305    /* (handle|timeout<<32, buf, len) -> bytes, 0=EOF */
+#define SYS_TCP_CLOSE 306   /* (handle) */
+#define SYS_TCP_ABORT 307   /* (handle) send RST and release */
+#define SYS_TCP_INFO 308    /* (handle, struct net_tcp_info *) */
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
@@ -468,6 +479,18 @@ struct ext2_blocks_info {
   uint32_t ino;
   uint32_t logical_count;
   uint32_t blocks[64];
+};
+
+struct net_tcp_info {
+  uint32_t state;
+  uint32_t local_address;
+  uint32_t remote_address;
+  uint16_t local_port;
+  uint16_t remote_port;
+  uint32_t bytes_unread;
+  uint32_t bytes_unsent;
+  uint32_t cwnd;
+  uint32_t rto_ms;
 };
 
 struct syscall_regs {

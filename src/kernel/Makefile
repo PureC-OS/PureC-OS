@@ -102,6 +102,7 @@ C_SOURCES := \
 	net/link/arp.c \
 	net/network/ipv4.c \
 	net/transport/udp.c \
+	net/transport/tcp.c \
 	net/name/dns.c \
 	net/config/dhcp.c \
 	net/diagnostics/icmp.c \

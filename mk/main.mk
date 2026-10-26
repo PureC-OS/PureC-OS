@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -36,6 +36,12 @@ test-ipc:
 	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
 		tests/ipc_mailbox_test.c -o $(BIN_DIR)/tests/ipc_mailbox_test
 	$(BIN_DIR)/tests/ipc_mailbox_test
+
+test-tcp:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
+		tests/tcp_test.c src/net/transport/tcp.c -o $(BIN_DIR)/tests/tcp_test
+	$(BIN_DIR)/tests/tcp_test
 
 test-initramfs:
 	@mkdir -p $(BIN_DIR)/tests
