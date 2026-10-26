@@ -2193,3 +2193,26 @@ void dump_kernel_log(void) {
 }
 ```
 
+
+
+## TCP-сокеты (300–308)
+
+Стек TCP живёт в ядре (`src/net/transport/tcp.c`); сокет принадлежит создавшему
+процессу и закрывается (RST) при его завершении. В `rbx` для блокирующих вызовов
+упаковано `handle | timeout_ms << 32` (0 — не блокировать, `0xFFFFFFFF` — ждать
+бесконечно). Ошибки: -1 invalid, -2 нет сокетов, -3 не подключён, -4 reset,
+-5 таймаут, -6 нет маршрута, -7 порт занят, -8 would block.
+
+| № | Имя | Аргументы (rbx, rcx, rdx) | Результат |
+|---|-----|---------------------------|-----------|
+| **300** | `SYS_TCP_SOCKET` | — | handle |
+| **301** | `SYS_TCP_CONNECT` | handle+timeout, ipv4, port | 0 |
+| **302** | `SYS_TCP_LISTEN` | handle, port, backlog (≤4) | 0 |
+| **303** | `SYS_TCP_ACCEPT` | handle+timeout | новый handle |
+| **304** | `SYS_TCP_SEND` | handle+timeout, buf, len | принято байт |
+| **305** | `SYS_TCP_RECV` | handle+timeout, buf, len | байт, 0 = EOF |
+| **306** | `SYS_TCP_CLOSE` | handle | 0 |
+| **307** | `SYS_TCP_ABORT` | handle | 0 |
+| **308** | `SYS_TCP_INFO` | handle, `struct net_tcp_info *` | 0 |
+
+Обёртки: `pc_tcp_*` в `libc/include/purec.h`.

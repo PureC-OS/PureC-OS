@@ -353,6 +353,23 @@ static void test_backlog_and_port_reuse_checks(void) {
     CHECK(tcp_socket() == TCP_ERR_NO_SOCKET);
 }
 
+static void test_owner_cleanup(void) {
+    reset_stack();
+    int32_t listener = tcp_socket_owned(7);
+    CHECK(listener >= 0 && tcp_is_owner(listener, 7) && !tcp_is_owner(listener, 8));
+    CHECK(tcp_listen(listener, 5500, 2) == TCP_OK);
+    int32_t client = tcp_socket_owned(9);
+    CHECK(tcp_connect(client, ADDRESS, 5500, 3000) == TCP_OK);
+    int32_t server = tcp_accept(listener, 1000);
+    CHECK(server >= 0 && tcp_is_owner(server, 7)); /* accepted child inherits */
+    /* Owner 7 "exits": its sockets vanish and the peer is reset. */
+    tcp_release_owner(7);
+    struct tcp_socket_info info;
+    CHECK(!tcp_get_info(listener, &info) && !tcp_get_info(server, &info));
+    char buffer[4];
+    CHECK(tcp_receive(client, buffer, sizeof(buffer), 1000) == TCP_ERR_RESET);
+}
+
 int main(void) {
     test_handshake_and_echo();
     test_orderly_close();
@@ -366,6 +383,7 @@ int main(void) {
     test_abort_resets_peer();
     test_peer_vanishes_times_out();
     test_backlog_and_port_reuse_checks();
+    test_owner_cleanup();
     if (failures) {
         fprintf(stderr, "%d tcp test failure(s)\n", failures);
         return 1;
