@@ -18,3 +18,4 @@ lang/Cargo.lock
 *.pyc
 kernel.map
 *PureC-OS-1.2.6 (2)/
+*.obsidian/
