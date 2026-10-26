@@ -29,11 +29,11 @@
 #define SYS_DIR_CREATE 207
 #define SYS_DISK_LIST 208
 #define SYS_STORAGE_CONTROLLERS 209
-#define SYS_FAT32_FORMAT 210
+#define SYS_FS_FORMAT 210
 #define SYS_FILE_WRITE 211
 #define SYS_USB_RESCAN 212
-#define SYS_FAT32_FORMAT_FORCE 213
-#define SYS_FAT32_FORMAT_UEFI 214
+#define SYS_FS_FORMAT_FORCE 213
+#define SYS_INSTALL_DEVICE 214
 #define SYS_CPU_INFO 215
 #define SYS_MEMORY_INFO 216
 #define SYS_DISK_STATS 217
@@ -87,7 +87,7 @@
 #define SYS_WIFI_STATUS 264
 #define SYS_SAVE_KLOG 265
 #define SYS_GET_ROOT_DEVICE 266
-#define SYS_FAT32_FORMAT_CUSTOM 267
+#define SYS_FS_FORMAT_CUSTOM 267
 #define SYS_FORMAT_DEVICE_EX 268
 #define SYS_INSTALL_START_EX 269
 #define SYS_FILE_SEEK 275
@@ -101,7 +101,6 @@
 #define SYS_IPC_RECV 292
 #define SYS_PANIC_TEST 299
 
-#define FS_TYPE_FAT32 0
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
 
@@ -408,7 +407,7 @@ struct save_klog_request {
   char path[64];
 };
 
-struct fat32_custom_format_request {
+struct custom_format_request {
   char device[32];
   uint32_t partition_count;
   uint64_t sizes_gb[4];

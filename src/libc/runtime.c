@@ -479,11 +479,11 @@ int32_t pc_get_root_device(char *buffer, uint32_t capacity){
 }
 int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb){
     if(!device || !partition_count || !sizes_gb) return -1;
-    struct fat32_custom_format_request req={0};
+    struct custom_format_request req={0};
     pc_copy(req.device, device, sizeof(req.device));
     req.partition_count=partition_count;
     for(uint32_t i=0;i<partition_count && i<4;i++) req.sizes_gb[i]=sizes_gb[i];
-    return (int32_t)pc_syscall(SYS_FAT32_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
+    return (int32_t)pc_syscall(SYS_FS_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
 }
 
 int32_t pc_format_device_ex(const char *device, const char *serial, uint8_t fs_type){

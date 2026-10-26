@@ -2,7 +2,7 @@
 #include "../../lib/string.h"
 
 static const char *system_program_names[] = {
-    "disks", "usbscan", "mkfs.fat32", "install", "setup",      "update",
+    "disks", "usbscan", "mkfs.ext2", "install", "setup",      "update",
     "dmesg", "savelog", "uname",      "about",   "systeminfo", "htop",
     "font",  "snake",   "mouse",      "debug"};
 

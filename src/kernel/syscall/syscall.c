@@ -44,7 +44,6 @@ static struct install_status install_job;
 static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
-static uint8_t install_fs_type;
 
 static bool readable(const void *buffer, uint64_t size) {
   return process_user_buffer(buffer, size, false);
@@ -94,9 +93,8 @@ static void install_worker(void *argument) {
   (void)argument;
   filesystem_syscall_lock();
   block_device_begin_exclusive_io();
-  int32_t result;
-  result = fat32_format_uefi_device_progress_ex(
-      install_device, install_serial, install_progress, install_fs_type);
+  int32_t result = installer_install_device(install_device, install_serial,
+                                            install_progress);
   block_device_end_exclusive_io();
   filesystem_syscall_unlock();
   install_job.result = result;
@@ -505,7 +503,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     return storage_controller_list(
         (struct storage_controller_info *)(uintptr_t)a1, (uint32_t)a2);
-  case SYS_FAT32_FORMAT: {
+  case SYS_FS_FORMAT: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
@@ -519,7 +517,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FAT32_FORMAT_FORCE: {
+  case SYS_FS_FORMAT_FORCE: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
@@ -531,15 +529,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FAT32_FORMAT_UEFI: {
+  case SYS_INSTALL_DEVICE: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
     filesystem_syscall_lock();
-    int32_t result = vfs_format_uefi_device((const char *)(uintptr_t)a1,
-                                            (const char *)(uintptr_t)a2);
+    int32_t result = vfs_install_device((const char *)(uintptr_t)a1,
+                                        (const char *)(uintptr_t)a2, 0);
     filesystem_syscall_unlock();
     return result;
   }
@@ -812,7 +810,6 @@ int64_t syscall_handler(struct syscall_regs *r) {
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
             sizeof(install_serial) - 1);
-    install_fs_type = FS_TYPE_EXT2;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
@@ -836,8 +833,6 @@ int64_t syscall_handler(struct syscall_regs *r) {
     memset(&install_history, 0, sizeof(install_history));
     strncpy(install_device, req->device, sizeof(install_device) - 1);
     strncpy(install_serial, req->serial, sizeof(install_serial) - 1);
-    install_fs_type =
-        req->fs_type <= FS_TYPE_EXT2 ? req->fs_type : FS_TYPE_FAT32;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
@@ -1016,17 +1011,20 @@ int64_t syscall_handler(struct syscall_regs *r) {
     memcpy(buffer, name, len + 1);
     return (int64_t)len;
   }
-  case SYS_FAT32_FORMAT_CUSTOM: {
-    const struct fat32_custom_format_request *user_req =
-        (const struct fat32_custom_format_request *)(uintptr_t)a1;
+  case SYS_FS_FORMAT_CUSTOM: {
+    const struct custom_format_request *user_req =
+        (const struct custom_format_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
       return -1;
-    struct fat32_custom_format_request req = *user_req;
+    struct custom_format_request req = *user_req;
     req.device[sizeof(req.device) - 1] = '\0';
     if (req.partition_count == 0 || req.partition_count > 4)
       return -1;
-    return fat32_format_custom_device(req.device, req.partition_count,
-                                      req.sizes_gb);
+    filesystem_syscall_lock();
+    int32_t result = installer_format_custom_device(
+        req.device, req.partition_count, req.sizes_gb);
+    filesystem_syscall_unlock();
+    return result;
   }
   case SYS_FORMAT_DEVICE_EX: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
@@ -1042,7 +1040,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_lock();
     int32_t res = vfs_format_device_ex(
         r.device, r.serial, r.erase,
-        r.fs_type == FS_TYPE_EXT2 ? VFS_FS_EXT2 : VFS_FS_FAT32);
+        VFS_FS_EXT2);
     filesystem_syscall_unlock();
     return res;
   }
@@ -1301,8 +1299,8 @@ void syscall_init(void) {
         }
       }
     } else {
-      klog(KLOG_WARN, "vfs: no PURECOS FAT32 root found (use 'install' or "
-                      "'mkfs.fat32' to create)");
+      klog(KLOG_WARN, "vfs: no ext2 root found (use 'install' or "
+                      "'mkfs' to create)");
     }
     boot_diag_checkpoint(BOOT_STAGE_SYSCALLS,
                          "storage and filesystem probe complete");

@@ -6,7 +6,7 @@ PureC OS is a simple 64-bit operating system written in C and x86_64 assembly la
 
 - UserSpace
 - Internet support only in VirtualBox I only described the interface in this block [Network Support](#network-support)
-- File system FAT32 and VFS and EXT2
+- File system VFS and EXT2
 - Implemented screen, keyboard and disk drivers
 - Implemented USB drivers
 - User Programs In Ring 3

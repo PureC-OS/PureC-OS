@@ -34,7 +34,7 @@ bool files_model_refresh(struct files_model *model){
     if(!model) return false;
     model->disk_count=pc_list_disks(model->disks,FILES_DISK_CAPACITY);
     if(model->disk_count<0) model->disk_count=0;
-    if(pc_get_fs_type(model->fs_type, sizeof(model->fs_type)) < 0) pc_copy(model->fs_type, "fat32", sizeof(model->fs_type));
+    if(pc_get_fs_type(model->fs_type, sizeof(model->fs_type)) < 0) pc_copy(model->fs_type, "ext2", sizeof(model->fs_type));
     if(pc_get_root_device(model->root_device, sizeof(model->root_device)) < 0) model->root_device[0]='\0';
     {
         char cfg[128]={0};
@@ -43,7 +43,6 @@ bool files_model_refresh(struct files_model *model){
             cfg[n]='\0';
             for(int32_t i=0; cfg[i] && i+12 < n; i++){
                 if(cfg[i]=='e' && cfg[i+1]=='x' && cfg[i+2]=='t' && cfg[i+3]=='2'){ pc_copy(model->fs_type, "ext2", sizeof(model->fs_type)); break; }
-                if(cfg[i]=='f' && cfg[i+1]=='a' && cfg[i+2]=='t' && cfg[i+3]=='3' && cfg[i+4]=='2'){ pc_copy(model->fs_type, "fat32", sizeof(model->fs_type)); break; }
             }
         }
     }

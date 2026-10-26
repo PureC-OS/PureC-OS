@@ -92,12 +92,7 @@ static void draw(struct pg_window *win, struct disk_app *app, const struct pg_ev
 
         uint32_t y = controls + 22;
         pg_window_text(win, 20, y, "Filesystem:", win->theme.muted_text);
-        const char *fs_name = app->fs_type == FS_TYPE_EXT2 ? "EXT2" : "FAT32";
-        pg_window_text(win, 140, y, fs_name, win->theme.text);
-        if (pg_button(win, (struct pg_rect){200, y - 4, 80, 22}, app->fs_type == FS_TYPE_EXT2 ? "-> FAT32" : "-> EXT2", ev)) {
-            app->fs_type = (app->fs_type == FS_TYPE_EXT2) ? FS_TYPE_FAT32 : FS_TYPE_EXT2;
-            app->confirm_format = false;
-        }
+        pg_window_text(win, 140, y, "EXT2", win->theme.text);
 
         y += 26;
         pg_window_text(win, 20, y, "Partitions:", win->theme.muted_text);
@@ -126,7 +121,7 @@ static void draw(struct pg_window *win, struct disk_app *app, const struct pg_ev
         y = win->client.height - 52;
         const char *label = app->confirm_format ? "CONFIRM ERASE" : "Format";
         char btn_label[32]; char *bl = append_text(btn_label, label);
-        (void)append_text(bl, app->fs_type == FS_TYPE_EXT2 ? " EXT2" : " FAT32");
+        (void)append_text(bl, " EXT2");
         if (pg_button(win, (struct pg_rect){20, y, 170, 30}, btn_label, ev)) {
             if (!d->writable || !d->operational || !d->serial[0]) {
                 pc_copy(app->status, "Disk cannot be formatted safely.", sizeof(app->status));
@@ -135,19 +130,19 @@ static void draw(struct pg_window *win, struct disk_app *app, const struct pg_ev
                 app->confirm_format = true;
                 pc_copy(app->status, "Warning: confirmation erases disk.", sizeof(app->status));
             } else if (app->custom_format && app->partition_count > 1) {
-                struct fat32_custom_format_request req = {0};
+                struct custom_format_request req = {0};
                 pc_copy(req.device, d->name, sizeof(req.device));
                 req.partition_count = (uint32_t)app->partition_count;
                 for (int i = 0; i < app->partition_count && i < 4; i++) req.sizes_gb[i] = app->sizes_gb[i];
-                int32_t r = (int32_t)pc_syscall(SYS_FAT32_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
+                int32_t r = (int32_t)pc_syscall(SYS_FS_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
                 app->confirm_format = false;
-                if (r == 0) pc_copy(app->status, "Custom FAT32 format done.", sizeof(app->status));
+                if (r == 0) pc_copy(app->status, "Custom EXT2 format done.", sizeof(app->status));
                 else { char msg[96]; pc_copy(msg, pf_strerror(r), sizeof(msg)); pc_copy(app->status, msg, sizeof(app->status)); if (r == PF_ERROR_BUSY) pc_copy(app->status, "busy - system disk, pick another", sizeof(app->status)); }
                 refresh(app);
             } else {
                 int32_t r = pc_format_device_ex(d->name, d->serial, app->fs_type);
                 app->confirm_format = false;
-                if (r == 0) pc_copy(app->status, app->fs_type == FS_TYPE_EXT2 ? "EXT2 format done." : "FAT32 format done.", sizeof(app->status));
+                if (r == 0) pc_copy(app->status, "EXT2 format done.", sizeof(app->status));
                 else { char msg[96]; pc_copy(msg, pf_strerror(r), sizeof(msg)); pc_copy(app->status, msg, sizeof(app->status)); if (r == PF_ERROR_BUSY) pc_copy(app->status, "busy - system disk, pick another", sizeof(app->status)); }
                 refresh(app);
             }

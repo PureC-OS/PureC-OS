@@ -87,9 +87,9 @@ int32_t pf_format_device(const char *device, const char *serial, uint8_t fs_type
 
 const char *pf_fs_type_name(uint8_t fs_type){
     if(fs_type == PF_FS_EXT2) return "ext2";
-    return "fat32";
+    return "unknown";
 }
 
 bool pf_fs_supported(uint8_t fs_type){
-    return fs_type == PF_FS_FAT32 || fs_type == PF_FS_EXT2;
+    return fs_type == PF_FS_EXT2;
 }

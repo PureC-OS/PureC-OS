@@ -303,7 +303,7 @@ static void draw_ui(struct logview_state *st){
         struct pg_rect dlg={w->client.width/2 - 180, 70, 360, 300};
         pg_window_rect(w, dlg, 0x1E1E2E);
         pg_window_rect(w, (struct pg_rect){dlg.x, dlg.y, dlg.width, 26}, 0x313244);
-        pg_window_text(w, dlg.x+12, dlg.y+7, "Save logs to FAT32 device", w->theme.text);
+        pg_window_text(w, dlg.x+12, dlg.y+7, "Save logs to ext2 device", w->theme.text);
         pg_window_text(w, dlg.x+12, dlg.y+36, "Select device:", w->theme.muted_text);
         for(int i=0;i<st->save_disk_count && i<6;i++){
             struct pg_rect row={dlg.x+12, (uint32_t)(dlg.y+56+i*28), dlg.width-24, 24};
@@ -336,7 +336,7 @@ static void draw_ui(struct logview_state *st){
             pg_window_text(w, row.x+8, row.y+6, disp, st->save_disks[i].writable ? w->theme.text : w->theme.muted_text);
         }
         if(st->save_disk_count==0){
-            pg_window_text(w, dlg.x+12, dlg.y+70, "No writable FAT32 disks found", w->theme.danger);
+            pg_window_text(w, dlg.x+12, dlg.y+70, "No writable ext2 disks found", w->theme.danger);
         }
         char path_line[96];
         pc_copy(path_line, "Path: ", sizeof(path_line));
