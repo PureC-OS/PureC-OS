@@ -15,7 +15,8 @@
 #include <stddef.h>
 
 #define INSTALL_ESP_START_LBA 2048
-#define INSTALL_ESP_SECTORS (512U * 1024U * 1024U / BLOCK_SECTOR_SIZE)
+#define INSTALL_ESP_ALIGN_SECTORS 2048U
+#define INSTALL_ESP_IMAGE_MODULE "/boot/esp.img"
 #define INSTALL_MAX_SECTORS UINT32_MAX
 #define GPT_ENTRY_COUNT 128
 #define GPT_ENTRY_SIZE 128
@@ -32,6 +33,8 @@ static const uint8_t gpt_basic_data_type_guid[16] = {
     0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
 
 static uint8_t sector_buffer[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
+/* ESP partition size in sectors; set from the prebuilt image before use. */
+static uint32_t esp_sectors;
 
 static void write_u16(uint8_t *data, uint16_t value)
 {
@@ -119,7 +122,7 @@ static void build_gpt_header(uint32_t current_lba, uint32_t backup_lba,
 
 static bool write_gpt_layout(uint32_t total_sectors, const char *serial)
 {
-    uint32_t data_start = INSTALL_ESP_START_LBA + INSTALL_ESP_SECTORS;
+    uint32_t data_start = INSTALL_ESP_START_LBA + esp_sectors;
     if (total_sectors <= data_start + GPT_ENTRY_SECTORS + 65535)
     {
         klogf(KLOG_ERROR, "write_gpt: total %u too small", total_sectors);
@@ -593,6 +596,44 @@ static int32_t install_program_payload(void)
     return 0;
 }
 
+#define ESP_WRITE_CHUNK_SECTORS 2048U
+
+static int32_t install_write_esp_image(const void *image, uint64_t image_size,
+                                       install_progress_callback callback)
+{
+    uint32_t image_sectors = (uint32_t)(image_size / BLOCK_SECTOR_SIZE);
+    const uint8_t *src = (const uint8_t *)image;
+    uint32_t done = 0;
+    while (done < image_sectors)
+    {
+        uint32_t count = image_sectors - done;
+        if (count > ESP_WRITE_CHUNK_SECTORS)
+            count = ESP_WRITE_CHUNK_SECTORS;
+        if (!block_device_write_sectors(INSTALL_ESP_START_LBA + done,
+                                        src + (uint64_t)done * BLOCK_SECTOR_SIZE, count))
+        {
+            klogf(KLOG_ERROR, "install: ESP write failed at sector %u/%u", done, image_sectors);
+            return FS_ERROR_IO;
+        }
+        done += count;
+        if (callback)
+            callback(20 + (uint32_t)((uint64_t)done * 45 / image_sectors), "Writing EFI system partition image");
+    }
+    if (!block_device_flush())
+        return FS_ERROR_IO;
+    uint8_t check[BLOCK_SECTOR_SIZE];
+    if (!block_device_read(INSTALL_ESP_START_LBA, check) ||
+        memcmp(check, src, BLOCK_SECTOR_SIZE) != 0 || check[510] != 0x55 || check[511] != 0xAA ||
+        !block_device_read(INSTALL_ESP_START_LBA + image_sectors - 1, check) ||
+        memcmp(check, src + (uint64_t)(image_sectors - 1) * BLOCK_SECTOR_SIZE, BLOCK_SECTOR_SIZE) != 0)
+    {
+        klog(KLOG_ERROR, "install: ESP image verify failed");
+        return FS_ERROR_IO;
+    }
+    klogf(KLOG_OK, "install: ESP image written (%u sectors)", image_sectors);
+    return 0;
+}
+
 int32_t installer_install_device(const char *device_name,
                                  const char *serial_confirmation,
                                  install_progress_callback callback)
@@ -618,8 +659,19 @@ int32_t installer_install_device(const char *device_name,
               INSTALL_MAX_SECTORS);
         return FS_ERROR_UNSUPPORTED;
     }
+    const void *esp_image;
+    uint64_t esp_image_size;
+    if (!boot_get_module(INSTALL_ESP_IMAGE_MODULE, &esp_image, &esp_image_size) ||
+        esp_image_size < BLOCK_SECTOR_SIZE || esp_image_size > UINT32_MAX ||
+        (esp_image_size % BLOCK_SECTOR_SIZE) != 0)
+    {
+        klog(KLOG_ERROR, "install: missing or invalid " INSTALL_ESP_IMAGE_MODULE " module");
+        return FS_ERROR_NOT_FOUND;
+    }
+    esp_sectors = (uint32_t)(esp_image_size / BLOCK_SECTOR_SIZE);
+    esp_sectors = (esp_sectors + INSTALL_ESP_ALIGN_SECTORS - 1) & ~(INSTALL_ESP_ALIGN_SECTORS - 1);
     uint32_t total_sectors = (uint32_t)info.sector_count;
-    uint32_t data_start = INSTALL_ESP_START_LBA + INSTALL_ESP_SECTORS;
+    uint32_t data_start = INSTALL_ESP_START_LBA + esp_sectors;
     if (total_sectors <= data_start + GPT_ENTRY_SECTORS + 65535)
         return FS_ERROR_TOO_SMALL;
     uint32_t data_sectors = total_sectors - data_start - GPT_ENTRY_SECTORS - 1;
@@ -628,13 +680,17 @@ int32_t installer_install_device(const char *device_name,
     if (callback)
         callback(8, "Writing GPT partition table");
     klogf(KLOG_INFO, "install: %s total %u ESP %u sectors data %u sectors",
-          device_name, total_sectors, INSTALL_ESP_SECTORS, data_sectors);
+          device_name, total_sectors, esp_sectors, data_sectors);
     if (!write_gpt_layout(total_sectors, info.serial) || !block_device_flush())
     {
         klog(KLOG_ERROR, "install: GPT write failed");
         return FS_ERROR_IO;
     }
-    klog(KLOG_WARN, "install: ESP is reserved but not formatted; provision it externally");
+    if (callback)
+        callback(20, "Writing EFI system partition image");
+    int32_t esp_status = install_write_esp_image(esp_image, esp_image_size, callback);
+    if (esp_status < 0)
+        return esp_status;
     if (callback)
         callback(70, "Formatting PureC system partition as ext2");
     if (ext2_format_at(data_start, data_sectors) != 0)
