@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
+#include "../../kernel/sync/spinlock.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -42,6 +43,7 @@ static bool set2_break_pending = false;
 static bool set2_extended = false;
 static bool set1_extended = false;
 static uint8_t set2_pause_bytes = 0;
+static spinlock_t keyboard_lock = SPINLOCK_INIT;
 
 static const char scancode_set1_map[128] = {
     0,  27, '1','2','3','4','5','6','7','8','9','0','-','=', '\b',
@@ -104,11 +106,15 @@ static void kbd_push(char c){
 }
 
 static bool kbd_pop(char *out){
-    if(kbd_count==0) return false;
-    *out = kbd_buf[kbd_tail];
-    kbd_tail = (kbd_tail + 1) % KBD_BUF_SIZE;
-    kbd_count--;
-    return true;
+    uint64_t flags = spin_lock_irqsave(&keyboard_lock);
+    bool ok = kbd_count != 0;
+    if(ok){
+        *out = kbd_buf[kbd_tail];
+        kbd_tail = (kbd_tail + 1) % KBD_BUF_SIZE;
+        kbd_count--;
+    }
+    spin_unlock_irqrestore(&keyboard_lock, flags);
+    return ok;
 }
 
 static void special_push(uint8_t key){
@@ -119,11 +125,15 @@ static void special_push(uint8_t key){
 }
 
 static bool special_pop(uint8_t *out){
-    if(special_count==0) return false;
-    *out = special_buf[special_tail];
-    special_tail = (special_tail + 1) % KBD_SPECIAL_BUF_SIZE;
-    special_count--;
-    return true;
+    uint64_t flags = spin_lock_irqsave(&keyboard_lock);
+    bool ok = special_count != 0;
+    if(ok){
+        *out = special_buf[special_tail];
+        special_tail = (special_tail + 1) % KBD_SPECIAL_BUF_SIZE;
+        special_count--;
+    }
+    spin_unlock_irqrestore(&keyboard_lock, flags);
+    return ok;
 }
 
 static void emit_key(const char *plain, const char *shifted, uint8_t sc){
@@ -382,6 +392,7 @@ static bool decoder_self_test(void){
 }
 
 void keyboard_poll(void){
+    uint64_t flags = spin_lock_irqsave(&keyboard_lock);
     for(;;){
         uint8_t status = inb(KBD_STATUS);
         if(!(status & KBD_STATUS_OUTPUT_FULL)) break;
@@ -389,6 +400,7 @@ void keyboard_poll(void){
         uint8_t sc = inb(KBD_DATA);
         handle_scancode(sc);
     }
+    spin_unlock_irqrestore(&keyboard_lock, flags);
 }
 
 bool keyboard_has_key(void){
