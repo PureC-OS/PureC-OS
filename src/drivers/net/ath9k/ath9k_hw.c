@@ -26,6 +26,8 @@
 #define BASE_ACTIVATE_DELAY 100
 #define RTC_PLL_SETTLE_DELAY 100
 #define COEF_SCALE_S 24
+#define SPUR_BASE_FREQ_2GHZ 2300
+#define SPUR_BOUND_HT20 10
 #define CLOCK_RATE_2GHZ_OFDM 44
 #define AR9285_CLCAL_REDO_THRESH 1
 #define AR9285_WA_DEFAULT_VALUE 0x004a050b
@@ -465,13 +467,16 @@ static void spur_mitigate(struct ath_hw *ah, uint16_t freq)
     uint16_t i;
 
     for (i = 0; i < ATH9K_EEP_MODAL_SPURS; i++) {
-        uint16_t spur = ath9k_eeprom_spur_channel(ah, i);
+        int spur = ath9k_eeprom_spur_channel(ah, i);
 
         if (spur == AR_NO_SPUR)
             break;
-        ath9k_log(ATH9K_LOG_WARN, "ath9k: EEPROM lists spur %u near %u MHz, spur mitigation not ported",
-                  spur, freq);
-        break;
+        spur = spur / 10 + SPUR_BASE_FREQ_2GHZ - freq;
+        if (spur > -SPUR_BOUND_HT20 && spur < SPUR_BOUND_HT20) {
+            ath9k_log(ATH9K_LOG_WARN, "ath9k: EEPROM spur %d MHz from channel %u MHz, mitigation not ported",
+                      spur, freq);
+            break;
+        }
     }
     REG_CLR_BIT(ah, AR_PHY_FORCE_CLKEN_CCK, AR_PHY_FORCE_CLKEN_CCK_MRC_MUX);
 }
