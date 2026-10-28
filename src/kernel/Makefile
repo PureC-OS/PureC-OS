@@ -99,6 +99,8 @@ C_SOURCES := \
 	net/802.11/b/b_plcp.c \
 	net/802.11/b/b_mgmt.c \
 	drivers/net/ath9k/ar9285.c \
+	drivers/net/ath9k/ath9k_hw.c \
+	drivers/net/ath9k/ath9k_eeprom.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \
 	net/link/arp.c \

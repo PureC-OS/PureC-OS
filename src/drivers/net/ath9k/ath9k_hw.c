@@ -16,7 +16,11 @@
  */
 #include "ath9k_priv.h"
 #include "ath9k_initvals.h"
+#ifdef PUREC_HOST_TEST
 #include <string.h>
+#else
+#include "lib/string.h"
+#endif
 
 #define POWER_UP_TIME 10000
 #define BASE_ACTIVATE_DELAY 100

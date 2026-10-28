@@ -15,7 +15,11 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 #include "ath9k_priv.h"
+#ifdef PUREC_HOST_TEST
 #include <string.h>
+#else
+#include "lib/string.h"
+#endif
 
 #define EEP_WORDS (sizeof(struct ath9k_eeprom_4k) / sizeof(uint16_t))
 #define SUB_NUM_CTL_MODES_AT_2G_40 3

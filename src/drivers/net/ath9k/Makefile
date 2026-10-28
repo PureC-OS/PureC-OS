@@ -9,7 +9,7 @@ TARGET_ELF := $(MODULE_DIR)/ar9285.elf
 TARGET_KO := $(MODULE_DIR)/ar9285.ko
 TARGET_SO := $(MODULE_DIR)/ar9285.so
 
-SOURCES := ar9285.c
+SOURCES := ar9285.c ath9k_hw.c ath9k_eeprom.c
 DOT11_B_NAMES := b_rates b_chan b_plcp b_mgmt
 OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o) $(OBJ_DIR)/dot11_assoc.o \
 	$(DOT11_B_NAMES:%=$(OBJ_DIR)/dot11_b_%.o)
