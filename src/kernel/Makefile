@@ -129,6 +129,7 @@ C_SOURCES := \
 	fs/vfs_path.c \
 	fs/vfs_mount.c \
 	fs/vfs_backends.c \
+	fs/devfs.c \
 	fs/initramfs.c \
 	userspace/display.c \
 	userspace/display_mode.c \

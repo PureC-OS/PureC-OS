@@ -74,6 +74,8 @@ static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY],
   destination[i] = '\0';
 }
 
+static void log_mount(const char *path);
+
 static void ensure_mounts(void) {
   if (mounts_ready)
     return;
@@ -81,6 +83,17 @@ static void ensure_mounts(void) {
   (void)vfs_mount_replace("/", &vfs_ext2_ops, 0, "ext2", 0);
   (void)vfs_mount_replace("/kernel", &vfs_kernelfs_ops, 0, "kernelfs",
                           VFS_MOUNT_READ_ONLY);
+  (void)vfs_mount_replace("/dev", &vfs_devfs_ops, 0, "devfs", 0);
+  log_mount("/kernel");
+  log_mount("/dev");
+}
+
+static void log_mount(const char *path) {
+  const struct vfs_mount *mount = vfs_mount_at(path);
+  if (mount)
+    klogf(KLOG_INFO, "vfs: %s on %s type %s%s", mount->source, mount->path,
+          mount->ops->name,
+          (mount->flags & VFS_MOUNT_READ_ONLY) ? " (ro)" : "");
 }
 
 static void set_root_ops(uint8_t fs_type) {
@@ -92,6 +105,7 @@ static void set_root_ops(uint8_t fs_type) {
   else
     (void)vfs_mount_replace("/", &vfs_ext2_ops, 0,
                             ext2_is_mounted() ? ext2_device_name() : "ext2", 0);
+  log_mount("/");
 }
 
 static int32_t resolve(const char *input, struct vfs_resolved *resolved) {
