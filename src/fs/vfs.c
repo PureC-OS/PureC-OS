@@ -84,8 +84,11 @@ static void ensure_mounts(void) {
   (void)vfs_mount_replace("/kernel", &vfs_kernelfs_ops, 0, "kernelfs",
                           VFS_MOUNT_READ_ONLY);
   (void)vfs_mount_replace("/dev", &vfs_devfs_ops, 0, "devfs", 0);
+  (void)vfs_mount_replace("/proc", &vfs_procfs_ops, 0, "proc",
+                          VFS_MOUNT_READ_ONLY);
   log_mount("/kernel");
   log_mount("/dev");
+  log_mount("/proc");
 }
 
 static void log_mount(const char *path) {

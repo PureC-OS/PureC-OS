@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -111,6 +111,19 @@ test-devfs:
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src -I$(ROOT_DIR)/src/lib \
 		tests/devfs_test.c src/fs/devfs.c -o $(BIN_DIR)/tests/devfs_test
 	$(BIN_DIR)/tests/devfs_test
+
+test-format:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/format_test.c src/lib/format.c -o $(BIN_DIR)/tests/format_test
+	$(BIN_DIR)/tests/format_test
+
+test-procfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/procfs_test.c src/fs/procfs.c src/lib/format.c \
+		-o $(BIN_DIR)/tests/procfs_test
+	$(BIN_DIR)/tests/procfs_test
 
 test-dot11:
 	@mkdir -p $(BIN_DIR)/tests
