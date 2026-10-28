@@ -41,8 +41,9 @@ int main(void) {
   expect("/bin/ls", "/bin/ls");
   expect("/bin/cat", "/bin/cat");
   expect("/bin/system", "/bin/system");
-  expect("/bin/modules/e1000.elf", "/bin/modules/e1000.elf");
-  expect("/bin/firmware/Intel/wifi/x.ucode", "/bin/firmware/Intel/wifi/x.ucode");
+  expect("/bin/modules/e1000.elf", "/lib/modules/e1000.elf");
+  expect("/bin/firmware/Intel/wifi/x.ucode", "/lib/firmware/Intel/wifi/x.ucode");
+  expect("/lib/modules/e1000.so", "/lib/modules/e1000.so");
   expect("/walpaper/wp01.png", "/usr/share/wallpapers/wp01.png");
   expect("/demo/wplist.ini", "/usr/share/demo/wplist.ini");
   expect("/src/demo/image.png", "/usr/share/demo/image.png");

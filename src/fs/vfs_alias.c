@@ -43,6 +43,8 @@ static const struct alias aliases[] = {
     {"/src/demo", "/usr/share/demo", false},
     {"/demo", "/usr/share/demo", false},
     {"/include", "/usr/include", false},
+    {"/bin/modules", "/lib/modules", false},
+    {"/bin/firmware", "/lib/firmware", false},
 };
 
 #define ALIAS_COUNT (sizeof(aliases) / sizeof(aliases[0]))

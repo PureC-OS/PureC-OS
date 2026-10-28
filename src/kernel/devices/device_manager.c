@@ -12,9 +12,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define DEVMAN_SO_PATH_CAP 96
-#define DEVMAN_SO_LIMIT (16ULL * 1024ULL * 1024ULL)
 #define DEVMAN_SO_CHUNK 1048576U
+
+static const char *const devman_module_dirs[] = {"/lib/modules",
+                                                 "/bin/modules"};
 
 static struct device_info g_devices[DEVICE_MANAGER_MAX_DEVICES];
 static uint32_t g_device_count = 0;
@@ -647,7 +648,7 @@ static struct device_driver g_drv_e1000 = {
     NULL,
     DEVMAN_ID_E1000_82540EM,
     sizeof(DEVMAN_ID_E1000_82540EM) / sizeof(DEVMAN_ID_E1000_82540EM[0]),
-    "/bin/modules/e1000.elf",
+    "/lib/modules/e1000.elf",
     NULL,
 };
 
@@ -660,7 +661,7 @@ static struct device_driver g_drv_e1000_gc = {
     NULL,
     DEVMAN_ID_E1000_82543GC,
     sizeof(DEVMAN_ID_E1000_82543GC) / sizeof(DEVMAN_ID_E1000_82543GC[0]),
-    "/bin/modules/e1000_82543gc.elf",
+    "/lib/modules/e1000_82543gc.elf",
     NULL,
 };
 
@@ -673,7 +674,7 @@ static struct device_driver g_drv_pcnet = {
     NULL,
     DEVMAN_ID_PCNET,
     sizeof(DEVMAN_ID_PCNET) / sizeof(DEVMAN_ID_PCNET[0]),
-    "/bin/modules/pcnet_am79c970a.elf",
+    "/lib/modules/pcnet_am79c970a.elf",
     NULL,
 };
 
@@ -686,7 +687,7 @@ static struct device_driver g_drv_ar9285 = {
     NULL,
     DEVMAN_ID_AR9285,
     sizeof(DEVMAN_ID_AR9285) / sizeof(DEVMAN_ID_AR9285[0]),
-    "/bin/modules/ar9285.elf",
+    "/lib/modules/ar9285.elf",
     NULL,
 };
 
@@ -798,24 +799,7 @@ uint32_t devman_unbound_count(void) {
   return g_device_count >= bound ? g_device_count - bound : 0;
 }
 
-static bool devman_so_path(const char *elf, char *out) {
-  size_t len = strlen(elf);
-  if (len < 5 || len + 1 > DEVMAN_SO_PATH_CAP)
-    return false;
-  if (strcmp(elf + len - 4, ".elf") != 0)
-    return false;
-  strncpy(out, elf, DEVMAN_SO_PATH_CAP - 1);
-  out[DEVMAN_SO_PATH_CAP - 1] = 0;
-  out[len - 3] = 's';
-  out[len - 2] = 'o';
-  out[len - 1] = 0;
-  return true;
-}
-
-static void devman_probe_so(struct device_driver *drv) {
-  char path[DEVMAN_SO_PATH_CAP];
-  if (!drv->module_path || !devman_so_path(drv->module_path, path))
-    return;
+static bool devman_load_so(struct device_driver *drv, const char *path) {
   const void *data = 0;
   uint64_t size = 0;
   uint64_t phys = 0;
@@ -829,20 +813,20 @@ static void devman_probe_so(struct device_driver *drv) {
   } else {
     int32_t fd = vfs_open(path);
     if (fd < 0)
-      return;
+      return false;
     struct file_stat_info st = {0};
     uint64_t blob = 0;
     if (vfs_stat(path, &st) >= 0)
       blob = st.size;
-    if (!blob || blob > DEVMAN_SO_LIMIT) {
+    if (!blob) {
       vfs_close(fd);
-      return;
+      return false;
     }
     pages = (blob + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
     phys = pmm_allocate_contiguous(pages);
     if (!phys) {
       vfs_close(fd);
-      return;
+      return false;
     }
     uint8_t *buf = (uint8_t *)pmm_physical_to_virtual(phys);
     uint64_t done = 0;
@@ -861,20 +845,66 @@ static void devman_probe_so(struct device_driver *drv) {
     vfs_close(fd);
     if (bad || done != blob) {
       pmm_free_contiguous(phys, pages);
-      return;
+      return false;
     }
     data = buf;
     size = done;
     owned = true;
   }
+  bool ok = false;
   if (kmod_syms_ready()) {
-    if (!kmod_load_so(drv->name, data, size))
+    ok = kmod_load_so(drv->name, data, size) != 0;
+    if (!ok)
       klogf(KLOG_WARN, "devman: .so probe failed for '%s'", path);
   } else {
     klogf(KLOG_DEBUG, "devman: ksyms not ready, skip '%s'", path);
   }
   if (owned)
     pmm_free_contiguous(phys, pages);
+  return ok;
+}
+
+static char *devman_so_path(const char *elf, const char *directory,
+                            uint64_t *phys_out, uint64_t *pages) {
+  size_t len = strlen(elf);
+  if (len < 5 || strcmp(elf + len - 4, ".elf") != 0)
+    return 0;
+  const char *base = elf;
+  for (const char *c = elf; *c; c++)
+    if (*c == '/')
+      base = c + 1;
+  size_t dir_len = strlen(directory);
+  size_t base_len = strlen(base) - 4;
+  size_t total = dir_len + 1 + base_len + 4;
+  uint64_t count = (total + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+  uint64_t phys = pmm_allocate_contiguous(count);
+  if (!phys)
+    return 0;
+  char *out = (char *)pmm_physical_to_virtual(phys);
+  memcpy(out, directory, dir_len);
+  out[dir_len] = '/';
+  memcpy(out + dir_len + 1, base, base_len);
+  memcpy(out + dir_len + 1 + base_len, ".so", 4);
+  *phys_out = phys;
+  *pages = count;
+  return out;
+}
+
+static void devman_probe_so(struct device_driver *drv) {
+  if (!drv->module_path)
+    return;
+  for (uint32_t d = 0;
+       d < sizeof(devman_module_dirs) / sizeof(devman_module_dirs[0]); d++) {
+    uint64_t path_phys = 0, path_pages = 0;
+    char *path = devman_so_path(drv->module_path, devman_module_dirs[d],
+                                &path_phys, &path_pages);
+    if (!path)
+      return;
+    bool loaded = devman_load_so(drv, path);
+    pmm_free_contiguous(path_phys, path_pages);
+    if (loaded)
+      return;
+  }
 }
 
 void devman_autoload(void) {

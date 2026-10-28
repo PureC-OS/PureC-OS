@@ -180,3 +180,11 @@
 /etc/shells /etc/shells - 0 rootfs/etc/shells
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
+
+# --- kernel modules (loaded by the device manager from /lib/modules) ---
+/lib/modules/e1000.so /lib/modules/e1000.so - 0 bin/modules/e1000.so
+/lib/modules/e1000_82543gc.so /lib/modules/e1000_82543gc.so - 0 bin/modules/e1000_82543gc.so
+/lib/modules/pcnet_am79c970a.so /lib/modules/pcnet_am79c970a.so - 0 bin/modules/pcnet_am79c970a.so
+/lib/modules/ar9285.so /lib/modules/ar9285.so - 0 bin/modules/ar9285.so
+/lib/modules/ext2.so /lib/modules/ext2.so - 0 bin/modules/ext2.so
+/lib/modules/wolf.so /lib/modules/wolf.so - 0 bin/modules/wolf.so

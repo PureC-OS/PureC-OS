@@ -261,7 +261,8 @@ iso: kernel programs
 	fi; \
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
-		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/bin/modules" \
+		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
+		"$(ISO_ROOT)/lib/firmware" \
 		"$(ISO_ROOT)/src/demo"; \
 	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
 		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
@@ -275,10 +276,10 @@ iso: kernel programs
 	for mod in ext2 crypt acpi wolf e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
-			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/bin/modules/$$mod.$$ext" || true; \
+			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/lib/modules/$$mod.$$ext" || true; \
 		done; \
 	done; \
-	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/bin/modules/" 2>/dev/null || true; \
+	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/lib/modules/" 2>/dev/null || true; \
 	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
 	sh "$(ROOT_DIR)/mk/make_esp_image.sh" "$(ISO_ROOT)" "$(ISO_ROOT)/boot/esp.img"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/boot/limine/limine.conf"; \
