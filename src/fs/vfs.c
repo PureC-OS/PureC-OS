@@ -13,28 +13,27 @@ static mutex_t vfs_mutex;
 #include "./ext2/include/ext2_types.h"
 #include "initramfs.h"
 #include "vfs.h"
+#include "vfs_backends.h"
+#include "vfs_mount.h"
+#include "vfs_path.h"
 
 #define VFS_HANDLE_INITIAL 32
+#define VFS_KLOG_WINDOW (8 * 1024 * 1024)
 
 enum vfs_handle_type {
   VFS_HANDLE_NONE,
-  VFS_HANDLE_EXT2,
-  VFS_HANDLE_INITRAMFS,
-  VFS_HANDLE_KERNEL_FILE,
+  VFS_HANDLE_BACKEND,
+  VFS_HANDLE_MEMORY,
   VFS_HANDLE_KLOG
 };
 
 static uint8_t vfs_active_fs = VFS_FS_EXT2;
-
-struct kernel_file {
-  const char *path;
-  const char *name;
-  const char *content;
-};
+static bool mounts_ready;
 
 struct vfs_handle {
   enum vfs_handle_type type;
   int32_t backend_descriptor;
+  struct vfs_mount *mount;
   const char *data;
   uint32_t size;
   uint32_t position;
@@ -42,14 +41,12 @@ struct vfs_handle {
   bool klog_data_lost;
 };
 
-static const struct kernel_file kernel_files[] = {
-    {"/kernel/version", "version", "PureC OS kernel 1.1.0\n"},
-    {"/kernel/panic", "panic.cfg", "panic-screan=classic\n #panic-screan=qr\n"},
-    {"/kernel/init", "init",
-     "pid1=/bin/init shell=/bin/program/terminal editor=/bin/program/nano\n"},
-    {"/kernel/abi", "abi",
-     "syscall=int80 process=exec,args,env,wait,exit fd=per-process "
-     "vfs=ext2\n"}};
+struct vfs_resolved {
+  struct vfs_mount *mount;
+  const char *relative;
+  char path[VFS_PATH_MAX];
+  char root[2];
+};
 
 static struct vfs_handle *handles;
 
@@ -67,13 +64,79 @@ static void copy_name(char destination[FS_DIRECTORY_NAME_CAPACITY],
   destination[i] = '\0';
 }
 
-static const struct kernel_file *find_kernel_file(const char *path) {
-  for (uint32_t i = 0; i < sizeof(kernel_files) / sizeof(kernel_files[0]);
-       i++) {
-    if (path_equals(path, kernel_files[i].path))
-      return &kernel_files[i];
+static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY],
+                           const char *source) {
+  uint32_t i = 0;
+  while (source[i] && i + 1 < FS_LONG_NAME_CAPACITY) {
+    destination[i] = source[i];
+    i++;
   }
+  destination[i] = '\0';
+}
+
+static void ensure_mounts(void) {
+  if (mounts_ready)
+    return;
+  mounts_ready = true;
+  (void)vfs_mount_replace("/", &vfs_ext2_ops, 0, "ext2", 0);
+  (void)vfs_mount_replace("/kernel", &vfs_kernelfs_ops, 0, "kernelfs",
+                          VFS_MOUNT_READ_ONLY);
+}
+
+static void set_root_ops(uint8_t fs_type) {
+  ensure_mounts();
+  vfs_active_fs = fs_type;
+  if (fs_type == VFS_FS_INITRAMFS)
+    (void)vfs_mount_replace("/", &vfs_initramfs_ops, 0, "initramfs",
+                            VFS_MOUNT_READ_ONLY);
+  else
+    (void)vfs_mount_replace("/", &vfs_ext2_ops, 0,
+                            ext2_is_mounted() ? ext2_device_name() : "ext2", 0);
+}
+
+static int32_t resolve(const char *input, struct vfs_resolved *resolved) {
+  ensure_mounts();
+  if (!input || !input[0])
+    return FS_ERROR_INVALID;
+  char absolute[VFS_PATH_MAX];
+  if (input[0] != '/') {
+    if (strlen(input) + 2 > sizeof(absolute))
+      return FS_ERROR_INVALID;
+    absolute[0] = '/';
+    strcpy(absolute + 1, input);
+    input = absolute;
+  }
+  if (vfs_path_normalize(input, resolved->path, sizeof(resolved->path)) < 0)
+    return FS_ERROR_INVALID;
+  resolved->mount = vfs_mount_find(resolved->path, &resolved->relative,
+                                   resolved->root, sizeof(resolved->root));
+  return resolved->mount ? 0 : FS_ERROR_NOT_FOUND;
+}
+
+static bool mount_ready(const struct vfs_mount *mount) {
+  return !mount->ops->is_ready || mount->ops->is_ready(mount->context);
+}
+
+static int32_t check_mutation(const struct vfs_mount *mount, const void *op) {
+  if (mount->flags & VFS_MOUNT_READ_ONLY)
+    return FS_ERROR_READ_ONLY;
+  if (!op || !mount_ready(mount))
+    return FS_ERROR_UNSUPPORTED;
   return 0;
+}
+
+static bool is_klog_path(const char *path) {
+  return path &&
+         (strcmp(path, "/kernel.log") == 0 || strcmp(path, "/dmesg.txt") == 0);
+}
+
+static bool overlay_find(const char *path, const void **data, uint32_t *size) {
+  return initramfs_is_mounted() && initramfs_find(path, data, size);
+}
+
+static uint32_t klog_visible_size(void) {
+  uint64_t total = klog_total_bytes();
+  return total > VFS_KLOG_WINDOW ? VFS_KLOG_WINDOW : (uint32_t)total;
 }
 
 static uint32_t handles_capacity;
@@ -140,7 +203,7 @@ uint8_t vfs_root_fs_type(void) {
 
 void vfs_set_active_fs(uint8_t fs_type) {
   MUTEX_SCOPE(&vfs_mutex);
-  vfs_active_fs = fs_type;
+  set_root_ops(fs_type);
 }
 
 bool vfs_mount_root(void) {
@@ -152,7 +215,7 @@ bool vfs_mount_initramfs(void) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!initramfs_mount())
     return false;
-  vfs_active_fs = VFS_FS_INITRAMFS;
+  set_root_ops(VFS_FS_INITRAMFS);
   return true;
 }
 
@@ -161,7 +224,7 @@ bool vfs_mount_root_with_fs(uint8_t fs_type) {
   if (fs_type != VFS_FS_EXT2 && fs_type != VFS_FS_AUTO)
     return false;
   if (ext2_init()) {
-    vfs_active_fs = VFS_FS_EXT2;
+    set_root_ops(VFS_FS_EXT2);
     return true;
   }
   return false;
@@ -181,66 +244,50 @@ const char *vfs_root_device_name(void) {
   return ext2_device_name();
 }
 
-static bool is_klog_path(const char *path) {
-  return path &&
-         (strcmp(path, "/kernel.log") == 0 || strcmp(path, "/dmesg.txt") == 0);
-}
-
 int32_t vfs_open(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (!path || !path[0])
-    return FS_ERROR_INVALID;
-  const struct kernel_file *kf = find_kernel_file(path);
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
   int32_t idx = allocate_handle();
   if (idx < 0)
     return idx;
   struct vfs_handle *h = &handles[idx];
-  if (kf) {
-    h->type = VFS_HANDLE_KERNEL_FILE;
-    h->backend_descriptor = -1;
-    h->data = kf->content;
-    h->size = (uint32_t)strlen(kf->content);
-    h->position = 0;
-    return VFS_FD_BASE + idx;
-  }
-  if (is_klog_path(path)) {
+  memset(h, 0, sizeof(*h));
+  h->backend_descriptor = -1;
+  if (is_klog_path(resolved.path)) {
     h->type = VFS_HANDLE_KLOG;
-    h->backend_descriptor = -1;
-    h->data = 0;
-    h->size = 0;
-    h->position = 0;
-    h->klog_cursor = 0;
     uint64_t total = klog_total_bytes();
-    h->klog_cursor = total > (8 * 1024 * 1024) ? total - 8 * 1024 * 1024 : 0;
-    h->klog_data_lost = false;
+    h->klog_cursor = total > VFS_KLOG_WINDOW ? total - VFS_KLOG_WINDOW : 0;
     return VFS_FD_BASE + idx;
   }
-  int32_t be = -1;
-  {
-    const void *data = 0;
-    uint32_t size = 0;
-    if (initramfs_find(path, &data, &size)) {
-      h->type = VFS_HANDLE_INITRAMFS;
-      h->backend_descriptor = -1;
-      h->data = data;
-      h->size = size;
-      h->position = 0;
-      return VFS_FD_BASE + idx;
-    }
+  const void *data = 0;
+  uint32_t size = 0;
+  if (overlay_find(resolved.path, &data, &size)) {
+    h->type = VFS_HANDLE_MEMORY;
+    h->data = data;
+    h->size = size;
+    return VFS_FD_BASE + idx;
   }
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    be = FS_ERROR_NOT_FOUND;
-  else
-    be = ext2_open(path);
-  if (be < 0) {
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  if (ops->map && ops->map(resolved.mount->context, resolved.relative, &data,
+                           &size) == 0) {
+    h->type = VFS_HANDLE_MEMORY;
+    h->data = data;
+    h->size = size;
+    return VFS_FD_BASE + idx;
+  }
+  int32_t backend = FS_ERROR_NOT_FOUND;
+  if (ops->open && mount_ready(resolved.mount))
+    backend = ops->open(resolved.mount->context, resolved.relative);
+  if (backend < 0) {
     memset(h, 0, sizeof(*h));
-    return be;
+    return backend;
   }
-  h->type = VFS_HANDLE_EXT2;
-  h->backend_descriptor = be;
-  h->data = 0;
-  h->size = 0;
-  h->position = 0;
+  h->type = VFS_HANDLE_BACKEND;
+  h->backend_descriptor = backend;
+  h->mount = resolved.mount;
   return VFS_FD_BASE + idx;
 }
 
@@ -251,15 +298,17 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
   struct vfs_handle *h = get_handle(descriptor);
   if (!h)
     return FS_ERROR_INVALID;
-  if (h->type == VFS_HANDLE_EXT2)
-    return ext2_read(h->backend_descriptor, buffer, count);
+  if (h->type == VFS_HANDLE_BACKEND) {
+    if (!h->mount->ops->read)
+      return FS_ERROR_UNSUPPORTED;
+    return h->mount->ops->read(h->mount->context, h->backend_descriptor,
+                               buffer, count);
+  }
   if (h->type == VFS_HANDLE_KLOG) {
     uint32_t a = klog_read_since(&h->klog_cursor, (char *)buffer, count,
                                  &h->klog_data_lost);
     return (int32_t)a;
   }
-  if (h->type != VFS_HANDLE_KERNEL_FILE && h->type != VFS_HANDLE_INITRAMFS)
-    return FS_ERROR_INVALID;
   if (h->position >= h->size)
     return 0;
   uint32_t rem = h->size - h->position;
@@ -276,8 +325,8 @@ int32_t vfs_close(int32_t descriptor) {
   if (!h)
     return FS_ERROR_INVALID;
   int32_t r = 0;
-  if (h->type == VFS_HANDLE_EXT2)
-    r = ext2_close(h->backend_descriptor);
+  if (h->type == VFS_HANDLE_BACKEND && h->mount->ops->close)
+    r = h->mount->ops->close(h->mount->context, h->backend_descriptor);
   memset(h, 0, sizeof(*h));
   return r;
 }
@@ -289,8 +338,12 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
   struct vfs_handle *h = get_handle(descriptor);
   if (!h)
     return FS_ERROR_INVALID;
-  if (h->type == VFS_HANDLE_EXT2)
-    return ext2_seek(h->backend_descriptor, offset, whence);
+  if (h->type == VFS_HANDLE_BACKEND) {
+    if (!h->mount->ops->seek)
+      return FS_ERROR_UNSUPPORTED;
+    return h->mount->ops->seek(h->mount->context, h->backend_descriptor,
+                               offset, whence);
+  }
   if (h->type == VFS_HANDLE_KLOG) {
     uint64_t total = klog_total_bytes();
     int64_t base = 0;
@@ -306,8 +359,6 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
     h->klog_cursor = (uint64_t)target;
     return target;
   }
-  if (h->type != VFS_HANDLE_KERNEL_FILE && h->type != VFS_HANDLE_INITRAMFS)
-    return FS_ERROR_INVALID;
   int64_t base = 0;
   if (whence == SEEK_CUR)
     base = (int64_t)h->position;
@@ -322,237 +373,201 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
 
 int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (!path || !path[0] || !out)
+  if (!out)
     return FS_ERROR_INVALID;
-  const struct kernel_file *kf = find_kernel_file(path);
-  if (kf) {
-    out->size = (uint64_t)strlen(kf->content);
-    out->is_directory = 0;
-    out->reserved = 0;
-    return 0;
-  }
-  if (path_equals(path, "/kernel")) {
-    out->size = 0;
-    out->is_directory = 1;
-    out->reserved = 0;
-    return 0;
-  }
-  if (is_klog_path(path)) {
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  out->reserved = 0;
+  if (is_klog_path(resolved.path)) {
     out->size = klog_total_bytes();
     out->is_directory = 0;
-    out->reserved = 0;
     return 0;
   }
-  if (initramfs_is_mounted()) {
-    const void *data = 0;
-    uint32_t size = 0;
-    if (initramfs_find(path, &data, &size)) {
-      out->size = size;
-      out->is_directory = 0;
-      out->reserved = 0;
-      return 0;
-    }
-    if (vfs_active_fs == VFS_FS_INITRAMFS)
-      return FS_ERROR_NOT_FOUND;
-  }
-  if (vfs_active_fs == VFS_FS_EXT2) {
-    uint32_t ino;
-    int32_t st = ext2_dir_resolve(path, &ino);
-    if (st < 0)
-      return st;
-    uint8_t ib[256];
-    if (!ext2_inode_read(ino, ib))
-      return FS_ERROR_IO;
-    out->size = ext2_read_u32(ib + 4);
-    out->is_directory = ((ext2_read_u16(ib) & 0xF000) == EXT2_S_IFDIR) ? 1 : 0;
-    out->reserved = 0;
+  const void *data = 0;
+  uint32_t size = 0;
+  if (overlay_find(resolved.path, &data, &size)) {
+    out->size = size;
+    out->is_directory = 0;
     return 0;
   }
-  return FS_ERROR_NOT_FOUND;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  if (!ops->stat || !mount_ready(resolved.mount))
+    return FS_ERROR_NOT_FOUND;
+  return ops->stat(resolved.mount->context, resolved.relative, out);
 }
 
 int32_t vfs_delete(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (find_kernel_file(path) || path_equals(path, "/kernel"))
-    return FS_ERROR_READ_ONLY;
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    return FS_ERROR_UNSUPPORTED;
-  return ext2_delete(path);
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  if (vfs_mount_at(resolved.path))
+    return FS_ERROR_BUSY;
+  status = check_mutation(resolved.mount, resolved.mount->ops->unlink);
+  if (status < 0)
+    return status;
+  return resolved.mount->ops->unlink(resolved.mount->context,
+                                     resolved.relative);
 }
 
 int32_t vfs_rename(const char *path, const char *new_name) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (find_kernel_file(path) || path_equals(path, "/kernel"))
-    return FS_ERROR_READ_ONLY;
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    return FS_ERROR_UNSUPPORTED;
-  return ext2_rename(path, new_name);
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  if (vfs_mount_at(resolved.path))
+    return FS_ERROR_BUSY;
+  status = check_mutation(resolved.mount, resolved.mount->ops->rename);
+  if (status < 0)
+    return status;
+  return resolved.mount->ops->rename(resolved.mount->context,
+                                     resolved.relative, new_name);
 }
 
 int32_t vfs_move(const char *path, const char *dest) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (find_kernel_file(path) || path_equals(path, "/kernel"))
-    return FS_ERROR_READ_ONLY;
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
+  struct vfs_resolved source;
+  struct vfs_resolved target;
+  int32_t status = resolve(path, &source);
+  if (status < 0)
+    return status;
+  status = resolve(dest, &target);
+  if (status < 0)
+    return status;
+  if (vfs_mount_at(source.path))
+    return FS_ERROR_BUSY;
+  if (source.mount != target.mount)
     return FS_ERROR_UNSUPPORTED;
-  return ext2_move(path, dest);
+  status = check_mutation(source.mount, source.mount->ops->move);
+  if (status < 0)
+    return status;
+  return source.mount->ops->move(source.mount->context, source.relative,
+                                 target.relative);
+}
+
+static bool short_has(const struct fs_directory_entry *entries, uint32_t count,
+                      const char *name) {
+  char clipped[FS_DIRECTORY_NAME_CAPACITY];
+  copy_name(clipped, name);
+  for (uint32_t i = 0; i < count; i++)
+    if (strcmp(entries[i].name, clipped) == 0)
+      return true;
+  return false;
+}
+
+static bool long_has(const struct fs_directory_entry_long *entries,
+                     uint32_t count, const char *name) {
+  for (uint32_t i = 0; i < count; i++)
+    if (strcmp(entries[i].name, name) == 0)
+      return true;
+  return false;
 }
 
 int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
                  uint32_t capacity) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (!path || !entries || capacity == 0)
+  if (!entries || capacity == 0)
     return FS_ERROR_INVALID;
-  if (path_equals(path, "/")) {
-    int32_t be = 0;
-    if (vfs_active_fs == VFS_FS_INITRAMFS)
-      be = initramfs_list(path, entries, capacity);
-    else if (vfs_active_fs == VFS_FS_EXT2)
-      be = ext2_list(path, entries, capacity);
-    uint32_t count = be > 0 ? (uint32_t)be : 0;
-    if (count < capacity) {
-      copy_name(entries[count].name, "kernel");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  int32_t backend = FS_ERROR_UNSUPPORTED;
+  if (ops->list && mount_ready(resolved.mount))
+    backend = ops->list(resolved.mount->context, resolved.relative, entries,
+                        capacity);
+  const char *children[VFS_MOUNT_MAX];
+  uint32_t child_count = vfs_mount_children(resolved.path, children,
+                                            VFS_MOUNT_MAX);
+  bool is_root = path_equals(resolved.path, "/");
+  if (backend < 0 && !is_root && !child_count)
+    return backend;
+  uint32_t count = backend > 0 ? (uint32_t)backend : 0;
+  for (uint32_t i = 0; i < child_count && count < capacity; i++) {
+    if (short_has(entries, count, children[i]))
+      continue;
+    copy_name(entries[count].name, children[i]);
+    entries[count].size = 0;
+    entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+    count++;
+  }
+  if (is_root) {
+    static const char *const log_names[] = {"dmesg.txt", "kernel.log"};
+    for (uint32_t i = 0; i < 2 && count < capacity; i++) {
+      if (short_has(entries, count, log_names[i]))
+        continue;
+      copy_name(entries[count].name, log_names[i]);
+      entries[count].size = klog_visible_size();
+      entries[count].attributes = 0;
       count++;
     }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "dmesg.txt") == 0)
-          has = true;
-      if (!has) {
-        copy_name(entries[count].name, "dmesg.txt");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "kernel.log") == 0)
-          has = true;
-      if (!has) {
-        copy_name(entries[count].name, "kernel.log");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    return (int32_t)count;
   }
-  if (path_equals(path, "/kernel")) {
-    uint32_t count = sizeof(kernel_files) / sizeof(kernel_files[0]);
-    if (count > capacity)
-      count = capacity;
-    for (uint32_t i = 0; i < count; i++) {
-      copy_name(entries[i].name, kernel_files[i].name);
-      entries[i].size = (uint32_t)strlen(kernel_files[i].content);
-      entries[i].attributes = 0;
-    }
-    return (int32_t)count;
-  }
-  if (vfs_active_fs == VFS_FS_INITRAMFS)
-    return initramfs_list(path, entries, capacity);
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    return FS_ERROR_UNSUPPORTED;
-  return ext2_list(path, entries, capacity);
-}
-
-static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY],
-                           const char *source) {
-  uint32_t i = 0;
-  while (source[i] && i + 1 < FS_LONG_NAME_CAPACITY) {
-    destination[i] = source[i];
-    i++;
-  }
-  destination[i] = '\0';
+  return (int32_t)count;
 }
 
 int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
                       uint32_t capacity) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (!path || !entries || capacity == 0)
+  if (!entries || capacity == 0)
     return FS_ERROR_INVALID;
-  if (path_equals(path, "/")) {
-    int32_t be = 0;
-    if (vfs_active_fs == VFS_FS_INITRAMFS)
-      be = initramfs_list_long(path, entries, capacity);
-    else if (vfs_active_fs == VFS_FS_EXT2)
-      be = ext2_list_long(path, entries, capacity);
-    uint32_t count = be > 0 ? (uint32_t)be : 0;
-    if (count < capacity) {
-      copy_name_long(entries[count].name, "kernel");
-      entries[count].size = 0;
-      entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  int32_t backend = FS_ERROR_UNSUPPORTED;
+  if (ops->list_long && mount_ready(resolved.mount))
+    backend = ops->list_long(resolved.mount->context, resolved.relative,
+                             entries, capacity);
+  const char *children[VFS_MOUNT_MAX];
+  uint32_t child_count = vfs_mount_children(resolved.path, children,
+                                            VFS_MOUNT_MAX);
+  bool is_root = path_equals(resolved.path, "/");
+  if (backend < 0 && !is_root && !child_count)
+    return backend;
+  uint32_t count = backend > 0 ? (uint32_t)backend : 0;
+  for (uint32_t i = 0; i < child_count && count < capacity; i++) {
+    if (long_has(entries, count, children[i]))
+      continue;
+    copy_name_long(entries[count].name, children[i]);
+    entries[count].size = 0;
+    entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
+    count++;
+  }
+  if (is_root) {
+    static const char *const log_names[] = {"dmesg.txt", "kernel.log"};
+    for (uint32_t i = 0; i < 2 && count < capacity; i++) {
+      if (long_has(entries, count, log_names[i]))
+        continue;
+      copy_name_long(entries[count].name, log_names[i]);
+      entries[count].size = klog_visible_size();
+      entries[count].attributes = 0;
       count++;
     }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "dmesg.txt") == 0)
-          has = true;
-      if (!has) {
-        copy_name_long(entries[count].name, "dmesg.txt");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    if (count < capacity) {
-      bool has = false;
-      for (uint32_t i = 0; i < count; i++)
-        if (strcmp(entries[i].name, "kernel.log") == 0)
-          has = true;
-      if (!has) {
-        copy_name_long(entries[count].name, "kernel.log");
-        entries[count].size = (uint32_t)klog_total_bytes();
-        if (entries[count].size > 8 * 1024 * 1024)
-          entries[count].size = 8 * 1024 * 1024;
-        entries[count].attributes = 0;
-        count++;
-      }
-    }
-    return (int32_t)count;
   }
-  if (path_equals(path, "/kernel")) {
-    uint32_t count = sizeof(kernel_files) / sizeof(kernel_files[0]);
-    if (count > capacity)
-      count = capacity;
-    for (uint32_t i = 0; i < count; i++) {
-      copy_name_long(entries[i].name, kernel_files[i].name);
-      entries[i].size = (uint32_t)strlen(kernel_files[i].content);
-      entries[i].attributes = 0;
-    }
-    return (int32_t)count;
-  }
-  if (vfs_active_fs == VFS_FS_INITRAMFS)
-    return initramfs_list_long(path, entries, capacity);
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    return FS_ERROR_UNSUPPORTED;
-  return ext2_list_long(path, entries, capacity);
+  return (int32_t)count;
 }
 
 int32_t vfs_create_file(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (!path || path_equals(path, "/kernel"))
-    return FS_ERROR_INVALID;
-  if (find_kernel_file(path))
-    return FS_ERROR_READ_ONLY;
-  if (is_klog_path(path))
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  if (is_klog_path(resolved.path))
     return 0;
-  if (vfs_active_fs == VFS_FS_INITRAMFS)
-    return FS_ERROR_READ_ONLY;
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    return FS_ERROR_UNSUPPORTED;
-  return ext2_create_file(path);
+  if (vfs_mount_at(resolved.path))
+    return FS_ERROR_EXISTS;
+  status = check_mutation(resolved.mount, resolved.mount->ops->create_file);
+  if (status < 0)
+    return status;
+  return resolved.mount->ops->create_file(resolved.mount->context,
+                                          resolved.relative);
 }
 
 static uint32_t raw_log_base_lba;
@@ -563,67 +578,83 @@ static int32_t raw_log_truncate(void);
 
 int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (find_kernel_file(path) || path_equals(path, "/kernel"))
-    return FS_ERROR_READ_ONLY;
-  if (is_klog_path(path)) {
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  if (is_klog_path(resolved.path)) {
     if (count == 0)
       raw_log_truncate();
-    int32_t r = ext2_is_mounted() ? ext2_write_file(path, buffer, count)
-                                  : FS_ERROR_NOT_FOUND;
+    int32_t r = ext2_is_mounted()
+                    ? ext2_write_file(resolved.path, buffer, count)
+                    : FS_ERROR_NOT_FOUND;
     if (r >= 0) {
       (void)raw_log_write(buffer, count);
       return r;
     }
-    int32_t raw = raw_log_write(buffer, count);
-    if (raw >= 0)
-      return (int32_t)count;
+    (void)raw_log_write(buffer, count);
     return (int32_t)count;
   }
-  if (vfs_active_fs == VFS_FS_INITRAMFS)
-    return FS_ERROR_READ_ONLY;
-  if (vfs_active_fs == VFS_FS_EXT2 && ext2_is_mounted()) {
-    int32_t ext_result = ext2_write_file(path, buffer, count);
-    if (ext_result >= 0)
-      block_device_flush();
-    return ext_result;
-  }
-  return FS_ERROR_UNSUPPORTED;
+  status = check_mutation(resolved.mount, resolved.mount->ops->write_file);
+  if (status < 0)
+    return status;
+  return resolved.mount->ops->write_file(resolved.mount->context,
+                                         resolved.relative, buffer, count);
 }
 
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (find_kernel_file(path) || path_equals(path, "/kernel"))
-    return FS_ERROR_READ_ONLY;
-  if (is_klog_path(path)) {
-    int32_t r = ext2_is_mounted() ? ext2_append_file(path, buffer, count)
-                                  : FS_ERROR_NOT_FOUND;
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  if (is_klog_path(resolved.path)) {
+    int32_t r = ext2_is_mounted()
+                    ? ext2_append_file(resolved.path, buffer, count)
+                    : FS_ERROR_NOT_FOUND;
     if (r >= 0) {
       (void)raw_log_write(buffer, count);
       return r;
     }
-    int32_t raw = raw_log_write(buffer, count);
-    if (raw >= 0)
-      return (int32_t)count;
+    (void)raw_log_write(buffer, count);
     return (int32_t)count;
   }
-  if (vfs_active_fs == VFS_FS_EXT2 && ext2_is_mounted()) {
-    int32_t ext_result = ext2_append_file(path, buffer, count);
-    if (ext_result >= 0)
-      block_device_flush();
-    return ext_result;
-  }
-  return FS_ERROR_UNSUPPORTED;
+  status = check_mutation(resolved.mount, resolved.mount->ops->append_file);
+  if (status < 0)
+    return status;
+  return resolved.mount->ops->append_file(resolved.mount->context,
+                                          resolved.relative, buffer, count);
 }
 
 int32_t vfs_create_directory(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
-  if (!path || path_equals(path, "/kernel"))
-    return FS_ERROR_INVALID;
-  if (find_kernel_file(path))
-    return FS_ERROR_READ_ONLY;
-  if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
-    return FS_ERROR_UNSUPPORTED;
-  return ext2_create_directory(path);
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  if (vfs_mount_at(resolved.path))
+    return FS_ERROR_EXISTS;
+  status = check_mutation(resolved.mount, resolved.mount->ops->create_directory);
+  if (status < 0)
+    return status;
+  return resolved.mount->ops->create_directory(resolved.mount->context,
+                                               resolved.relative);
+}
+
+int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out) {
+  MUTEX_SCOPE(&vfs_mutex);
+  ensure_mounts();
+  const struct vfs_mount *mount = vfs_mount_get(index);
+  if (!mount || !out)
+    return FS_ERROR_NOT_FOUND;
+  strncpy(out->path, mount->path, sizeof(out->path) - 1);
+  out->path[sizeof(out->path) - 1] = '\0';
+  strncpy(out->source, mount->source, sizeof(out->source) - 1);
+  out->source[sizeof(out->source) - 1] = '\0';
+  strncpy(out->type, mount->ops->name, sizeof(out->type) - 1);
+  out->type[sizeof(out->type) - 1] = '\0';
+  out->flags = mount->flags;
+  return 0;
 }
 
 int32_t vfs_format_device(const char *device_name,
@@ -774,7 +805,7 @@ int32_t vfs_save_klog_to_device(const char *device, const char *path) {
   else {
     if (block_device_select((uint32_t)dev_idx)) {
       if (ext2_mount_specific(device)) {
-        vfs_active_fs = VFS_FS_EXT2;
+        set_root_ops(VFS_FS_EXT2);
         mounted = true;
       } else
         mounted = vfs_mount_root();

@@ -126,6 +126,9 @@ C_SOURCES := \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
+	fs/vfs_path.c \
+	fs/vfs_mount.c \
+	fs/vfs_backends.c \
 	fs/initramfs.c \
 	userspace/display.c \
 	userspace/display_mode.c \
