@@ -33,6 +33,11 @@
 #define AR_SREV_9300_20_OR_LATER(_ah) 0
 #define AR_SREV_9340(_ah) 0
 
+#define AR_SREV_ID(_ah) 0x000000FF
+#define AR_NO_SPUR 0x8000
+#define AR_INTR_SYNC_LOCAL_TIMEOUT 0x00002000
+#define AR_INTR_SYNC_RADM_CPL_TIMEOUT 0x00001000
+
 #ifndef REG_H
 #define REG_H 
 #endif
@@ -7058,4 +7063,115 @@
 #endif
 #ifndef ATH9K_RATESERIES_STBC
 #define ATH9K_RATESERIES_STBC 0x0008
+#endif
+#ifndef ATH_REGISTERS_H
+#define ATH_REGISTERS_H 
+#endif
+#ifndef AR_MIBC
+#define AR_MIBC 0x0040
+#endif
+#ifndef AR_MIBC_COW
+#define AR_MIBC_COW 0x00000001
+#endif
+#ifndef AR_MIBC_FMC
+#define AR_MIBC_FMC 0x00000002
+#endif
+#ifndef AR_MIBC_CMC
+#define AR_MIBC_CMC 0x00000004
+#endif
+#ifndef AR_MIBC_MCS
+#define AR_MIBC_MCS 0x00000008
+#endif
+#ifndef AR_STA_ID0
+#define AR_STA_ID0 0x8000
+#endif
+#ifndef AR_STA_ID1
+#define AR_STA_ID1 0x8004
+#endif
+#ifndef AR_STA_ID1_SADH_MASK
+#define AR_STA_ID1_SADH_MASK 0x0000ffff
+#endif
+#ifndef AR_BSSMSKL
+#define AR_BSSMSKL 0x80e0
+#endif
+#ifndef AR_BSSMSKU
+#define AR_BSSMSKU 0x80e4
+#endif
+#ifndef AR_TFCNT
+#define AR_TFCNT 0x80ec
+#endif
+#ifndef AR_RFCNT
+#define AR_RFCNT 0x80f0
+#endif
+#ifndef AR_RCCNT
+#define AR_RCCNT 0x80f4
+#endif
+#ifndef AR_CCCNT
+#define AR_CCCNT 0x80f8
+#endif
+#ifndef AR_KEYTABLE_0
+#define AR_KEYTABLE_0 0x8800
+#endif
+#ifndef AR_KEYTABLE
+#define AR_KEYTABLE(_n) (AR_KEYTABLE_0 + ((_n)*32))
+#endif
+#ifndef AR_KEY_CACHE_SIZE
+#define AR_KEY_CACHE_SIZE 128
+#endif
+#ifndef AR_RSVD_KEYTABLE_ENTRIES
+#define AR_RSVD_KEYTABLE_ENTRIES 4
+#endif
+#ifndef AR_KEY_TYPE
+#define AR_KEY_TYPE 0x00000007
+#endif
+#ifndef AR_KEYTABLE_TYPE_40
+#define AR_KEYTABLE_TYPE_40 0x00000000
+#endif
+#ifndef AR_KEYTABLE_TYPE_104
+#define AR_KEYTABLE_TYPE_104 0x00000001
+#endif
+#ifndef AR_KEYTABLE_TYPE_128
+#define AR_KEYTABLE_TYPE_128 0x00000003
+#endif
+#ifndef AR_KEYTABLE_TYPE_TKIP
+#define AR_KEYTABLE_TYPE_TKIP 0x00000004
+#endif
+#ifndef AR_KEYTABLE_TYPE_AES
+#define AR_KEYTABLE_TYPE_AES 0x00000005
+#endif
+#ifndef AR_KEYTABLE_TYPE_CCM
+#define AR_KEYTABLE_TYPE_CCM 0x00000006
+#endif
+#ifndef AR_KEYTABLE_TYPE_CLR
+#define AR_KEYTABLE_TYPE_CLR 0x00000007
+#endif
+#ifndef AR_KEYTABLE_ANT
+#define AR_KEYTABLE_ANT 0x00000008
+#endif
+#ifndef AR_KEYTABLE_VALID
+#define AR_KEYTABLE_VALID 0x00008000
+#endif
+#ifndef AR_KEYTABLE_KEY0
+#define AR_KEYTABLE_KEY0(_n) (AR_KEYTABLE(_n) + 0)
+#endif
+#ifndef AR_KEYTABLE_KEY1
+#define AR_KEYTABLE_KEY1(_n) (AR_KEYTABLE(_n) + 4)
+#endif
+#ifndef AR_KEYTABLE_KEY2
+#define AR_KEYTABLE_KEY2(_n) (AR_KEYTABLE(_n) + 8)
+#endif
+#ifndef AR_KEYTABLE_KEY3
+#define AR_KEYTABLE_KEY3(_n) (AR_KEYTABLE(_n) + 12)
+#endif
+#ifndef AR_KEYTABLE_KEY4
+#define AR_KEYTABLE_KEY4(_n) (AR_KEYTABLE(_n) + 16)
+#endif
+#ifndef AR_KEYTABLE_TYPE
+#define AR_KEYTABLE_TYPE(_n) (AR_KEYTABLE(_n) + 20)
+#endif
+#ifndef AR_KEYTABLE_MAC0
+#define AR_KEYTABLE_MAC0(_n) (AR_KEYTABLE(_n) + 24)
+#endif
+#ifndef AR_KEYTABLE_MAC1
+#define AR_KEYTABLE_MAC1(_n) (AR_KEYTABLE(_n) + 28)
 #endif

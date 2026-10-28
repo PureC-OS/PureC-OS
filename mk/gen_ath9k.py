@@ -53,7 +53,7 @@ def read_defines(path):
 
 
 def main():
-    files = ["reg.h", "phy.h", "ar9002_phy.h", "mac.h"]
+    files = ["reg.h", "phy.h", "ar9002_phy.h", "mac.h", "../reg.h"]
     seen = {}
     order = []
     for f in files:
@@ -87,9 +87,11 @@ def main():
         for sr in sorted(referenced):
             fh.write("#define %s(_ah) %d\n" % (sr, 1 if sr in SREV_TRUE else 0))
         fh.write("\n")
+        fh.write("#define AR_SREV_ID(_ah) 0x000000FF\n#define AR_NO_SPUR 0x8000\n")
+        fh.write("#define AR_INTR_SYNC_LOCAL_TIMEOUT 0x00002000\n#define AR_INTR_SYNC_RADM_CPL_TIMEOUT 0x00001000\n\n")
         for name in order:
             args, body = seen[name]
-            if name in ("MS", "SM", "BIT"):
+            if name in ("MS", "SM", "BIT") or name in ("AR_SREV_ID", "AR_NO_SPUR"):
                 continue
             fh.write("#ifndef %s\n#define %s%s %s\n#endif\n" % (name, name, args, body))
     print("wrote", os.path.join(OUT, "ath9k_regs.h"), len(order), "defines")
