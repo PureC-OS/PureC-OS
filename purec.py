@@ -178,68 +178,140 @@ _PROGRESS = re.compile(
 def _clean_line(raw: str) -> str:
     return ANSI_RE.sub("", raw).rstrip()
 
+_ENTER   = re.compile(r"make(?:\[\d+\])?: Entering directory '(.+)'")
+_LEAVE   = re.compile(r"make(?:\[\d+\])?: Leaving directory '(.+)'")
+_COMPILE = re.compile(r"\s-c\s+(\S+)")
+_ASM     = re.compile(r"\bnasm\b.*?(\S+\.(?:asm|s))\b", re.IGNORECASE)
+_OUTPUT  = re.compile(r"\s-o\s+(\S+)")
+
+@dataclass
+class Stage:
+    name:   str
+    depth:  int
+    state:  str = "run"
+    work:   int = 0
+    detail: str = ""
+
 class LiveLog:
     def __init__(self, title: str):
-        self.title = title
-        self.rows  = max(4, min(12, th() // 3))
-        self.lines: List[str] = []
-        self.total = 0
+        self.title  = title
+        self.stages: List[Stage] = []
+        self.stack: List[Optional[Stage]] = []
+        self.base   = Stage(title, 0)
+        self.files  = 0
         self.pct: Optional[int] = None
-        self.drawn = False
+        self.last   = ""
+
+    def _rel(self, path: str) -> str:
+        rel = os.path.relpath(path, ROOT)
+        return "root" if rel == "." else rel
+
+    def _top(self) -> Stage:
+        for st in reversed(self.stack):
+            if st is not None:
+                return st
+        return self.base
+
+    def _detail(self, line: str) -> Optional[str]:
+        m = _COMPILE.search(line)
+        if m:
+            self.files += 1
+            f = m.group(1)
+            return os.path.relpath(f, ROOT) if os.path.isabs(f) else f
+        m = _ASM.search(line)
+        if m:
+            self.files += 1
+            return m.group(1)
+        if "xorriso" in line:
+            return "assembling ISO image"
+        if re.search(r"(?:^|[\s/-])ld\s", line) and _OUTPUT.search(line):
+            return "linking " + os.path.basename(_OUTPUT.search(line).group(1))
+        if re.search(r"\bar\s+\w*r\w*\s", line):
+            return "archiving"
+        if "gen_assets" in line:
+            return "generating assets"
+        return None
 
     def push(self, raw: str):
         cl = _clean_line(raw)
         if not cl:
             return
-        self.total += 1
         m = _PROGRESS.search(cl)
         if m:
             self.pct = int(m.group(1) or m.group(2))
-        if _NOISE.match(cl):
+        if not _NOISE.match(cl):
+            self.last = cl
+        m = _ENTER.search(cl)
+        if m:
+            name = self._rel(m.group(1))
+            if name == "root" and not self.stack:
+                self.stack.append(None)
+            else:
+                depth = sum(1 for x in self.stack if x is not None)
+                st = Stage(name, depth)
+                self.stages.append(st)
+                self.stack.append(st)
             return
-        self.lines.append(cl)
-        if len(self.lines) > 400:
-            del self.lines[:200]
+        if _LEAVE.search(cl):
+            if self.stack:
+                st = self.stack.pop()
+                if st is not None:
+                    st.state = "done"
+                    st.detail = ""
+            return
+        d = self._detail(cl)
+        if d:
+            top = self._top()
+            top.work += 1
+            top.detail = d
 
-    def draw(self, frame: str, elapsed: float, final: Optional[Tuple[bool, str]] = None):
-        total = max(30, tw() - 1)
-        inner = total - 4
-        if final is None:
-            col = C.BLUE
+    def current(self) -> str:
+        st = self._top()
+        return f"{st.name} — {st.detail}" if st.detail else st.name
+
+    def draw(self, frame: str, elapsed: float):
+        w, h = tw(), th()
+        avail = max(20, w - 1)
+        out = [""]
+        left = f"  {frame} {self.title}"
+        right = fmt_time(elapsed) + " "
+        gap = max(1, avail - len(left) - len(right))
+        out.append("  " + c(C.MAUVE, frame) + " " + c(C.BOLD + C.TEXT, clip(self.title, avail - len(right) - 6)) + " " * gap + c(C.SUB, right))
+        if self.pct is not None:
+            out.append("  " + bar(self.pct, min(40, avail - 12)) + c(C.TEXT, f" {self.pct:3d}%"))
         else:
-            col = C.GREEN if final[0] else C.RED
+            out.append("  " + c(C.OVERLAY, "─" * max(4, avail - 4)))
+        out.append("")
 
-        t = clip(self.title, max(8, total - 24))
-        left  = f"╭─ {frame} {t} "
-        right = f" {fmt_time(elapsed)} ─╮"
-        fill  = "─" * max(1, total - len(left) - len(right))
-        out = [c(col, left) + c(col, fill) + c(C.SUB, f" {fmt_time(elapsed)} ") + c(col, "─╮")]
+        stages = self.stages if self.stages else [self.base]
+        if not self.stages:
+            self.base.detail = clip(self.last, avail - len(self.title) - 12) if self.last else ""
+        room = max(1, h - len(out) - 3)
+        shown = stages[-room:]
+        for st in shown:
+            if st.state == "done":
+                icon, icol = ("✓", C.GREEN) if st.work else ("–", C.OVERLAY)
+            else:
+                icon, icol = frame, C.MAUVE
+            indent = "  " * min(st.depth, 4)
+            name = clip(st.name, max(8, avail // 2 - 6))
+            nl = 4 + len(indent) + len(name)
+            ncol = C.OVERLAY if (st.state == "done" and not st.work) else (C.TEXT if st.state == "run" else C.SUB)
+            line = "  " + indent + c(icol, icon) + " " + c(ncol, name)
+            if st.state == "run" and st.detail:
+                line += "  " + c(C.SUB, clip(st.detail, max(0, avail - nl - 2)))
+            elif st.state == "done" and not st.work:
+                line += "  " + c(C.OVERLAY, "up to date")
+            out.append(line)
+        hidden = len(stages) - len(shown)
+        if hidden > 0:
+            out.insert(4, "  " + c(C.OVERLAY, f"… {hidden} earlier steps"))
 
-        visible = self.lines[-self.rows:]
-        for ln in visible + [""] * (self.rows - len(visible)):
-            row = clip(ln, inner).ljust(inner)
-            out.append(c(col, "│") + " " + c(C.SUB, row) + " " + c(col, "│"))
-
-        if final is None:
-            lt = c(C.MAUVE, frame) + " " + c(C.TEXT, "Running…") + c(C.OVERLAY, f"  {self.total} lines")
-            rt = ""
-            if self.pct is not None:
-                rt = bar(self.pct, 14) + c(C.TEXT, f" {self.pct:3d}%")
-        else:
-            icon = c(C.GREEN, "✓") if final[0] else c(C.RED, "✗")
-            lt = icon + " " + c(C.GREEN if final[0] else C.RED, final[1])
-            rt = c(C.OVERLAY, f"{self.total} lines")
-        gap = max(1, inner - vlen(lt) - vlen(rt))
-        out.append(c(col, "│") + " " + lt + " " * gap + rt + " " + c(col, "│"))
-        out.append(c(col, "╰" + "─" * (total - 2) + "╯"))
-
-        buf = ""
-        if self.drawn:
-            buf += f"\033[{self.rows + 3}A\r"
-        buf += "".join(line + "\033[K\n" for line in out)
-        sys.stdout.write(buf)
+        foot = f"  {self.files} files compiled · Ctrl-C to cancel"
+        out += [""] * max(0, h - len(out) - 1)
+        out = out[:h - 1] + [c(C.OVERLAY, clip(foot, avail))]
+        sys.stdout.write("".join(f"\033[{n};1H{line}\033[K" for n, line in enumerate(out[:h], 1)))
         sys.stdout.flush()
-        self.drawn = True
 
 def _run_live(cmd: List[str], title: str, cwd: str = ROOT) -> int:
     if not sys.stdout.isatty():
@@ -267,7 +339,7 @@ def _run_live(cmd: List[str], title: str, cwd: str = ROOT) -> int:
 
     threading.Thread(target=reader, daemon=True).start()
 
-    sys.stdout.write(C.HIDE_CURSOR)
+    sys.stdout.write(C.ALT_ON + C.HIDE_CURSOR)
     i = 0
     done = False
     cancelled = False
@@ -295,6 +367,9 @@ def _run_live(cmd: List[str], title: str, cwd: str = ROOT) -> int:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
             proc.kill()
+    finally:
+        sys.stdout.write(C.ALT_OFF + C.SHOW_CURSOR)
+        sys.stdout.flush()
 
     elapsed = time.time() - start
     rc = 130 if cancelled else proc.returncode
@@ -304,8 +379,12 @@ def _run_live(cmd: List[str], title: str, cwd: str = ROOT) -> int:
         final = (True, f"Success in {fmt_time(elapsed)}")
     else:
         final = (False, f"Failed (exit {rc}) after {fmt_time(elapsed)}")
-    log.draw("•", elapsed, final)
-    sys.stdout.write(C.SHOW_CURSOR)
+    if rc == 0:
+        done = sum(1 for st in log.stages if st.work)
+        print(f"  {c(C.GREEN, '✓')}  {c(C.TEXT, title)}  {c(C.SUB, final[1] + f' · {done} steps · {log.files} files')}")
+    else:
+        print(f"  {c(C.RED, '✗')}  {c(C.TEXT, title)}  {c(C.RED, final[1])}")
+        print(f"     {c(C.OVERLAY, 'stopped at: ')}{c(C.TEXT, clip(log.current(), tw() - 20))}")
 
     if rc != 0:
         os.makedirs(BIN, exist_ok=True)
