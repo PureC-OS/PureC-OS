@@ -15,6 +15,7 @@
 #include "../drivers/mouse/ps2_mouse.h"
 #include "../drivers/mouse/usb_mouse.h"
 #include "../drivers/interrupts/timer.h"
+#include "../arch/x86_64/idt/include/idt.h"
 #include "../drivers/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/diagnostics/boot_diag.h"
@@ -567,6 +568,7 @@ void userspace_input_thread(void *arg){
     (void)arg;
     klog(KLOG_INFO, "sched: input thread started (mouse polling + desktop)");
     for(;;){
+        idt_check_interrupt_rates();
         ps2_mouse_poll();
         block_device_poll_usb_hotplug();
         usb_mouse_poll();

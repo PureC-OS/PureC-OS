@@ -8,3 +8,5 @@ void idt_set_irq_handler(uint8_t irq, void *fn, void *ctx);
 void idt_clear_irq_handler(uint8_t irq);
 void idt_unmask_irq(uint8_t irq);
 void idt_mask_irq(uint8_t irq);
+uint64_t idt_vector_count(uint8_t vector);
+void idt_check_interrupt_rates(void);

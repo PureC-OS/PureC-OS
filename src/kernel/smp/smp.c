@@ -1,6 +1,7 @@
 #include "smp.h"
 #include "cpu.h"
 #include "lapic.h"
+#include "cpufreq.h"
 #include "../sync/spinlock.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
@@ -109,6 +110,7 @@ void smp_ap_main(struct ap_boot_context *context,
         cpu_fail(id);
         for(;;) __asm__ volatile("cli; hlt");
     }
+    cpufreq_init_cpu();
     scheduler_init_cpu();
     if(!cpu_publish_idle(id)){
         for(;;) __asm__ volatile("cli; hlt");
@@ -157,6 +159,7 @@ bool smp_start_cpu(struct limine_smp_response *response,
 
 
 void smp_start_all(struct limine_smp_response *response){
+    cpufreq_init_bsp();
     if(!lapic_init()){
         klog(KLOG_WARN, "smp: LAPIC unavailable; BSP scheduling only");
         return;
