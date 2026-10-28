@@ -541,6 +541,142 @@ int32_t ext2_file_write(const char *path, const void *buffer, uint32_t count)
     return ext2_write_data(ino, (const uint8_t *)buffer, count);
 }
 
+static bool ext2_set_block_ptr(uint8_t *ib, uint32_t logical, uint32_t block,
+                               uint32_t *metadata_blocks)
+{
+    uint32_t per = ext2_volume()->block_size / 4;
+    uint8_t *pointers = ib + 40;
+    if (logical < 12)
+    {
+        ext2_write_u32(pointers + logical * 4, block);
+        return true;
+    }
+    uint64_t rest = logical - 12;
+    uint32_t levels, root_slot;
+    if (rest < per)
+    {
+        levels = 1;
+        root_slot = 12;
+    }
+    else if ((rest -= per) < (uint64_t)per * per)
+    {
+        levels = 2;
+        root_slot = 13;
+    }
+    else
+    {
+        rest -= (uint64_t)per * per;
+        if (rest >= (uint64_t)per * per * per)
+            return false;
+        levels = 3;
+        root_slot = 14;
+    }
+    static uint8_t table[4096];
+    uint32_t current = ext2_read_u32(pointers + root_slot * 4);
+    if (!current)
+    {
+        current = ext2_alloc_block();
+        if (!current)
+            return false;
+        ext2_write_u32(pointers + root_slot * 4, current);
+        (*metadata_blocks)++;
+    }
+    for (uint32_t level = levels; level >= 1; level--)
+    {
+        uint64_t span = 1;
+        for (uint32_t i = 1; i < level; i++)
+            span *= per;
+        uint32_t slot = (uint32_t)(rest / span);
+        rest %= span;
+        if (!ext2_read_block(current, table))
+            return false;
+        if (level == 1)
+        {
+            ext2_write_u32(table + slot * 4, block);
+            return ext2_write_block(current, table);
+        }
+        uint32_t next = ext2_read_u32(table + slot * 4);
+        if (!next)
+        {
+            next = ext2_alloc_block();
+            if (!next)
+                return false;
+            ext2_write_u32(table + slot * 4, next);
+            if (!ext2_write_block(current, table))
+            {
+                ext2_free_block(next);
+                return false;
+            }
+            (*metadata_blocks)++;
+        }
+        current = next;
+    }
+    return false;
+}
+
+static int32_t ext2_append_data(uint32_t ino, uint8_t *ib, const uint8_t *data,
+                                uint32_t count)
+{
+    uint32_t bsz = ext2_volume()->block_size;
+    uint32_t old = ext2_read_u32(ib + 4);
+    if (count > UINT32_MAX - old)
+        return -4;
+    static uint8_t block_data[4096];
+    uint32_t done = 0, position = old, data_blocks = 0, metadata_blocks = 0;
+    int32_t status = 0;
+    while (done < count)
+    {
+        uint32_t logical = position / bsz;
+        uint32_t offset = position % bsz;
+        uint32_t chunk = bsz - offset;
+        if (chunk > count - done)
+            chunk = count - done;
+        uint32_t block = offset ? ext2_inode_block_ptr(ib, logical) : 0;
+        if (block)
+        {
+            if (!ext2_read_block(block, block_data))
+            {
+                status = -1;
+                break;
+            }
+        }
+        else
+        {
+            memset(block_data, 0, bsz);
+            block = ext2_alloc_block();
+            if (!block)
+            {
+                status = -4;
+                break;
+            }
+            if (!ext2_set_block_ptr(ib, logical, block, &metadata_blocks))
+            {
+                ext2_free_block(block);
+                status = -4;
+                break;
+            }
+            data_blocks++;
+        }
+        memcpy(block_data + offset, data + done, chunk);
+        if (!ext2_write_block(block, block_data))
+        {
+            status = -1;
+            break;
+        }
+        done += chunk;
+        position += chunk;
+    }
+    if (done)
+    {
+        ext2_write_u32(ib + 4, old + done);
+        ext2_write_u32(ib + 28, ext2_read_u32(ib + 28) +
+                                    (data_blocks + metadata_blocks) * (bsz / 512));
+        if (!ext2_write_inode(ino, ib))
+            return -1;
+    }
+    return status < 0 ? status : (int32_t)done;
+}
+
 int32_t ext2_file_append(const char *path, const void *buffer, uint32_t count)
 {
     uint32_t ino;
@@ -552,31 +688,13 @@ int32_t ext2_file_append(const char *path, const void *buffer, uint32_t count)
     uint8_t ib[256];
     if (!ext2_inode_read(ino, ib))
         return -1;
-    uint32_t old = ext2_read_u32(ib + 4);
-    if (old == 0)
-        return ext2_write_data(ino, (const uint8_t *)buffer, count);
-    uint32_t nsize = old + count;
-    if (nsize < old)
-        return -3;
-    uint64_t pages = (nsize + 4095) / 4096;
-    if (pages == 0)
-        pages = 1;
-    if (nsize > 64 * 1024 * 1024)
-        return -4;
-    uint64_t phys = pmm_allocate_contiguous(pages);
-    if (!phys)
-        return -4;
-    uint8_t *combined = (uint8_t *)pmm_physical_to_virtual(phys);
-    int32_t r = ext2_inode_read_data(ib, 0, combined, old);
-    if (r < 0 || (uint32_t)r != old)
-    {
-        pmm_free_contiguous(phys, pages);
-        return -1;
-    }
-    memcpy(combined + old, buffer, count);
-    int32_t res = ext2_write_data(ino, combined, nsize);
-    pmm_free_contiguous(phys, pages);
-    return res;
+    if ((ext2_read_u16(ib) & 0xF000) == 0x4000)
+        return -6;
+    if (ext2_read_u32(ib + 4) == 0)
+        return ext2_write_data(ino, (const uint8_t *)buffer, count) < 0
+                   ? -1
+                   : (int32_t)count;
+    return ext2_append_data(ino, ib, (const uint8_t *)buffer, count);
 }
 
 int32_t ext2_file_create_dir(const char *path)
