@@ -32,14 +32,27 @@
 #define INIT_RSSI_THR 0x00000700
 #define AR_DESC_STRIDE ATH9K_DESC_STRIDE
 
+#ifdef PUREC_HOST_TEST
+void (*ath9k_test_read_hook)(struct ath_hw *ah, uint32_t reg);
+void (*ath9k_test_write_hook)(struct ath_hw *ah, uint32_t reg, uint32_t val);
+#endif
+
 uint32_t ath9k_reg_read(struct ath_hw *ah, uint32_t reg)
 {
+#ifdef PUREC_HOST_TEST
+    if (ath9k_test_read_hook)
+        ath9k_test_read_hook(ah, reg);
+#endif
     return *(volatile uint32_t *)(ah->regs + reg);
 }
 
 void ath9k_reg_write(struct ath_hw *ah, uint32_t reg, uint32_t val)
 {
     *(volatile uint32_t *)(ah->regs + reg) = val;
+#ifdef PUREC_HOST_TEST
+    if (ath9k_test_write_hook)
+        ath9k_test_write_hook(ah, reg, val);
+#endif
 }
 
 bool ath9k_hw_wait(struct ath_hw *ah, uint32_t reg, uint32_t mask,
