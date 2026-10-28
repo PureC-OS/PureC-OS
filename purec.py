@@ -2,31 +2,41 @@
 """
 PureC OS — Build & Setup TUI
 Usage:
-    ./purec.py                  interactive menu
-    ./purec.py setup            clone all external repos
+    ./purec.py                  interactive menu (arrows / hotkeys / mouse)
+    ./purec.py setup [repo]     clone all (or one) external repos
     ./purec.py build [target]   build (all / kernel / programs / iso / libs / notepad / hexedit / userspace)
     ./purec.py run              launch in QEMU
+    ./purec.py debug            QEMU debug / run submenu
     ./purec.py clean            remove build artefacts
-    ./purec.py status           show which repos are present
+    ./purec.py status           show repos, ISO and host tools
 """
 
+import contextlib
 import os
+import queue
 import re
 import select
+import shutil
 import subprocess
 import sys
+import textwrap
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
+
+try:
+    import termios
+    import tty
+except ImportError:
+    termios = None
+    tty = None
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BIN  = os.path.join(ROOT, "bin")
 ISO  = os.path.join(BIN, "purec_limine.iso")
+LAST_LOG = os.path.join(BIN, "purec-last.log")
 
-# ──────────────────────────────────────────────────────────────
-# Catppuccin Mocha palette
-# ──────────────────────────────────────────────────────────────
 class C:
     RST    = "\033[0m"
     BOLD   = "\033[1m"
@@ -46,19 +56,49 @@ class C:
     HIDE_CURSOR = "\033[?25l"
     SHOW_CURSOR = "\033[?25h"
     CLEAR_LINE  = "\033[2K\r"
+    ALT_ON      = "\033[?1049h"
+    ALT_OFF     = "\033[?1049l"
+    MOUSE_ON    = "\033[?1000h\033[?1006h"
+    MOUSE_OFF   = "\033[?1006l\033[?1000l"
+
+ANSI_RE = re.compile(r"\033\[[0-9;?<]*[a-zA-Z]")
 
 def c(col, text): return f"{col}{text}{C.RST}"
+def vlen(s: str) -> int: return len(ANSI_RE.sub("", s))
+def pad(s: str, n: int) -> str: return s + " " * max(0, n - vlen(s))
+def clip(s: str, n: int) -> str:
+    if n <= 0: return ""
+    return s if len(s) <= n else s[:max(0, n - 1)] + "…"
 
-# ──────────────────────────────────────────────────────────────
-# Terminal width helper
-# ──────────────────────────────────────────────────────────────
-def tw() -> int:
-    try:    return os.get_terminal_size().columns
-    except: return 80
+def _rgb(r, g, b): return f"\033[38;2;{r};{g};{b}m"
 
-# ──────────────────────────────────────────────────────────────
-# External repos
-# ──────────────────────────────────────────────────────────────
+def gradient(i: int, n: int) -> str:
+    t = i / max(1, n - 1)
+    a, b = (203, 166, 247), (137, 220, 235)
+    return _rgb(*[int(a[k] + (b[k] - a[k]) * t) for k in range(3)])
+
+def tw() -> int: return shutil.get_terminal_size((80, 24)).columns
+def th() -> int: return shutil.get_terminal_size((80, 24)).lines
+
+def is_tty() -> bool:
+    return bool(termios) and sys.stdin.isatty() and sys.stdout.isatty()
+
+def fmt_time(sec: float) -> str:
+    s = int(sec)
+    return f"{s // 60}:{s % 60:02d}"
+
+def ago(ts: float) -> str:
+    d = max(0, time.time() - ts)
+    if d < 60:    return "just now"
+    if d < 3600:  return f"{int(d // 60)} min ago"
+    if d < 86400: return f"{int(d // 3600)} h ago"
+    return f"{int(d // 86400)} d ago"
+
+def bar(pct: int, width: int = 16, col: str = C.MAUVE) -> str:
+    pct = max(0, min(100, pct))
+    f = int(width * pct / 100)
+    return c(col, "█" * f) + c(C.OVERLAY, "░" * (width - f))
+
 @dataclass
 class Repo:
     name:  str
@@ -94,9 +134,9 @@ REPOS: List[Repo] = [
 def _present(r: Repo) -> bool:
     return os.path.exists(os.path.join(ROOT, r.check))
 
-# ──────────────────────────────────────────────────────────────
-# ASCII logo
-# ──────────────────────────────────────────────────────────────
+def _deps_ready() -> Tuple[int, int]:
+    return sum(_present(r) for r in REPOS), len(REPOS)
+
 LOGO = [
     r" ____                  ____   ___  ____  ",
     r"|  _ \ _   _ _ __ ___ / ___| / _ \/ ___| ",
@@ -104,211 +144,491 @@ LOGO = [
     r"|  __/| |_| | | |  __/ |___  |_| |___) |",
     r"|_|    \__,_|_|  \___|\____|\___/|____/ ",
 ]
+SUBTITLE = "64-bit OS written in C and x86_64 assembly"
+
+def _rule(width: int) -> str:
+    return c(C.OVERLAY, "  " + "─" * max(4, width - 4))
+
+def _header_lines(logo: bool = True) -> List[str]:
+    w = min(tw(), 110)
+    out = [""]
+    if logo and w >= 48:
+        for i, line in enumerate(LOGO):
+            out.append("  " + c(C.BOLD + gradient(i, len(LOGO)), line))
+        out.append("  " + c(C.SUB, clip(SUBTITLE, w - 4)))
+    else:
+        out.append("  " + c(C.BOLD + C.MAUVE, "◆ PureC OS") + c(C.SUB, "  Build & Setup"))
+    out.append(_rule(w))
+    return out
 
 def _header():
-    print()
-    for line in LOGO:
-        print(c(C.MAUVE, C.BOLD + line))
-    w = tw()
-    subtitle = "  64-bit OS written in C and x86_64 assembly"
-    print(c(C.SUB, subtitle))
-    print(c(C.OVERLAY, "  " + "─" * (w - 4)))
+    print("\n".join(_header_lines()))
     print()
 
-# ──────────────────────────────────────────────────────────────
-# Spinner
-# ──────────────────────────────────────────────────────────────
 SPINNER_FRAMES = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
 
-class Spinner:
-    def __init__(self, label: str):
-        self.label   = label
-        self._stop   = threading.Event()
-        self._thread = threading.Thread(target=self._spin, daemon=True)
-
-    def _spin(self):
-        i = 0
-        print(C.HIDE_CURSOR, end="", flush=True)
-        while not self._stop.is_set():
-            frame = c(C.MAUVE, SPINNER_FRAMES[i % len(SPINNER_FRAMES)])
-            lbl   = c(C.TEXT, self.label)
-            sys.stdout.write(f"{C.CLEAR_LINE}  {frame}  {lbl}")
-            sys.stdout.flush()
-            time.sleep(0.08)
-            i += 1
-
-    def start(self):
-        self._thread.start()
-        return self
-
-    def stop(self, ok: bool = True, note: str = ""):
-        self._stop.set()
-        self._thread.join()
-        icon  = c(C.GREEN, "✓") if ok else c(C.RED, "✗")
-        label = c(C.TEXT, self.label)
-        extra = (c(C.SUB, "  " + note)) if note else ""
-        sys.stdout.write(f"{C.CLEAR_LINE}  {icon}  {label}{extra}\n")
-        sys.stdout.flush()
-        print(C.SHOW_CURSOR, end="", flush=True)
-
-# ──────────────────────────────────────────────────────────────
-# Live-log box (shows last N lines of process output)
-# ──────────────────────────────────────────────────────────────
-
-# Noise patterns we want to hide
 _NOISE = re.compile(
-    r"^\s*(make\[|\bNothing to be done\b|^make:.*Entering|^make:.*Leaving"
-    r"|^\s*$)", re.IGNORECASE
+    r"^\s*(make\[|\bNothing to be done\b|make:.*Entering|make:.*Leaving)",
+    re.IGNORECASE
+)
+_PROGRESS = re.compile(
+    r"(?:\[\s*(\d{1,3})%\]|(?:Receiving objects|Resolving deltas|Compressing objects|Counting objects):\s+(\d{1,3})%)"
 )
 
 def _clean_line(raw: str) -> str:
-    """Strip ANSI, trailing whitespace."""
-    ansi = re.compile(r"\033\[[0-9;]*[a-zA-Z]")
-    return ansi.sub("", raw).rstrip()
-
-LOG_LINES = 6   # how many lines to show in the live box
+    return ANSI_RE.sub("", raw).rstrip()
 
 class LiveLog:
-    """Renders a fixed-height scrolling log panel in the terminal."""
-
     def __init__(self, title: str):
-        self.title  = title
+        self.title = title
+        self.rows  = max(4, min(12, th() // 3))
         self.lines: List[str] = []
-        self._rendered = 0
-
-    def _box_top(self):
-        w   = tw() - 2
-        ttl = f" {self.title} "
-        bar = "─" * (w - len(ttl) - 2)
-        print(c(C.BLUE, f"╭{ttl}{bar}╮"))
-
-    def _box_bot(self):
-        w = tw() - 2
-        print(c(C.BLUE, f"╰{'─' * w}╯"))
+        self.total = 0
+        self.pct: Optional[int] = None
+        self.drawn = False
 
     def push(self, raw: str):
         cl = _clean_line(raw)
-        if not cl or _NOISE.match(cl):
+        if not cl:
             return
-        # Truncate to terminal width
-        w = tw() - 6
-        if len(cl) > w:
-            cl = cl[:w-1] + "…"
+        self.total += 1
+        m = _PROGRESS.search(cl)
+        if m:
+            self.pct = int(m.group(1) or m.group(2))
+        if _NOISE.match(cl):
+            return
         self.lines.append(cl)
-        self._redraw()
+        if len(self.lines) > 400:
+            del self.lines[:200]
 
-    def _redraw(self):
-        visible = self.lines[-LOG_LINES:]
-        # Move cursor up to overwrite previous render
-        if self._rendered:
-            sys.stdout.write(f"\033[{self._rendered + 2}A")
+    def draw(self, frame: str, elapsed: float, final: Optional[Tuple[bool, str]] = None):
+        total = max(30, tw() - 1)
+        inner = total - 4
+        if final is None:
+            col = C.BLUE
+        else:
+            col = C.GREEN if final[0] else C.RED
 
-        self._box_top()
-        w = tw() - 4
-        for ln in visible:
-            row = ln[:w].ljust(w)
-            print(c(C.BLUE, "│") + " " + c(C.SUB, row) + " " + c(C.BLUE, "│"))
-        # Pad empty rows
-        for _ in range(LOG_LINES - len(visible)):
-            print(c(C.BLUE, "│") + " " * (w + 2) + c(C.BLUE, "│"))
-        self._box_bot()
-        self._rendered = LOG_LINES
+        t = clip(self.title, max(8, total - 24))
+        left  = f"╭─ {frame} {t} "
+        right = f" {fmt_time(elapsed)} ─╮"
+        fill  = "─" * max(1, total - len(left) - len(right))
+        out = [c(col, left) + c(col, fill) + c(C.SUB, f" {fmt_time(elapsed)} ") + c(col, "─╮")]
+
+        visible = self.lines[-self.rows:]
+        for ln in visible + [""] * (self.rows - len(visible)):
+            row = clip(ln, inner).ljust(inner)
+            out.append(c(col, "│") + " " + c(C.SUB, row) + " " + c(col, "│"))
+
+        if final is None:
+            lt = c(C.MAUVE, frame) + " " + c(C.TEXT, "Running…") + c(C.OVERLAY, f"  {self.total} lines")
+            rt = ""
+            if self.pct is not None:
+                rt = bar(self.pct, 14) + c(C.TEXT, f" {self.pct:3d}%")
+        else:
+            icon = c(C.GREEN, "✓") if final[0] else c(C.RED, "✗")
+            lt = icon + " " + c(C.GREEN if final[0] else C.RED, final[1])
+            rt = c(C.OVERLAY, f"{self.total} lines")
+        gap = max(1, inner - vlen(lt) - vlen(rt))
+        out.append(c(col, "│") + " " + lt + " " * gap + rt + " " + c(col, "│"))
+        out.append(c(col, "╰" + "─" * (total - 2) + "╯"))
+
+        buf = ""
+        if self.drawn:
+            buf += f"\033[{self.rows + 3}A\r"
+        buf += "".join(line + "\033[K\n" for line in out)
+        sys.stdout.write(buf)
         sys.stdout.flush()
-
-    def clear(self):
-        if self._rendered:
-            # erase the box lines
-            for _ in range(self._rendered + 2):
-                sys.stdout.write(f"\033[1A{C.CLEAR_LINE}")
-        self._rendered = 0
-        sys.stdout.flush()
-
-# ──────────────────────────────────────────────────────────────
-# Process runner with live output
-# ──────────────────────────────────────────────────────────────
+        self.drawn = True
 
 def _run_live(cmd: List[str], title: str, cwd: str = ROOT) -> int:
-    """Run cmd, stream stdout/stderr into a LiveLog box. Return exit code."""
-    log = LiveLog(title)
-    # Print initial empty box
-    log._redraw()
+    if not sys.stdout.isatty():
+        return subprocess.call(cmd, cwd=cwd)
 
-    proc = subprocess.Popen(
-        cmd, cwd=cwd,
-        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
-    )
-    for line in proc.stdout:
-        log.push(line)
-    proc.wait()
+    log   = LiveLog(title)
+    q: "queue.Queue[Optional[str]]" = queue.Queue()
+    full: List[str] = []
+    start = time.time()
 
-    # Final status line
-    ok = proc.returncode == 0
-    icon = c(C.GREEN, "✓") if ok else c(C.RED, "✗")
-    status = c(C.GREEN, "Success") if ok else c(C.RED, f"Failed (exit {proc.returncode})")
-    # Replace bottom border with status
-    sys.stdout.write(f"\033[1A{C.CLEAR_LINE}")
-    print(c(C.BLUE, "│") + f" {icon} {status}".ljust(tw() - 4) + " " + c(C.BLUE, "│"))
-    print(c(C.BLUE, f"╰{'─' * (tw() - 2)}╯"))
+    try:
+        proc = subprocess.Popen(
+            cmd, cwd=cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1, errors="replace",
+        )
+    except FileNotFoundError:
+        _err(f"Command not found: {cmd[0]}")
+        return 127
+
+    def reader():
+        for line in proc.stdout:
+            q.put(line)
+        q.put(None)
+
+    threading.Thread(target=reader, daemon=True).start()
+
+    sys.stdout.write(C.HIDE_CURSOR)
+    i = 0
+    done = False
+    cancelled = False
+    try:
+        log.draw(SPINNER_FRAMES[0], 0)
+        while not done:
+            try:
+                item = q.get(timeout=0.08)
+                while True:
+                    if item is None:
+                        done = True
+                        break
+                    full.append(item)
+                    log.push(item)
+                    item = q.get_nowait()
+            except queue.Empty:
+                pass
+            i += 1
+            log.draw(SPINNER_FRAMES[i % len(SPINNER_FRAMES)], time.time() - start)
+        proc.wait()
+    except KeyboardInterrupt:
+        cancelled = True
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    elapsed = time.time() - start
+    rc = 130 if cancelled else proc.returncode
+    if cancelled:
+        final = (False, f"Cancelled after {fmt_time(elapsed)}")
+    elif rc == 0:
+        final = (True, f"Success in {fmt_time(elapsed)}")
+    else:
+        final = (False, f"Failed (exit {rc}) after {fmt_time(elapsed)}")
+    log.draw("•", elapsed, final)
+    sys.stdout.write(C.SHOW_CURSOR)
+
+    if rc != 0:
+        os.makedirs(BIN, exist_ok=True)
+        try:
+            with open(LAST_LOG, "w") as f:
+                f.writelines(full)
+        except OSError:
+            pass
+        tail = [_clean_line(x) for x in full if _clean_line(x)][-18:]
+        if tail:
+            print(f"\n  {c(C.RED, 'Last output:')}")
+            for ln in tail:
+                print("  " + c(C.OVERLAY, "│ ") + c(C.SUB, clip(ln, tw() - 8)))
+            print(f"  {c(C.OVERLAY, 'Full log: ' + LAST_LOG)}")
     sys.stdout.flush()
-    return proc.returncode
-
+    return rc
 
 def _run_git_clone(url: str, dest: str, name: str) -> int:
-    """Clone with progress shown in spinner + live log."""
     print(f"\n  {c(C.BLUE, '↓')}  Cloning {c(C.MAUVE + C.BOLD, name)}")
     cmd = ["git", "clone", "--depth=1", "--progress", url, dest]
     return _run_live(cmd, f"git clone {name}")
 
-
 def _make_live(title: str, *args: str) -> int:
-    cmd = ["make", "-C", ROOT, *args]
-    return _run_live(cmd, title)
+    return _run_live(["make", "-C", ROOT, *args], title)
 
-# ──────────────────────────────────────────────────────────────
-# Feedback helpers
-# ──────────────────────────────────────────────────────────────
 def _ok(msg):   print(f"  {c(C.GREEN,  '✓')}  {c(C.TEXT, msg)}")
 def _warn(msg): print(f"  {c(C.YELLOW, '⚠')}  {c(C.YELLOW, msg)}")
 def _err(msg):  print(f"  {c(C.RED,    '✗')}  {c(C.RED, msg)}")
+def _info(msg): print(f"  {c(C.SKY,    'ℹ')}  {c(C.SUB, msg)}")
 def _step(msg): print(f"\n  {c(C.MAUVE, '●')}  {c(C.BOLD + C.TEXT, msg)}\n")
 def _die(msg):  _err(msg); print(C.SHOW_CURSOR); sys.exit(1)
 
-# ──────────────────────────────────────────────────────────────
-# Commands
-# ──────────────────────────────────────────────────────────────
+_MOUSE_RE = re.compile(r"\033\[<(\d+);(\d+);(\d+)([Mm])")
+_KEYS = {
+    "\033[A": "up",   "\033OA": "up",
+    "\033[B": "down", "\033OB": "down",
+    "\033[H": "home", "\033[1~": "home", "\033OH": "home", "\033[5~": "home",
+    "\033[F": "end",  "\033[4~": "end",  "\033OF": "end",  "\033[6~": "end",
+    "\r": "enter", "\n": "enter",
+    "\033": "esc", "\x03": "esc", "\x04": "esc",
+}
+
+def _read_raw(timeout: Optional[float]) -> Optional[str]:
+    fd = sys.stdin.fileno()
+    r, _, _ = select.select([fd], [], [], timeout)
+    if not r:
+        return None
+    return os.read(fd, 64).decode(errors="ignore")
+
+def _decode(data: str) -> Tuple:
+    m = _MOUSE_RE.match(data)
+    if m:
+        b, y, t = int(m.group(1)), int(m.group(3)), m.group(4)
+        if b == 64: return ("wheel", -1)
+        if b == 65: return ("wheel", 1)
+        if b == 0 and t == "M": return ("click", y)
+        return ("none",)
+    if data in _KEYS:
+        return (_KEYS[data],)
+    if data.startswith("\033"):
+        return ("none",)
+    return ("char", data[0].lower())
+
+@contextlib.contextmanager
+def _raw(alt: bool = False, mouse: bool = False):
+    fd  = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        sys.stdout.write(C.HIDE_CURSOR + (C.ALT_ON if alt else "") + (C.MOUSE_ON if mouse else ""))
+        sys.stdout.flush()
+        yield
+    finally:
+        sys.stdout.write((C.MOUSE_OFF if mouse else "") + (C.ALT_OFF if alt else "") + C.SHOW_CURSOR)
+        sys.stdout.flush()
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+def _pause(msg: str = "Press any key to continue…"):
+    if not is_tty():
+        return
+    print("\n  " + c(C.SUB, msg), end="", flush=True)
+    try:
+        with _raw():
+            _read_raw(None)
+    except KeyboardInterrupt:
+        pass
+    print()
+
+def _confirm(question: str, default: bool = False) -> bool:
+    hint = "Y/n" if default else "y/N"
+    print(f"\n  {c(C.YELLOW, '?')}  {c(C.TEXT, question)} {c(C.SUB, '[' + hint + ']')} ", end="", flush=True)
+    if not is_tty():
+        ans = sys.stdin.readline().strip().lower()
+        return default if not ans else ans.startswith("y")
+    try:
+        with _raw():
+            while True:
+                d = _read_raw(None)
+                k = _decode(d or "")
+                if k[0] == "enter":
+                    print(c(C.GREEN if default else C.RED, "yes" if default else "no"))
+                    return default
+                if k[0] == "esc":
+                    print(c(C.RED, "no"))
+                    return False
+                if k[0] == "char" and k[1] in "yn":
+                    print(c(C.GREEN, "yes") if k[1] == "y" else c(C.RED, "no"))
+                    return k[1] == "y"
+    except KeyboardInterrupt:
+        print()
+        return False
+
+@dataclass
+class MenuItem:
+    key:    str
+    label:  str
+    desc:   str
+    action: Optional[Callable]
+    icon:   str = "•"
+    danger: bool = False
+
+def _fallback_menu(title: str, items: List[MenuItem]) -> Optional[MenuItem]:
+    print(f"\n  {title}")
+    for it in items:
+        print(f"   [{it.key}] {it.label}  {it.desc}")
+    try:
+        ans = input("  Choice: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        return None
+    return next((it for it in items if it.key == ans), None)
+
+def _build_menu_screen(title, items, idx, accent, status, show_logo, show_detail, rows_out):
+    w, h = tw(), th()
+    cw   = max(30, min(w - 4, 100))
+    wide = cw >= 72
+    lines = _header_lines(show_logo)
+    if status:
+        lines.append("  " + status())
+    lines.append("")
+    lines.append("  " + c(C.BOLD + accent, title))
+    lines.append("")
+
+    lw = min(max(len(it.label) for it in items) + 4, 28)
+    first = len(lines) + 1
+    for n, it in enumerate(items):
+        sel = n == idx
+        bg  = C.SURF if sel else ""
+        mark = (accent + "▌") if sel else " "
+        kcol = accent if sel else (C.RED if it.danger else C.YELLOW)
+        lcol = C.BOLD + C.TEXT if sel else (C.RED if it.danger else C.TEXT)
+        segs = [(mark, ""), (kcol, f" [{it.key}] "), (lcol, f"{it.icon} " + clip(it.label, lw - 2).ljust(lw - 2))]
+        if wide and it.desc:
+            segs.append((C.OVERLAY, "│ "))
+            segs.append((C.SUB, clip(it.desc, cw - lw - 12)))
+        row = ""
+        used = 0
+        for col, text in segs:
+            row += bg + col + text + C.RST
+            used += len(text)
+        row += bg + " " * max(0, cw - used) + C.RST
+        lines.append("  " + row)
+        rows_out.append(first + n)
+
+    if show_detail and not wide and items[idx].desc:
+        lines.append("")
+        wrapped = textwrap.wrap(items[idx].desc, max(10, cw - 6)) or [""]
+        lines.append("  " + c(accent, "╭" + "─" * (cw - 2) + "╮"))
+        for ln in wrapped[:3]:
+            lines.append("  " + c(accent, "│ ") + c(C.TEXT, ln.ljust(cw - 4)) + c(accent, " │"))
+        lines.append("  " + c(accent, "╰" + "─" * (cw - 2) + "╯"))
+
+    lines.append("")
+    hint = "↑↓/jk move · ⏎ select · hotkeys · esc back · mouse" if w >= 60 else "↑↓ ⏎ esc"
+    lines.append("  " + c(C.OVERLAY, clip(hint, w - 4)))
+    return lines
+
+def select_menu(title: str, items: List[MenuItem], accent: str = C.MAUVE,
+                index: int = 0, status: Optional[Callable[[], str]] = None
+                ) -> Tuple[Optional[MenuItem], int]:
+    if not is_tty():
+        return _fallback_menu(title, items), index
+
+    idx = max(0, min(index, len(items) - 1))
+    last_size = None
+    dirty = True
+    rows: List[int] = []
+    with _raw(alt=True, mouse=True):
+        while True:
+            size = (tw(), th())
+            if dirty or size != last_size:
+                for logo, detail in ((True, True), (False, True), (False, False)):
+                    rows = []
+                    lines = _build_menu_screen(title, items, idx, accent, status, logo, detail, rows)
+                    if len(lines) <= size[1]:
+                        break
+                lines = lines[:size[1]]
+                sys.stdout.write("\033[H" + "".join(l + "\033[K\r\n" for l in lines[:-1]) + lines[-1] + "\033[K\033[J")
+                sys.stdout.flush()
+                last_size, dirty = size, False
+
+            try:
+                data = _read_raw(0.3)
+            except KeyboardInterrupt:
+                return None, idx
+            if data is None:
+                if status:
+                    dirty = True
+                continue
+
+            k = _decode(data)
+            kind = k[0]
+            if kind == "esc":
+                return None, idx
+            elif kind in ("up", "down", "wheel"):
+                step = -1 if kind == "up" else 1 if kind == "down" else k[1]
+                idx = (idx + step) % len(items)
+                dirty = True
+            elif kind == "home":
+                idx, dirty = 0, True
+            elif kind == "end":
+                idx, dirty = len(items) - 1, True
+            elif kind == "enter":
+                return items[idx], idx
+            elif kind == "click":
+                if k[1] in rows:
+                    idx = rows.index(k[1])
+                    return items[idx], idx
+            elif kind == "char":
+                ch = k[1]
+                hit = next((n for n, it in enumerate(items) if it.key == ch), None)
+                if hit is not None:
+                    return items[hit], hit
+                if ch == "j":
+                    idx, dirty = (idx + 1) % len(items), True
+                elif ch == "k":
+                    idx, dirty = (idx - 1) % len(items), True
+
+def _menu_loop(title: str, items: List[MenuItem], accent: str = C.MAUVE,
+               status: Optional[Callable[[], str]] = None, on_back_exit: bool = False):
+    idx = 0
+    while True:
+        item, idx = select_menu(title, items, accent, idx, status)
+        if item is None or item.action is None:
+            if on_back_exit:
+                print(C.SHOW_CURSOR)
+                sys.exit(0)
+            return
+        os.system("clear")
+        try:
+            item.action()
+        except KeyboardInterrupt:
+            print(C.SHOW_CURSOR)
+            _warn("Interrupted")
+        _pause("Press any key to return to the menu…")
+
+def _box(title: str, rows: List[str], col: str = C.BLUE):
+    total = max(30, min(tw() - 2, 104))
+    inner = total - 4
+    ttl = f" {title} "
+    print("  " + c(col, "╭─" + ttl + "─" * max(1, total - len(ttl) - 3) + "╮"))
+    for r in rows:
+        print("  " + c(col, "│") + " " + pad(r, inner) + " " + c(col, "│"))
+    print("  " + c(col, "╰" + "─" * (total - 2) + "╯"))
+
+HOST_TOOLS = [
+    ("make", "build driver"),
+    ("gcc", "C compiler"),
+    ("nasm", "assembler"),
+    ("git", "repo fetching"),
+    ("xorriso", "ISO creation"),
+    ("qemu-system-x86_64", "emulator"),
+]
 
 def cmd_status():
     _header()
-    w = tw() - 2
-    ttl = " Dependency Status "
-    bar = "─" * (w - len(ttl) - 2)
-    print(c(C.BLUE, f"╭{ttl}{bar}╮"))
+    have, total = _deps_ready()
+    w = min(tw() - 2, 104) - 4
+    wide = w >= 66
+
+    rows = []
     for r in REPOS:
-        present = _present(r)
-        icon  = c(C.GREEN, "✓ present") if present else c(C.RED,  "✗ missing")
-        name  = c(C.MAUVE if present else C.RED, f"{r.name:<26}")
-        desc  = c(C.SUB, r.desc)
-        row   = f" {icon}  {name} {desc}"
-        pad   = w - len(_clean_line(row))
-        print(c(C.BLUE, "│") + row + " " * max(pad, 1) + c(C.BLUE, "│"))
-    print(c(C.BLUE, f"╰{'─' * w}╯"))
+        p = _present(r)
+        icon = c(C.GREEN, "✓") if p else c(C.RED, "✗")
+        name = c(C.MAUVE if p else C.RED, f"{r.name:<20}")
+        row = f"{icon} {name}"
+        if wide:
+            row += " " + c(C.SUB, f"{r.desc:<32}") + " " + c(C.OVERLAY, clip(r.dest, max(8, w - 58)))
+        else:
+            row += " " + c(C.SUB, clip(r.desc, max(4, w - 24)))
+        rows.append(row)
+    rows.append("")
+    pct = int(100 * have / total)
+    rows.append(bar(pct, 24, C.GREEN if have == total else C.YELLOW) + c(C.TEXT, f"  {have}/{total} ready"))
+    _box("Dependencies", rows, C.GREEN if have == total else C.YELLOW)
     print()
+
+    trows = []
+    for tool, desc in HOST_TOOLS:
+        path = shutil.which(tool)
+        icon = c(C.GREEN, "✓") if path else c(C.RED, "✗")
+        trows.append(f"{icon} {c(C.TEXT, f'{tool:<20}')} {c(C.SUB, desc if wide else '')}")
+    kvm = os.path.exists("/dev/kvm") and os.access("/dev/kvm", os.R_OK | os.W_OK)
+    kvm_icon = c(C.GREEN, "✓") if kvm else c(C.YELLOW, "⚠")
+    kvm_note = "hardware acceleration" if kvm else "unavailable — QEMU falls back to TCG"
+    trows.append(f"{kvm_icon} {c(C.TEXT, '/dev/kvm'.ljust(20))} {c(C.SUB, kvm_note)}")
+    _box("Host tools", trows, C.BLUE)
+    print()
+
     if os.path.isfile(ISO):
-        mb = os.path.getsize(ISO) / 1_048_576
-        _ok(f"ISO: {ISO}  ({mb:.1f} MB)")
+        st = os.stat(ISO)
+        _ok(f"ISO: {ISO}  ({st.st_size / 1_048_576:.1f} MB, built {ago(st.st_mtime)})")
     else:
         _warn("ISO: not built yet")
     print()
 
-
 def cmd_setup(only: Optional[str] = None):
     _header()
+    targets = [r for r in REPOS if not only or r.name.lower() == only.lower()]
+    if only and not targets:
+        _die(f"Unknown repo '{only}'. Choose: {', '.join(r.name for r in REPOS)}")
     _step("Fetching external repositories")
     total = ok_count = 0
-    for r in REPOS:
-        if only and r.name.lower() != only.lower():
-            continue
+    for r in targets:
         total += 1
         if _present(r):
             _ok(f"{r.name} — already present")
@@ -333,9 +653,18 @@ def cmd_setup(only: Optional[str] = None):
             _ok(f"{r.name} → {r.dest}/")
             ok_count += 1
     print()
-    _ok(f"Done — {ok_count}/{total} repos ready")
+    (_ok if ok_count == total else _warn)(f"Done — {ok_count}/{total} repos ready")
     print()
 
+def cmd_setup_pick():
+    items = []
+    for n, r in enumerate(REPOS, 1):
+        p = _present(r)
+        items.append(MenuItem(str(n), r.name, f"{r.desc}  ({'present' if p else 'missing'})",
+                              (lambda name=r.name: cmd_setup(name)),
+                              icon="✓" if p else "✗"))
+    items.append(MenuItem("b", "Back", "", None, icon="←"))
+    _menu_loop("Fetch a single repository", items, C.BLUE)
 
 TARGETS = {
     "all":       ([], "Build everything"),
@@ -353,29 +682,46 @@ def cmd_build(target: str = "all") -> int:
     if target not in TARGETS:
         _die(f"Unknown target '{target}'. Choose: {', '.join(TARGETS)}")
     args, title = TARGETS[target]
+    missing = [r.name for r in REPOS if not _present(r)]
+    if missing:
+        _warn(f"Missing deps: {', '.join(missing)} — run setup if the build fails")
     _step(title)
     rc = _make_live(title, *args)
     print()
     if rc == 0:
         _ok("Build succeeded!")
         if target in ("all", "iso") and os.path.isfile(ISO):
-            mb = os.path.getsize(ISO) / 1_048_576
-            _ok(f"ISO: {ISO}  ({mb:.1f} MB)")
+            _ok(f"ISO: {ISO}  ({os.path.getsize(ISO) / 1_048_576:.1f} MB)")
     else:
         _err(f"Build failed (exit {rc})")
     print()
     return rc
 
+def cmd_build_pick():
+    items = []
+    for n, (name, (_, title)) in enumerate(TARGETS.items(), 1):
+        items.append(MenuItem(str(n), name, title, (lambda t=name: cmd_build(t)), icon="⚒"))
+    items.append(MenuItem("b", "Back", "", None, icon="←"))
+    _menu_loop("Choose build target", items, C.GREEN)
 
 def cmd_clean():
     _header()
+    if is_tty() and not _confirm("Remove all build artefacts?"):
+        _info("Cancelled")
+        return
     _step("Cleaning build artefacts")
-    _make_live("make clean", "clean")
-    _ok("Done")
+    rc = _make_live("make clean", "clean")
+    (_ok if rc == 0 else _err)("Done" if rc == 0 else f"Clean failed (exit {rc})")
     print()
 
+LOG_FILE = os.path.join(BIN, "qemu-debug.log")
+GPU_LOG_FILE = os.path.join(BIN, "qemu-gpu-debug.log")
 
-LOG_FILE = os.path.join(ROOT, "bin", "qemu-debug.log")
+def _qemu_ok() -> bool:
+    if shutil.which("qemu-system-x86_64"):
+        return True
+    _err("qemu-system-x86_64 not found in PATH")
+    return False
 
 def _ensure_iso() -> bool:
     if os.path.isfile(ISO):
@@ -383,242 +729,138 @@ def _ensure_iso() -> bool:
     _warn("ISO not found — building first…")
     return cmd_build("all") == 0
 
-def _qemu_ok() -> bool:
-    return subprocess.run(["which", "qemu-system-x86_64"],
-                          capture_output=True).returncode == 0
+def _ready() -> bool:
+    return _qemu_ok() and _ensure_iso()
 
 def _qemu_base() -> List[str]:
-    return ["qemu-system-x86_64", "-cdrom", ISO, "-m", "512M",
-            "-enable-kvm", "-boot", "d"]
+    cmd = ["qemu-system-x86_64", "-cdrom", ISO, "-m", "512M", "-boot", "d"]
+    if os.access("/dev/kvm", os.R_OK | os.W_OK):
+        cmd.append("-enable-kvm")
+    else:
+        _warn("/dev/kvm unavailable — running without acceleration (slow)")
+    return cmd
 
-# ─── 6 debug modes ───────────────────────────────────────────────
+def _qemu_logged(label: str, vga: str, serial: str, mon_name: str):
+    os.makedirs(BIN, exist_ok=True)
+    int_log  = serial.replace(".log", "-internal.log")
+    mon_sock = os.path.join(BIN, mon_name)
+    try:
+        if os.path.exists(mon_sock): os.unlink(mon_sock)
+    except OSError:
+        pass
+    _step(label)
+    _info(f"Serial : {serial}")
+    _info(f"QEMU   : {int_log}")
+    _info(f"Monitor: {mon_sock}")
+    _info(f"hang?    socat - UNIX-CONNECT:{mon_sock}   then: info registers / info status")
+    print()
+    _run_live(
+        _qemu_base() + [
+            "-vga", vga,
+            "-serial", f"file:{serial}",
+            "-monitor", f"unix:{mon_sock},server,nowait",
+            "-D", int_log,
+            "-d", "int,cpu_reset,guest_errors",
+        ],
+        label,
+    )
+    if os.path.isfile(serial):
+        _ok(f"Serial log: {serial}")
+
 def qemu_graphics():
     _header()
-    if not _ensure_iso() or not _qemu_ok(): return
+    if not _ready(): return
     _step("QEMU — graphical mode")
     _run_live(_qemu_base() + ["-vga", "std", "-serial", "stdio"], "QEMU (graphics)")
 
 def qemu_nographic():
     _header()
-    if not _ensure_iso() or not _qemu_ok(): return
-    _step("QEMU — no graphics  (Ctrl-A X to quit)")
-    print(c(C.SUB, "  Tip: Ctrl-A then X exits QEMU\n"))
+    if not _ready(): return
+    _step("QEMU — no graphics")
+    _info("Ctrl-A then X exits QEMU\n")
     subprocess.run(_qemu_base() + ["-nographic"])
 
 def qemu_log_console():
     _header()
-    if not _ensure_iso() or not _qemu_ok(): return
-    _step("QEMU — graphics + live serial log in TUI")
-    _run_live(_qemu_base() + ["-vga", "std", "-serial", "stdio"],
-              "QEMU (serial → console)")
+    if not _ready(): return
+    _step("QEMU — graphics + live serial log")
+    _run_live(_qemu_base() + ["-vga", "std", "-serial", "stdio"], "QEMU (serial → console)")
 
 def qemu_log_file():
     _header()
-    if not _ensure_iso() or not _qemu_ok(): return
-    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-    int_log = LOG_FILE.replace(".log", "-internal.log")
-    mon_sock = os.path.join(os.path.dirname(LOG_FILE), "qemu-mon.sock")
-    try:
-        if os.path.exists(mon_sock): os.unlink(mon_sock)
-    except OSError:
-        pass
-    _step(f"QEMU — graphics + logs → file")
-    print(c(C.SUB, f"  Serial : {LOG_FILE}"))
-    print(c(C.SUB, f"  QEMU   : {int_log}"))
-    print(c(C.SUB, f"  Monitor: {mon_sock}  (при зависании: socat - UNIX-CONNECT:{mon_sock})"))
-    print(c(C.SUB, f"           в мониторе: info registers / info status\n"))
-    _run_live(
-        _qemu_base() + [
-            "-vga", "std",
-            "-serial", f"file:{LOG_FILE}",
-            "-monitor", f"unix:{mon_sock},server,nowait",
-            "-D", int_log,
-            "-d", "int,cpu_reset,guest_errors",
-        ],
-        "QEMU (log → file)",
-    )
-    if os.path.isfile(LOG_FILE):
-        _ok(f"Serial log: {LOG_FILE}")
-
-GPU_LOG_FILE = os.path.join(ROOT, "bin", "qemu-gpu-debug.log")
+    if not _ready(): return
+    _qemu_logged("QEMU — graphics + logs → file", "std", LOG_FILE, "qemu-mon.sock")
 
 def qemu_gpu_graphics():
     _header()
-    if not _ensure_iso() or not _qemu_ok(): return
+    if not _ready(): return
     _step("QEMU — GPU (vmware-svga) graphical mode")
     _run_live(_qemu_base() + ["-vga", "vmware", "-serial", "stdio"], "QEMU GPU (graphics)")
 
 def qemu_gpu_log_file():
     _header()
-    if not _ensure_iso() or not _qemu_ok(): return
-    os.makedirs(os.path.dirname(GPU_LOG_FILE), exist_ok=True)
-    int_log = GPU_LOG_FILE.replace(".log", "-internal.log")
-    mon_sock = os.path.join(os.path.dirname(GPU_LOG_FILE), "qemu-gpu-mon.sock")
-    try:
-        if os.path.exists(mon_sock): os.unlink(mon_sock)
-    except OSError:
-        pass
-    _step(f"QEMU — GPU (vmware-svga) + logs → file")
-    print(c(C.SUB, f"  Serial : {GPU_LOG_FILE}"))
-    print(c(C.SUB, f"  QEMU   : {int_log}"))
-    print(c(C.SUB, f"  Monitor: {mon_sock}  (при зависании: socat - UNIX-CONNECT:{mon_sock})"))
-    print(c(C.SUB, f"           в мониторе: info registers / info status\n"))
-    _run_live(
-        _qemu_base() + [
-            "-vga", "vmware",
-            "-serial", f"file:{GPU_LOG_FILE}",
-            "-monitor", f"unix:{mon_sock},server,nowait",
-            "-D", int_log,
-            "-d", "int,cpu_reset,guest_errors",
-        ],
-        "QEMU GPU (log → file)",
-    )
-    if os.path.isfile(GPU_LOG_FILE):
-        _ok(f"Serial log: {GPU_LOG_FILE}")
+    if not _ready(): return
+    _qemu_logged("QEMU — GPU (vmware-svga) + logs → file", "vmware", GPU_LOG_FILE, "qemu-gpu-mon.sock")
 
-# ─── Debug submenu ───────────────────────────────────────────────
 def cmd_debug():
-    while True:
-        os.system("clear")
-        _header()
-
-        K, L, D = 5, 26, 42
-        def _sep(): print(c(C.OVERLAY, "  " + "─" * (K + L + D + 6)))
-
-        print(f"  {c(C.BOLD + C.PEACH, '⚙  Debug / Run options')}\n")
-        head = (f"  {c(C.BOLD+C.PEACH,'Key'):<{K+14}} {c(C.BLUE,'│')} "
-                f"{c(C.BOLD+C.PEACH,'Mode'):<{L+14}} {c(C.BLUE,'│')} "
-                f"{c(C.BOLD+C.PEACH,'Description')}")
-        print(head)
-        _sep()
-
-        debug_items = [
-            ("1", "Run with graphics",    "Normal QEMU window, serial → console",   qemu_graphics),
-            ("2", "Run without graphics", "No window — serial in terminal (nographic)", qemu_nographic),
-            ("3", "Log → console",        "Graphics + live serial log in TUI box",  qemu_log_console),
-            ("4", "Log → file",           f"Graphics + serial & QEMU log → bin/*.log", qemu_log_file),
-            ("5", "GPU graphics",         "QEMU -vga vmware, serial → console",     qemu_gpu_graphics),
-            ("6", "GPU log → file",       f"QEMU -vga vmware, logs → bin/qemu-gpu-*.log", qemu_gpu_log_file),
-            ("b", "Back",                 "",                                        None),
-        ]
-        for key, lab, desc, _ in debug_items:
-            k  = c(C.YELLOW, f"[{key}]") + " " * max(0, K - len(key) - 2)
-            l  = c(C.TEXT, lab)          + " " * max(0, L - len(lab))
-            d  = c(C.SUB, desc)
-            print(f"  {k}  {c(C.BLUE,'│')} {l}  {c(C.BLUE,'│')} {d}")
-        _sep()
-        print()
-
-        try:
-            choice = input(f"  {c(C.PEACH,'❯')} {c(C.TEXT,'Choice: ')}").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            return
-
-        if choice == "b":
-            return
-        matched = [(k, l, d, fn) for k, l, d, fn in debug_items if k == choice]
-        if not matched:
-            _warn(f"Unknown option '{choice}'"); time.sleep(0.8); continue
-
-        os.system("clear")
-        matched[0][3]()
-        try:
-            input(c(C.SUB, "  Press Enter to return to debug menu…"))
-        except (KeyboardInterrupt, EOFError):
-            return
+    items = [
+        MenuItem("1", "Run with graphics",    "Normal QEMU window, serial → console",         qemu_graphics,    icon="▶"),
+        MenuItem("2", "Run without graphics", "No window — serial in terminal (nographic)",   qemu_nographic,   icon="▢"),
+        MenuItem("3", "Log → console",        "Graphics + live serial log in the TUI box",     qemu_log_console, icon="≡"),
+        MenuItem("4", "Log → file",           "Graphics + serial & QEMU log → bin/*.log",      qemu_log_file,    icon="▤"),
+        MenuItem("5", "GPU graphics",         "QEMU -vga vmware, serial → console",           qemu_gpu_graphics, icon="◈"),
+        MenuItem("6", "GPU log → file",       "QEMU -vga vmware, logs → bin/qemu-gpu-*.log",   qemu_gpu_log_file, icon="▤"),
+        MenuItem("b", "Back",                 "",                                              None,             icon="←"),
+    ]
+    _menu_loop("Debug / Run options", items, C.PEACH)
 
 def cmd_run():
     qemu_graphics()
 
-# ──────────────────────────────────────────────────────────────
-# Interactive TUI menu
-# ──────────────────────────────────────────────────────────────
-@dataclass
-class MenuItem:
-    key:    str
-    label:  str
-    desc:   str
-    action: Callable
+def _status_line() -> str:
+    have, total = _deps_ready()
+    parts = [c(C.GREEN if have == total else C.YELLOW, "●") + c(C.SUB, f" deps {have}/{total}")]
+    if os.path.isfile(ISO):
+        st = os.stat(ISO)
+        parts.append(c(C.GREEN, "●") + c(C.SUB, f" ISO {st.st_size / 1_048_576:.1f} MB · {ago(st.st_mtime)}"))
+    else:
+        parts.append(c(C.YELLOW, "●") + c(C.SUB, " ISO not built"))
+    if tw() >= 60:
+        kvm = os.access("/dev/kvm", os.R_OK | os.W_OK)
+        parts.append(c(C.GREEN if kvm else C.YELLOW, "●") + c(C.SUB, " KVM" if kvm else " no KVM"))
+    return c(C.OVERLAY, "  │  ").join(parts)
 
 def _menu():
     items: List[MenuItem] = [
-        MenuItem("1", "Setup / Fetch deps",    "Clone all external repositories",   lambda: cmd_setup()),
-        MenuItem("2", "Build all",             "Build kernel + programs + ISO",     lambda: cmd_build("all")),
-        MenuItem("3", "Build kernel",          "Build kernel only",                 lambda: cmd_build("kernel")),
-        MenuItem("4", "Build programs",        "Build Ring-3 user programs",        lambda: cmd_build("programs")),
-        MenuItem("5", "Build ISO",             "Assemble the bootable ISO image",   lambda: cmd_build("iso")),
-        MenuItem("6", "Run  (QEMU)",           "Launch PureC OS in QEMU",           lambda: cmd_run()),
-        MenuItem("7", "Dependency status",     "Show which external repos present", lambda: cmd_status()),
-        MenuItem("8", "Clean",                 "Remove all build artefacts",        lambda: cmd_clean()),
-        MenuItem("9", "Debug / Run options",   "Submenu: graphics / nographic / logs", lambda: cmd_debug()),
-        MenuItem("q", "Quit",                  "",                                  lambda: sys.exit(0)),
+        MenuItem("1", "Setup / Fetch deps",  "Clone all missing external repositories", lambda: cmd_setup(), icon="↓"),
+        MenuItem("2", "Fetch one repo…",     "Pick a single repository to clone",        cmd_setup_pick,     icon="⇣"),
+        MenuItem("3", "Build all",           "Build kernel + programs + ISO",            lambda: cmd_build("all"), icon="⚒"),
+        MenuItem("4", "Build…",              "Pick a target: kernel, programs, iso, libs, apps", cmd_build_pick, icon="⚙"),
+        MenuItem("5", "Run  (QEMU)",         "Launch PureC OS in QEMU",                  cmd_run,            icon="▶"),
+        MenuItem("6", "Debug / Run options", "Submenu: graphics / nographic / logs",     cmd_debug,          icon="◈"),
+        MenuItem("7", "Dependency status",   "Repos, host tools, ISO info",              cmd_status,         icon="≡"),
+        MenuItem("8", "Clean",               "Remove all build artefacts",               cmd_clean,          icon="✕", danger=True),
+        MenuItem("q", "Quit",                "",                                         None,               icon="⏻"),
     ]
+    _menu_loop("Main menu", items, C.MAUVE, _status_line, on_back_exit=True)
 
-    while True:
-        os.system("clear")
-        _header()
-
-        w = tw()
-        # Column widths
-        K, L, D = 5, 22, 38
-
-        def _sep(): print(c(C.OVERLAY, "  " + "─" * (K + L + D + 6)))
-
-        head = (f"  {c(C.BOLD + C.MAUVE, 'Key'):<{K+14}} "
-                f"{c(C.BLUE, '│')} {c(C.BOLD + C.MAUVE, 'Action'):<{L+14}} "
-                f"{c(C.BLUE, '│')} {c(C.BOLD + C.MAUVE, 'Description')}")
-        print(head)
-        _sep()
-
-        for it in items:
-            key  = c(C.YELLOW, f"[{it.key}]")
-            lab  = c(C.TEXT,   it.label)
-            desc = c(C.SUB,    it.desc)
-            # fixed width via raw-length padding
-            key_p  = key  + " " * max(0, K  - len(it.key) - 2)
-            lab_p  = lab  + " " * max(0, L  - len(it.label))
-            print(f"  {key_p}  {c(C.BLUE,'│')} {lab_p}  {c(C.BLUE,'│')} {desc}")
-
-        _sep()
-        print()
-
-        try:
-            choice = input(
-                f"  {c(C.MAUVE,'❯')} {c(C.TEXT,'Choice: ')}"
-            ).strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            sys.exit(0)
-
-        matched = [it for it in items if it.key == choice]
-        if not matched:
-            _warn(f"Unknown option '{choice}'")
-            time.sleep(0.8)
-            continue
-
-        os.system("clear")
-        matched[0].action()
-        try:
-            input(c(C.SUB, "  Press Enter to return to menu…"))
-        except (KeyboardInterrupt, EOFError):
-            print()
-            sys.exit(0)
-
-# ──────────────────────────────────────────────────────────────
-# Entry point
-# ──────────────────────────────────────────────────────────────
 def main():
     args = sys.argv[1:]
     if not args:
-        _menu()
+        try:
+            _menu()
+        except KeyboardInterrupt:
+            print(C.SHOW_CURSOR)
         return
     cmd = args[0].lower()
-    if   cmd == "setup":   cmd_setup(args[1] if len(args) > 1 else None)
-    elif cmd == "build":   sys.exit(cmd_build(args[1] if len(args) > 1 else "all"))
+    arg = args[1] if len(args) > 1 else None
+    if   cmd == "setup":   cmd_setup(arg)
+    elif cmd == "build":   sys.exit(cmd_build(arg or "all"))
     elif cmd == "run":     cmd_run()
+    elif cmd == "debug":   cmd_debug()
     elif cmd == "clean":   cmd_clean()
     elif cmd == "status":  cmd_status()
-    elif cmd in ("-h","--help","help"): print(__doc__)
+    elif cmd in ("-h", "--help", "help"): print(__doc__)
     else:
         print(c(C.RED, f"Unknown command: {cmd}")); print(__doc__); sys.exit(1)
 
