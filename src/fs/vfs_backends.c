@@ -7,6 +7,7 @@
 #include "./ext2/include/ext2_inode.h"
 #include "./ext2/include/ext2_types.h"
 #include "initramfs.h"
+#include "vfs_path.h"
 
 static bool ext2_ready(void *context) {
   (void)context;
@@ -153,18 +154,38 @@ static int32_t initramfs_op_stat(void *context, const char *path,
   return 0;
 }
 
+static int32_t directory_with_slash(const char *path, char *out,
+                                    uint32_t capacity) {
+  uint32_t length = (uint32_t)strlen(path);
+  if (length + 2 > capacity)
+    return FS_ERROR_INVALID;
+  memcpy(out, path, length);
+  if (length && out[length - 1] != '/')
+    out[length++] = '/';
+  out[length] = '\0';
+  return 0;
+}
+
 static int32_t initramfs_op_list(void *context, const char *path,
                                  struct fs_directory_entry *entries,
                                  uint32_t capacity) {
   (void)context;
-  return initramfs_list(path, entries, capacity);
+  char directory[VFS_PATH_MAX];
+  int32_t status = directory_with_slash(path, directory, sizeof(directory));
+  if (status < 0)
+    return status;
+  return initramfs_list(directory, entries, capacity);
 }
 
 static int32_t initramfs_op_list_long(void *context, const char *path,
                                       struct fs_directory_entry_long *entries,
                                       uint32_t capacity) {
   (void)context;
-  return initramfs_list_long(path, entries, capacity);
+  char directory[VFS_PATH_MAX];
+  int32_t status = directory_with_slash(path, directory, sizeof(directory));
+  if (status < 0)
+    return status;
+  return initramfs_list_long(directory, entries, capacity);
 }
 
 const struct vfs_fs_ops vfs_initramfs_ops = {
