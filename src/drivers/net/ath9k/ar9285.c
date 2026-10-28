@@ -25,16 +25,6 @@
 #define AR9285_NOISE_FLOOR_DBM (-95)
 #define AR9285_RX_BUDGET 16
 
-#define DOT11_LLC_LEN 8
-#define DOT11_QOS_DATA_SUBTYPE 0x08
-#define DOT11_NULL_SUBTYPE_MASK 0x04
-#define DOT11_FC_TODS 0x0100
-#define DOT11_FC_FROMDS 0x0200
-#define DOT11_FC_PROTECTED 0x4000
-#define DOT11_FC_ORDER 0x8000
-
-static const uint8_t llc_snap[6] = {0xAA, 0xAA, 0x03, 0x00, 0x00, 0x00};
-
 struct ar9285_device {
     struct ath_hw hw;
     struct pci_device_info pci;
@@ -281,45 +271,18 @@ static void handle_mgmt(struct ar9285_device *dev, const uint8_t *frame, uint16_
 static void handle_data(struct ar9285_device *dev, const uint8_t *frame, uint16_t len,
                         int8_t rssi)
 {
-    uint16_t fc = (uint16_t)frame[0] | ((uint16_t)frame[1] << 8);
-    uint8_t subtype = (uint8_t)DOT11_FC_STYPE(fc);
-    uint16_t hdr = 24;
     uint8_t eth[NET_ETHERNET_MAX_FRAME_SIZE];
-    uint16_t payload_len;
+    uint16_t eth_len = 0;
 
     dev->data_rx++;
-    if (!dev->mlme_active || dev->mlme.state != DOT11_MLME_ASSOCIATED)
-        goto drop;
-    if ((fc & DOT11_FC_FROMDS) == 0 || (fc & DOT11_FC_TODS) != 0)
-        goto drop;
-    if (fc & DOT11_FC_PROTECTED)
-        goto drop;
-    if (subtype & DOT11_NULL_SUBTYPE_MASK)
-        goto drop;
-    if (memcmp(frame + 10, dev->target_bssid, 6) != 0)
-        goto drop;
-    if (subtype & DOT11_QOS_DATA_SUBTYPE)
-        hdr = (uint16_t)(hdr + 2);
-    if ((fc & DOT11_FC_ORDER) && (subtype & DOT11_QOS_DATA_SUBTYPE))
-        hdr = (uint16_t)(hdr + 4);
-    if (len < hdr + DOT11_LLC_LEN)
-        goto drop;
-    if (memcmp(frame + hdr, llc_snap, 6) != 0)
-        goto drop;
-
-    payload_len = (uint16_t)(len - hdr - DOT11_LLC_LEN);
-    if (payload_len + 14u > sizeof(eth))
-        goto drop;
-
-    memcpy(eth, frame + 4, 6);
-    memcpy(eth + 6, frame + 16, 6);
-    memcpy(eth + 12, frame + hdr + 6, 2);
-    memcpy(eth + 14, frame + hdr + DOT11_LLC_LEN, payload_len);
-    dev->last_rssi = rssi;
-    wifi_update_rssi(rssi);
-    if (net_device_receive(&dev->net, eth, (uint16_t)(payload_len + 14)))
-        return;
-drop:
+    if (dev->mlme_active && dev->mlme.state == DOT11_MLME_ASSOCIATED)
+        eth_len = dot11_data_to_ethernet(frame, len, dev->target_bssid, eth, sizeof(eth));
+    if (eth_len) {
+        dev->last_rssi = rssi;
+        wifi_update_rssi(rssi);
+        if (net_device_receive(&dev->net, eth, eth_len))
+            return;
+    }
     dev->data_rx_dropped++;
     dev->net.stats.rx_dropped++;
 }
@@ -349,7 +312,6 @@ static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length
 {
     struct ar9285_device *dev = context;
     uint8_t out[ATH9K_MAX_TX_LEN];
-    uint16_t seq_ctrl;
     uint16_t total;
 
     if (!dev || !dev->initialized || !frame || length < 14)
@@ -358,27 +320,14 @@ static bool ar9285_transmit(void *context, const uint8_t *frame, uint16_t length
         dev->net.stats.tx_dropped++;
         return false;
     }
-    total = (uint16_t)(24 + DOT11_LLC_LEN + length - 14);
-    if (total > sizeof(out)) {
+
+    total = dot11_ethernet_to_data(frame, length, dev->target_bssid,
+                                   (uint16_t)(dev->tx_seq << 4), out, sizeof(out));
+    if (!total) {
         dev->net.stats.tx_dropped++;
         return false;
     }
-
-    seq_ctrl = (uint16_t)(dev->tx_seq << 4);
     dev->tx_seq = (uint16_t)((dev->tx_seq + 1) & 0x0FFF);
-
-    out[0] = 0x08;
-    out[1] = 0x01;
-    out[2] = 0;
-    out[3] = 0;
-    memcpy(out + 4, dev->target_bssid, 6);
-    memcpy(out + 10, frame + 6, 6);
-    memcpy(out + 16, frame, 6);
-    out[22] = (uint8_t)seq_ctrl;
-    out[23] = (uint8_t)(seq_ctrl >> 8);
-    memcpy(out + 24, llc_snap, 6);
-    memcpy(out + 30, frame + 12, 2);
-    memcpy(out + 32, frame + 14, (size_t)(length - 14));
 
     if (!hw_send(dev, out, total, dev->data_rate, addr_is_multicast(frame))) {
         dev->net.stats.tx_dropped++;

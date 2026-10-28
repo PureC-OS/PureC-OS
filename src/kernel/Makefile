@@ -94,6 +94,7 @@ C_SOURCES := \
 	drivers/net/pcnet/pcnet_am79c970a.c \
 	net/wifi/wifi.c \
 	net/802.11/assoc.c \
+	net/802.11/data.c \
 	net/802.11/b/b_rates.c \
 	net/802.11/b/b_chan.c \
 	net/802.11/b/b_plcp.c \
