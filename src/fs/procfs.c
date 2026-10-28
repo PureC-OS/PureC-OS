@@ -132,7 +132,7 @@ static void generate_interrupts(struct pbuf *out, uint32_t pid) {
 
 static void generate_filesystems(struct pbuf *out, uint32_t pid) {
   (void)pid;
-  emit(out, "ext2\ninitramfs\nnodev\tdevfs\nnodev\tkernelfs\nnodev\tprocfs\n");
+  emit(out, "ext2\ninitramfs\nnodev\tdevfs\nnodev\tkernelfs\nnodev\tprocfs\nnodev\tsysfs\n");
 }
 
 static void generate_partitions(struct pbuf *out, uint32_t pid) {

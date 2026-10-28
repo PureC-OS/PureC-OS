@@ -129,9 +129,12 @@ static void ensure_mounts(void) {
   (void)vfs_mount_replace("/dev", &vfs_devfs_ops, 0, "devfs", 0);
   (void)vfs_mount_replace("/proc", &vfs_procfs_ops, 0, "proc",
                           VFS_MOUNT_READ_ONLY);
+  (void)vfs_mount_replace("/sys", &vfs_sysfs_ops, 0, "sysfs",
+                          VFS_MOUNT_READ_ONLY);
   log_mount("/kernel");
   log_mount("/dev");
   log_mount("/proc");
+  log_mount("/sys");
   sync_tmpfs_mounts();
 }
 
@@ -1059,6 +1062,8 @@ void vfs_selftest(void) {
   failed += !selftest_stat("/dev", true);
   failed += !selftest_stat("/dev/null", false);
   failed += !selftest_stat("/proc", true);
+  failed += !selftest_stat("/sys", true);
+  failed += !selftest_read("/sys/kernel/version", "PureC OS");
   failed += !selftest_stat("/tmp", true);
   failed += !selftest_stat("/home", true);
   failed += !selftest_stat("/var/log", true);

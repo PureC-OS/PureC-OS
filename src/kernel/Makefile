@@ -132,6 +132,7 @@ C_SOURCES := \
 	fs/vfs_backends.c \
 	fs/devfs.c \
 	fs/procfs.c \
+	fs/sysfs.c \
 	fs/tmpfs.c \
 	lib/format.c \
 	fs/initramfs.c \
