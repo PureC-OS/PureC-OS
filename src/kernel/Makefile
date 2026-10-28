@@ -79,6 +79,7 @@ C_SOURCES := \
 	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
+	drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \

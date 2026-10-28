@@ -1,4 +1,5 @@
 #include "init.h"
+#include "../../drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.h"
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/mouse/usb_mouse.h"
 #include "../../drivers/serial/serial.h"
@@ -48,6 +49,7 @@ void init_process_start(void) {
       scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, -1);
   if (log_tid >= 0)
     scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
+  (void)purec_i2c_hid_touchpad_start();
   int32_t net_pid = process_spawn_service(net_service_thread, 0, "net-rx", 2,
                                           -1, SCHED_QOS_UTILITY,
                                           PROCESS_CAP_NET_ADMIN);
