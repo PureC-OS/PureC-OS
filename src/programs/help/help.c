@@ -5,7 +5,7 @@ int help_main(void){
     pc_write("Builtins: env set unset ping panic exit\n");
     pc_write("  ping [-c count] <ip|host|url>\n");
     pc_write("EXT2 debug: stat <path> | inode <num> | super | blocks <path> | fsinfo | dumpi <num>\n");
-    pc_write("System programs resolve through PATH=/bin/program/system:/bin/program:/bin:\n");
+    pc_write("System programs resolve through PATH=/usr/bin:/bin:/usr/games:/sbin:\n");
     pc_write("  help | cd [directory] | pwd | clear | echo [text] | ls [directory] | cat <file>\n");
     pc_write("  touch <file> | mkdir <directory> | rm [-rRfvd] <path> | mkfs <fs> <dev>\n");
     pc_write("  nano <file> | hexedit <file> | disks | usbscan | dmesg | savelog\n");

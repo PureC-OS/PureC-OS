@@ -582,9 +582,31 @@ static int32_t install_manifest_pass(bool dry_run)
     return 0;
 }
 
+static int32_t install_standard_directories(void)
+{
+    static const char *const directories[] = {
+        "/etc", "/home", "/root", "/mnt", "/opt", "/srv", "/var",
+        "/var/log", "/var/tmp", "/var/cache", "/usr", "/usr/bin", "/usr/lib",
+        "/usr/local", "/usr/local/bin", "/usr/local/lib", "/usr/share",
+        "/usr/games", "/sbin", "/boot"};
+    for (uint32_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++)
+    {
+        int32_t status = payload_mkdir(directories[i]);
+        if (status < 0)
+        {
+            klogf(KLOG_ERROR, "install: mkdir %s failed %d", directories[i], status);
+            return status;
+        }
+    }
+    return 0;
+}
+
 static int32_t install_program_payload(void)
 {
-    int32_t status = install_manifest_pass(true);
+    int32_t status = install_standard_directories();
+    if (status < 0)
+        return status;
+    status = install_manifest_pass(true);
     if (status < 0)
         return status;
     status = install_manifest_pass(false);

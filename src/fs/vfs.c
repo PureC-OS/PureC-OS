@@ -13,6 +13,7 @@ static mutex_t vfs_mutex;
 #include "./ext2/include/ext2_types.h"
 #include "initramfs.h"
 #include "vfs.h"
+#include "vfs_alias.h"
 #include "vfs_backends.h"
 #include "vfs_mount.h"
 #include "vfs_path.h"
@@ -76,9 +77,51 @@ static void copy_name_long(char destination[FS_LONG_NAME_CAPACITY],
 
 static void log_mount(const char *path);
 
-static void ensure_mounts(void) {
-  if (mounts_ready)
+static bool live_mode;
+static bool tmpfs_synced;
+
+static void mount_tmpfs(const char *path, const char *const *seed) {
+  if (vfs_mount_at(path))
     return;
+  void *instance = vfs_tmpfs_create();
+  if (!instance)
+    return;
+  if (vfs_mount_add(path, &vfs_tmpfs_ops, instance, "tmpfs", 0) < 0)
+    return;
+  for (uint32_t i = 0; seed && seed[i]; i++)
+    (void)vfs_tmpfs_ops.create_directory(instance, seed[i]);
+  log_mount(path);
+}
+
+static void unmount_live_tmpfs(const char *path) {
+  const struct vfs_mount *mount = vfs_mount_at(path);
+  if (mount && mount->ops == &vfs_tmpfs_ops)
+    (void)vfs_mount_remove(path);
+}
+
+static void sync_tmpfs_mounts(void) {
+  if (tmpfs_synced || !pmm_is_ready())
+    return;
+  tmpfs_synced = true;
+  mount_tmpfs("/tmp", 0);
+  mount_tmpfs("/run", 0);
+  if (live_mode) {
+    static const char *const var_seed[] = {"/log", "/tmp", "/cache", 0};
+    mount_tmpfs("/var", var_seed);
+    mount_tmpfs("/home", 0);
+    mount_tmpfs("/root", 0);
+  } else {
+    unmount_live_tmpfs("/var");
+    unmount_live_tmpfs("/home");
+    unmount_live_tmpfs("/root");
+  }
+}
+
+static void ensure_mounts(void) {
+  if (mounts_ready) {
+    sync_tmpfs_mounts();
+    return;
+  }
   mounts_ready = true;
   (void)vfs_mount_replace("/", &vfs_ext2_ops, 0, "ext2", 0);
   (void)vfs_mount_replace("/kernel", &vfs_kernelfs_ops, 0, "kernelfs",
@@ -89,6 +132,7 @@ static void ensure_mounts(void) {
   log_mount("/kernel");
   log_mount("/dev");
   log_mount("/proc");
+  sync_tmpfs_mounts();
 }
 
 static void log_mount(const char *path) {
@@ -102,6 +146,8 @@ static void log_mount(const char *path) {
 static void set_root_ops(uint8_t fs_type) {
   ensure_mounts();
   vfs_active_fs = fs_type;
+  live_mode = fs_type == VFS_FS_INITRAMFS;
+  tmpfs_synced = false;
   if (fs_type == VFS_FS_INITRAMFS)
     (void)vfs_mount_replace("/", &vfs_initramfs_ops, 0, "initramfs",
                             VFS_MOUNT_READ_ONLY);
@@ -109,6 +155,7 @@ static void set_root_ops(uint8_t fs_type) {
     (void)vfs_mount_replace("/", &vfs_ext2_ops, 0,
                             ext2_is_mounted() ? ext2_device_name() : "ext2", 0);
   log_mount("/");
+  sync_tmpfs_mounts();
 }
 
 static int32_t resolve(const char *input, struct vfs_resolved *resolved) {
@@ -123,11 +170,40 @@ static int32_t resolve(const char *input, struct vfs_resolved *resolved) {
     strcpy(absolute + 1, input);
     input = absolute;
   }
-  if (vfs_path_normalize(input, resolved->path, sizeof(resolved->path)) < 0)
+  if (vfs_alias_resolve(input, resolved->path, sizeof(resolved->path)) < 0)
     return FS_ERROR_INVALID;
   resolved->mount = vfs_mount_find(resolved->path, &resolved->relative,
                                    resolved->root, sizeof(resolved->root));
   return resolved->mount ? 0 : FS_ERROR_NOT_FOUND;
+}
+
+static const char *const virtual_dirs[] = {"/mnt", "/opt", "/srv", "/usr/local",
+                                           "/usr/local/bin", "/lost+found"};
+
+#define VIRTUAL_DIR_COUNT (sizeof(virtual_dirs) / sizeof(virtual_dirs[0]))
+
+static bool is_virtual_dir(const char *path) {
+  if (!live_mode)
+    return false;
+  for (uint32_t i = 0; i < VIRTUAL_DIR_COUNT; i++)
+    if (strcmp(path, virtual_dirs[i]) == 0)
+      return true;
+  return false;
+}
+
+static uint32_t virtual_children(const char *directory, const char **names,
+                                 uint32_t capacity) {
+  uint32_t found = 0;
+  if (!live_mode)
+    return 0;
+  char parent[VFS_PATH_MAX];
+  for (uint32_t i = 0; i < VIRTUAL_DIR_COUNT && found < capacity; i++) {
+    if (vfs_path_parent(virtual_dirs[i], parent, sizeof(parent)) < 0)
+      continue;
+    if (strcmp(parent, directory) == 0)
+      names[found++] = vfs_path_basename(virtual_dirs[i]);
+  }
+  return found;
 }
 
 static bool mount_ready(const struct vfs_mount *mount) {
@@ -410,9 +486,16 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
     return 0;
   }
   const struct vfs_fs_ops *ops = resolved.mount->ops;
-  if (!ops->stat || !mount_ready(resolved.mount))
-    return FS_ERROR_NOT_FOUND;
-  return ops->stat(resolved.mount->context, resolved.relative, out);
+  int32_t result = FS_ERROR_NOT_FOUND;
+  if (ops->stat && mount_ready(resolved.mount))
+    result = ops->stat(resolved.mount->context, resolved.relative, out);
+  if (result < 0 && is_virtual_dir(resolved.path)) {
+    out->size = 0;
+    out->is_directory = 1;
+    out->reserved = FS_NODE_FILE;
+    return 0;
+  }
+  return result;
 }
 
 int32_t vfs_delete(const char *path) {
@@ -498,11 +581,12 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
   if (ops->list && mount_ready(resolved.mount))
     backend = ops->list(resolved.mount->context, resolved.relative, entries,
                         capacity);
-  const char *children[VFS_MOUNT_MAX];
+  const char *children[VFS_MOUNT_MAX + 8];
   uint32_t child_count = vfs_mount_children(resolved.path, children,
                                             VFS_MOUNT_MAX);
+  child_count += virtual_children(resolved.path, children + child_count, 8);
   bool is_root = path_equals(resolved.path, "/");
-  if (backend < 0 && !is_root && !child_count)
+  if (backend < 0 && !is_root && !child_count && !is_virtual_dir(resolved.path))
     return backend;
   uint32_t count = backend > 0 ? (uint32_t)backend : 0;
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
@@ -541,11 +625,12 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
   if (ops->list_long && mount_ready(resolved.mount))
     backend = ops->list_long(resolved.mount->context, resolved.relative,
                              entries, capacity);
-  const char *children[VFS_MOUNT_MAX];
+  const char *children[VFS_MOUNT_MAX + 8];
   uint32_t child_count = vfs_mount_children(resolved.path, children,
                                             VFS_MOUNT_MAX);
+  child_count += virtual_children(resolved.path, children + child_count, 8);
   bool is_root = path_equals(resolved.path, "/");
-  if (backend < 0 && !is_root && !child_count)
+  if (backend < 0 && !is_root && !child_count && !is_virtual_dir(resolved.path))
     return backend;
   uint32_t count = backend > 0 ? (uint32_t)backend : 0;
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
@@ -913,4 +998,82 @@ int32_t vfs_ext2_inode_blocks(uint32_t ino, struct ext2_blocks_info *out) {
   if (vfs_active_fs != VFS_FS_EXT2 || !ext2_is_mounted())
     return FS_ERROR_UNSUPPORTED;
   return ext2_inode_blocks(ino, out);
+}
+
+static bool selftest_stat(const char *path, bool directory) {
+  struct file_stat_info info;
+  if (vfs_stat(path, &info) < 0) {
+    klogf(KLOG_WARN, "vfs: selftest %s missing", path);
+    return false;
+  }
+  if ((info.is_directory != 0) != directory) {
+    klogf(KLOG_WARN, "vfs: selftest %s wrong type", path);
+    return false;
+  }
+  return true;
+}
+
+static bool selftest_read(const char *path, const char *expected_prefix) {
+  int32_t fd = vfs_open(path);
+  if (fd < 0) {
+    klogf(KLOG_WARN, "vfs: selftest open %s failed %d", path, fd);
+    return false;
+  }
+  char buffer[64];
+  int32_t count = vfs_read(fd, buffer, sizeof(buffer) - 1);
+  (void)vfs_close(fd);
+  if (count < 0) {
+    klogf(KLOG_WARN, "vfs: selftest read %s failed %d", path, count);
+    return false;
+  }
+  buffer[count] = '\0';
+  if (expected_prefix && strncmp(buffer, expected_prefix, strlen(expected_prefix)) != 0) {
+    klogf(KLOG_WARN, "vfs: selftest %s content mismatch", path);
+    return false;
+  }
+  return true;
+}
+
+static bool selftest_tmp(void) {
+  const char *path = "/tmp/.vfs-selftest";
+  if (vfs_write_file(path, "purec", 5) != 5) {
+    klog(KLOG_WARN, "vfs: selftest /tmp write failed");
+    return false;
+  }
+  bool ok = selftest_read(path, "purec");
+  (void)vfs_delete(path);
+  return ok;
+}
+
+void vfs_selftest(void) {
+  uint32_t failed = 0;
+  failed += !selftest_stat("/", true);
+  failed += !selftest_stat("/bin/ls", false);
+  failed += !selftest_stat("/usr/bin/terminal", false);
+  failed += !selftest_stat("/bin/program/terminal", false);
+  failed += !selftest_stat("/usr/share/applications", true);
+  failed += !selftest_stat("/sbin/init", false);
+  failed += !selftest_stat("/etc/hostname", false);
+  failed += !selftest_stat("/etc", true);
+  failed += !selftest_stat("/dev", true);
+  failed += !selftest_stat("/dev/null", false);
+  failed += !selftest_stat("/proc", true);
+  failed += !selftest_stat("/tmp", true);
+  failed += !selftest_stat("/home", true);
+  failed += !selftest_stat("/var/log", true);
+  failed += !selftest_stat("/mnt", true);
+  failed += !selftest_read("/proc/version", "PureC OS");
+  failed += !selftest_read("/etc/hostname", "purec");
+  failed += !selftest_read("/dev/zero", 0);
+  failed += !selftest_tmp();
+  static struct fs_directory_entry_long entries[64];
+  int32_t count = vfs_list_long("/", entries, 64);
+  if (count < 10) {
+    klogf(KLOG_WARN, "vfs: selftest root listing only %d entries", count);
+    failed++;
+  }
+  if (failed)
+    klogf(KLOG_WARN, "vfs: selftest FAILED checks=%u", failed);
+  else
+    klog(KLOG_OK, "vfs: selftest passed");
 }

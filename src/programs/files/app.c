@@ -158,7 +158,7 @@ static void handle_key(struct files_app *app, int32_t key){
 }
 
 static void handle_action(struct files_app *app, struct files_action action){
-    static const char *quick_paths[]={"/bin","/bin/program","/game"};
+    static const char *quick_paths[]={"/bin","/usr/bin","/usr/games"};
     switch(action.type){
         case FILES_ACTION_BACK:
             if(app->disk_view) open_path(app,"/");

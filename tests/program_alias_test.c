@@ -21,10 +21,12 @@ int main(void){
     expect_alias("disks");
     expect_alias("/bin/debug");
     expect_alias("/bin/program/systeminfo");
+    expect_alias("/usr/bin/debug");
+    expect_alias("/sbin/debug");
 
     expect_no_alias("");
     expect_no_alias("unknown");
-    expect_no_alias("/usr/bin/debug");
+    expect_no_alias("/opt/bin/debug");
     expect_no_alias("relative/debug");
     expect_no_alias("/bin/program/");
     assert(!program_alias_resolve(NULL, NULL));

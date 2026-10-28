@@ -1,0 +1,5 @@
+NAME="PureC OS"
+ID=purec
+VERSION="1.1.0"
+PRETTY_NAME="PureC OS 1.1.0"
+HOME_URL="https://github.com/PureC-OS"

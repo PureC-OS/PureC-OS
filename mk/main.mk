@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-tmpfs test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-tmpfs test-vfs-alias test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -124,6 +124,19 @@ test-procfs:
 		tests/procfs_test.c src/fs/procfs.c src/lib/format.c \
 		-o $(BIN_DIR)/tests/procfs_test
 	$(BIN_DIR)/tests/procfs_test
+
+test-tmpfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/tmpfs_test.c src/fs/tmpfs.c -o $(BIN_DIR)/tests/tmpfs_test
+	$(BIN_DIR)/tests/tmpfs_test
+
+test-vfs-alias:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/vfs_alias_test.c src/fs/vfs_alias.c src/fs/vfs_path.c \
+		-o $(BIN_DIR)/tests/vfs_alias_test
+	$(BIN_DIR)/tests/vfs_alias_test
 
 test-dot11:
 	@mkdir -p $(BIN_DIR)/tests

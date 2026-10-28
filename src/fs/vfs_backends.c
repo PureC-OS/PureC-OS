@@ -146,11 +146,16 @@ static int32_t initramfs_op_stat(void *context, const char *path,
   (void)context;
   const void *data = 0;
   uint32_t size = 0;
-  if (!initramfs_find(path, &data, &size))
-    return FS_ERROR_NOT_FOUND;
-  out->size = size;
-  out->is_directory = 0;
   out->reserved = 0;
+  if (initramfs_find(path, &data, &size)) {
+    out->size = size;
+    out->is_directory = 0;
+    return 0;
+  }
+  if (!initramfs_directory_exists(path))
+    return FS_ERROR_NOT_FOUND;
+  out->size = 0;
+  out->is_directory = 1;
   return 0;
 }
 

@@ -127,10 +127,12 @@ C_SOURCES := \
 	fs/ext2/debug.c \
 	fs/vfs.c \
 	fs/vfs_path.c \
+	fs/vfs_alias.c \
 	fs/vfs_mount.c \
 	fs/vfs_backends.c \
 	fs/devfs.c \
 	fs/procfs.c \
+	fs/tmpfs.c \
 	lib/format.c \
 	fs/initramfs.c \
 	userspace/display.c \

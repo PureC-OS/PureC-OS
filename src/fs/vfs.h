@@ -23,6 +23,7 @@ struct vfs_mount_info {
   uint32_t flags;
 };
 
+void vfs_selftest(void);
 int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out);
 bool vfs_mount_root(void);
 bool vfs_mount_initramfs(void);
