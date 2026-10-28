@@ -8,6 +8,7 @@
 #define BLOCK_MULTI_MAX_SECTORS 32
 
 bool block_device_init(void);
+bool block_device_is_ready(void);
 uint32_t block_device_rescan_usb(void);
 void block_device_poll_usb_hotplug(void);
 void block_device_begin_exclusive_io(void);

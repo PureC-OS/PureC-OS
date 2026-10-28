@@ -93,6 +93,11 @@ static bool block_device_exclusive_io_active(void)
     return __atomic_load_n(&exclusive_io_count, __ATOMIC_ACQUIRE) != 0;
 }
 
+bool block_device_is_ready(void)
+{
+    return initialization_complete;
+}
+
 bool block_device_init(void)
 {
     if (initialization_complete)

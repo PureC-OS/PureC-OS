@@ -140,6 +140,29 @@ bool initramfs_find(const char *path, const void **data, uint32_t *size) {
   return false;
 }
 
+bool initramfs_directory_exists(const char *path) {
+  if (!archive || !path)
+    return false;
+  while (*path == '/')
+    path++;
+  uint32_t prefix = (uint32_t)strlen(path);
+  while (prefix && path[prefix - 1] == '/')
+    prefix--;
+  if (!prefix)
+    return true;
+  uint32_t offset = 0, namesize, filesize;
+  const char *name;
+  const void *filedata;
+  while (next_entry(&offset, &name, &namesize, &filedata, &filesize)) {
+    if (namesize == 10 && memcmp(name, "TRAILER!!!", 10) == 0)
+      break;
+    if (namesize > prefix + 1 && memcmp(name, path, prefix) == 0 &&
+        name[prefix] == '/')
+      return true;
+  }
+  return false;
+}
+
 static int32_t list_common(const char *path, void *entries, uint32_t capacity,
                            bool long_names) {
   if (!archive || !path || !entries || !capacity)

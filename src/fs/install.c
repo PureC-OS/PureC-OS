@@ -9,6 +9,7 @@
 #include "vfs.h"
 
 #include "../boot/install_source.h"
+#include "vfs_path.h"
 #include "../drivers/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"
@@ -220,7 +221,7 @@ static int32_t payload_write_file(const char *path, const void *data, uint32_t s
 static int32_t payload_write_named(const char *directory, const char *name,
                                    const void *data, uint32_t size)
 {
-    char full_path[256];
+    char full_path[VFS_PATH_MAX];
     uint32_t dlen = (uint32_t)strlen(directory);
     uint32_t nlen = (uint32_t)strlen(name);
     if (dlen + 1 + nlen >= sizeof(full_path))
@@ -244,76 +245,59 @@ static int32_t payload_verify_file(const char *path, uint32_t expected_size)
     return ext2_read_u32(inode + 4) == expected_size ? 0 : FS_ERROR_IO;
 }
 
+static bool firmware_module_name(const char *path, const char **name)
+{
+    static const char directory[] = "/firmware/";
+    static const char suffix[] = ".ucode";
+    const char *base = path;
+    for (const char *c = path; *c; c++)
+        if (*c == '/')
+            base = c + 1;
+    const char *dir_start = path;
+    if (strncmp(dir_start, directory, sizeof(directory) - 1) != 0)
+        return false;
+    size_t length = strlen(base);
+    if (length < sizeof(suffix) || strcmp(base + length - (sizeof(suffix) - 1), suffix) != 0)
+        return false;
+    *name = base;
+    return true;
+}
+
 static int32_t install_firmware_payload(void)
 {
-    if (payload_mkdir("/bin/firmware") < 0)
+    if (payload_mkdir("/lib") < 0 || payload_mkdir("/lib/firmware") < 0)
         return FS_ERROR_IO;
-    if (payload_mkdir("/bin/firmware/Intel") < 0)
+    if (payload_mkdir("/lib/firmware/Intel") < 0)
         return FS_ERROR_IO;
-    if (payload_mkdir("/bin/firmware/Intel/wifi") < 0)
+    if (payload_mkdir("/lib/firmware/Intel/wifi") < 0)
         return FS_ERROR_IO;
 
-    struct fw_entry
-    {
-        const char *module_path;
-        const char *long_name;
-    };
-    static const struct fw_entry fw_table[] = {
-        {"/firmware/iwlwifi-so-a0-hr-b0-89.ucode", "iwlwifi-so-a0-hr-b0-89.ucode"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-86.ucode", "iwlwifi-so-a0-hr-b0-86.ucode"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-83.ucode", "iwlwifi-so-a0-hr-b0-83.ucode"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-77.ucode", "iwlwifi-so-a0-hr-b0-77.ucode"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-74.ucode", "iwlwifi-so-a0-hr-b0-74.ucode"},
-        {"/firmware/iwlwifi-so-a0-hr-b0-72.ucode", "iwlwifi-so-a0-hr-b0-72.ucode"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-89.ucode", "iwlwifi-so-a0-gf-a0-89.ucode"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-86.ucode", "iwlwifi-so-a0-gf-a0-86.ucode"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-83.ucode", "iwlwifi-so-a0-gf-a0-83.ucode"},
-        {"/firmware/iwlwifi-so-a0-gf-a0-77.ucode", "iwlwifi-so-a0-gf-a0-77.ucode"},
-        {"/firmware/iwlwifi-so-a0-gf4-a0-89.ucode", "iwlwifi-so-a0-gf4-a0-89.ucode"},
-        {"/firmware/iwlwifi-so-a0-gf4-a0-86.ucode", "iwlwifi-so-a0-gf4-a0-86.ucode"},
-        {"/firmware/iwlwifi-so-a0-jf-b0-77.ucode", "iwlwifi-so-a0-jf-b0-77.ucode"},
-        {"/firmware/iwlwifi-so-a0-jf-b0-72.ucode", "iwlwifi-so-a0-jf-b0-72.ucode"},
-        {"/firmware/iwlwifi-QuZ-a0-hr-b0-77.ucode", "iwlwifi-QuZ-a0-hr-b0-77.ucode"},
-        {"/firmware/iwlwifi-QuZ-a0-hr-b0-74.ucode", "iwlwifi-QuZ-a0-hr-b0-74.ucode"},
-        {"/firmware/iwlwifi-Qu-b0-hr-b0-77.ucode", "iwlwifi-Qu-b0-hr-b0-77.ucode"},
-        {"/firmware/iwlwifi-cc-a0-77.ucode", "iwlwifi-cc-a0-77.ucode"},
-    };
-    for (uint32_t i = 0; i < sizeof(fw_table) / sizeof(fw_table[0]); i++)
+    uint64_t count = boot_get_module_count();
+    for (uint64_t index = 0; index < count; index++)
     {
         const void *data = NULL;
         uint64_t size = 0;
-        if (!boot_get_module(fw_table[i].module_path, &data, &size) || !data || size > UINT32_MAX || size < 8)
+        const char *module_path = NULL;
+        const char *name = NULL;
+        if (!boot_get_module_by_index(index, &data, &size, &module_path) || !module_path ||
+            !firmware_module_name(module_path, &name))
+            continue;
+        if (!data || size > UINT32_MAX || size < 8)
         {
-            klogf(KLOG_INFO, "install: firmware %s not present as Limine module, skip", fw_table[i].long_name);
+            klogf(KLOG_WARN, "install: firmware %s unusable, skip", name);
             continue;
         }
         uint32_t sz = (uint32_t)size;
-        if (size >= 8)
-        {
-            uint32_t magic = ((uint32_t)((const uint8_t *)data)[4]) | ((uint32_t)((const uint8_t *)data)[5] << 8) | ((uint32_t)((const uint8_t *)data)[6] << 16) | ((uint32_t)((const uint8_t *)data)[7] << 24);
-            if (magic != 0x0A4C5749U)
-            {
-                klogf(KLOG_WARN, "install: firmware %s bad magic 0x%08x, still copying", fw_table[i].long_name, magic);
-            }
-        }
-        char long_path[96];
-        const char *prefix = "/bin/firmware/Intel/wifi/";
-        uint32_t p = 0;
-        for (uint32_t k = 0; prefix[k] && p + 1 < sizeof(long_path); k++)
-            long_path[p++] = prefix[k];
-        for (uint32_t k = 0; fw_table[i].long_name[k] && p + 1 < sizeof(long_path); k++)
-            long_path[p++] = fw_table[i].long_name[k];
-        long_path[p] = '\0';
-        int32_t st = payload_write_file(long_path, data, sz);
+        uint32_t magic = ((uint32_t)((const uint8_t *)data)[4]) | ((uint32_t)((const uint8_t *)data)[5] << 8) | ((uint32_t)((const uint8_t *)data)[6] << 16) | ((uint32_t)((const uint8_t *)data)[7] << 24);
+        if (magic != 0x0A4C5749U)
+            klogf(KLOG_WARN, "install: firmware %s bad magic 0x%08x, still copying", name, magic);
+        int32_t st = payload_write_named("/lib/firmware/Intel/wifi", name, data, sz);
         if (st < 0)
         {
-            klogf(KLOG_ERROR, "install: write firmware %s failed %d", fw_table[i].long_name, st);
+            klogf(KLOG_ERROR, "install: write firmware %s failed %d", name, st);
             continue;
         }
-        klogf(KLOG_OK, "install: firmware %s (%u KB)", fw_table[i].long_name, sz / 1024U);
-        int32_t v = payload_verify_file(long_path, sz);
-        if (v < 0)
-            klogf(KLOG_WARN, "install: verify firmware %s failed %d", long_path, v);
+        klogf(KLOG_OK, "install: firmware %s (%u KB)", name, sz / 1024U);
     }
     klog(KLOG_OK, "install: firmware payload complete");
     return 0;
@@ -582,9 +566,31 @@ static int32_t install_manifest_pass(bool dry_run)
     return 0;
 }
 
+static int32_t install_standard_directories(void)
+{
+    static const char *const directories[] = {
+        "/etc", "/home", "/root", "/mnt", "/opt", "/srv", "/var",
+        "/var/log", "/var/tmp", "/var/cache", "/usr", "/usr/bin", "/usr/lib",
+        "/usr/local", "/usr/local/bin", "/usr/local/lib", "/usr/share",
+        "/usr/games", "/sbin", "/boot"};
+    for (uint32_t i = 0; i < sizeof(directories) / sizeof(directories[0]); i++)
+    {
+        int32_t status = payload_mkdir(directories[i]);
+        if (status < 0)
+        {
+            klogf(KLOG_ERROR, "install: mkdir %s failed %d", directories[i], status);
+            return status;
+        }
+    }
+    return 0;
+}
+
 static int32_t install_program_payload(void)
 {
-    int32_t status = install_manifest_pass(true);
+    int32_t status = install_standard_directories();
+    if (status < 0)
+        return status;
+    status = install_manifest_pass(true);
     if (status < 0)
         return status;
     status = install_manifest_pass(false);

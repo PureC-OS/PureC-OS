@@ -1,0 +1,572 @@
+<mxfile host="65bd71144e">
+    <diagram name="1. Архитектура VFS" id="p1">
+        <mxGraphModel dx="1439" dy="1129" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p1-2" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=20;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="PureC OS — файловая подсистема: слои от программы до диска" vertex="1">
+                    <mxGeometry height="30" width="1600" x="20" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" value="Ring-3 программы: terminal, files, nano, installer, login …&lt;br&gt;libc / libfs (purefs.h): open, read, write, list, stat, mkdir …" vertex="1">
+                    <mxGeometry height="60" width="1580" x="40" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" value="Системные вызовы  int 0x80  (SYS_FILE_*, SYS_INSTALL_*, SYS_LIST_DISKS …)&lt;br&gt;src/kernel/syscall/syscall.c — fd-таблица процесса поверх vfs_open/read/write" vertex="1">
+                    <mxGeometry height="60" width="1580" x="40" y="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=13;align=center;verticalAlign=middle;arcSize=8;" value="" vertex="1">
+                    <mxGeometry height="250" width="1580" x="40" y="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-6" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=15;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="VFS  —  src/fs/vfs.c   (глобальный vfs_mutex)" vertex="1">
+                    <mxGeometry height="28" width="600" x="60" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="vfs_alias.c&lt;br&gt;таблица алиасов старых путей:&lt;br&gt;/bin/program→/usr/bin, /game→/usr/games,&lt;br&gt;/bin/modules→/lib/modules, /bin/firmware→/lib/firmware …" vertex="1">
+                    <mxGeometry height="90" width="360" x="70" y="285" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="vfs_path.c&lt;br&gt;нормализация пути (.., //),&lt;br&gt;проверка префикса,&lt;br&gt;VFS_PATH_MAX = 512" vertex="1">
+                    <mxGeometry height="90" width="300" x="450" y="285" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="vfs_mount.c — таблица монтирования&lt;br&gt;наибольший совпавший префикс → vfs_fs_ops&lt;br&gt;флаги: READ_ONLY;  vfs_mount_add/replace/remove" vertex="1">
+                    <mxGeometry height="90" width="400" x="770" y="285" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="vfs_open / read / seek / close&lt;br&gt;stat, list, list_long, create, write,&lt;br&gt;append, mkdir — делегируют в ops смонтированной ФС" vertex="1">
+                    <mxGeometry height="90" width="400" x="1190" y="285" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;arcSize=8;dashed=1;" value="Особый путь  /kernel.log  (klog): vfs_append_file → ext2_append_file  +  raw_log_write (запись лога в сырые сектора как резерв)&lt;br&gt;Поток klog-disk в userspace дописывает лог раз в секунду (дозапись только в хвост файла)" vertex="1">
+                    <mxGeometry height="70" width="1520" x="70" y="395" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="интерфейс  struct vfs_fs_ops { map, open, read, seek, close, stat, list, list_long, create_file, write_file, append_file, create_directory, … }" vertex="1">
+                    <mxGeometry height="40" width="1580" x="40" y="520" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="ext2&lt;br&gt;(корень /, на диске)" vertex="1">
+                    <mxGeometry height="80" width="215" x="40" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="initramfs&lt;br&gt;(корень / в live, RO)" vertex="1">
+                    <mxGeometry height="80" width="215" x="267" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="kernelfs&lt;br&gt;/kernel (RO)" vertex="1">
+                    <mxGeometry height="80" width="215" x="494" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="devfs&lt;br&gt;/dev" vertex="1">
+                    <mxGeometry height="80" width="215" x="721" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="procfs&lt;br&gt;/proc (RO)" vertex="1">
+                    <mxGeometry height="80" width="215" x="948" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="sysfs&lt;br&gt;/sys (RO)" vertex="1">
+                    <mxGeometry height="80" width="215" x="1175" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-19" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="tmpfs&lt;br&gt;/tmp, /run,&lt;br&gt;live: /var /home /root" vertex="1">
+                    <mxGeometry height="80" width="215" x="1402" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-20" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-13" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-21" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-14" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-22" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-15" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-23" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-16" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-24" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-17" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-25" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-18" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-26" edge="1" parent="1" source="p1-12" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-19" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-27" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Модуль ext2  src/fs/ext2/&lt;br&gt;block.c  inode.c  dir.c&lt;br&gt;file.c  format.c  super.c&lt;br&gt;1 КиБ-блок, 12 прямых +&lt;br&gt;одинарная/двойная/тройная&lt;br&gt;косвенность" vertex="1">
+                    <mxGeometry height="130" width="215" x="40" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-28" edge="1" parent="1" source="p1-13" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-27" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-29" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="cpio-архив в ОЗУ&lt;br&gt;/boot/initramfs.cpio&lt;br&gt;(Limine module)&lt;br&gt;собирается mk/gen_assets.py&lt;br&gt;по assets/manifest.txt" vertex="1">
+                    <mxGeometry height="130" width="215" x="267" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-30" edge="1" parent="1" source="p1-14" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-29" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-31" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Встроенные строки:&lt;br&gt;version, panic.cfg,&lt;br&gt;init, abi" vertex="1">
+                    <mxGeometry height="130" width="215" x="494" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-32" edge="1" parent="1" source="p1-15" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-31" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-33" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Устройства:&lt;br&gt;null, zero, full,&lt;br&gt;random, urandom, kmsg" vertex="1">
+                    <mxGeometry height="130" width="215" x="721" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-34" edge="1" parent="1" source="p1-16" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-33" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-35" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Данные ядра на лету (генераторы при open)&lt;br&gt;/proc: version, uptime, meminfo, cpuinfo, mounts,&lt;br&gt;interrupts, filesystems, partitions, &amp;lt;pid&amp;gt;/status,name&lt;br&gt;/sys: kernel/version, devices/system/cpu/cpuN,&lt;br&gt;bus/pci/devices/BB:SS.F, block/&amp;lt;диск&amp;gt;" vertex="1">
+                    <mxGeometry height="130" width="442" x="948" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-36" edge="1" parent="1" source="p1-17" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-35" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-37" edge="1" parent="1" source="p1-18" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-35" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-38" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Страницы ОЗУ (pmm)&lt;br&gt;каталоги и файлы&lt;br&gt;живут до перезагрузки" vertex="1">
+                    <mxGeometry height="130" width="218" x="1402" y="730" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-39" edge="1" parent="1" source="p1-19" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-38" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-40" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Блочный слой  src/drivers/storage/block_device.c  —  единый список дисков, block_device_read/write(_sectors), select, flush, горячее подключение USB" vertex="1">
+                    <mxGeometry height="60" width="1580" x="40" y="910" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-41" edge="1" parent="1" source="p1-27" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-40" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-42" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="ATA PIO&lt;br&gt;(legacy IDE)" vertex="1">
+                    <mxGeometry height="60" width="300" x="40" y="1000" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-43" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="AHCI SATA&lt;br&gt;(VirtualBox SATA, ноутбуки)" vertex="1">
+                    <mxGeometry height="60" width="300" x="360" y="1000" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-44" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="xHCI USB 3&lt;br&gt;(mass storage, мышь HID)" vertex="1">
+                    <mxGeometry height="60" width="300" x="680" y="1000" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-45" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="EHCI USB 2&lt;br&gt;(mass storage)" vertex="1">
+                    <mxGeometry height="60" width="300" x="1000" y="1000" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-46" edge="1" parent="1" source="p1-40" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-42" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-47" edge="1" parent="1" source="p1-40" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-43" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-48" edge="1" parent="1" source="p1-40" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-44" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-49" edge="1" parent="1" source="p1-40" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-45" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-50" edge="1" parent="1" source="p1-3" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-4" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-51" edge="1" parent="1" source="p1-4" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-5" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p1-52" edge="1" parent="1" source="p1-5" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p1-12" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="2. Дерево монтирования" id="p2">
+        <mxGraphModel dx="1667" dy="1307" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p2-2" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=20;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Точки монтирования и раскладка каталогов (FHS)" vertex="1">
+                    <mxGeometry height="30" width="1600" x="20" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-3" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=16;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Live-режим (загрузка с ISO)" vertex="1">
+                    <mxGeometry height="28" width="520" x="40" y="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-4" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=16;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Установленная система (корень на ext2)" vertex="1">
+                    <mxGeometry height="28" width="520" x="600" y="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-5" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=16;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Дерево каталогов корня" vertex="1">
+                    <mxGeometry height="28" width="480" x="1160" y="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="initramfs (RO) — загруженный cpio" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/kernel" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="154" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="kernelfs (RO)" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="154" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/dev" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="208" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-11" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="devfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="208" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/proc" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="procfs (RO)" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/sys" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="316" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="sysfs (RO)" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="316" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/tmp" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="370" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-17" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="370" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/run" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="424" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-19" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="424" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/var" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="478" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs  (log, tmp, cache)" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="478" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/home" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="532" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-23" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="532" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/root" vertex="1">
+                    <mxGeometry height="44" width="90" x="40" y="586" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-25" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="140" y="586" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-26" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-27" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="ext2 (RW) — раздел PureC System" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-28" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/kernel" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="154" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-29" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="kernelfs (RO)" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="154" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-30" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/dev" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="208" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-31" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="devfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="208" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-32" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/proc" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-33" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="procfs (RO)" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-34" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/sys" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="316" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-35" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#9673a6;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="sysfs (RO)" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="316" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-36" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/tmp" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="370" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-37" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="370" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-38" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/run" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="424" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-39" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="tmpfs" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="424" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-40" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/var" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="478" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-41" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="каталог на ext2" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="478" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-42" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/home" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="532" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-43" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="каталог на ext2" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="532" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-44" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=13;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/root" vertex="1">
+                    <mxGeometry height="44" width="90" x="600" y="586" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-45" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="каталог на ext2" vertex="1">
+                    <mxGeometry height="44" width="400" x="700" y="586" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-46" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/bin" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-47" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="основные утилиты: ls cat cd rm mkdir touch echo pwd clear help system login …" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-48" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/sbin" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="158" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-49" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="init, installer, mkfs, reboot, poweroff, shutdown, halt, hddcheck" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="158" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-50" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/boot" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="216" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-51" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="служебное: loader.cfg; на ESP — ядро и initramfs" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="216" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-52" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/etc" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="274" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-53" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="hostname os-release passwd group shells fstab motd" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="274" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-54" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/lib" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="332" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-55" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="libpurec.a/.so libpurefs.a libpuregui.a crt0.o,&lt;br&gt;modules/*.so, firmware/, tcc/" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="332" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-56" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/usr" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="390" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-57" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="bin (terminal nano files monitor tcc lua …), games,&lt;br&gt;share (applications wallpapers sounds demo), include, lib, local" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="390" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-58" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/opt  /srv  /mnt" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="448" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-59" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="пустые каталоги под сторонние данные и носители" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="448" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-60" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/purec" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="506" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-61" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="install.cfg — конфигурация установки" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="506" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-62" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/kernel.log" vertex="1">
+                    <mxGeometry height="50" width="130" x="1160" y="564" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-63" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="персональный лог ядра (дозапись раз в секунду)" vertex="1">
+                    <mxGeometry height="50" width="340" x="1300" y="564" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-64" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=14;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Легенда" vertex="1">
+                    <mxGeometry height="26" width="1600" x="40" y="660" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-65" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="ext2 — на диске, RW" vertex="1">
+                    <mxGeometry height="40" width="360" x="40" y="695" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-66" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="виртуальная ФС ядра (devfs, procfs, sysfs, kernelfs)" vertex="1">
+                    <mxGeometry height="40" width="360" x="420" y="695" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-67" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="tmpfs — только в ОЗУ" vertex="1">
+                    <mxGeometry height="40" width="360" x="800" y="695" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-68" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="каталоги корня" vertex="1">
+                    <mxGeometry height="40" width="360" x="1180" y="695" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-69" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=14;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Алиасы старых путей (vfs_alias.c) — программы со старыми путями продолжают работать" vertex="1">
+                    <mxGeometry height="26" width="1600" x="40" y="765" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-70" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/program/*  →  /usr/bin/*" vertex="1">
+                    <mxGeometry height="40" width="780" x="40" y="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-71" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/program/system/*  →  /bin/*" vertex="1">
+                    <mxGeometry height="40" width="780" x="840" y="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-72" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/init → /sbin/init   /bin/reboot → /sbin/reboot   /bin/mkfs → /sbin/mkfs …" vertex="1">
+                    <mxGeometry height="40" width="780" x="40" y="848" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-73" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/tetris, /bin/snake, /game/* → /usr/games/*" vertex="1">
+                    <mxGeometry height="40" width="780" x="840" y="848" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-74" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/sound, /game/sound → /usr/share/sounds" vertex="1">
+                    <mxGeometry height="40" width="780" x="40" y="896" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-75" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/walpaper → /usr/share/wallpapers" vertex="1">
+                    <mxGeometry height="40" width="780" x="840" y="896" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-76" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/demo, /src/demo → /usr/share/demo" vertex="1">
+                    <mxGeometry height="40" width="780" x="40" y="944" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-77" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/include → /usr/include" vertex="1">
+                    <mxGeometry height="40" width="780" x="840" y="944" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-78" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/modules → /lib/modules" vertex="1">
+                    <mxGeometry height="40" width="780" x="40" y="992" as="geometry"/>
+                </mxCell>
+                <mxCell id="p2-79" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="/bin/firmware → /lib/firmware" vertex="1">
+                    <mxGeometry height="40" width="780" x="840" y="992" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram name="3. Диск и загрузка" id="p3">
+        <mxGraphModel dx="1667" dy="1307" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1200" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="p3-2" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=20;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Раскладка диска (установщик src/fs/install.c) и цепочка загрузки" vertex="1">
+                    <mxGeometry height="30" width="1600" x="20" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Защитный&lt;br&gt;MBR&lt;br&gt;LBA 0" vertex="1">
+                    <mxGeometry height="90" width="90" x="40" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="GPT&lt;br&gt;заголовок&lt;br&gt;LBA 1" vertex="1">
+                    <mxGeometry height="90" width="90" x="130" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Записи GPT&lt;br&gt;LBA 2–33" vertex="1">
+                    <mxGeometry height="90" width="110" x="220" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="ESP  FAT32&lt;br&gt;с LBA 2048&lt;br&gt;≈ 88 МиБ (размер образа esp.img,&lt;br&gt;округлённый до 1 МиБ)" vertex="1">
+                    <mxGeometry height="90" width="330" x="330" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-7" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Раздел PureC System&lt;br&gt;ext2  (тип Basic Data)&lt;br&gt;весь остаток диска" vertex="1">
+                    <mxGeometry height="90" width="560" x="660" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Резервные&lt;br&gt;записи GPT" vertex="1">
+                    <mxGeometry height="90" width="120" x="1220" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-9" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Резерв.&lt;br&gt;заголовок" vertex="1">
+                    <mxGeometry height="90" width="100" x="1340" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-10" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="" vertex="1">
+                    <mxGeometry height="330" width="560" x="40" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-11" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=14;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Содержимое ESP (FAT32, метка PUREC-ESP)" vertex="1">
+                    <mxGeometry height="28" width="520" x="55" y="205" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-12" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="EFI/BOOT/BOOTX64.EFI        — Limine UEFI" vertex="1">
+                    <mxGeometry height="44" width="520" x="60" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="EFI/BOOT/limine.conf, /limine.conf, boot/limine/limine.conf" vertex="1">
+                    <mxGeometry height="44" width="520" x="60" y="297" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="boot/kernel.elf                — основное ядро" vertex="1">
+                    <mxGeometry height="44" width="520" x="60" y="349" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-15" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="boot/kernel-fallback.elf      — предыдущий образ ядра" vertex="1">
+                    <mxGeometry height="44" width="520" x="60" y="401" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-16" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d6b656;fontSize=12;align=left;verticalAlign=middle;arcSize=8;" value="boot/initramfs.cpio           — cpio c программами и /etc" vertex="1">
+                    <mxGeometry height="44" width="520" x="60" y="453" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-17" edge="1" parent="1" source="p3-6" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-10" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-18" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;arcSize=8;" value="" vertex="1">
+                    <mxGeometry height="330" width="960" x="640" y="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-19" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=14;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="ext2: раскладка и адресация блоков файла" vertex="1">
+                    <mxGeometry height="28" width="900" x="655" y="205" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-20" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Суперблок" vertex="1">
+                    <mxGeometry height="70" width="110" x="660" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-21" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Таблица&lt;br&gt;групп" vertex="1">
+                    <mxGeometry height="70" width="110" x="778" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-22" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Битмап&lt;br&gt;блоков" vertex="1">
+                    <mxGeometry height="70" width="110" x="896" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-23" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Битмап&lt;br&gt;inode" vertex="1">
+                    <mxGeometry height="70" width="110" x="1014" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-24" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Таблица inode" vertex="1">
+                    <mxGeometry height="70" width="150" x="1132" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-25" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;" value="Блоки данных ... (повторяется для групп)" vertex="1">
+                    <mxGeometry height="70" width="300" x="1290" y="245" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-26" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#82b366;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="inode (256 байт)&lt;br&gt;размер, режим, i_blocks&lt;br&gt;блоки [0..11]  — прямые&lt;br&gt;блок [12]  — одинарная косвенность&lt;br&gt;блок [13]  — двойная&lt;br&gt;блок [14]  — тройная" vertex="1">
+                    <mxGeometry height="170" width="340" x="660" y="340" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-27" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#d79b00;fontSize=11;align=left;verticalAlign=middle;arcSize=8;" value="Дозапись в файл (ext2_file_append):&lt;br&gt;1. найти последний блок, дописать в его хвост&lt;br&gt;2. выделить новые блоки (alloc_block), занести&lt;br&gt;    в указатели нужного уровня, создав косвенные&lt;br&gt;3. обновить размер и i_blocks, записать inode&lt;br&gt;Нагрузка пропорциональна дозаписанному объёму" vertex="1">
+                    <mxGeometry height="170" width="550" x="1030" y="340" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-28" edge="1" parent="1" source="p3-7" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-18" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-29" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=16;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Цепочка загрузки" vertex="1">
+                    <mxGeometry height="28" width="1600" x="40" y="570" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-30" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="UEFI / VirtualBox&lt;br&gt;находит ESP на GPT,&lt;br&gt;грузит EFI/BOOT/BOOTX64.EFI" vertex="1">
+                    <mxGeometry height="90" width="370" x="40" y="615" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-31" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Limine&lt;br&gt;читает limine.conf,&lt;br&gt;грузит ядро и модули" vertex="1">
+                    <mxGeometry height="90" width="370" x="450" y="615" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-32" edge="1" parent="1" source="p3-30" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-31" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-33" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="kernel.elf&lt;br&gt;boot → pmm/vmm →&lt;br&gt;vfs_mount_initramfs" vertex="1">
+                    <mxGeometry height="90" width="370" x="860" y="615" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-34" edge="1" parent="1" source="p3-31" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-33" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-35" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="vfs_selftest&lt;br&gt;проверка /, /dev, /proc, /sys, /tmp, /var,&lt;br&gt;чтение /etc/hostname" vertex="1">
+                    <mxGeometry height="90" width="370" x="1270" y="615" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-36" edge="1" parent="1" source="p3-33" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-35" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-37" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="mmio_init → storage:&lt;br&gt;ATA / AHCI / xHCI / EHCI,&lt;br&gt;block_device_init" vertex="1">
+                    <mxGeometry height="90" width="370" x="40" y="745" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-38" edge="1" parent="1" source="p3-35" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-37" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-39" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="ext2_init&lt;br&gt;находит раздел Basic Data,&lt;br&gt;корень / переключается на ext2" vertex="1">
+                    <mxGeometry height="90" width="370" x="450" y="745" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-40" edge="1" parent="1" source="p3-37" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-39" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-41" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="devman_autoload&lt;br&gt;грузит /lib/modules/*.so&lt;br&gt;(e1000, pcnet, ar9285 …)" vertex="1">
+                    <mxGeometry height="90" width="370" x="860" y="745" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-42" edge="1" parent="1" source="p3-39" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-41" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-43" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="/sbin/init →&lt;br&gt;window manager,&lt;br&gt;login, рабочий стол" vertex="1">
+                    <mxGeometry height="90" width="370" x="1270" y="745" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-44" edge="1" parent="1" source="p3-41" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-43" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-45" parent="1" style="text;html=1;whiteSpace=wrap;fontSize=16;align=left;verticalAlign=middle;fontColor=#333333;fontStyle=1;" value="Откуда берутся файлы установленной системы" vertex="1">
+                    <mxGeometry height="28" width="1600" x="40" y="900" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-46" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="ISO: /boot/esp.img&lt;br&gt;(модуль Limine)&lt;br&gt;→ пишется на ESP как есть" vertex="1">
+                    <mxGeometry height="110" width="300" x="40" y="940" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-47" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="ISO: /boot/initramfs.cpio&lt;br&gt;содержимое по&lt;br&gt;assets/manifest.txt" vertex="1">
+                    <mxGeometry height="110" width="300" x="360" y="940" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-48" edge="1" parent="1" source="p3-46" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-47" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-49" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Установщик&lt;br&gt;installer_install_device:&lt;br&gt;GPT → ESP → mkfs ext2" vertex="1">
+                    <mxGeometry height="110" width="300" x="680" y="940" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-50" edge="1" parent="1" source="p3-47" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-49" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-51" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Копирование manifest-записей&lt;br&gt;в ext2 (программы, библиотеки,&lt;br&gt;modules, /etc, обои, звуки)" vertex="1">
+                    <mxGeometry height="110" width="300" x="1000" y="940" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-52" edge="1" parent="1" source="p3-49" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-51" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-53" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;align=center;verticalAlign=middle;arcSize=8;fontStyle=1;" value="Прошивки *.ucode из модулей Limine&lt;br&gt;→ /lib/firmware/Intel/wifi" vertex="1">
+                    <mxGeometry height="110" width="300" x="1320" y="940" as="geometry"/>
+                </mxCell>
+                <mxCell id="p3-54" edge="1" parent="1" source="p3-51" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#555555;fontSize=11;endArrow=block;endFill=1;" target="p3-53" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

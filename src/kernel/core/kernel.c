@@ -62,6 +62,7 @@ void kernel_main(struct limine_framebuffer *fb) {
   vmm_init();
   if (!vfs_mount_initramfs())
     kernel_panic("cannot mount /boot/initramfs.cpio");
+  vfs_selftest();
   fpu_init();
   power_init();
   process_init();

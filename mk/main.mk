@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -98,6 +98,61 @@ test-path:
 		tests/path_test.c src/programs/terminal/path.c src/programs/files/path.c \
 		-o $(BIN_DIR)/tests/path_test
 	$(BIN_DIR)/tests/path_test
+
+test-vfs-mount:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/vfs_mount_test.c src/fs/vfs_path.c src/fs/vfs_mount.c \
+		-o $(BIN_DIR)/tests/vfs_mount_test
+	$(BIN_DIR)/tests/vfs_mount_test
+
+test-devfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src -I$(ROOT_DIR)/src/lib \
+		tests/devfs_test.c src/fs/devfs.c -o $(BIN_DIR)/tests/devfs_test
+	$(BIN_DIR)/tests/devfs_test
+
+test-format:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/format_test.c src/lib/format.c -o $(BIN_DIR)/tests/format_test
+	$(BIN_DIR)/tests/format_test
+
+test-ext2-append:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/ext2_append_test.c src/fs/ext2/block.c src/fs/ext2/dir.c \
+		src/fs/ext2/ext2.c src/fs/ext2/file.c src/fs/ext2/format.c \
+		src/fs/ext2/inode.c src/fs/ext2/super.c src/fs/ext2/debug.c \
+		-o $(BIN_DIR)/tests/ext2_append_test
+	$(BIN_DIR)/tests/ext2_append_test
+
+test-sysfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/sysfs_test.c src/fs/sysfs.c src/lib/format.c \
+		-o $(BIN_DIR)/tests/sysfs_test
+	$(BIN_DIR)/tests/sysfs_test
+
+test-procfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/procfs_test.c src/fs/procfs.c src/lib/format.c \
+		-o $(BIN_DIR)/tests/procfs_test
+	$(BIN_DIR)/tests/procfs_test
+
+test-tmpfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/tmpfs_test.c src/fs/tmpfs.c -o $(BIN_DIR)/tests/tmpfs_test
+	$(BIN_DIR)/tests/tmpfs_test
+
+test-vfs-alias:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/vfs_alias_test.c src/fs/vfs_alias.c src/fs/vfs_path.c \
+		-o $(BIN_DIR)/tests/vfs_alias_test
+	$(BIN_DIR)/tests/vfs_alias_test
 
 test-dot11:
 	@mkdir -p $(BIN_DIR)/tests
@@ -215,13 +270,14 @@ iso: kernel programs
 	fi; \
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
-		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/bin/modules" \
+		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
+		"$(ISO_ROOT)/lib/firmware" \
 		"$(ISO_ROOT)/src/demo"; \
 	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
 		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
 	fi; \
 	command -v python3 >/dev/null || { echo "python3 required (mk/gen_assets.py)" >&2; exit 1; }; \
-	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged"; \
+	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
@@ -229,10 +285,10 @@ iso: kernel programs
 	for mod in ext2 crypt acpi wolf e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
-			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/bin/modules/$$mod.$$ext" || true; \
+			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/lib/modules/$$mod.$$ext" || true; \
 		done; \
 	done; \
-	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/bin/modules/" 2>/dev/null || true; \
+	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/lib/modules/" 2>/dev/null || true; \
 	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
 	sh "$(ROOT_DIR)/mk/make_esp_image.sh" "$(ISO_ROOT)" "$(ISO_ROOT)/boot/esp.img"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/boot/limine/limine.conf"; \

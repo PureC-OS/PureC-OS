@@ -26,6 +26,10 @@ bool program_alias_resolve(const char *requested_path,
     prefix_ok = true;
   else if (strncmp(requested_path, "/bin/", 5) == 0)
     prefix_ok = true;
+  else if (strncmp(requested_path, "/usr/bin/", 9) == 0)
+    prefix_ok = true;
+  else if (strncmp(requested_path, "/sbin/", 6) == 0)
+    prefix_ok = true;
   else if (!has_slash)
     prefix_ok = true;
   if (!prefix_ok)

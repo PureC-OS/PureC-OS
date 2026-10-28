@@ -424,7 +424,7 @@ static void execute_program(struct terminal_window *terminal,
         }
         char search_path[PROCESS_ENVIRONMENT_VALUE_LIMIT];
         if(pc_getenv("PATH",search_path,sizeof(search_path))<0){
-            pc_copy(search_path,"/bin/program/system:/bin/program:/bin",sizeof(search_path));
+            pc_copy(search_path,"/usr/bin:/bin:/usr/games:/sbin",sizeof(search_path));
         }
         const char *directory=search_path;
         while(*directory){
@@ -491,7 +491,7 @@ int shell_run(struct terminal_window *terminal, const char *initial_command){
     char line[SHELL_LINE_CAPACITY];
     char path_env[PROCESS_ENVIRONMENT_VALUE_LIMIT];
     if(pc_getenv("PATH",path_env,sizeof(path_env))<0){
-        pc_setenv("PATH","/bin/program/system:/bin/program:/bin");
+        pc_setenv("PATH","/usr/bin:/bin:/usr/games:/sbin");
     }
     pc_write("PureC Terminal\n");
     pc_write("Minimal shell: type help. Programs resolve via PATH.\n\n");

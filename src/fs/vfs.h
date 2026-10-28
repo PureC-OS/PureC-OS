@@ -16,6 +16,15 @@
 #define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
 
+struct vfs_mount_info {
+  char path[512];
+  char source[64];
+  char type[16];
+  uint32_t flags;
+};
+
+void vfs_selftest(void);
+int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out);
 bool vfs_mount_root(void);
 bool vfs_mount_initramfs(void);
 bool vfs_mount_root_with_fs(uint8_t fs_type);
