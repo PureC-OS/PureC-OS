@@ -716,7 +716,7 @@ int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
                     : FS_ERROR_NOT_FOUND;
     if (r >= 0) {
       (void)raw_log_write(buffer, count);
-      return r;
+      return (int32_t)count;
     }
     (void)raw_log_write(buffer, count);
     return (int32_t)count;
@@ -724,8 +724,9 @@ int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
   status = check_mutation(resolved.mount, resolved.mount->ops->append_file);
   if (status < 0)
     return status;
-  return resolved.mount->ops->append_file(resolved.mount->context,
-                                          resolved.relative, buffer, count);
+  int32_t appended = resolved.mount->ops->append_file(
+      resolved.mount->context, resolved.relative, buffer, count);
+  return appended >= 0 ? (int32_t)count : appended;
 }
 
 int32_t vfs_create_directory(const char *path) {
