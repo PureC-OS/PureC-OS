@@ -110,7 +110,9 @@ static void build_tree(void) {
     add_child(directory, "revision", KIND_PCI_REVISION, (uint8_t)i);
   }
   add_node("/block", KIND_DIR, 0);
-  block_count = block_device_list(block_devices, SYSFS_MAX_BLOCK);
+  block_count = block_device_is_ready()
+                    ? block_device_list(block_devices, SYSFS_MAX_BLOCK)
+                    : 0;
   if (block_count < 0)
     block_count = 0;
   for (int32_t i = 0; i < block_count; i++) {

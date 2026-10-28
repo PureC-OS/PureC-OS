@@ -26,6 +26,7 @@ void pci_enumerate(pci_device_visitor visitor, void *context) {
   struct pci_device_info second = {0x1234, 0x1111, 0, 0x1f, 2, 3, 0, 0, 0};
   visitor(&second, context);
 }
+bool block_device_is_ready(void) { return true; }
 int32_t block_device_list(struct storage_device_info *devices, uint32_t capacity) {
   (void)capacity;
   memset(&devices[0], 0, sizeof(devices[0]));
