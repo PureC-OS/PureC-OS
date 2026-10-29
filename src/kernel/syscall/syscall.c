@@ -159,6 +159,13 @@ int64_t syscall_handler(struct syscall_regs *r) {
     uint64_t len = a2;
     if (!readable(s, len))
       return -1;
+    struct process *writer = process_current();
+    if (writer && writer->descriptors[1] != VFS_FD_STDOUT) {
+      if (len > 0x7FFFFFFFULL)
+        return -1;
+      int32_t sent = fd_write(1, s, (uint32_t)len);
+      return sent < 0 ? -1 : (int64_t)sent;
+    }
     for (uint64_t i = 0; i < len; i++) {
       serial_putc(s[i]);
       if (gop_console_is_active())
