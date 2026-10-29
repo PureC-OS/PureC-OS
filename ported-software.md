@@ -31,11 +31,7 @@ the build system.
 | Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | `/usr/share/doom/freedoom1.wad` (optional) | Working (Phase 1) |
 | doomgeneric | unspecified | GPL-2.0 | `src/doom/` (+ external clone) | Userspace | Not shipped | Fallback driver; build skipped without sources |
 | wolfSSL | 5.9.4 | GPLv2/3 or commercial | `wolfssl/` | Kernel module + lib | `/lib/modules/wolf.*` | Buildable; **no consumer yet** |
-| libpurecrypt (libxcrypt fork) | n/a — own project | See `libxcrypt/README.md` | `libxcrypt/` | Kernel (`crypt.ko`) | `/lib/modules/crypt.*` | Working; used by `/etc` hashing |
 | uACPI (via PureC-OS-ACPI) | 6.1.0 (interpreter) | Apache-2.0 / MIT-class | `acpi/AML/uACPI/` | Kernel (`acpi.ko`) | `/lib/modules/acpi.*` | Interpreter integrated; AML executor path WIP |
-
-A JSON/HTML view of the same data does not exist yet; this table is the single
-source of truth for port metadata.
 
 ---
 
@@ -216,25 +212,7 @@ source of truth for port metadata.
 - **Status**: builds cleanly, but **nothing in the kernel or userland consumes
   it yet** (`src/` contains no references to wolf). Treat the integration as
   WIP; potential consumers include TLS enablement in the network stack and
-  stronger `/etc` password hashing (currently libpurecrypt).
-
-## libpurecrypt (libxcrypt Organization Fork)
-
-- **Location**: `libxcrypt/` — subproject `https://github.com/PureC-OS/libxcrypt.git`
-  (branch `main`). Despite the directory name this is **not** upstream
-  libxcrypt: it is PureC's own freestanding password-hashing library,
-  internally named **libpurecrypt**.
-- **Scope**: SHA-512 and `$6$` (SHA512-crypt) password hashing, byte-identical
-  to glibc `crypt("$6$")`. Sources `src/sha512.c`, `src/crypt_sha512.c`;
-  headers `include/sha512.h`, `include/purecrypt.h`; host-side tests in
-  `test/`.
-- **Integration**: compiled **into the kernel image** (`src/kernel/Makefile`,
-  with `-mgeneral-regs-only`) and additionally as the relocatable module
-  `crypt.{elf,ko}` plus the static library `bin/lib/libpurecrypt.a`.
-- **Consumers**: `/etc` passwd hashing via `src/programs/accounts`, and the
-  entropy driver `src/drivers/random` (HDRBG test). Similar to acpi, it is
-  both built into the kernel image and shipped as a loadable module.
-- **Status**: working.
+  stronger cryptography alongside libpurecrypt.
 
 ## ACPI (PureC-OS-ACPI with the uACPI Interpreter)
 
@@ -266,7 +244,7 @@ The top-level `Makefile` includes `mk/main.mk`. Relevant targets:
 | SDL2 | `make sdl2` | `SDL/src/SDL.c` absent |
 | doomgeneric | `make doomgeneric` | `doomgeneric/` (external clone) absent |
 | wolfSSL | `make wolf` / `kernel` | `wolfssl/` absent |
-| libpurecrypt, ACPI | `kernel` | Respective subprojects absent |
+| ACPI | `kernel` | Subproject absent |
 | Host tests | `test-wolfcrypt`, `test-accounts`, `test-hdrbg` | — |
 
 Sources fetched by `./purec.py setup` (see `purec.py`, `REPOS` list):
@@ -305,6 +283,17 @@ adjacent to them and frequently mistaken for them:
 - `lang/` — **PureL**, an in-house scripting language implemented in Rust
   (`no_std`, target `x86_64-unknown-none`, linked against
   `userspace/crates/purec`); ships as `/usr/bin/pl`.
+- `libxcrypt/` — **libpurecrypt**, an in-house freestanding cryptography
+  library (despite the directory name, this is **not** upstream libxcrypt).
+  Implements SHA-512 and `$6$` (SHA512-crypt) password hashing,
+  byte-identical to glibc `crypt("$6$")` — sources `src/sha512.c`,
+  `src/crypt_sha512.c`, headers `include/sha512.h`, `include/purecrypt.h`,
+  host tests in `test/`. Compiled **into the kernel image**
+  (`src/kernel/Makefile`, with `-mgeneral-regs-only`) and additionally as the
+  relocatable module `crypt.{elf,ko}` plus the static library
+  `bin/lib/libpurecrypt.a`. Consumers: `/etc` passwd hashing via
+  `src/programs/accounts`, and the entropy driver `src/drivers/random`
+  (HDRBG test). Ships as `/lib/modules/crypt.*`.
 - `purec-notepad-os/` — in-house C++20 Ring-3 GUI text editor (own syscall
   layer and mini GUI toolkit, no third-party code); ships as
   `/usr/bin/notepad`.
