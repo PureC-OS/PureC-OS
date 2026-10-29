@@ -79,7 +79,7 @@ void pmm_init(const struct limine_memmap_response *memory_map,
     if (ref_phys)
       frame_refs = (uint16_t *)pmm_physical_to_virtual(ref_phys);
     else
-      klog(KLOG_ERROR, "pmm: frame reference table unavailable, COW disabled");
+      klogf(KLOG_ERROR, "pmm: frame reference table unavailable, COW disabled%s", "");
   }
   klogf(ready ? KLOG_OK : KLOG_ERROR,
         "pmm: managed=%llu MiB free=%llu MiB page=%u",

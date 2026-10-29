@@ -1,5 +1,3 @@
-// PureC hosted libc: process model on top of the kernel fork/execve/
-// waitpid syscalls: exec family, wait, posix_spawn, system and popen.
 
 #include "include/hosted/unistd.h"
 #include "include/hosted/fcntl.h"

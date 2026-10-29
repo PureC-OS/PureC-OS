@@ -127,25 +127,26 @@
 #define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
 #define SYS_FB_BLIT 322       /* (struct fb_blit_request *) */
 #define SYS_KEY_EVENT_GET 323 /* (struct key_event *) -> 1 event, 0 empty */
-#define SYS_EXECVE 324        /* (path, argv, envp), replaces the image */
-#define SYS_WAITPID 325       /* (pid|-1, int *status, options) */
-#define SYS_PIPE 326          /* (int fds[2], flags) */
-#define SYS_DUP 327           /* (fd) */
-#define SYS_DUP2 328          /* (old, new) */
-#define SYS_FD_READ 329       /* (fd, buf, len); KERR_CONSOLE on a tty */
-#define SYS_FD_WRITE 330      /* (fd, buf, len) */
-#define SYS_FD_OPEN 331       /* (path, flags) -> lowest free fd */
-#define SYS_FD_CTL 332        /* (fd, cmd, arg) */
-#define SYS_CHDIR 333         /* (path) */
-#define SYS_GETCWD 334        /* (buf, cap) */
-#define SYS_KILL 335          /* (pid, sig) */
-#define SYS_SIGACTION 336     /* (sig, const struct ksigaction *, old *) */
-#define SYS_SIGPROCMASK 337   /* (how, const uint64_t *, uint64_t *old) */
+#define SYS_EXECVE 324
+#define SYS_WAITPID 325
+#define SYS_PIPE 326
+#define SYS_DUP 327
+#define SYS_DUP2 328
+#define SYS_FD_READ 329
+#define SYS_FD_WRITE 330
+#define SYS_FD_OPEN 331
+#define SYS_FD_CTL 332
+#define SYS_CHDIR 333
+#define SYS_GETCWD 334
+#define SYS_KILL 335
+#define SYS_SIGACTION 336
+#define SYS_SIGPROCMASK 337
 #define SYS_SIGRETURN 338
 #define SYS_GETPPID 339
-#define SYS_FD_STAT 340       /* (fd, struct file_stat_info *) */
-#define SYS_SIGPENDING 341    /* (uint64_t *) */
+#define SYS_FD_STAT 340
+#define SYS_SIGPENDING 341
 #define SYS_PAUSE 342
+#define SYS_FD_PATH 343
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2

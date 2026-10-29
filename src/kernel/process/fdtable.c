@@ -256,6 +256,16 @@ int32_t fd_ctl(int32_t fd, uint32_t command, uint64_t argument) {
   }
 }
 
+int32_t fd_path(int32_t fd, char *out, uint32_t capacity) {
+  int32_t value = value_get(fd);
+  if (value < 0)
+    return -KERR_BADF;
+  if (value <= VFS_FD_STDERR || value_is_pipe(value))
+    return -KERR_INVAL;
+  int32_t result = vfs_handle_path(value, out, capacity);
+  return result < 0 ? vfs_error(result) : result;
+}
+
 int32_t fd_stat(int32_t fd, struct file_stat_info *out) {
   int32_t value = value_get(fd);
   if (value < 0)

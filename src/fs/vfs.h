@@ -39,6 +39,7 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence);
 int32_t vfs_stat(const char *path, struct file_stat_info *out);
 int32_t vfs_close(int32_t descriptor);
 int32_t vfs_ref(int32_t descriptor);
+int32_t vfs_handle_path(int32_t descriptor, char *out, uint32_t capacity);
 int32_t vfs_open_flags(const char *path, uint32_t flags);
 int32_t vfs_write(int32_t descriptor, const void *buffer, uint32_t count);
 int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out);

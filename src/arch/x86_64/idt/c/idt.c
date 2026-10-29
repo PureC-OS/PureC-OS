@@ -62,7 +62,7 @@ struct isr_regs {
 static void deliver_timer_signals(struct isr_regs *regs, uint64_t cs){
     if((cs&3)!=3) return;
     struct process *p=process_current();
-    if(!p || !p->sig_pending) return;
+    if(!p || !(p->sig_pending & ~p->sig_blocked)) return;
     scheduler_enter_kernel();
     signal_deliver((struct syscall_regs*)regs);
     scheduler_leave_kernel();

@@ -603,6 +603,18 @@ int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out) {
   return vfs_stat(path, out);
 }
 
+int32_t vfs_handle_path(int32_t descriptor, char *out, uint32_t capacity) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_handle *h = get_handle(descriptor);
+  if (!h || !h->path[0] || !out || !capacity)
+    return FS_ERROR_INVALID;
+  size_t length = strlen(h->path);
+  if (length + 1 > capacity)
+    return FS_ERROR_INVALID;
+  memcpy(out, h->path, length + 1);
+  return (int32_t)length;
+}
+
 int32_t vfs_ref(int32_t descriptor) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_handle *h = get_handle(descriptor);

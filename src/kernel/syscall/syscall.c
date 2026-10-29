@@ -444,6 +444,10 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (!writable((void *)(uintptr_t)a2, sizeof(struct file_stat_info)))
       return -KERR_FAULT;
     return fd_stat((int32_t)a1, (struct file_stat_info *)(uintptr_t)a2);
+  case SYS_FD_PATH:
+    if (a3 > 4096 || !writable((void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    return fd_path((int32_t)a1, (char *)(uintptr_t)a2, (uint32_t)a3);
   case SYS_CHDIR:
     if (!readable_string((const char *)(uintptr_t)a1))
       return -KERR_FAULT;

@@ -16,7 +16,7 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
@@ -72,6 +72,12 @@ test-oom:
 	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
 		tests/oom_policy_test.c src/mm/oom/oom.c src/mm/oom/oom_account.c -o $(BIN_DIR)/tests/oom_policy_test
 	$(BIN_DIR)/tests/oom_policy_test
+
+test-pmm-refcount:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
+		tests/pmm_refcount_test.c src/mm/pmm.c -o $(BIN_DIR)/tests/pmm_refcount_test
+	$(BIN_DIR)/tests/pmm_refcount_test
 
 test-pmm-smp:
 	@mkdir -p $(BIN_DIR)/tests

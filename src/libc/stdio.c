@@ -104,6 +104,20 @@ int stdio_fd_write_all(int fd, const void *data, size_t size) {
 FILE *stdio_open_fd(int fd, const char *mode) {
     stdio_init_std();
     if (fd < 0 || !mode) { errno = EBADF; return 0; }
+    int64_t kind = pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_KIND, 0);
+    if (kind == FD_KIND_FILE) {
+        char path[FILENAME_MAX];
+        int64_t length = pc_syscall(SYS_FD_PATH, (uint64_t)fd, (uint64_t)(uintptr_t)path, sizeof(path));
+        if (length > 0) {
+            const char *legacy_mode = mode[0] == 'a' ? "a" : (mode[0] == 'w' ? "r+" : "r");
+            if (mode[0] == 'w' && strchr(mode, '+') == 0) legacy_mode = "r+";
+            FILE *file = fopen(path, legacy_mode);
+            if (!file) return 0;
+            if (mode[0] == 'w') file->writable = true;
+            file->kfd = fd;
+            return file;
+        }
+    }
     bool read = false, write = false, append = false;
     for (const char *m = mode; *m; m++) {
         if (*m == 'r') read = true;
@@ -134,7 +148,7 @@ int stdio_stream_fd(const FILE *stream) {
     if (stream == stdin) return 0;
     if (stream == stdout) return 1;
     if (stream == stderr) return 2;
-    return stream->kernel ? stream->kfd : -1;
+    return stream->kfd;
 }
 
 void stdio_set_child(FILE *stream, int pid) { if (stream) stream->child_pid = pid; }
@@ -286,7 +300,7 @@ int fclose(FILE *stream) {
     }
     if (!known) { errno = EBADF; return EOF; }
     int result = fflush(stream);
-    if (stream->kernel && stream->kfd >= 0) {
+    if (stream->kfd >= 0) {
         if (pc_syscall(SYS_FILE_CLOSE, (uint64_t)stream->kfd, 0, 0) < 0 && result == 0) result = EOF;
     }
     if (stream->fd >= 0) pc_file_close(stream->fd);

@@ -1,7 +1,3 @@
-// PureC sh: POSIX-style shell. Runs scripts, `sh -c`, and an interactive
-// prompt. Pipelines, redirections, here-documents, quoting, parameter /
-// command / arithmetic expansion, globbing, if/while/until/for/case,
-// functions, and the usual builtins.
 
 #include <ctype.h>
 #include <dirent.h>
@@ -18,8 +14,6 @@
 #include <unistd.h>
 
 extern char **environ;
-
-// ---------------------------------------------------------------- strings
 
 struct buf {
     char *data;
@@ -66,8 +60,6 @@ static char *buf_take(struct buf *b) {
     b->length = b->capacity = 0;
     return d;
 }
-
-// ---------------------------------------------------------------- state
 
 struct variable {
     char *name;
@@ -192,8 +184,6 @@ static bool valid_name(const char *s) {
         if (!(isalnum((unsigned char)s[i]) || s[i] == '_')) return false;
     return true;
 }
-
-// ---------------------------------------------------------------- lexer
 
 enum token_type {
     T_EOF, T_WORD, T_NEWLINE, T_PIPE, T_OR, T_AND, T_SEMI, T_DSEMI, T_AMP,
@@ -465,8 +455,6 @@ static struct token take(struct lexer *lx) {
     lx->has_pending = false;
     return t;
 }
-
-// ---------------------------------------------------------------- AST
 
 enum node_type {
     N_SIMPLE, N_PIPELINE, N_AND, N_OR, N_LIST, N_BACKGROUND, N_IF, N_WHILE,
@@ -867,8 +855,6 @@ static struct node *parse_list(struct parser *p, bool stop_on_reserved) {
     return list;
 }
 
-// ---------------------------------------------------------------- patterns
-
 static bool match_pattern(const char *pattern, const char *text, bool leading_dot_guard);
 
 static bool match_bracket(const char **pattern, char c, bool *ok) {
@@ -939,8 +925,6 @@ static bool match_pattern(const char *pattern, const char *text, bool dot_guard)
     }
     return !*text;
 }
-
-// ---------------------------------------------------------------- expansion
 
 struct cell {
     char c;
@@ -1076,7 +1060,6 @@ static size_t arith_group_end(const char *raw, size_t start) {
 
 static char *expand_scalar(const char *raw);
 
-// Expands a ${...} body (without the braces) and appends to the cells.
 static void expand_braced(const char *body, struct cells *out, unsigned char flags) {
     char scratch[64];
     char name[128];
@@ -1534,8 +1517,6 @@ static void expand_word(const char *raw, struct field_list *fields) {
     free(cs.items);
 }
 
-// ---------------------------------------------------------------- arithmetic
-
 struct arith {
     const char *p;
 };
@@ -1632,8 +1613,6 @@ static long arith_eval(const char *expr) {
     struct arith a = {expr};
     return arith_expr(&a, 0);
 }
-
-// ---------------------------------------------------------------- execution helpers
 
 static int status_from_wait(int status) {
     if (WIFEXITED(status)) return WEXITSTATUS(status);
@@ -1792,8 +1771,6 @@ static void restore_redirects(struct saved_fd *saves, int count) {
     }
 }
 
-// ---------------------------------------------------------------- builtins
-
 static int builtin_echo(int argc, char **argv) {
     bool newline = true;
     bool escapes = true;
@@ -1936,8 +1913,6 @@ static int builtin_printf(int argc, char **argv) {
     free(out.data);
     return status;
 }
-
-// test / [
 
 struct test_state {
     char **argv;
@@ -2382,8 +2357,6 @@ static int builtin_dispatch(int argc, char **argv, bool *handled) {
     *handled = false;
     return 0;
 }
-
-// ---------------------------------------------------------------- execution
 
 static void trace_command(char **argv, int argc) {
     if (!opt_xtrace) return;
