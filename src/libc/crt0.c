@@ -87,12 +87,12 @@ void crt0_main(uint64_t *frame) {
             while (crt0_cmdline[i] == ' ' || crt0_cmdline[i] == '\t'
                    || crt0_cmdline[i] == '\n' || crt0_cmdline[i] == '\r') i++;
             if (!crt0_cmdline[i]) break;
-            bool quoted = false;
-            if (crt0_cmdline[i] == '"') { quoted = true; i++; }
+            char quote = 0;
+            if (crt0_cmdline[i] == '"' || crt0_cmdline[i] == '\'') { quote = crt0_cmdline[i]; i++; }
             crt0_argv[argc++] = &crt0_cmdline[i];
             while (crt0_cmdline[i]
-                   && ((quoted && crt0_cmdline[i] != '"')
-                       || (!quoted && crt0_cmdline[i] != ' ' && crt0_cmdline[i] != '\t'
+                   && ((quote && crt0_cmdline[i] != quote)
+                       || (!quote && crt0_cmdline[i] != ' ' && crt0_cmdline[i] != '\t'
                            && crt0_cmdline[i] != '\n' && crt0_cmdline[i] != '\r'))) i++;
             if (crt0_cmdline[i]) crt0_cmdline[i++] = '\0';
         }
