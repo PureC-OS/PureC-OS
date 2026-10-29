@@ -5,6 +5,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+struct vfs_perm_meta;
+
 struct vfs_fs_ops {
   const char *name;
   int32_t (*map)(void *context, const char *path, const void **data,
@@ -32,5 +34,11 @@ struct vfs_fs_ops {
                         uint32_t count);
   int32_t (*append_file)(void *context, const char *path, const void *buffer,
                          uint32_t count);
+  int32_t (*stat_ex)(void *context, const char *path,
+                     struct file_stat_ex *out);
+  int32_t (*get_meta)(void *context, const char *path,
+                      struct vfs_perm_meta *out);
+  int32_t (*set_meta)(void *context, const char *path,
+                      const struct vfs_perm_meta *meta);
   bool (*is_ready)(void *context);
 };

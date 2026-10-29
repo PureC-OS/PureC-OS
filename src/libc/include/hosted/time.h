@@ -1,6 +1,7 @@
 #pragma once
-// PureC hosted libc: time. Clock is uptime-based (no RTC in userspace):
-// time()/gettimeofday() count seconds since boot (UTC, no DST).
+// PureC hosted libc: time. time()/gettimeofday()/clock_gettime() return
+// real calendar time from the kernel wall clock (RTC, UTC epoch 1970).
+// localtime() applies the kernel time zone offset; no DST.
 
 #include <stddef.h>
 
@@ -21,6 +22,15 @@ struct tm {
     int tm_isdst;
 };
 
+#define CLOCK_REALTIME 0
+#define CLOCK_MONOTONIC 1
+
+struct timespec {
+    time_t tv_sec;
+    long tv_nsec;
+};
+
+int clock_gettime(int clock_id, struct timespec *out);
 time_t time(time_t *result);
 clock_t clock(void);
 double difftime(time_t end, time_t start);

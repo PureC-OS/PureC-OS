@@ -267,6 +267,63 @@ int32_t pc_file_stat(const char *path, struct file_stat_info *out){
         (uint64_t)(uintptr_t)out,0);
 }
 
+int32_t pc_session_begin(uint32_t uid, uint32_t gid){
+    return (int32_t)pc_syscall(SYS_SESSION_BEGIN,uid,gid,0);
+}
+
+int32_t pc_install_start_accounts(const char *device, const char *serial,
+                                  uint8_t fs_type,
+                                  const struct install_account_request *accounts){
+    if(!device || !serial) return -1;
+    struct install_start_request req={0};
+    pc_copy(req.device, device, sizeof(req.device));
+    pc_copy(req.serial, serial, sizeof(req.serial));
+    req.fs_type = fs_type;
+    if(accounts) req.accounts = *accounts;
+    return (int32_t)pc_syscall(SYS_INSTALL_START_EX, (uint64_t)(uintptr_t)&req, 0, 0);
+}
+
+int32_t pc_time_get(struct time_info *out){
+    return (int32_t)pc_syscall(SYS_TIME_GET,(uint64_t)(uintptr_t)out,0,0);
+}
+
+int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes){
+    return (int32_t)pc_syscall(SYS_TIME_SET,(uint64_t)unix_seconds,
+        (uint64_t)(int64_t)tz_minutes,0);
+}
+
+int32_t pc_file_stat_ex(const char *path, struct file_stat_ex *out){
+    return (int32_t)pc_syscall(SYS_FILE_STAT_EX,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)out,0);
+}
+
+int32_t pc_getrandom(void *buffer, uint32_t count){
+    return (int32_t)pc_syscall(SYS_GETRANDOM,(uint64_t)(uintptr_t)buffer,count,0);
+}
+
+int32_t pc_getuid(void){ return (int32_t)pc_syscall(SYS_GETUID,0,0,0); }
+int32_t pc_getgid(void){ return (int32_t)pc_syscall(SYS_GETGID,0,0,0); }
+int32_t pc_setuid(uint32_t uid){ return (int32_t)pc_syscall(SYS_SETUID,uid,0,0); }
+int32_t pc_setgid(uint32_t gid){ return (int32_t)pc_syscall(SYS_SETGID,gid,0,0); }
+
+int32_t pc_chmod(const char *path, uint32_t mode){
+    return (int32_t)pc_syscall(SYS_CHMOD,(uint64_t)(uintptr_t)path,mode,0);
+}
+
+int32_t pc_chown(const char *path, uint32_t uid, uint32_t gid){
+    return (int32_t)pc_syscall(SYS_CHOWN,(uint64_t)(uintptr_t)path,uid,gid);
+}
+
+int32_t pc_file_perm(const char *path, struct file_perm_info *out){
+    return (int32_t)pc_syscall(SYS_FILE_PERM,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)out,0);
+}
+
+int32_t pc_user_lookup(const char *name, uint32_t uid, struct user_info *out){
+    return (int32_t)pc_syscall(SYS_USER_LOOKUP,(uint64_t)(uintptr_t)name,uid,
+        (uint64_t)(uintptr_t)out);
+}
+
 int32_t pc_file_close(int32_t descriptor){
     return (int32_t)pc_syscall(SYS_FILE_CLOSE,(uint32_t)descriptor,0,0);
 }

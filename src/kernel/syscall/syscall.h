@@ -111,6 +111,19 @@
 #define SYS_TCP_CLOSE 306   /* (handle) */
 #define SYS_TCP_ABORT 307   /* (handle) send RST and release */
 #define SYS_TCP_INFO 308    /* (handle, struct net_tcp_info *) */
+#define SYS_GETUID 309
+#define SYS_GETGID 310
+#define SYS_SETUID 311
+#define SYS_SETGID 312
+#define SYS_CHMOD 313       /* (path, mode) */
+#define SYS_CHOWN 314       /* (path, uid, gid) */
+#define SYS_FILE_PERM 315   /* (path, struct file_perm_info *) */
+#define SYS_USER_LOOKUP 316 /* (name|NULL, uid, struct user_info *) */
+#define SYS_GETRANDOM 317   /* (buf, len) -> len */
+#define SYS_SESSION_BEGIN 318 /* (uid, gid), root only */
+#define SYS_TIME_GET 319      /* (struct time_info *) */
+#define SYS_TIME_SET 320      /* (unix_seconds, tz_minutes), root only */
+#define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
@@ -123,11 +136,28 @@ struct format_request {
   uint8_t reserved[3];
 };
 
+#define INSTALL_HOSTNAME_MAX 64
+#define INSTALL_USER_MAX 32
+#define INSTALL_GECOS_MAX 64
+#define INSTALL_HASH_MAX 128
+#define INSTALL_FIRST_UID 1000
+
+struct install_account_request {
+  uint32_t present;
+  uint32_t user_uid;
+  char hostname[INSTALL_HOSTNAME_MAX];
+  char root_hash[INSTALL_HASH_MAX];
+  char user_name[INSTALL_USER_MAX];
+  char user_gecos[INSTALL_GECOS_MAX];
+  char user_hash[INSTALL_HASH_MAX];
+};
+
 struct install_start_request {
   char device[32];
   char serial[32];
   uint8_t fs_type;
   uint8_t reserved[3];
+  struct install_account_request accounts;
 };
 
 #define NETWORK_PING_TARGET_CAPACITY 128
@@ -436,6 +466,42 @@ struct file_stat_info {
   uint64_t size;
   uint32_t is_directory;
   uint32_t reserved;
+};
+
+struct time_info {
+  int64_t unix_seconds;
+  uint32_t millis;
+  int32_t tz_minutes;
+  uint64_t uptime_ms;
+  uint32_t source;
+  uint32_t reserved;
+};
+
+struct file_stat_ex {
+  uint64_t size;
+  uint32_t mode;
+  uint32_t uid;
+  uint32_t gid;
+  uint32_t is_directory;
+  uint32_t atime;
+  uint32_t mtime;
+  uint32_t ctime;
+  uint32_t reserved;
+};
+
+struct file_perm_info {
+  uint32_t mode;
+  uint32_t uid;
+  uint32_t gid;
+  uint32_t reserved;
+};
+
+struct user_info {
+  char name[32];
+  uint32_t uid;
+  uint32_t gid;
+  char home[64];
+  char shell[64];
 };
 
 struct ext2_stat_info {

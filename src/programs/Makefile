@@ -9,6 +9,9 @@ LIBPUREGUI := $(LIB_DIR)/libpuregui.a
 LIBPGUIW := $(LIB_DIR)/libpguiw.a
 LIBPUREFS := $(LIB_DIR)/libpurefs.a
 LIBPUREAUDIO := $(LIB_DIR)/libpureaudio.a
+LIBPURECRYPT := $(LIB_DIR)/libpurecrypt.a
+CRYPT_DIR := $(ROOT_DIR)/libxcrypt
+ACCOUNT_OBJECTS := $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(OBJ_DIR)/accounts/install_accounts.o
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 
 PLAIN_SOURCES := \
@@ -56,6 +59,9 @@ LUA_SOURCES := \
 GENERAL_SOURCES := \
 	installer/main.c \
 	installer/progress.c \
+	installer/setup.c \
+	accounts/accounts.c \
+	accounts/accounts_core.c \
 	terminal/main.c \
 	terminal/shell.c \
 	terminal/path.c \
@@ -209,9 +215,18 @@ $(LIBPUREGUI) $(LIBPGUIW):
 $(LIBPUREFS):
 	$(MAKE) -C $(ROOT_DIR)/src/libfs
 
+$(OBJ_DIR)/accounts/install_accounts.o: $(ROOT_DIR)/src/fs/install_accounts.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(LIBPURECRYPT):
+	$(MAKE) -C $(CRYPT_DIR)
+	@mkdir -p $(LIB_DIR)
+	cp $(CRYPT_DIR)/build/libpurecrypt.a $@
+
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/programs/settings/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include -I$(ROOT_DIR)/src/programs/settings/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	@mkdir -p $(@D)
@@ -221,7 +236,7 @@ $(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progress.o $(OBJ_DIR)/terminal/window.o $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progress.o $(OBJ_DIR)/installer/setup.o $(ACCOUNT_OBJECTS) $(OBJ_DIR)/terminal/window.o $(LIBPUREGUI) $(LIBPUREFS) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
@@ -257,7 +272,7 @@ $(PROGRAM_DIR)/monitor: $(OBJ_DIR)/monitor/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

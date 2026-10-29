@@ -1,4 +1,5 @@
 #include "include/ext2_types.h"
+#include "include/ext2_time.h"
 #include "../types/fs_types.h"
 #include "include/ext2_block.h"
 #include "include/ext2_inode.h"
@@ -411,12 +412,9 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
     }
     ext2_write_u32(ib + 4, size);
     ext2_write_u32(ib + 28, bcnt * (bsz / 512));
-    ext2_write_u16(ib + 24, 1);
-    uint16_t old_mode = ext2_read_u16(old_ib);
-    if ((old_mode & 0xF000) == 0x4000)
-        ext2_write_u16(ib, 0x41ED);
-    else
-        ext2_write_u16(ib, 0x81A4);
+    if (ext2_read_u16(ib + EXT2_INODE_LINKS) == 0)
+        ext2_write_u16(ib + EXT2_INODE_LINKS, 1);
+    ext2_stamp_modified(ib);
     ext2_inode_free_blocks(old_ib);
     return ext2_write_inode(ino, ib) ? (int32_t)size : -1;
 }
@@ -494,7 +492,8 @@ static int32_t ext2_create_file_internal(const char *path)
     uint8_t ib[256] = {0};
     ext2_write_u16(ib, 0x81A4);
     ext2_write_u32(ib + 4, 0);
-    ext2_write_u16(ib + 24, 1);
+    ext2_write_u16(ib + EXT2_INODE_LINKS, 1);
+    ext2_stamp_new(ib);
     if (!ext2_write_inode(nino, ib))
         return -1;
     int32_t r = ext2_dir_add_entry(par_ino, base, nino, 1);
@@ -671,6 +670,7 @@ static int32_t ext2_append_data(uint32_t ino, uint8_t *ib, const uint8_t *data,
         ext2_write_u32(ib + 4, old + done);
         ext2_write_u32(ib + 28, ext2_read_u32(ib + 28) +
                                     (data_blocks + metadata_blocks) * (bsz / 512));
+        ext2_stamp_modified(ib);
         if (!ext2_write_inode(ino, ib))
             return -1;
     }

@@ -49,6 +49,11 @@ int32_t vfs_create_file(const char *path);
 int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count);
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count);
 int32_t vfs_create_directory(const char *path);
+int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out);
+int32_t vfs_chmod(const char *path, uint16_t mode);
+int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid);
+int32_t vfs_get_perm(const char *path, struct file_perm_info *out);
+int32_t vfs_user_lookup(const char *name, uint32_t uid, struct user_info *out);
 int32_t vfs_format_device(const char *device_name,
                           const char *serial_confirmation,
                           const char *erase_confirmation);
