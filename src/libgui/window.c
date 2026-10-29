@@ -43,6 +43,8 @@ bool pg_window_init(struct pg_window *window, const char *title,
     window->drag_offset_x=0;
     window->drag_offset_y=0;
     window->previous_mouse_buttons=0;
+    window->previous_wheel=0;
+    window->wheel_ready=false;
     window->dragging=false;
     window->minimized=false;
     window->open=true;

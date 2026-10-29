@@ -117,3 +117,23 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
     if(!(mouse.buttons&1)) window->dragging=false;
     return event->type!=PG_EVENT_NONE;
 }
+
+bool pg_window_poll_key_event(struct pg_window *window, struct key_event *event){
+    if(!window || !event || !window->open) return false;
+    bool focused=(pc_gui_window_state()&GUI_WINDOW_STATE_FOCUSED)!=0;
+    if(!focused) return false;
+    return pc_key_event_get(event)==1;
+}
+
+int32_t pg_window_take_wheel(struct pg_window *window){
+    struct mouse_state mouse;
+    if(!window || !window->open || !pc_mouse_get(&mouse)) return 0;
+    if(!window->wheel_ready){
+        window->previous_wheel=mouse.wheel;
+        window->wheel_ready=true;
+        return 0;
+    }
+    int32_t delta=mouse.wheel-window->previous_wheel;
+    window->previous_wheel=mouse.wheel;
+    return (pc_gui_window_state()&GUI_WINDOW_STATE_FOCUSED) ? delta : 0;
+}

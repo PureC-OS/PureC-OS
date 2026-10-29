@@ -899,6 +899,12 @@ int64_t syscall_handler(struct syscall_regs *r) {
     uint8_t key;
     return keyboard_try_get_special(&key) ? key : -1;
   }
+  case SYS_KEY_EVENT_GET: {
+    struct key_event *out = (struct key_event *)(uintptr_t)a1;
+    if (!writable(out, sizeof(*out)))
+      return -1;
+    return keyboard_try_get_event(out) ? 1 : 0;
+  }
   case SYS_INSTALL_START:
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -10;

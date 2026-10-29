@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "../../fs/types/fs_types.h"
 #include "../../drivers/mouse/ps2_mouse.h"
+#include "../../drivers/input/key_event.h"
 #include "../../drivers/input/keyboard.h"
 #include "../../drivers/storage/storage_types.h"
 #include "../../kernel/syscall/syscall.h"
@@ -33,6 +34,7 @@ int32_t pc_exec_with_args(const char *path, const char *arguments);
 int32_t pc_wait(int32_t pid, int32_t *status, bool nohang);
 int32_t pc_try_getchar(void);
 int32_t pc_try_get_special(void);
+int32_t pc_key_event_get(struct key_event *event);
 int32_t pc_get_command_line(char *buffer, uint32_t capacity);
 int32_t pc_get_process_name(char *buffer, uint32_t capacity);
 int32_t pc_getenv(const char *name, char *buffer, uint32_t capacity);
@@ -47,8 +49,6 @@ int32_t pc_process_list_page(struct process_monitor_info *processes,
 bool pc_cpu_info(struct cpu_monitor_info *info);
 bool pc_memory_info(struct memory_monitor_info *info);
 int32_t pc_cpu_core_info(struct cpu_core_info *info);
-/* TCP sockets (kernel owns the stack; see SYS_TCP_* in syscall.h). Timeouts in
- * ms: 0 never blocks, 0xFFFFFFFF waits forever. Negative returns are errors. */
 int32_t pc_tcp_socket(void);
 int32_t pc_tcp_connect(int32_t handle, uint32_t ipv4, uint16_t port,
                        uint32_t timeout_ms);

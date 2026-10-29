@@ -3,6 +3,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "../../drivers/input/key_event.h"
+
 #define PG_API_VERSION 3
 #define PG_VERSION "V1.0.2"
 #define PG_VERSION_MAJOR 1
@@ -62,6 +64,8 @@ struct pg_window {
     int32_t previous_mouse_y;
     int32_t drag_offset_x;
     int32_t drag_offset_y;
+    int32_t previous_wheel;
+    bool wheel_ready;
     uint8_t previous_mouse_buttons;
     bool dragging;
     bool minimized;
@@ -108,3 +112,5 @@ void pg_window_text_sized(struct pg_window *window, uint32_t x, uint32_t y,
 void pg_set_font_face(uint32_t face);
 void pg_font_sync(void);
 bool pg_window_poll_event(struct pg_window *window, struct pg_event *event);
+bool pg_window_poll_key_event(struct pg_window *window, struct key_event *event);
+int32_t pg_window_take_wheel(struct pg_window *window);

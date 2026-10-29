@@ -89,6 +89,7 @@ C_SOURCES := \
 	kernel/diagnostics/panic_qr.c \
 	kernel/diagnostics/panic.c \
 	drivers/input/keyboard.c \
+	drivers/input/hid_keymap.c \
 	drivers/pci/pci.c \
 	drivers/net/e1000/e1000_82540em.c \
 	drivers/net/82543gc/e1000_82543gc.c \

@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
+#include "key_event.h"
 
 enum keyboard_special_key {
     KEYBOARD_SPECIAL_F1 = 1,
@@ -24,3 +25,4 @@ char keyboard_getc(void);
 void keyboard_poll(void);
 void keyboard_set_leds(bool caps, bool num, bool scroll);
 bool keyboard_try_get_special(uint8_t *out);
+bool keyboard_try_get_event(struct key_event *out);

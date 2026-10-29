@@ -1,4 +1,5 @@
 #include "keyboard.h"
+#include "hid_keymap.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
 #include "../../kernel/sync/spinlock.h"
@@ -136,6 +137,50 @@ static bool special_pop(uint8_t *out){
     return ok;
 }
 
+#define KBD_EVENT_BUF_SIZE 64
+static struct key_event event_buf[KBD_EVENT_BUF_SIZE];
+static uint8_t event_head = 0, event_tail = 0, event_count = 0;
+static uint8_t hid_mods = 0;
+static uint8_t hid_down[32];
+
+static void event_push(uint16_t scancode, bool pressed){
+    if(!scancode || scancode > 255) return;
+    uint8_t mask = (uint8_t)(1u << (scancode & 7));
+    uint8_t *slot = &hid_down[scancode >> 3];
+    bool was_down = (*slot & mask) != 0;
+    if(pressed) *slot |= mask; else *slot &= (uint8_t)~mask;
+    uint8_t mod = hid_modifier_bit(scancode);
+    if(mod){
+        if(pressed) hid_mods |= mod; else hid_mods &= (uint8_t)~mod;
+    }
+    if(!pressed && !was_down) return;
+    if(event_count >= KBD_EVENT_BUF_SIZE){
+        event_tail = (event_tail + 1) % KBD_EVENT_BUF_SIZE;
+        event_count--;
+    }
+    struct key_event *e = &event_buf[event_head];
+    *e = (struct key_event){
+        .scancode = scancode,
+        .pressed = pressed,
+        .repeat = pressed && was_down,
+        .mods = hid_mods
+    };
+    event_head = (event_head + 1) % KBD_EVENT_BUF_SIZE;
+    event_count++;
+}
+
+static bool event_pop(struct key_event *out){
+    uint64_t flags = spin_lock_irqsave(&keyboard_lock);
+    bool ok = event_count != 0;
+    if(ok){
+        *out = event_buf[event_tail];
+        event_tail = (event_tail + 1) % KBD_EVENT_BUF_SIZE;
+        event_count--;
+    }
+    spin_unlock_irqrestore(&keyboard_lock, flags);
+    return ok;
+}
+
 static void emit_key(const char *plain, const char *shifted, uint8_t sc){
     char base = plain[sc];
     char c;
@@ -156,6 +201,7 @@ static void handle_scancode_set1(uint8_t sc){
         bool released=(sc&0x80)!=0;
         sc&=0x7F;
         set1_extended=false;
+        event_push(hid_from_set1(sc,1),!released);
         if(released) return;
         switch(sc){
             case 0x47: special_push(KEYBOARD_SPECIAL_HOME); break;
@@ -171,6 +217,7 @@ static void handle_scancode_set1(uint8_t sc){
         }
         return;
     }
+    if(sc != 0xE1) event_push(hid_from_set1(sc&0x7F,0),!(sc&0x80));
     if(sc == 0x1D){
         control_pressed = true;
         return;
@@ -235,6 +282,7 @@ static void handle_scancode_set2(uint8_t sc){
     set2_break_pending = false;
     set2_extended = false;
 
+    event_push(hid_from_set2(sc,extended),!released);
     if(sc == 0x12 || sc == 0x59){
         shift_pressed = !released;
         return;
@@ -366,6 +414,9 @@ static bool decoder_self_test(void){
     set2_pause_bytes = 0;
     kbd_head = kbd_tail = kbd_count = 0;
     special_head = special_tail = special_count = 0;
+    event_head = event_tail = event_count = 0;
+    hid_mods = 0;
+    for(uint32_t i=0; i<sizeof(hid_down); i++) hid_down[i] = 0;
     handle_scancode(0x1C);
     handle_scancode(0xF0);
     handle_scancode(0x1C);
@@ -388,6 +439,9 @@ static bool decoder_self_test(void){
     set2_pause_bytes = 0;
     kbd_head = kbd_tail = kbd_count = 0;
     special_head = special_tail = special_count = 0;
+    event_head = event_tail = event_count = 0;
+    hid_mods = 0;
+    for(uint32_t i=0; i<sizeof(hid_down); i++) hid_down[i] = 0;
     return ok;
 }
 
@@ -411,6 +465,11 @@ bool keyboard_has_key(void){
 bool keyboard_try_getc(char *out){
     keyboard_poll();
     return kbd_pop(out);
+}
+
+bool keyboard_try_get_event(struct key_event *out){
+    keyboard_poll();
+    return event_pop(out);
 }
 
 bool keyboard_try_get_special(uint8_t *out){

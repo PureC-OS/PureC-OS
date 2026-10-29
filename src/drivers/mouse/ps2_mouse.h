@@ -38,4 +38,5 @@ bool mouse_get_debug_overlay(void);
 struct mouse_state mouse_get_state(void);
 struct mouse_debug_state mouse_get_debug_state(void);
 void mouse_set_bounds(int32_t w, int32_t h);
+void mouse_add_wheel(int32_t delta);
 void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy);

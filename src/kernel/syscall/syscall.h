@@ -125,6 +125,7 @@
 #define SYS_TIME_SET 320      /* (unix_seconds, tz_minutes), root only */
 #define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
 #define SYS_FB_BLIT 322       /* (struct fb_blit_request *) */
+#define SYS_KEY_EVENT_GET 323 /* (struct key_event *) -> 1 event, 0 empty */
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
