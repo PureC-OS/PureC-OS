@@ -66,6 +66,7 @@ struct pg_window {
     int32_t drag_offset_y;
     int32_t previous_wheel;
     bool wheel_ready;
+    bool esc_closes;
     uint8_t previous_mouse_buttons;
     bool dragging;
     bool minimized;
@@ -90,6 +91,7 @@ void pg_window_begin(struct pg_window *window);
 void pg_window_end(struct pg_window *window);
 void pg_window_close(struct pg_window *window);
 void pg_window_set_closable(struct pg_window *window, bool closable);
+void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
 void pg_window_minimize(struct pg_window *window);
 void pg_window_restore(struct pg_window *window);

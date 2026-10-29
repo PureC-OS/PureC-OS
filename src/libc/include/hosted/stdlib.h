@@ -34,4 +34,5 @@ char *getenv(const char *name);
 char *realpath(const char *path, char *resolved);
 int system(const char *cmd);
 void exit(int status);
+void _exit(int status) __attribute__((noreturn));
 void abort(void);

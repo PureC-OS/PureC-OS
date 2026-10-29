@@ -285,7 +285,11 @@ libraries:
 programs: libraries notepad
 	$(MAKE) -C src/programs
 	$(MAKE) -C src/programs/micropython
+	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
+
+sdl2: libraries
+	$(MAKE) -C src/libsdl2
 
 notepad:
 	@test -f "$(NOTEPAD_DIR)/Makefile" || \
@@ -377,6 +381,7 @@ clean:
 	$(MAKE) -C src/libgui      clean 2>/dev/null || true
 	$(MAKE) -C src/libfs       clean 2>/dev/null || true
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
+	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true
 	$(MAKE) -C src/programs    clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
 	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true

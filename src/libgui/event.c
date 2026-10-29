@@ -31,7 +31,7 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
         if(key>=0){
             event->key=key;
             /* Gate windows (login) cannot be dismissed with Esc. */
-            if(key==27 && window->closable){
+            if(key==27 && window->closable && window->esc_closes){
                 event->type=PG_EVENT_CLOSE;
                 pg_window_close(window);
             }else{

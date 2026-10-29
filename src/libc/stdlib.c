@@ -431,4 +431,5 @@ void exit(int status) {
     fflush(0);
     pc_exit(status);
 }
+void _exit(int status) { pc_exit(status); for (;;) { } }
 void abort(void) { pc_exit(134); }
