@@ -147,12 +147,16 @@
 #define SYS_SIGPENDING 341
 #define SYS_PAUSE 342
 #define SYS_FD_PATH 343
+#define SYS_FD_SEEK 344
+#define SYS_FD_TRUNCATE 345
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
 #define FD_CTL_DUPFD 3
 #define FD_CTL_KIND 4
 #define FD_CTL_DUPFD_CLOEXEC 5
+#define FD_CTL_GETFL 6
+#define FD_CTL_SETFL 7
 
 #define FD_KIND_CONSOLE 0
 #define FD_KIND_FILE 1
@@ -176,6 +180,7 @@
 #define KERR_INVAL 22
 #define KERR_NFILE 23
 #define KERR_MFILE 24
+#define KERR_SPIPE 29
 #define KERR_PIPE 32
 #define KERR_NAMETOOLONG 36
 #define KERR_NOSYS 38

@@ -25,6 +25,7 @@ static mutex_t process_mutex;
 #include "scheduler.h"
 #include "signal.h"
 #include "fdtable.h"
+#include "ofd.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 
 #define USER_STACK_TOP 0x00007FFFFFF00000ULL
@@ -303,6 +304,7 @@ static struct process *allocate_process(void) {
   process->cwd[0] = '/';
   for (uint32_t fd = 0; fd < PROCESS_FD_COUNT; fd++)
     process->descriptors[fd] = -1;
+  ofd_init();
   process->descriptors[0] = VFS_FD_STDIN;
   process->descriptors[1] = VFS_FD_STDOUT;
   process->descriptors[2] = VFS_FD_STDERR;
@@ -1434,27 +1436,14 @@ int32_t process_monitor_list(struct process_monitor_info *entries,
 }
 
 int32_t process_fd_install(int32_t kernel_descriptor) {
-  MUTEX_SCOPE(&process_mutex);
-  struct process *process = process_current();
-  if (!process)
-    return kernel_descriptor;
-  for (int32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
-    if (process->descriptors[fd] < 0) {
-      process->descriptors[fd] = kernel_descriptor;
-      return fd;
-    }
-  }
-  return -1;
+  return fd_install_handle(kernel_descriptor);
 }
 
 int32_t process_fd_resolve(int32_t descriptor) {
-  MUTEX_SCOPE(&process_mutex);
   struct process *process = process_current();
   if (!process)
     return descriptor;
-  if (descriptor < 0 || descriptor >= PROCESS_FD_COUNT)
-    return -1;
-  return process->descriptors[descriptor];
+  return fd_vfs_handle(descriptor);
 }
 
 int32_t process_fd_close(int32_t descriptor) {

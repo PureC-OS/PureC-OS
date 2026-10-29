@@ -1,54 +1,12 @@
 #include "fdtable.h"
-#include "../../drivers/display/gop.h"
-#include "../../drivers/serial/serial.h"
-#include "../../lib/string.h"
 #include "../../fs/vfs.h"
+#include "../../lib/string.h"
 #include "../ipc/pipe.h"
 #include "../syscall/syscall.h"
+#include "ofd.h"
 #include "process.h"
 
 #define O_CLOEXEC_FLAG 02000000U
-#define O_NONBLOCK_FLAG 04000U
-
-static bool value_is_pipe(int32_t value) { return value >= FD_PIPE_BASE; }
-static int32_t pipe_id(int32_t value) { return (value - FD_PIPE_BASE) >> 1; }
-static bool pipe_is_write(int32_t value) { return (value & 1) != 0; }
-
-static int32_t vfs_error(int32_t code) {
-  switch (code) {
-  case FS_ERROR_NOT_FOUND:
-    return -KERR_NOENT;
-  case FS_ERROR_EXISTS:
-    return -KERR_EXIST;
-  case FS_ERROR_INVALID:
-    return -KERR_INVAL;
-  case FS_ERROR_NO_SPACE:
-    return -KERR_NFILE;
-  case FS_ERROR_NOT_DIR:
-    return -KERR_NOTDIR;
-  case FS_ERROR_DENIED:
-  case FS_ERROR_READ_ONLY:
-    return -KERR_ACCES;
-  case FS_ERROR_UNSUPPORTED:
-    return -KERR_BADF;
-  default:
-    return -KERR_IO;
-  }
-}
-
-static void value_ref(int32_t value) {
-  if (value >= VFS_FD_BASE && !value_is_pipe(value))
-    (void)vfs_ref(value);
-  else if (value_is_pipe(value))
-    pipe_ref(pipe_id(value), pipe_is_write(value));
-}
-
-static void value_release(int32_t value) {
-  if (value >= VFS_FD_BASE && !value_is_pipe(value))
-    (void)vfs_close(value);
-  else if (value_is_pipe(value))
-    pipe_release(pipe_id(value), pipe_is_write(value));
-}
 
 static int32_t slot_find(const struct process *process, int32_t minimum) {
   for (int32_t fd = minimum < 0 ? 0 : minimum; fd < PROCESS_FD_COUNT; fd++) {
@@ -58,82 +16,90 @@ static int32_t slot_find(const struct process *process, int32_t minimum) {
   return -1;
 }
 
-static int32_t value_get(int32_t fd) {
+static int32_t object_get(int32_t fd) {
   struct process *process = process_current();
   if (!process || fd < 0 || fd >= PROCESS_FD_COUNT)
     return -1;
   process_table_lock();
-  int32_t value = process->descriptors[fd];
+  int32_t object = process->descriptors[fd];
   process_table_unlock();
-  return value;
+  return object;
 }
 
-static void console_write(const char *text, uint32_t count) {
-  for (uint32_t i = 0; i < count; i++) {
-    serial_putc(text[i]);
-    if (gop_console_is_active())
-      gop_console_putc(text[i]);
-    else
-      gop_putc(text[i]);
+int32_t fd_install_handle(int32_t handle) {
+  struct process *process = process_current();
+  if (!process)
+    return handle;
+  int32_t object = ofd_create_file(handle, 0);
+  if (object < 0)
+    return -1;
+  process_table_lock();
+  for (int32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
+    if (process->descriptors[fd] < 0) {
+      process->descriptors[fd] = object;
+      process->fd_flags[fd] = 0;
+      process_table_unlock();
+      return fd;
+    }
   }
+  process_table_unlock();
+  ofd_release(object);
+  return -1;
+}
+
+int32_t fd_vfs_handle(int32_t fd) {
+  struct process *process = process_current();
+  if (!process)
+    return fd;
+  int32_t object = object_get(fd);
+  return object < 0 ? -1 : ofd_vfs_handle(object);
 }
 
 int32_t fd_open(const char *path, uint32_t flags) {
   struct process *process = process_current();
   if (!process)
     return -KERR_BADF;
+  filesystem_syscall_lock();
   int32_t handle = vfs_open_flags(path, flags);
+  filesystem_syscall_unlock();
   if (handle < 0)
-    return vfs_error(handle);
+    return kerr_from_vfs(handle);
+  int32_t object = ofd_create_file(handle, flags);
+  if (object < 0) {
+    (void)vfs_close(handle);
+    return object;
+  }
   process_table_lock();
   int32_t fd = slot_find(process, 0);
   if (fd < 0) {
     process_table_unlock();
-    (void)vfs_close(handle);
+    ofd_release(object);
     return -KERR_MFILE;
   }
-  process->descriptors[fd] = handle;
+  process->descriptors[fd] = object;
   process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
   process_table_unlock();
   return fd;
 }
 
 int32_t fd_read(int32_t fd, void *buffer, uint32_t count) {
-  int32_t value = value_get(fd);
-  if (value < 0)
-    return -KERR_BADF;
-  if (value == VFS_FD_STDIN)
-    return -KERR_CONSOLE;
-  if (value <= VFS_FD_STDERR)
-    return -KERR_BADF;
-  if (value_is_pipe(value)) {
-    if (pipe_is_write(value))
-      return -KERR_BADF;
-    return pipe_read(pipe_id(value), buffer, count);
-  }
-  filesystem_syscall_lock();
-  int32_t result = vfs_read(value, buffer, count);
-  filesystem_syscall_unlock();
-  return result < 0 ? vfs_error(result) : result;
+  int32_t object = object_get(fd);
+  return object < 0 ? -KERR_BADF : ofd_read(object, buffer, count);
 }
 
 int32_t fd_write(int32_t fd, const void *buffer, uint32_t count) {
-  int32_t value = value_get(fd);
-  if (value < 0 || value == VFS_FD_STDIN)
-    return -KERR_BADF;
-  if (value <= VFS_FD_STDERR) {
-    console_write((const char *)buffer, count);
-    return (int32_t)count;
-  }
-  if (value_is_pipe(value)) {
-    if (!pipe_is_write(value))
-      return -KERR_BADF;
-    return pipe_write(pipe_id(value), buffer, count);
-  }
-  filesystem_syscall_lock();
-  int32_t result = vfs_write(value, buffer, count);
-  filesystem_syscall_unlock();
-  return result < 0 ? vfs_error(result) : result;
+  int32_t object = object_get(fd);
+  return object < 0 ? -KERR_BADF : ofd_write(object, buffer, count);
+}
+
+int64_t fd_seek(int32_t fd, int64_t offset, uint32_t whence) {
+  int32_t object = object_get(fd);
+  return object < 0 ? -KERR_BADF : ofd_seek(object, offset, whence);
+}
+
+int32_t fd_truncate(int32_t fd, uint64_t length) {
+  int32_t object = object_get(fd);
+  return object < 0 ? -KERR_BADF : ofd_truncate(object, length);
 }
 
 int32_t fd_close(int32_t fd) {
@@ -141,13 +107,13 @@ int32_t fd_close(int32_t fd) {
   if (!process || fd < 0 || fd >= PROCESS_FD_COUNT)
     return -KERR_BADF;
   process_table_lock();
-  int32_t value = process->descriptors[fd];
+  int32_t object = process->descriptors[fd];
   process->descriptors[fd] = -1;
   process->fd_flags[fd] = 0;
   process_table_unlock();
-  if (value < 0)
+  if (object < 0)
     return -KERR_BADF;
-  value_release(value);
+  ofd_release(object);
   return 0;
 }
 
@@ -157,14 +123,14 @@ int32_t fd_dup(int32_t fd, int32_t minimum, bool cloexec) {
       minimum >= PROCESS_FD_COUNT)
     return -KERR_BADF;
   process_table_lock();
-  int32_t value = process->descriptors[fd];
-  int32_t slot = value < 0 ? -1 : slot_find(process, minimum);
-  if (value < 0 || slot < 0) {
+  int32_t object = process->descriptors[fd];
+  int32_t slot = object < 0 ? -1 : slot_find(process, minimum);
+  if (object < 0 || slot < 0) {
     process_table_unlock();
-    return value < 0 ? -KERR_BADF : -KERR_MFILE;
+    return object < 0 ? -KERR_BADF : -KERR_MFILE;
   }
-  value_ref(value);
-  process->descriptors[slot] = value;
+  ofd_ref(object);
+  process->descriptors[slot] = object;
   process->fd_flags[slot] = cloexec ? PROCESS_FD_CLOEXEC : 0;
   process_table_unlock();
   return slot;
@@ -176,8 +142,8 @@ int32_t fd_dup2(int32_t old_fd, int32_t new_fd) {
       new_fd >= PROCESS_FD_COUNT)
     return -KERR_BADF;
   process_table_lock();
-  int32_t value = process->descriptors[old_fd];
-  if (value < 0) {
+  int32_t object = process->descriptors[old_fd];
+  if (object < 0) {
     process_table_unlock();
     return -KERR_BADF;
   }
@@ -186,12 +152,12 @@ int32_t fd_dup2(int32_t old_fd, int32_t new_fd) {
     return new_fd;
   }
   int32_t previous = process->descriptors[new_fd];
-  value_ref(value);
-  process->descriptors[new_fd] = value;
+  ofd_ref(object);
+  process->descriptors[new_fd] = object;
   process->fd_flags[new_fd] = 0;
   process_table_unlock();
   if (previous >= 0)
-    value_release(previous);
+    ofd_release(previous);
   return new_fd;
 }
 
@@ -203,23 +169,40 @@ int32_t fd_pipe(int32_t fds[2], uint32_t flags) {
   int32_t status = pipe_create(&id);
   if (status < 0)
     return status;
+  int32_t read_object = ofd_create_pipe(id, false);
+  int32_t write_object = ofd_create_pipe(id, true);
+  if (read_object < 0 || write_object < 0) {
+    if (read_object >= 0)
+      ofd_release(read_object);
+    else
+      pipe_release(id, false);
+    if (write_object >= 0)
+      ofd_release(write_object);
+    else
+      pipe_release(id, true);
+    return -KERR_NFILE;
+  }
+  if (flags & 04000U) {
+    (void)ofd_flags_set(read_object, 04000U);
+    (void)ofd_flags_set(write_object, 04000U);
+  }
   process_table_lock();
   int32_t read_fd = slot_find(process, 0);
   int32_t write_fd = -1;
   if (read_fd >= 0) {
-    process->descriptors[read_fd] = FD_PIPE_BASE + id * 2;
+    process->descriptors[read_fd] = read_object;
     write_fd = slot_find(process, 0);
     if (write_fd < 0)
       process->descriptors[read_fd] = -1;
   }
   if (read_fd < 0 || write_fd < 0) {
     process_table_unlock();
-    pipe_release(id, false);
-    pipe_release(id, true);
+    ofd_release(read_object);
+    ofd_release(write_object);
     return -KERR_MFILE;
   }
   uint8_t cloexec = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
-  process->descriptors[write_fd] = FD_PIPE_BASE + id * 2 + 1;
+  process->descriptors[write_fd] = write_object;
   process->fd_flags[read_fd] = cloexec;
   process->fd_flags[write_fd] = cloexec;
   process_table_unlock();
@@ -232,10 +215,8 @@ int32_t fd_ctl(int32_t fd, uint32_t command, uint64_t argument) {
   struct process *process = process_current();
   if (!process || fd < 0 || fd >= PROCESS_FD_COUNT)
     return -KERR_BADF;
-  process_table_lock();
-  int32_t value = process->descriptors[fd];
-  process_table_unlock();
-  if (value < 0)
+  int32_t object = object_get(fd);
+  if (object < 0)
     return -KERR_BADF;
   switch (command) {
   case FD_CTL_GETFD:
@@ -248,45 +229,33 @@ int32_t fd_ctl(int32_t fd, uint32_t command, uint64_t argument) {
   case FD_CTL_DUPFD_CLOEXEC:
     return fd_dup(fd, (int32_t)argument, true);
   case FD_CTL_KIND:
-    if (value <= VFS_FD_STDERR)
-      return FD_KIND_CONSOLE;
-    return value_is_pipe(value) ? FD_KIND_PIPE : FD_KIND_FILE;
+    return ofd_kind_of(object);
+  case FD_CTL_GETFL:
+    return ofd_flags_get(object);
+  case FD_CTL_SETFL:
+    return ofd_flags_set(object, (uint32_t)argument);
   default:
     return -KERR_INVAL;
   }
 }
 
 int32_t fd_path(int32_t fd, char *out, uint32_t capacity) {
-  int32_t value = value_get(fd);
-  if (value < 0)
-    return -KERR_BADF;
-  if (value <= VFS_FD_STDERR || value_is_pipe(value))
-    return -KERR_INVAL;
-  int32_t result = vfs_handle_path(value, out, capacity);
-  return result < 0 ? vfs_error(result) : result;
+  int32_t object = object_get(fd);
+  return object < 0 ? -KERR_BADF : ofd_path(object, out, capacity);
 }
 
 int32_t fd_stat(int32_t fd, struct file_stat_info *out) {
-  int32_t value = value_get(fd);
-  if (value < 0)
-    return -KERR_BADF;
-  if (value <= VFS_FD_STDERR || value_is_pipe(value)) {
-    memset(out, 0, sizeof(*out));
-    return 0;
-  }
-  filesystem_syscall_lock();
-  int32_t result = vfs_handle_stat(value, out);
-  filesystem_syscall_unlock();
-  return result < 0 ? vfs_error(result) : 0;
+  int32_t object = object_get(fd);
+  return object < 0 ? -KERR_BADF : ofd_stat(object, out);
 }
 
 void fd_close_all(struct process *process) {
   for (int32_t fd = 0; fd < PROCESS_FD_COUNT; fd++) {
-    int32_t value = process->descriptors[fd];
+    int32_t object = process->descriptors[fd];
     process->descriptors[fd] = -1;
     process->fd_flags[fd] = 0;
-    if (value >= VFS_FD_BASE)
-      value_release(value);
+    if (object >= 0)
+      ofd_release(object);
   }
 }
 
@@ -295,20 +264,19 @@ void fd_close_on_exec(struct process *process) {
     if (process->descriptors[fd] < 0 ||
         !(process->fd_flags[fd] & PROCESS_FD_CLOEXEC))
       continue;
-    int32_t value = process->descriptors[fd];
+    int32_t object = process->descriptors[fd];
     process->descriptors[fd] = -1;
     process->fd_flags[fd] = 0;
-    if (value >= VFS_FD_BASE)
-      value_release(value);
+    ofd_release(object);
   }
 }
 
 void fd_clone(struct process *child, const struct process *parent) {
   for (int32_t fd = 0; fd < PROCESS_FD_COUNT; fd++) {
-    int32_t value = parent->descriptors[fd];
-    child->descriptors[fd] = value;
+    int32_t object = parent->descriptors[fd];
+    child->descriptors[fd] = object;
     child->fd_flags[fd] = parent->fd_flags[fd];
-    if (value >= VFS_FD_BASE)
-      value_ref(value);
+    if (object >= 0)
+      ofd_ref(object);
   }
 }

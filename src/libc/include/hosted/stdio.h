@@ -16,7 +16,7 @@
 #define EOF (-1)
 #define BUFSIZ 4096
 #define FILENAME_MAX 256
-#define FOPEN_MAX 16
+#define FOPEN_MAX 128
 #define TMP_MAX 10000
 #define L_tmpnam 64
 

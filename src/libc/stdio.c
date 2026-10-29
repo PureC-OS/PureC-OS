@@ -13,12 +13,11 @@
 #include <stdint.h>
 
 struct file_impl {
-    int fd; // kept only while preloading; -1 afterwards (except stdio)
+    int fd;
     uint8_t *buffer;
-    size_t size;
     size_t capacity;
+    size_t length;
     size_t position;
-    char path[FILENAME_MAX];
     bool readable;
     bool writable;
     bool append;
@@ -26,11 +25,13 @@ struct file_impl {
     bool error;
     bool unbuffered;
     bool line_buffered;
+    bool reading;
+    bool writing;
+    bool owns_fd;
     int pushed;
     bool has_pushed;
-    int kfd;
-    bool kernel;
     int child_pid;
+    char *temp_path;
 };
 
 static struct file_impl std_in_impl;
@@ -43,6 +44,8 @@ FILE *stderr = &std_err_impl;
 static FILE *open_registry[FOPEN_MAX];
 static uint32_t open_count = 0;
 static bool std_initialized = false;
+static int stdin_console_state = -1;
+static unsigned temp_counter;
 
 static void stdio_init_std(void) {
     if (std_initialized) return;
@@ -50,9 +53,6 @@ static void stdio_init_std(void) {
     memset(&std_in_impl, 0, sizeof(std_in_impl));
     memset(&std_out_impl, 0, sizeof(std_out_impl));
     memset(&std_err_impl, 0, sizeof(std_err_impl));
-    std_in_impl.kfd = -1;
-    std_out_impl.kfd = -1;
-    std_err_impl.kfd = -1;
     std_in_impl.fd = 0;
     std_in_impl.readable = true;
     std_out_impl.fd = 1;
@@ -74,9 +74,6 @@ static void registry_remove(FILE *stream) {
         if (open_registry[i] == stream) open_registry[i] = 0;
     }
 }
-
-
-static int stdin_console_state = -1;
 
 void stdio_stdin_reset(void) { stdin_console_state = -1; }
 
@@ -101,158 +98,120 @@ int stdio_fd_write_all(int fd, const void *data, size_t size) {
     return 0;
 }
 
-FILE *stdio_open_fd(int fd, const char *mode) {
-    stdio_init_std();
-    if (fd < 0 || !mode) { errno = EBADF; return 0; }
-    int64_t kind = pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_KIND, 0);
-    if (kind == FD_KIND_FILE) {
-        char path[FILENAME_MAX];
-        int64_t length = pc_syscall(SYS_FD_PATH, (uint64_t)fd, (uint64_t)(uintptr_t)path, sizeof(path));
-        if (length > 0) {
-            const char *legacy_mode = mode[0] == 'a' ? "a" : (mode[0] == 'w' ? "r+" : "r");
-            if (mode[0] == 'w' && strchr(mode, '+') == 0) legacy_mode = "r+";
-            FILE *file = fopen(path, legacy_mode);
-            if (!file) return 0;
-            if (mode[0] == 'w') file->writable = true;
-            file->kfd = fd;
-            return file;
-        }
+static bool ensure_buffer(FILE *stream) {
+    if (stream->buffer) return true;
+    stream->buffer = (uint8_t *)malloc(BUFSIZ);
+    if (!stream->buffer) { errno = ENOMEM; stream->error = true; return false; }
+    stream->capacity = BUFSIZ;
+    return true;
+}
+
+static int flush_write(FILE *stream) {
+    if (!stream->writing) return 0;
+    int result = 0;
+    if (stream->length && stdio_fd_write_all(stream->fd, stream->buffer, stream->length) < 0) {
+        stream->error = true;
+        result = EOF;
     }
-    bool read = false, write = false, append = false;
-    for (const char *m = mode; *m; m++) {
-        if (*m == 'r') read = true;
-        else if (*m == 'w') write = true;
-        else if (*m == 'a') { write = true; append = true; }
-        else if (*m == '+') { read = true; write = true; }
+    stream->length = 0;
+    stream->writing = false;
+    return result;
+}
+
+static void drop_read(FILE *stream) {
+    if (!stream->reading) return;
+    size_t unread = stream->length - stream->position;
+    if (unread) pc_syscall(SYS_FD_SEEK, (uint64_t)stream->fd, (uint64_t)(-(int64_t)unread), SEEK_CUR);
+    stream->reading = false;
+    stream->length = 0;
+    stream->position = 0;
+}
+
+static int fill_read(FILE *stream) {
+    if (flush_write(stream) != 0) return EOF;
+    if (!ensure_buffer(stream)) return EOF;
+    int64_t got = pc_syscall(SYS_FD_READ, (uint64_t)stream->fd,
+                             (uint64_t)(uintptr_t)stream->buffer, stream->capacity);
+    if (got <= 0) {
+        if (got < 0) { errno = (int)-got; stream->error = true; }
+        stream->eof = true;
+        return EOF;
     }
-    if (!read && !write) { errno = EINVAL; return 0; }
+    stream->length = (size_t)got;
+    stream->position = 0;
+    stream->reading = true;
+    return 0;
+}
+
+static FILE *stream_create(int fd, bool readable, bool writable, bool append, bool owns) {
+    if (open_count >= FOPEN_MAX) { errno = EMFILE; return 0; }
     FILE *stream = (FILE *)malloc(sizeof(FILE));
     if (!stream) { errno = ENOMEM; return 0; }
     memset(stream, 0, sizeof(*stream));
-    stream->fd = -1;
-    stream->kfd = fd;
-    stream->kernel = true;
-    stream->readable = read && !write;
-    stream->writable = write;
+    stream->fd = fd;
+    stream->readable = readable;
+    stream->writable = writable;
     stream->append = append;
-    stream->buffer = (uint8_t *)malloc(BUFSIZ);
-    if (!stream->buffer) { free(stream); errno = ENOMEM; return 0; }
-    stream->capacity = BUFSIZ;
+    stream->owns_fd = owns;
     registry_add(stream);
     open_count++;
     return stream;
 }
 
+static bool parse_mode(const char *mode, int *flags, bool *read, bool *write, bool *append) {
+    bool r = false, w = false, a = false, plus = false;
+    for (const char *m = mode; *m; m++) {
+        if (*m == 'r') r = true;
+        else if (*m == 'w') w = true;
+        else if (*m == 'a') a = true;
+        else if (*m == '+') plus = true;
+        else if (*m == 'b' || *m == 't' || *m == 'e' || *m == 'x') { }
+        else return false;
+    }
+    if (r + w + a != 1) return false;
+    *read = r || plus;
+    *write = w || a || plus;
+    *append = a;
+    int access = plus ? 2 : (r ? 0 : 1);
+    *flags = access;
+    if (w) *flags |= 0100 | 01000;
+    if (a) *flags |= 0100 | 02000;
+    return true;
+}
+
+FILE *stdio_open_fd(int fd, const char *mode) {
+    stdio_init_std();
+    if (fd < 0 || !mode) { errno = EBADF; return 0; }
+    int flags;
+    bool read, write, append;
+    if (!parse_mode(mode, &flags, &read, &write, &append)) { errno = EINVAL; return 0; }
+    return stream_create(fd, read, write, append, true);
+}
+
 int stdio_stream_fd(const FILE *stream) {
-    if (!stream) return -1;
-    if (stream == stdin) return 0;
-    if (stream == stdout) return 1;
-    if (stream == stderr) return 2;
-    return stream->kfd;
+    return stream ? stream->fd : -1;
 }
 
 void stdio_set_child(FILE *stream, int pid) { if (stream) stream->child_pid = pid; }
 int stdio_get_child(const FILE *stream) { return stream ? stream->child_pid : 0; }
 
-// ---- open/close ----
-
 FILE *fopen(const char *path, const char *mode) {
     stdio_init_std();
     if (!path || !mode) { errno = EINVAL; return 0; }
-    char abs[512];
-    if (path[0] != '/' && !(path[0] == '-' && path[1] == '\0')) {
-        if (realpath(path, abs)) path = abs;
-    }
-    bool read = false, write = false, append = false, truncate = false, must_exist = false;
-    // Parse "r/w/a" + "+" + "b"/"t".
-    for (const char *m = mode; *m; m++) {
-        if (*m == 'r') { read = true; must_exist = true; }
-        else if (*m == 'w') { write = true; truncate = true; }
-        else if (*m == 'a') { write = true; append = true; }
-        else if (*m == '+') { read = true; write = true; must_exist = !truncate; }
-        else if (*m == 'b' || *m == 't') { }
-        else { errno = EINVAL; return 0; }
-    }
-    if (!read && !write) { errno = EINVAL; return 0; }
-    if (open_count >= FOPEN_MAX) { errno = EMFILE; return 0; }
-
-    FILE *stream = (FILE *)malloc(sizeof(FILE));
-    if (!stream) return 0;
-    memset(stream, 0, sizeof(*stream));
-    stream->fd = -1;
-    stream->kfd = -1;
-    strncpy(stream->path, path, sizeof(stream->path) - 1);
-    stream->readable = read;
-    stream->writable = write;
-    stream->append = append;
-
-    if (truncate) {
-        // Create-or-replace with empty content (full-replace write model).
-        static char empty = 0;
-        int32_t probe = pc_file_open(path);
-        if (probe >= 0) {
-            pc_file_close(probe);
-            if (pc_file_write(path, &empty, 0) < 0) {
-                free(stream);
-                errno = EIO;
-                return 0;
-            }
-        } else {
-            if (pc_file_create(path) < 0) {
-                free(stream);
-                errno = ENOENT;
-                return 0;
-            }
-        }
-    }
-
-    if (read || append) {
-        // Preload whole file into the heap buffer.
-        struct file_stat_info info;
-        uint64_t file_size = 0;
-        if (pc_file_stat(path, &info) == 0) file_size = info.size;
-        if (must_exist && file_size == 0) {
-            // Distinguish missing file from empty file via open probe.
-            int32_t probe = pc_file_open(path);
-            if (probe < 0) {
-                free(stream);
-                errno = ENOENT;
-                return 0;
-            }
-            pc_file_close(probe);
-        }
-        if (file_size > 0) {
-            if (file_size > 64 * 1024 * 1024) {
-                free(stream);
-                errno = ENOMEM;
-                return 0;
-            }
-            stream->buffer = (uint8_t *)malloc((size_t)file_size);
-            if (!stream->buffer) { free(stream); return 0; }
-            int32_t fd = pc_file_open(path);
-            if (fd < 0) { free(stream->buffer); free(stream); errno = ENOENT; return 0; }
-            uint64_t done = 0;
-            while (done < file_size) {
-                uint32_t chunk = file_size - done > 0x40000 ? 0x40000 : (uint32_t)(file_size - done);
-                int32_t got = pc_file_read(fd, stream->buffer + done, chunk);
-                if (got <= 0) break;
-                done += (uint64_t)got;
-            }
-            pc_file_close(fd);
-            stream->size = (size_t)done;
-            stream->capacity = (size_t)file_size;
-        }
-        stream->position = append ? stream->size : 0;
-    }
-    registry_add(stream);
-    open_count++;
+    int flags;
+    bool read, write, append;
+    if (!parse_mode(mode, &flags, &read, &write, &append)) { errno = EINVAL; return 0; }
+    int64_t fd = pc_syscall(SYS_FD_OPEN, (uint64_t)(uintptr_t)path, (uint64_t)(uint32_t)flags, 0);
+    if (fd < 0) { errno = (int)-fd; return 0; }
+    FILE *stream = stream_create((int)fd, read, write, append, true);
+    if (!stream) pc_syscall(SYS_FILE_CLOSE, (uint64_t)fd, 0, 0);
     return stream;
 }
 
 int fflush(FILE *stream) {
     if (!stream) {
+        stdio_init_std();
         int result = 0;
-        // Console streams are not in the registry; flush them explicitly.
         if (fflush(stdout) != 0) result = EOF;
         if (fflush(stderr) != 0) result = EOF;
         for (uint32_t i = 0; i < FOPEN_MAX; i++) {
@@ -260,31 +219,8 @@ int fflush(FILE *stream) {
         }
         return result;
     }
-    if (stream == stdout || stream == stderr || stream == stdin) {
-        // Console streams flush inline on write; drain stdout's line buffer.
-        if (stream == stdout && stream->buffer && stream->size) {
-            stdio_fd_write_all(1, stream->buffer, stream->size);
-            stream->size = 0;
-        }
-        return 0;
-    }
-    if (stream->kernel) {
-        if (!stream->writable || !stream->buffer || !stream->size) return 0;
-        if (stdio_fd_write_all(stream->kfd, stream->buffer, stream->size) < 0) {
-            stream->error = true;
-            return EOF;
-        }
-        stream->size = 0;
-        stream->position = 0;
-        return 0;
-    }
-    if (!stream->writable || !stream->buffer || !stream->size) return 0;
-    if (pc_file_write(stream->path, stream->buffer, (uint32_t)stream->size) < 0) {
-        stream->error = true;
-        errno = EIO;
-        return EOF;
-    }
-    return 0;
+    if (stream == stdin) return 0;
+    return flush_write(stream);
 }
 
 int fclose(FILE *stream) {
@@ -292,18 +228,18 @@ int fclose(FILE *stream) {
         errno = EINVAL;
         return EOF;
     }
-    // Shared ownership with fdopen(): the stream may already be gone.
-    // Membership probe touches only the registry, never the pointer.
     bool known = false;
     for (uint32_t i = 0; i < FOPEN_MAX; i++) {
         if (open_registry[i] == stream) { known = true; break; }
     }
     if (!known) { errno = EBADF; return EOF; }
-    int result = fflush(stream);
-    if (stream->kfd >= 0) {
-        if (pc_syscall(SYS_FILE_CLOSE, (uint64_t)stream->kfd, 0, 0) < 0 && result == 0) result = EOF;
+    int result = flush_write(stream);
+    if (stream->owns_fd && pc_syscall(SYS_FILE_CLOSE, (uint64_t)stream->fd, 0, 0) < 0 && result == 0)
+        result = EOF;
+    if (stream->temp_path) {
+        pc_file_delete(stream->temp_path);
+        free(stream->temp_path);
     }
-    if (stream->fd >= 0) pc_file_close(stream->fd);
     free(stream->buffer);
     registry_remove(stream);
     if (open_count) open_count--;
@@ -312,45 +248,79 @@ int fclose(FILE *stream) {
 }
 
 FILE *freopen(const char *filename, const char *mode, FILE *stream) {
-    // No text/binary distinction ("b" ignored in fopen), so reopen is
-    // close + open. NULL filename keeps the stream (C standard).
+    stdio_init_std();
     if (!mode || !stream) { errno = EINVAL; return 0; }
-    if (!filename) return stream;
-    if (stream != stdin && stream != stdout && stream != stderr)
-        fclose(stream);
-    return fopen(filename, mode);
+    int flags;
+    bool read, write, append;
+    if (!parse_mode(mode, &flags, &read, &write, &append)) { errno = EINVAL; return 0; }
+    flush_write(stream);
+    if (!filename) {
+        stream->readable = read;
+        stream->writable = write;
+        stream->append = append;
+        return stream;
+    }
+    drop_read(stream);
+    int64_t fd = pc_syscall(SYS_FD_OPEN, (uint64_t)(uintptr_t)filename, (uint64_t)(uint32_t)flags, 0);
+    if (fd < 0) { errno = (int)-fd; return 0; }
+    if (stream == stdin || stream == stdout || stream == stderr) {
+        pc_syscall(SYS_DUP2, (uint64_t)fd, (uint64_t)stream->fd, 0);
+        pc_syscall(SYS_FILE_CLOSE, (uint64_t)fd, 0, 0);
+        if (stream == stdin) stdin_console_state = -1;
+    } else {
+        if (stream->owns_fd) pc_syscall(SYS_FILE_CLOSE, (uint64_t)stream->fd, 0, 0);
+        stream->fd = (int)fd;
+        stream->owns_fd = true;
+    }
+    stream->readable = read;
+    stream->writable = write;
+    stream->append = append;
+    stream->eof = false;
+    stream->error = false;
+    stream->has_pushed = false;
+    stream->length = stream->position = 0;
+    stream->reading = stream->writing = false;
+    return stream;
 }
 
 FILE *tmpfile(void) {
-    // No temp-file support on PureC VFS yet.
-    errno = ENOSYS;
-    return 0;
+    stdio_init_std();
+    char path[64];
+    snprintf(path, sizeof(path), "/tmp/tmpf.%d.%u", (int)pc_getpid(), temp_counter++);
+    int64_t fd = pc_syscall(SYS_FD_OPEN, (uint64_t)(uintptr_t)path, 02 | 0100 | 01000, 0);
+    if (fd < 0) { errno = (int)-fd; return 0; }
+    FILE *stream = stream_create((int)fd, true, true, false, true);
+    if (!stream) { pc_syscall(SYS_FILE_CLOSE, (uint64_t)fd, 0, 0); return 0; }
+    size_t length = strlen(path) + 1;
+    stream->temp_path = (char *)malloc(length);
+    if (stream->temp_path) memcpy(stream->temp_path, path, length);
+    return stream;
 }
 
 char *tmpnam(char *s) {
-    // No temp names yet; callers (Lua loslib) treat NULL as error.
-    (void)s;
-    errno = ENOSYS;
-    return 0;
+    static char internal[L_tmpnam];
+    char *out = s ? s : internal;
+    snprintf(out, L_tmpnam, "/tmp/tmpn.%d.%u", (int)pc_getpid(), temp_counter++);
+    return out;
 }
-
-// ---- positioning ----
 
 int fseek(FILE *stream, long offset, int origin) {
     if (!stream) { errno = EINVAL; return -1; }
-    if (stream == stdin) { errno = ESPIPE; return -1; }
-    if (stream == stdout || stream == stderr) { errno = ESPIPE; return -1; }
-    if (stream->kernel) { errno = ESPIPE; return -1; }
     if (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END) {
         errno = EINVAL;
         return -1;
     }
-    int64_t base = 0;
-    if (origin == SEEK_CUR) base = (int64_t)stream->position;
-    else if (origin == SEEK_END) base = (int64_t)stream->size;
-    int64_t target = base + offset;
-    if (target < 0) { errno = EINVAL; return -1; }
-    stream->position = (size_t)target;
+    if (flush_write(stream) != 0) return -1;
+    int64_t adjust = 0;
+    if (origin == SEEK_CUR) {
+        if (stream->reading) adjust -= (int64_t)(stream->length - stream->position);
+        if (stream->has_pushed) adjust -= 1;
+    }
+    int64_t result = pc_syscall(SYS_FD_SEEK, (uint64_t)stream->fd,
+                                (uint64_t)((int64_t)offset + adjust), (uint64_t)origin);
+    if (result < 0) { errno = ESPIPE; return -1; }
+    stream->reading = false;
+    stream->length = stream->position = 0;
     stream->eof = false;
     stream->has_pushed = false;
     return 0;
@@ -358,78 +328,39 @@ int fseek(FILE *stream, long offset, int origin) {
 
 long ftell(FILE *stream) {
     if (!stream) { errno = EINVAL; return -1L; }
-    if (stream == stdin || stream == stdout || stream == stderr) return 0L;
-    return (long)stream->position;
+    int64_t position = pc_syscall(SYS_FD_SEEK, (uint64_t)stream->fd, 0, SEEK_CUR);
+    if (position < 0) { errno = ESPIPE; return -1L; }
+    if (stream->writing) position += (int64_t)stream->length;
+    if (stream->reading) position -= (int64_t)(stream->length - stream->position);
+    if (stream->has_pushed) position -= 1;
+    return (long)position;
 }
 
 void rewind(FILE *stream) {
     if (!stream) return;
-    if (stream == stdin || stream == stdout || stream == stderr) return;
-    stream->position = 0;
-    stream->eof = false;
+    fseek(stream, 0, SEEK_SET);
     stream->error = false;
-    stream->has_pushed = false;
-}
-
-// ---- character/block IO ----
-
-static int file_getc_buffered(FILE *stream) {
-    if (stream->has_pushed) {
-        stream->has_pushed = false;
-        return stream->pushed;
-    }
-    if (stream->position >= stream->size) {
-        if (stream->kernel && stream->readable && stream->kfd >= 0) {
-            if (!stream->buffer) {
-                stream->buffer = (uint8_t *)malloc(BUFSIZ);
-                if (!stream->buffer) { stream->error = true; return EOF; }
-                stream->capacity = BUFSIZ;
-            }
-            int64_t got = pc_syscall(SYS_FD_READ, (uint64_t)stream->kfd,
-                                     (uint64_t)(uintptr_t)stream->buffer, stream->capacity);
-            if (got <= 0) {
-                if (got < 0) { stream->error = true; errno = (int)-got; }
-                stream->eof = true;
-                return EOF;
-            }
-            stream->size = (size_t)got;
-            stream->position = 0;
-            return stream->buffer[stream->position++];
-        }
-        stream->eof = true;
-        return EOF;
-    }
-    return stream->buffer[stream->position++];
 }
 
 int fgetc(FILE *stream) {
     if (!stream) { errno = EINVAL; return EOF; }
     if (stream == stdin) {
+        stdio_init_std();
         if (stdin_is_console()) {
-            int32_t c = (int32_t)pc_syscall(SYS_GETCHAR, 0, 0, 0); // blocking
+            int32_t c = (int32_t)pc_syscall(SYS_GETCHAR, 0, 0, 0);
             return c < 0 ? EOF : c & 0xFF;
         }
-        stdio_init_std();
-        if (stream->has_pushed) { stream->has_pushed = false; return stream->pushed; }
-        if (stream->position >= stream->size) {
-            if (!stream->buffer) {
-                stream->buffer = (uint8_t *)malloc(BUFSIZ);
-                if (!stream->buffer) { stream->error = true; return EOF; }
-                stream->capacity = BUFSIZ;
-            }
-            int64_t got = pc_syscall(SYS_FD_READ, 0, (uint64_t)(uintptr_t)stream->buffer, stream->capacity);
-            if (got <= 0) {
-                if (got < 0) { stream->error = true; errno = (int)-got; }
-                stream->eof = true;
-                return EOF;
-            }
-            stream->size = (size_t)got;
-            stream->position = 0;
-        }
-        return stream->buffer[stream->position++];
     }
     if (!stream->readable) { stream->error = true; errno = EBADF; return EOF; }
-    return file_getc_buffered(stream);
+    if (stream->has_pushed) {
+        stream->has_pushed = false;
+        return stream->pushed;
+    }
+    if (!stream->reading || stream->position >= stream->length) {
+        if (stream->reading) { stream->reading = false; stream->length = stream->position = 0; }
+        if (fill_read(stream) != 0) return EOF;
+    }
+    return stream->buffer[stream->position++];
 }
 
 int getc(FILE *stream) { return fgetc(stream); }
@@ -446,53 +377,29 @@ char *fgets(char *buffer, int count, FILE *stream) {
         if (c == '\n') break;
     }
     if (!i && feof(stream)) return 0;
+    if (!i && ferror(stream)) return 0;
     buffer[i] = '\0';
     return buffer;
 }
 
-static bool file_ensure_capacity(FILE *stream, size_t extra) {
-    if (stream->position + extra <= stream->capacity) return true;
-    size_t need = stream->position + extra;
-    size_t grown = stream->capacity ? stream->capacity * 2 : 256;
-    while (grown < need) grown *= 2;
-    uint8_t *fresh = (uint8_t *)realloc(stream->buffer, grown);
-    if (!fresh) { stream->error = true; errno = ENOMEM; return false; }
-    stream->buffer = fresh;
-    stream->capacity = grown;
-    return true;
-}
-
 int fputc(int value, FILE *stream) {
     if (!stream) { errno = EINVAL; return EOF; }
-    if (stream == stdout || stream == stderr) {
-        uint8_t c = (uint8_t)value;
-        if (stream == stderr) {
-            stdio_fd_write_all(2, &c, 1);
-            return value & 0xFF;
-        }
-        // stdout: line buffered.
-        if (!stream->buffer) {
-            stream->buffer = (uint8_t *)malloc(BUFSIZ);
-            if (!stream->buffer) { errno = ENOMEM; return EOF; }
-            stream->capacity = BUFSIZ;
-            stream->size = 0;
-        }
-        if (!file_ensure_capacity(stream, 1)) return EOF;
-        stream->buffer[stream->size++] = c;
-        if (c == '\n') fflush(stream);
-        return value & 0xFF;
-    }
+    stdio_init_std();
     if (!stream->writable) { stream->error = true; errno = EBADF; return EOF; }
-    if (stream->kernel) {
-        if (stream->size >= stream->capacity && fflush(stream) != 0) return EOF;
-        stream->buffer[stream->size++] = (uint8_t)value;
-        stream->position = stream->size;
+    uint8_t c = (uint8_t)value;
+    if (stream->reading) {
+        drop_read(stream);
+        stream->has_pushed = false;
+    }
+    if (stream->unbuffered) {
+        if (stdio_fd_write_all(stream->fd, &c, 1) < 0) { stream->error = true; return EOF; }
         return value & 0xFF;
     }
-    if (stream->append) stream->position = stream->size;
-    if (!file_ensure_capacity(stream, 1)) return EOF;
-    if (stream->position >= stream->size) stream->size = stream->position + 1;
-    stream->buffer[stream->position++] = (uint8_t)value;
+    if (!ensure_buffer(stream)) return EOF;
+    if (stream->length >= stream->capacity && flush_write(stream) != 0) return EOF;
+    stream->buffer[stream->length++] = c;
+    stream->writing = true;
+    if (stream->line_buffered && c == '\n' && flush_write(stream) != 0) return EOF;
     return value & 0xFF;
 }
 
@@ -501,10 +408,8 @@ int putchar(int value) { return fputc(value, stdout); }
 
 int fputs(const char *text, FILE *stream) {
     if (!text || !stream) { errno = EINVAL; return EOF; }
-    for (; *text; text++) {
-        if (fputc((unsigned char)*text, stream) == EOF) return EOF;
-    }
-    return 0;
+    size_t length = strlen(text);
+    return fwrite(text, 1, length, stream) == length ? 0 : EOF;
 }
 
 int puts(const char *text) {
@@ -514,10 +419,6 @@ int puts(const char *text) {
 
 int ungetc(int value, FILE *stream) {
     if (!stream || value == EOF) return EOF;
-    if (stream == stdin || stream == stdout || stream == stderr) {
-        errno = ESPIPE;
-        return EOF;
-    }
     if (!stream->readable || stream->has_pushed) return EOF;
     stream->pushed = value & 0xFF;
     stream->has_pushed = true;
@@ -528,42 +429,82 @@ int ungetc(int value, FILE *stream) {
 size_t fread(void *buffer, size_t size, size_t count, FILE *stream) {
     if (!buffer || !stream) { errno = EINVAL; return 0; }
     if (size == 0 || count == 0) return 0;
+    size_t total = size * count;
+    uint8_t *out = (uint8_t *)buffer;
+    size_t done = 0;
     if (stream == stdin) {
-        uint8_t *out = (uint8_t *)buffer;
-        size_t got = 0;
-        for (size_t i = 0; i < count; i++) {
-            for (size_t k = 0; k < size; k++) {
+        stdio_init_std();
+        if (stdin_is_console()) {
+            for (; done < total; done++) {
                 int c = fgetc(stream);
-                if (c == EOF) return got;
-                out[i * size + k] = (uint8_t)c;
+                if (c == EOF) break;
+                out[done] = (uint8_t)c;
             }
-            got++;
+            return done / size;
         }
-        return got;
     }
     if (!stream->readable) { stream->error = true; errno = EBADF; return 0; }
-    size_t done = 0;
-    uint8_t *out = (uint8_t *)buffer;
-    for (size_t i = 0; i < count; i++) {
-        for (size_t k = 0; k < size; k++) {
-            int c = file_getc_buffered(stream);
-            if (c == EOF) return done;
-            out[i * size + k] = (uint8_t)c;
-        }
-        done++;
+    if (stream->has_pushed && done < total) {
+        stream->has_pushed = false;
+        out[done++] = (uint8_t)stream->pushed;
     }
-    return done;
+    while (done < total) {
+        if (stream->reading && stream->position < stream->length) {
+            size_t available = stream->length - stream->position;
+            size_t take = total - done < available ? total - done : available;
+            memcpy(out + done, stream->buffer + stream->position, take);
+            stream->position += take;
+            done += take;
+            continue;
+        }
+        stream->reading = false;
+        stream->length = stream->position = 0;
+        if (flush_write(stream) != 0) break;
+        if (total - done >= BUFSIZ) {
+            int64_t got = pc_syscall(SYS_FD_READ, (uint64_t)stream->fd,
+                                     (uint64_t)(uintptr_t)(out + done), total - done);
+            if (got <= 0) {
+                if (got < 0) { errno = (int)-got; stream->error = true; }
+                stream->eof = true;
+                break;
+            }
+            done += (size_t)got;
+            continue;
+        }
+        if (fill_read(stream) != 0) break;
+    }
+    return done / size;
 }
 
 size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream) {
     if (!buffer || !stream) { errno = EINVAL; return 0; }
     if (size == 0 || count == 0) return 0;
+    stdio_init_std();
+    if (!stream->writable) { stream->error = true; errno = EBADF; return 0; }
+    size_t total = size * count;
     const uint8_t *in = (const uint8_t *)buffer;
-    for (size_t i = 0; i < count; i++) {
-        for (size_t k = 0; k < size; k++) {
-            if (fputc(in[i * size + k], stream) == EOF) return i;
-        }
+    if (stream->reading) {
+        drop_read(stream);
+        stream->has_pushed = false;
     }
+    if (stream->unbuffered || total >= BUFSIZ) {
+        if (flush_write(stream) != 0) return 0;
+        if (stdio_fd_write_all(stream->fd, in, total) < 0) { stream->error = true; return 0; }
+        return count;
+    }
+    if (!ensure_buffer(stream)) return 0;
+    size_t done = 0;
+    while (done < total) {
+        if (stream->length >= stream->capacity && flush_write(stream) != 0) return done / size;
+        size_t room = stream->capacity - stream->length;
+        size_t take = total - done < room ? total - done : room;
+        memcpy(stream->buffer + stream->length, in + done, take);
+        stream->length += take;
+        stream->writing = true;
+        done += take;
+    }
+    if (stream->line_buffered && memchr(in, '\n', total) && flush_write(stream) != 0)
+        return 0;
     return count;
 }
 
@@ -574,7 +515,6 @@ void clearerr(FILE *stream) {
     if (!stream) return;
     stream->eof = false;
     stream->error = false;
-    stream->has_pushed = false;
 }
 
 void perror(const char *prefix) {
@@ -584,12 +524,6 @@ void perror(const char *prefix) {
     }
     fputs(strerror(errno), stderr);
     fputc('\n', stderr);
-}
-
-// Internal accessor for unistd.c fstat(): FILE layout stays private to
-// this TU, no header cycle.
-const char *stdio_stream_path(const FILE *stream) {
-    return stream ? stream->path : 0;
 }
 
 int remove(const char *path) {    if (!path) { errno = EINVAL; return -1; }
@@ -621,12 +555,15 @@ int rename(const char *old_path, const char *new_path) {
 }
 
 int setvbuf(FILE *stream, char *buffer, int mode, size_t size) {
-    (void)stream; (void)buffer; (void)mode; (void)size;
-    return 0; // buffering model is fixed; accepted for compatibility
+    (void)buffer; (void)size;
+    if (!stream) { errno = EINVAL; return -1; }
+    stream->unbuffered = mode == _IONBF;
+    stream->line_buffered = mode == _IOLBF;
+    return 0;
 }
 
 void setbuf(FILE *stream, char *buffer) {
-    (void)stream; (void)buffer;
+    if (stream) setvbuf(stream, buffer, buffer ? _IOFBF : _IONBF, BUFSIZ);
 }
 
 // ---- printf engine (integers, chars, strings, pointers; no floats) ----
@@ -644,6 +581,7 @@ struct fmt_sink {
 static void sink_putc(struct fmt_sink *sink, char c) {
     if (sink->stream) {
         if (fputc((unsigned char)c, sink->stream) == EOF) sink->error = true;
+        else sink->length++;
         return;
     }
     if (sink->dynamic) {
@@ -1025,13 +963,16 @@ int vprintf(const char *format, va_list args) {
 }
 
 size_t stdio_stream_peek(FILE *stream, char *out, size_t capacity) {
+    stdio_init_std();
     if (!stream || !stream->readable) return 0;
     if (stream->has_pushed) return 0;
-    if (stream->position >= stream->size) {
-        stream->eof = true;
-        return 0;
+    if (stream == stdin && stdin_is_console()) return 0;
+    if (!stream->reading || stream->position >= stream->length) {
+        stream->reading = false;
+        stream->length = stream->position = 0;
+        if (fill_read(stream) != 0) return 0;
     }
-    size_t available = stream->size - stream->position;
+    size_t available = stream->length - stream->position;
     if (available > capacity) available = capacity;
     memcpy(out, stream->buffer + stream->position, available);
     return available;
@@ -1040,10 +981,7 @@ size_t stdio_stream_peek(FILE *stream, char *out, size_t capacity) {
 void stdio_stream_advance(FILE *stream, size_t count) {
     if (!stream) return;
     stream->position += count;
-    if (stream->position >= stream->size) {
-        stream->position = stream->size;
-        stream->eof = true;
-    }
+    if (stream->position > stream->length) stream->position = stream->length;
 }
 
 int printf(const char *format, ...) {

@@ -34,6 +34,7 @@ pid_t fork(void);
 pid_t getpid(void);
 pid_t getppid(void);
 int dup(int fd);
+int ftruncate(int fd, off_t length);
 int dup2(int old_fd, int new_fd);
 int pipe(int fds[2]);
 int pipe2(int fds[2], int flags);

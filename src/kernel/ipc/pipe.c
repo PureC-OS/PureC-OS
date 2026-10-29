@@ -126,7 +126,7 @@ void pipe_release(int32_t id, bool write_end) {
   wake_all(wake, wake_count);
 }
 
-int32_t pipe_read(int32_t id, void *buffer, uint32_t count) {
+int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock) {
   if (!count)
     return 0;
   int32_t self = scheduler_current_tid();
@@ -156,6 +156,10 @@ int32_t pipe_read(int32_t id, void *buffer, uint32_t count) {
       mutex_unlock(&pipe_mutex);
       return 0;
     }
+    if (nonblock) {
+      mutex_unlock(&pipe_mutex);
+      return -KERR_AGAIN;
+    }
     if (signal_pending_current()) {
       mutex_unlock(&pipe_mutex);
       return -KERR_INTR;
@@ -169,7 +173,8 @@ int32_t pipe_read(int32_t id, void *buffer, uint32_t count) {
   }
 }
 
-int32_t pipe_write(int32_t id, const void *buffer, uint32_t count) {
+int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
+                   bool nonblock) {
   int32_t self = scheduler_current_tid();
   const uint8_t *in = (const uint8_t *)buffer;
   uint32_t written = 0;
@@ -200,6 +205,10 @@ int32_t pipe_write(int32_t id, const void *buffer, uint32_t count) {
       mutex_unlock(&pipe_mutex);
       wake_all(wake, wake_count);
       continue;
+    }
+    if (nonblock) {
+      mutex_unlock(&pipe_mutex);
+      return written ? (int32_t)written : -KERR_AGAIN;
     }
     if (signal_pending_current()) {
       mutex_unlock(&pipe_mutex);

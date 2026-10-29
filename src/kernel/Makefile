@@ -55,6 +55,7 @@ C_SOURCES := \
 	kernel/ipc/pipe.c \
 	kernel/process/signal.c \
 	kernel/process/fdtable.c \
+	kernel/process/ofd.c \
 	mm/pmm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \

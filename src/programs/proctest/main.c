@@ -157,6 +157,64 @@ int main(int argc, char **argv) {
         check("popen read", 0);
     }
 
+    int wfd = open("/tmp/ofd_test", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    check("open O_WRONLY|O_CREAT|O_TRUNC", wfd >= 0 && write(wfd, "abcdefgh", 8) == 8);
+    close(wfd);
+    int rfd = open("/tmp/ofd_test", O_RDONLY);
+    int rdup = dup(rfd);
+    char two[4] = {0};
+    char three[4] = {0};
+    read(rfd, two, 3);
+    read(rdup, three, 3);
+    check("dup shares file offset", strcmp(two, "abc") == 0 && strcmp(three, "def") == 0);
+    pid = fork();
+    if (pid == 0) {
+        char c;
+        _exit(read(rfd, &c, 1) == 1 && c == 'g' ? 0 : 1);
+    }
+    waitpid(pid, &status, 0);
+    char last = 0;
+    read(rfd, &last, 1);
+    check("fork shares file offset", WIFEXITED(status) && WEXITSTATUS(status) == 0 && last == 'h');
+    close(rfd);
+    close(rdup);
+
+    int rw = open("/tmp/ofd_test", O_RDWR);
+    check("O_RDWR open", rw >= 0);
+    lseek(rw, 2, SEEK_SET);
+    write(rw, "XY", 2);
+    lseek(rw, 0, SEEK_SET);
+    char all[16] = {0};
+    ssize_t got = read(rw, all, sizeof(all) - 1);
+    check("write at offset in middle", got == 8 && strcmp(all, "abXYefgh") == 0);
+    check("ftruncate shrink", ftruncate(rw, 4) == 0);
+    lseek(rw, 0, SEEK_SET);
+    memset(all, 0, sizeof(all));
+    got = read(rw, all, sizeof(all) - 1);
+    check("ftruncate result", got == 4 && strcmp(all, "abXY") == 0);
+    check("lseek SEEK_END", lseek(rw, 0, SEEK_END) == 4);
+    close(rw);
+
+    FILE *fp = fopen("/tmp/ofd_test", "r+");
+    check("fopen r+", fp != 0);
+    if (fp) {
+        fseek(fp, 1, SEEK_SET);
+        fputc('Q', fp);
+        fseek(fp, 0, SEEK_SET);
+        fgets(text, sizeof(text), fp);
+        check("FILE r+ overwrite via fd", strcmp(text, "aQXY") == 0);
+        fclose(fp);
+    }
+
+    pipe(fds);
+    int fl = fcntl(fds[0], F_GETFL);
+    fcntl(fds[0], F_SETFL, fl | O_NONBLOCK);
+    char probe;
+    check("O_NONBLOCK pipe EAGAIN", read(fds[0], &probe, 1) == -1 && errno == EAGAIN);
+    close(fds[0]);
+    close(fds[1]);
+    unlink("/tmp/ofd_test");
+
     printf("proctest done failures=%d\n", failures);
     return failures ? 1 : 0;
 }

@@ -21,7 +21,6 @@
 
 // FILE layout (path field) is internal to stdio.c; fstat reaches it
 // through this accessor to avoid a header cycle.
-const char *stdio_stream_path(const FILE *stream);
 
 // No kernel cwd: resolve relative paths against logical $PWD so ported
 // programs (tcc, etc.) work with "file.c" instead of only "/abs/path".
@@ -94,10 +93,15 @@ FILE *fdopen(int fd, const char *mode) {
 }
 
 off_t lseek(int fd, off_t offset, int origin) {
-    int64_t result = pc_syscall(SYS_FILE_SEEK, (uint64_t)fd, (uint64_t)(int64_t)offset,
+    int64_t result = pc_syscall(SYS_FD_SEEK, (uint64_t)fd, (uint64_t)(int64_t)offset,
                                 (uint64_t)(uint32_t)origin);
-    if (result < 0) { errno = ESPIPE; return -1; }
+    if (result < 0) { errno = (int)-result; return -1; }
     return (off_t)result;
+}
+
+int ftruncate(int fd, off_t length) {
+    if (length < 0) { errno = EINVAL; return -1; }
+    return syscall_result(pc_syscall(SYS_FD_TRUNCATE, (uint64_t)fd, (uint64_t)length, 0));
 }
 
 int dup(int fd) {
@@ -136,8 +140,9 @@ int fcntl(int fd, int command, ...) {
     case F_DUPFD_CLOEXEC:
         return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_DUPFD_CLOEXEC, (uint64_t)argument));
     case F_GETFL:
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_GETFL, 0));
     case F_SETFL:
-        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_GETFD, 0)) < 0 ? -1 : 0;
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_SETFL, (uint64_t)argument));
     default:
         errno = EINVAL;
         return -1;

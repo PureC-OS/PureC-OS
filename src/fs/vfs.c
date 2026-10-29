@@ -28,7 +28,7 @@ enum vfs_handle_type {
   VFS_HANDLE_BACKEND,
   VFS_HANDLE_MEMORY,
   VFS_HANDLE_KLOG,
-  VFS_HANDLE_APPEND
+  VFS_HANDLE_WRITABLE
 };
 
 static uint8_t vfs_active_fs = VFS_FS_EXT2;
@@ -44,6 +44,7 @@ struct vfs_handle {
   uint64_t klog_cursor;
   bool klog_data_lost;
   uint32_t refs;
+  uint32_t wflags;
   char path[VFS_PATH_MAX];
 };
 
@@ -504,8 +505,26 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
   struct vfs_handle *h = get_handle(descriptor);
   if (!h)
     return FS_ERROR_INVALID;
-  if (h->type == VFS_HANDLE_APPEND)
-    return FS_ERROR_UNSUPPORTED;
+  if (h->type == VFS_HANDLE_WRITABLE) {
+    if (!(h->wflags & 2U))
+      return FS_ERROR_UNSUPPORTED;
+    char path[VFS_PATH_MAX];
+    strncpy(path, h->path, sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    uint32_t position = h->position;
+    int32_t temporary = vfs_open(path);
+    if (temporary < 0)
+      return temporary;
+    (void)vfs_seek(temporary, (int64_t)position, SEEK_SET);
+    int32_t got = vfs_read(temporary, buffer, count);
+    vfs_close(temporary);
+    if (got > 0) {
+      h = get_handle(descriptor);
+      if (h)
+        h->position += (uint32_t)got;
+    }
+    return got;
+  }
   if (h->type == VFS_HANDLE_BACKEND) {
     if (!h->mount->ops->read)
       return FS_ERROR_UNSUPPORTED;
@@ -568,26 +587,130 @@ int32_t vfs_open_flags(const char *path, uint32_t flags) {
   memset(h, 0, sizeof(*h));
   h->refs = 1;
   h->backend_descriptor = -1;
-  h->type = VFS_HANDLE_APPEND;
+  h->type = VFS_HANDLE_WRITABLE;
+  h->wflags = ((flags & 02000U) ? 1U : 0U) | (access == 2 ? 2U : 0U);
   strncpy(h->path, resolved.path, sizeof(h->path) - 1);
+  if (h->wflags & 1U) {
+    struct file_stat_info end_info;
+    if (vfs_stat(h->path, &end_info) >= 0)
+      h->position = (uint32_t)end_info.size;
+  }
   return VFS_FD_BASE + idx;
+}
+
+#define VFS_RMW_LIMIT (64ULL * 1024ULL * 1024ULL)
+
+static int32_t file_size_of(const char *path, uint64_t *size) {
+  struct file_stat_info info;
+  int32_t status = vfs_stat(path, &info);
+  if (status < 0)
+    return status;
+  *size = info.size;
+  return 0;
+}
+
+static int32_t load_prefix(const char *path, uint8_t *buffer, uint64_t length) {
+  if (!length)
+    return 0;
+  int32_t fd = vfs_open(path);
+  if (fd < 0)
+    return fd;
+  uint64_t done = 0;
+  while (done < length) {
+    uint64_t left = length - done;
+    int32_t got = vfs_read(fd, buffer + done, left > 1048576 ? 1048576 : (uint32_t)left);
+    if (got <= 0)
+      break;
+    done += (uint64_t)got;
+  }
+  vfs_close(fd);
+  return 0;
+}
+
+static int32_t rewrite_file(const char *path, uint64_t offset, const void *data,
+                            uint32_t count, uint64_t new_length) {
+  uint64_t size = 0;
+  (void)file_size_of(path, &size);
+  uint64_t final_length = new_length;
+  if (offset + count > final_length)
+    final_length = offset + count;
+  if (final_length > VFS_RMW_LIMIT)
+    return FS_ERROR_NO_SPACE;
+  uint64_t pages = (final_length + 4095) / 4096;
+  uint64_t phys = pages ? pmm_allocate_contiguous(pages) : 0;
+  if (pages && !phys)
+    return FS_ERROR_NO_SPACE;
+  uint8_t *buffer = phys ? (uint8_t *)pmm_physical_to_virtual(phys) : 0;
+  uint64_t keep = size < final_length ? size : final_length;
+  int32_t status = load_prefix(path, buffer, keep);
+  if (status >= 0) {
+    if (count)
+      memcpy(buffer + offset, data, count);
+    status = vfs_write_file(path, buffer ? (const void *)buffer : (const void *)"",
+                            (uint32_t)final_length);
+  }
+  if (phys)
+    pmm_free_contiguous(phys, pages);
+  return status;
 }
 
 int32_t vfs_write(int32_t descriptor, const void *buffer, uint32_t count) {
   char path[VFS_PATH_MAX];
+  uint64_t position;
+  uint32_t wflags;
   {
     MUTEX_SCOPE(&vfs_mutex);
     struct vfs_handle *h = get_handle(descriptor);
     if (!h)
       return FS_ERROR_INVALID;
-    if (h->type != VFS_HANDLE_APPEND)
+    if (h->type != VFS_HANDLE_WRITABLE)
       return FS_ERROR_UNSUPPORTED;
     strncpy(path, h->path, sizeof(path) - 1);
     path[sizeof(path) - 1] = '\0';
+    position = h->position;
+    wflags = h->wflags;
   }
   if (!count)
     return 0;
-  return vfs_append_file(path, buffer, count);
+  uint64_t size = 0;
+  (void)file_size_of(path, &size);
+  int32_t status;
+  if ((wflags & 1U) || position == size) {
+    status = vfs_append_file(path, buffer, count);
+    position = size + count;
+  } else {
+    status = rewrite_file(path, position, buffer, count, size);
+    if (status >= 0)
+      position += count;
+  }
+  if (status < 0)
+    return status;
+  {
+    MUTEX_SCOPE(&vfs_mutex);
+    struct vfs_handle *h = get_handle(descriptor);
+    if (h)
+      h->position = (uint32_t)position;
+  }
+  return (int32_t)count;
+}
+
+int32_t vfs_handle_truncate(int32_t descriptor, uint64_t length) {
+  char path[VFS_PATH_MAX];
+  {
+    MUTEX_SCOPE(&vfs_mutex);
+    struct vfs_handle *h = get_handle(descriptor);
+    if (!h || h->type != VFS_HANDLE_WRITABLE)
+      return FS_ERROR_INVALID;
+    strncpy(path, h->path, sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+  }
+  uint64_t size = 0;
+  (void)file_size_of(path, &size);
+  if (length == size)
+    return 0;
+  if (length == 0)
+    return vfs_write_file(path, "", 0);
+  return rewrite_file(path, 0, 0, 0, length) < 0 ? FS_ERROR_NO_SPACE : 0;
 }
 
 int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out) {
@@ -647,8 +770,27 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
   struct vfs_handle *h = get_handle(descriptor);
   if (!h)
     return FS_ERROR_INVALID;
-  if (h->type == VFS_HANDLE_APPEND)
-    return FS_ERROR_UNSUPPORTED;
+  if (h->type == VFS_HANDLE_WRITABLE) {
+    int64_t base = 0;
+    if (whence == SEEK_CUR) {
+      base = (int64_t)h->position;
+    } else if (whence == SEEK_END) {
+      char path[VFS_PATH_MAX];
+      strncpy(path, h->path, sizeof(path) - 1);
+      path[sizeof(path) - 1] = '\0';
+      struct file_stat_info info;
+      if (vfs_stat(path, &info) >= 0)
+        base = (int64_t)info.size;
+      h = get_handle(descriptor);
+      if (!h)
+        return FS_ERROR_INVALID;
+    }
+    int64_t target = base + offset;
+    if (target < 0)
+      return FS_ERROR_INVALID;
+    h->position = (uint32_t)(target > 0xFFFFFFFFLL ? 0xFFFFFFFFLL : target);
+    return (int64_t)h->position;
+  }
   if (h->type == VFS_HANDLE_BACKEND) {
     if (!h->mount->ops->seek)
       return FS_ERROR_UNSUPPORTED;

@@ -448,6 +448,10 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (a3 > 4096 || !writable((void *)(uintptr_t)a2, a3))
       return -KERR_FAULT;
     return fd_path((int32_t)a1, (char *)(uintptr_t)a2, (uint32_t)a3);
+  case SYS_FD_SEEK:
+    return fd_seek((int32_t)a1, (int64_t)a2, (uint32_t)a3);
+  case SYS_FD_TRUNCATE:
+    return fd_truncate((int32_t)a1, a2);
   case SYS_CHDIR:
     if (!readable_string((const char *)(uintptr_t)a1))
       return -KERR_FAULT;
