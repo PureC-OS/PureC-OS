@@ -4,6 +4,7 @@
 #include "include/ext2_super.h"
 #include "include/ext2_inode.h"
 #include "include/ext2_dir.h"
+#include "include/ext2_meta.h"
 #include "include/ext2_file.h"
 #include "include/ext2_format.h"
 #include "../../drivers/storage/block_device.h"
@@ -211,22 +212,17 @@ int32_t ext2_create_directory(const char *path)
 
 int32_t ext2_delete(const char *path)
 {
-    (void)path;
-    return -10;
+    return ext2_unlink_path(path);
 }
 
 int32_t ext2_rename(const char *path, const char *n)
 {
-    (void)path;
-    (void)n;
-    return -10;
+    return ext2_rename_path(path, n);
 }
 
 int32_t ext2_move(const char *a, const char *b)
 {
-    (void)a;
-    (void)b;
-    return -10;
+    return ext2_move_path(a, b);
 }
 
 int32_t ext2_format_device(const char *device_name, const char *serial_confirmation, const char *erase_confirmation)

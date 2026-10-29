@@ -2,6 +2,7 @@
 #include "../../libc/include/purec.h"
 #include "../terminal/window.h"
 #include "progress.h"
+#include "setup.h"
 
 #define MAX_INSTALL_DISKS 20
 
@@ -77,7 +78,7 @@ static bool select_disk(void) {
 
     for (;;) {
         clear_console();
-        pc_write("Pure OS console installer\n");
+        pc_write("Pure OS installation - step 1 of 5\n");
         print_separator();
         pc_write("Select the target disk. All data on it will be erased.\n\n");
         for (int32_t i = 0; i < disk_count; i++) {
@@ -108,26 +109,35 @@ static bool select_disk(void) {
     }
 }
 
-static bool confirm_erase(void) {
+#define CONFIRM_CANCEL 0
+#define CONFIRM_START 1
+#define CONFIRM_EDIT 2
+
+static int confirm_install(const struct install_settings *settings) {
     char input[32];
     const struct storage_device_info *disk = &disks[selected_disk];
 
     clear_console();
-    pc_write("Confirm installation\n");
+    pc_write("Pure OS installation - step 5 of 5\n");
     print_separator();
-    pc_write("Target: ");
+    pc_write("Review and confirm\n\n");
+    pc_write("Target:        ");
     pc_write(disk->name);
     pc_write("  ");
     pc_write(disk->model);
-    pc_write("\nSize:   ");
+    pc_write("  ");
     pc_write_u64(disk_size_mib(disk));
     pc_write(" MiB\n");
-    pc_write("FS:     ext2 (system); UEFI ESP is not formatted by the installer\n\n");
-    pc_write("WARNING: every partition and file on this disk will be erased.\n");
+    pc_write("File system:   ext2 (system); UEFI ESP is not formatted by the installer\n");
+    setup_summary(settings);
+    pc_write("\nWARNING: every partition and file on this disk will be erased.\n");
     if(!terminal_window_read_line(&installer_window,
-            "Type ERASE to start, or anything else to cancel: ",
-            input,sizeof(input))) return false;
-    return pc_strcmp(input, "ERASE") == 0;
+            "Type ERASE to start, E to change the settings, or anything else to cancel: ",
+            input,sizeof(input))) return CONFIRM_CANCEL;
+    if (pc_strcmp(input, "ERASE") == 0) return CONFIRM_START;
+    if (pc_strcmp(input, "E") == 0 || pc_strcmp(input, "e") == 0)
+        return CONFIRM_EDIT;
+    return CONFIRM_CANCEL;
 }
 
 static bool write_install_config(void) {
@@ -165,7 +175,8 @@ static void wait_for_reboot(void) {
     }
 }
 
-static bool run_installation(bool start_job) {
+static bool run_installation(bool start_job,
+                             const struct install_settings *settings) {
     struct install_status status;
     struct installer_progress_view progress_view;
     installer_progress_init(&progress_view);
@@ -176,7 +187,16 @@ static bool run_installation(bool start_job) {
 
     if (start_job) {
         const struct storage_device_info *disk = &disks[selected_disk];
-        int32_t result = pc_install_start_ex(disk->name, disk->serial, selected_fs);
+        struct install_account_request accounts;
+        pc_write("Preparing user accounts...\n");
+        if (!setup_build_request(settings, &accounts)) {
+            pc_write("Could not prepare the user accounts.\n");
+            return false;
+        }
+        int32_t result = pc_install_start_accounts(disk->name, disk->serial,
+                                                   selected_fs, &accounts);
+        for (uint32_t i = 0; i < sizeof(accounts); i++)
+            ((volatile uint8_t *)&accounts)[i] = 0;
         if (result < 0) {
             pc_write("Could not start installation. Error: ");
             pc_write_i64(result);
@@ -244,9 +264,10 @@ static int installer_main(void) {
 
     if (pc_install_status(&status) &&
         status.state != INSTALL_IDLE && status.state != INSTALL_FAILED) {
-        (void)run_installation(false);
+        (void)run_installation(false, 0);
     }
 
+    static struct install_settings settings;
     for (;;) {
         if (!select_disk()) {
             if(!pg_window_is_open(&installer_window.gui)) return 0;
@@ -254,10 +275,29 @@ static int installer_main(void) {
             pc_write("Installation cancelled.\n");
             return 0;
         }
-        if (!confirm_erase()) {
+        bool collected = false;
+        int decision = CONFIRM_CANCEL;
+        for (;;) {
+            if (!collected) {
+                if (!setup_collect(&installer_window, &settings)) {
+                    setup_wipe(&settings);
+                    if(!pg_window_is_open(&installer_window.gui)) return 0;
+                    break;
+                }
+                collected = true;
+            }
+            decision = confirm_install(&settings);
+            if (decision != CONFIRM_EDIT) break;
+            collected = false;
+        }
+        if (decision != CONFIRM_START) {
+            setup_wipe(&settings);
+            if(!pg_window_is_open(&installer_window.gui)) return 0;
             continue;
         }
-        if (run_installation(true)) {
+        bool installed = run_installation(true, &settings);
+        setup_wipe(&settings);
+        if (installed) {
             return 0;
         }
         if(!pg_window_is_open(&installer_window.gui)) return 0;

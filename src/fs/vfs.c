@@ -2,6 +2,7 @@
 static mutex_t vfs_mutex;
 #include "../drivers/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
+#include "../kernel/process/process.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
@@ -17,6 +18,7 @@ static mutex_t vfs_mutex;
 #include "vfs_backends.h"
 #include "vfs_mount.h"
 #include "vfs_path.h"
+#include "vfs_perm.h"
 
 #define VFS_HANDLE_INITIAL 32
 #define VFS_KLOG_WINDOW (8 * 1024 * 1024)
@@ -91,6 +93,10 @@ static void mount_tmpfs(const char *path, const char *const *seed) {
   for (uint32_t i = 0; seed && seed[i]; i++)
     (void)vfs_tmpfs_ops.create_directory(instance, seed[i]);
   log_mount(path);
+  if (path_equals(path, "/tmp") || path_equals(path, "/run")) {
+    struct vfs_perm_meta shared = {01777, 0, 0};
+    (void)vfs_perm_set(path, &shared);
+  }
 }
 
 static void unmount_live_tmpfs(const char *path) {
@@ -207,6 +213,102 @@ static uint32_t virtual_children(const char *directory, const char **names,
       names[found++] = vfs_path_basename(virtual_dirs[i]);
   }
   return found;
+}
+
+static bool mount_ready(const struct vfs_mount *mount);
+
+static void parent_of(const char *path, char *out, uint32_t capacity) {
+  uint32_t length = (uint32_t)strlen(path);
+  if (length >= capacity)
+    length = capacity - 1;
+  memcpy(out, path, length);
+  out[length] = '\0';
+  while (length > 1 && out[length - 1] == '/')
+    out[--length] = '\0';
+  while (length > 1 && out[length - 1] != '/')
+    length--;
+  if (length > 1)
+    length--;
+  out[length] = '\0';
+  if (!out[0]) {
+    out[0] = '/';
+    out[1] = '\0';
+  }
+}
+
+static struct vfs_mount *meta_mount(const char *path, const char **relative,
+                                    char *buffer, uint32_t capacity) {
+  struct vfs_mount *mount = vfs_mount_find(path, relative, buffer, capacity);
+  if (!mount || !mount->ops->get_meta || !mount->ops->set_meta ||
+      !mount_ready(mount))
+    return 0;
+  return mount;
+}
+
+static void effective_meta(const char *path, bool directory,
+                           struct vfs_perm_meta *meta) {
+  const char *relative;
+  char buffer[2];
+  struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
+  if (mount && mount->ops->get_meta(mount->context, relative, meta) >= 0)
+    return;
+  if (!vfs_perm_get(path, meta))
+    vfs_perm_default(meta, directory);
+}
+
+static int32_t store_meta(const char *path, const struct vfs_perm_meta *meta) {
+  const char *relative;
+  char buffer[2];
+  struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
+  if (mount && !(mount->flags & VFS_MOUNT_READ_ONLY))
+    return mount->ops->set_meta(mount->context, relative, meta);
+  return vfs_perm_set(path, meta);
+}
+
+static int32_t check_access(const char *path, bool directory, uint32_t want) {
+  uint32_t uid = process_current_uid();
+  if (uid == 0)
+    return 0;
+  struct vfs_perm_meta meta;
+  effective_meta(path, directory, &meta);
+  return vfs_perm_allowed(uid, process_current_gid(), &meta, want)
+             ? 0
+             : FS_ERROR_DENIED;
+}
+
+static int32_t check_parent_write(const char *path) {
+  char parent[VFS_PATH_MAX];
+  parent_of(path, parent, sizeof(parent));
+  return check_access(parent, true, VFS_PERM_W);
+}
+
+static bool path_exists(const struct vfs_resolved *resolved) {
+  struct file_stat_info info;
+  const struct vfs_fs_ops *ops = resolved->mount->ops;
+  return ops->stat && mount_ready(resolved->mount) &&
+         ops->stat(resolved->mount->context, resolved->relative, &info) >= 0;
+}
+
+static void own_created(const char *path, bool directory) {
+  uint32_t uid = process_current_uid();
+  if (uid == 0)
+    return;
+  struct vfs_perm_meta meta;
+  vfs_perm_default(&meta, directory);
+  meta.uid = uid;
+  meta.gid = process_current_gid();
+  (void)store_meta(path, &meta);
+}
+
+static int32_t check_write_target(const struct vfs_resolved *resolved,
+                                  bool *created) {
+  *created = false;
+  if (process_current_uid() == 0)
+    return 0;
+  if (path_exists(resolved))
+    return check_access(resolved->path, false, VFS_PERM_W);
+  *created = true;
+  return check_parent_write(resolved->path);
 }
 
 static bool mount_ready(const struct vfs_mount *mount) {
@@ -344,6 +446,9 @@ int32_t vfs_open(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  status = check_access(resolved.path, false, VFS_PERM_R);
   if (status < 0)
     return status;
   int32_t idx = allocate_handle();
@@ -512,8 +617,14 @@ int32_t vfs_delete(const char *path) {
   status = check_mutation(resolved.mount, resolved.mount->ops->unlink);
   if (status < 0)
     return status;
-  return resolved.mount->ops->unlink(resolved.mount->context,
-                                     resolved.relative);
+  status = check_parent_write(resolved.path);
+  if (status < 0)
+    return status;
+  status = resolved.mount->ops->unlink(resolved.mount->context,
+                                       resolved.relative);
+  if (status >= 0)
+    vfs_perm_forget(resolved.path);
+  return status;
 }
 
 int32_t vfs_rename(const char *path, const char *new_name) {
@@ -527,8 +638,25 @@ int32_t vfs_rename(const char *path, const char *new_name) {
   status = check_mutation(resolved.mount, resolved.mount->ops->rename);
   if (status < 0)
     return status;
-  return resolved.mount->ops->rename(resolved.mount->context,
-                                     resolved.relative, new_name);
+  status = check_parent_write(resolved.path);
+  if (status < 0)
+    return status;
+  status = resolved.mount->ops->rename(resolved.mount->context,
+                                       resolved.relative, new_name);
+  if (status >= 0) {
+    char parent[VFS_PATH_MAX];
+    char renamed[VFS_PATH_MAX];
+    parent_of(resolved.path, parent, sizeof(parent));
+    uint32_t length = (uint32_t)strlen(parent);
+    if (length + strlen(new_name) + 2 <= sizeof(renamed)) {
+      memcpy(renamed, parent, length);
+      if (length > 1)
+        renamed[length++] = '/';
+      strcpy(renamed + length, new_name);
+      vfs_perm_rename(resolved.path, renamed);
+    }
+  }
+  return status;
 }
 
 int32_t vfs_move(const char *path, const char *dest) {
@@ -548,8 +676,30 @@ int32_t vfs_move(const char *path, const char *dest) {
   status = check_mutation(source.mount, source.mount->ops->move);
   if (status < 0)
     return status;
-  return source.mount->ops->move(source.mount->context, source.relative,
-                                 target.relative);
+  status = check_parent_write(source.path);
+  if (status < 0)
+    return status;
+  status = check_access(target.path, true, VFS_PERM_W);
+  if (status < 0)
+    return status;
+  status = source.mount->ops->move(source.mount->context, source.relative,
+                                   target.relative);
+  if (status >= 0) {
+    const char *base = source.path;
+    for (const char *c = source.path; *c; c++)
+      if (*c == '/')
+        base = c + 1;
+    char moved[VFS_PATH_MAX];
+    uint32_t length = (uint32_t)strlen(target.path);
+    if (length + strlen(base) + 2 <= sizeof(moved)) {
+      memcpy(moved, target.path, length);
+      if (length > 1)
+        moved[length++] = '/';
+      strcpy(moved + length, base);
+      vfs_perm_rename(source.path, moved);
+    }
+  }
+  return status;
 }
 
 static bool short_has(const struct fs_directory_entry *entries, uint32_t count,
@@ -671,8 +821,14 @@ int32_t vfs_create_file(const char *path) {
   status = check_mutation(resolved.mount, resolved.mount->ops->create_file);
   if (status < 0)
     return status;
-  return resolved.mount->ops->create_file(resolved.mount->context,
-                                          resolved.relative);
+  status = check_parent_write(resolved.path);
+  if (status < 0)
+    return status;
+  status = resolved.mount->ops->create_file(resolved.mount->context,
+                                            resolved.relative);
+  if (status >= 0)
+    own_created(resolved.path, false);
+  return status;
 }
 
 static uint32_t raw_log_base_lba;
@@ -703,8 +859,15 @@ int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count) {
   status = check_mutation(resolved.mount, resolved.mount->ops->write_file);
   if (status < 0)
     return status;
-  return resolved.mount->ops->write_file(resolved.mount->context,
-                                         resolved.relative, buffer, count);
+  bool created;
+  status = check_write_target(&resolved, &created);
+  if (status < 0)
+    return status;
+  status = resolved.mount->ops->write_file(resolved.mount->context,
+                                           resolved.relative, buffer, count);
+  if (status >= 0 && created)
+    own_created(resolved.path, false);
+  return status;
 }
 
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
@@ -727,8 +890,14 @@ int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count) {
   status = check_mutation(resolved.mount, resolved.mount->ops->append_file);
   if (status < 0)
     return status;
+  bool created;
+  status = check_write_target(&resolved, &created);
+  if (status < 0)
+    return status;
   int32_t appended = resolved.mount->ops->append_file(
       resolved.mount->context, resolved.relative, buffer, count);
+  if (appended >= 0 && created)
+    own_created(resolved.path, false);
   return appended >= 0 ? (int32_t)count : appended;
 }
 
@@ -743,8 +912,169 @@ int32_t vfs_create_directory(const char *path) {
   status = check_mutation(resolved.mount, resolved.mount->ops->create_directory);
   if (status < 0)
     return status;
-  return resolved.mount->ops->create_directory(resolved.mount->context,
-                                               resolved.relative);
+  status = check_parent_write(resolved.path);
+  if (status < 0)
+    return status;
+  status = resolved.mount->ops->create_directory(resolved.mount->context,
+                                                 resolved.relative);
+  if (status >= 0)
+    own_created(resolved.path, true);
+  return status;
+}
+
+static int32_t resolve_existing(const char *path, struct vfs_resolved *resolved,
+                                bool *directory) {
+  int32_t status = resolve(path, resolved);
+  if (status < 0)
+    return status;
+  struct file_stat_info info;
+  const struct vfs_fs_ops *ops = resolved->mount->ops;
+  if (!ops->stat || !mount_ready(resolved->mount) ||
+      ops->stat(resolved->mount->context, resolved->relative, &info) < 0) {
+    if (!is_virtual_dir(resolved->path))
+      return FS_ERROR_NOT_FOUND;
+    *directory = true;
+    return 0;
+  }
+  *directory = info.is_directory != 0;
+  return 0;
+}
+
+int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
+  MUTEX_SCOPE(&vfs_mutex);
+  if (!out)
+    return FS_ERROR_INVALID;
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  memset(out, 0, sizeof(*out));
+  bool filled = false;
+  if (ops->stat_ex && mount_ready(resolved.mount) &&
+      !is_klog_path(resolved.path)) {
+    status = ops->stat_ex(resolved.mount->context, resolved.relative, out);
+    if (status < 0 && !is_virtual_dir(resolved.path))
+      return status;
+    filled = status >= 0;
+  }
+  if (!filled) {
+    struct file_stat_info info;
+    if (is_klog_path(resolved.path)) {
+      out->size = klog_total_bytes();
+    } else {
+      const void *data = 0;
+      uint32_t size = 0;
+      if (overlay_find(resolved.path, &data, &size)) {
+        out->size = size;
+      } else if (ops->stat && mount_ready(resolved.mount) &&
+                 ops->stat(resolved.mount->context, resolved.relative,
+                           &info) >= 0) {
+        out->size = info.size;
+        out->is_directory = info.is_directory;
+      } else if (is_virtual_dir(resolved.path)) {
+        out->is_directory = 1;
+      } else {
+        return FS_ERROR_NOT_FOUND;
+      }
+    }
+  }
+  struct vfs_perm_meta meta;
+  effective_meta(resolved.path, out->is_directory != 0, &meta);
+  out->mode = meta.mode;
+  out->uid = meta.uid;
+  out->gid = meta.gid;
+  return 0;
+}
+
+int32_t vfs_chmod(const char *path, uint16_t mode) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved resolved;
+  bool directory;
+  int32_t status = resolve_existing(path, &resolved, &directory);
+  if (status < 0)
+    return status;
+  if (resolved.mount->flags & VFS_MOUNT_READ_ONLY)
+    return FS_ERROR_READ_ONLY;
+  struct vfs_perm_meta meta;
+  effective_meta(resolved.path, directory, &meta);
+  uint32_t uid = process_current_uid();
+  if (uid != 0 && uid != meta.uid)
+    return FS_ERROR_DENIED;
+  meta.mode = mode & VFS_MODE_MASK;
+  return store_meta(resolved.path, &meta);
+}
+
+int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved resolved;
+  bool directory;
+  int32_t status = resolve_existing(path, &resolved, &directory);
+  if (status < 0)
+    return status;
+  if (resolved.mount->flags & VFS_MOUNT_READ_ONLY)
+    return FS_ERROR_READ_ONLY;
+  if (process_current_uid() != 0)
+    return FS_ERROR_DENIED;
+  struct vfs_perm_meta meta;
+  effective_meta(resolved.path, directory, &meta);
+  if (uid != USER_ID_NONE)
+    meta.uid = uid;
+  if (gid != USER_ID_NONE)
+    meta.gid = gid;
+  return store_meta(resolved.path, &meta);
+}
+
+int32_t vfs_get_perm(const char *path, struct file_perm_info *out) {
+  MUTEX_SCOPE(&vfs_mutex);
+  if (!out)
+    return FS_ERROR_INVALID;
+  struct vfs_resolved resolved;
+  bool directory;
+  int32_t status = resolve_existing(path, &resolved, &directory);
+  if (status < 0)
+    return status;
+  struct vfs_perm_meta meta;
+  effective_meta(resolved.path, directory, &meta);
+  out->mode = meta.mode;
+  out->uid = meta.uid;
+  out->gid = meta.gid;
+  out->reserved = directory ? 1 : 0;
+  return 0;
+}
+
+int32_t vfs_user_lookup(const char *name, uint32_t uid,
+                        struct user_info *out) {
+  if (!out)
+    return FS_ERROR_INVALID;
+  int32_t handle = vfs_open("/etc/passwd");
+  if (handle < 0)
+    return handle;
+  static char passwd_text[4096];
+  int32_t total = 0;
+  for (;;) {
+    int32_t got = vfs_read(handle, passwd_text + total,
+                           (uint32_t)(sizeof(passwd_text) - 1 - total));
+    if (got <= 0)
+      break;
+    total += got;
+    if ((uint32_t)total >= sizeof(passwd_text) - 1)
+      break;
+  }
+  vfs_close(handle);
+  passwd_text[total] = '\0';
+  struct user_entry entry;
+  bool found = name ? user_lookup_name(passwd_text, name, &entry)
+                    : user_lookup_uid(passwd_text, uid, &entry);
+  if (!found)
+    return FS_ERROR_NOT_FOUND;
+  memset(out, 0, sizeof(*out));
+  strncpy(out->name, entry.name, sizeof(out->name) - 1);
+  strncpy(out->home, entry.home, sizeof(out->home) - 1);
+  strncpy(out->shell, entry.shell, sizeof(out->shell) - 1);
+  out->uid = entry.uid;
+  out->gid = entry.gid;
+  return 0;
 }
 
 int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out) {

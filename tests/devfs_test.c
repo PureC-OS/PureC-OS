@@ -54,6 +54,16 @@ void klog(enum klog_level level, const char *message) {
   (void)level;
   strncpy(last_klog, message, sizeof(last_klog) - 1);
 }
+#include "../src/kernel/random/krandom.h"
+static uint64_t test_rng_state = 0x1234567;
+void krandom_fill(void *buffer, uint32_t count) {
+  uint8_t *bytes = buffer;
+  for (uint32_t i = 0; i < count; i++) {
+    test_rng_state = test_rng_state * 6364136223846793005ULL + 1442695040888963407ULL;
+    bytes[i] = (uint8_t)(test_rng_state >> 56);
+  }
+}
+void krandom_mix(const void *data, uint32_t count) { (void)data; (void)count; }
 uint64_t klog_total_bytes(void) { return strlen(log_text); }
 uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
                          bool *data_lost) {

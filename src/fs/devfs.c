@@ -2,6 +2,7 @@
 #include "../drivers/storage/block_device.h"
 #include "../drivers/storage/storage_types.h"
 #include "../kernel/diagnostics/klog.h"
+#include "../kernel/random/krandom.h"
 #include "../lib/string.h"
 
 #define DEVFS_MAX_OPEN 32
@@ -43,55 +44,6 @@ static const struct devfs_node char_nodes[] = {
 
 static struct devfs_file files[DEVFS_MAX_OPEN];
 static uint8_t sector_buffer[DEVFS_SECTOR_MAX];
-static uint64_t random_state;
-
-static uint64_t read_tsc(void) {
-  uint32_t low, high;
-  __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-  return ((uint64_t)high << 32) | low;
-}
-
-static bool hardware_random(uint64_t *value) {
-  uint32_t eax = 1, ebx, ecx = 0, edx;
-  __asm__ volatile("cpuid"
-                   : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
-  if (!(ecx & (1U << 30)))
-    return false;
-  for (int attempt = 0; attempt < 10; attempt++) {
-    uint64_t result;
-    unsigned char ok;
-    __asm__ volatile("rdrand %0; setc %1" : "=r"(result), "=qm"(ok));
-    if (ok) {
-      *value = result;
-      return true;
-    }
-  }
-  return false;
-}
-
-static uint64_t random_next(void) {
-  if (!random_state) {
-    uint64_t seed = 0;
-    (void)hardware_random(&seed);
-    random_state = seed ^ read_tsc() ^ 0x9E3779B97F4A7C15ULL;
-    if (!random_state)
-      random_state = 0x9E3779B97F4A7C15ULL;
-  }
-  random_state ^= random_state >> 12;
-  random_state ^= random_state << 25;
-  random_state ^= random_state >> 27;
-  return random_state * 0x2545F4914F6CDD1DULL;
-}
-
-static void random_mix(const void *data, uint32_t count) {
-  const uint8_t *bytes = data;
-  (void)random_next();
-  for (uint32_t i = 0; i < count; i++)
-    random_state = (random_state << 5 | random_state >> 59) ^ bytes[i];
-  if (!random_state)
-    random_state = 0x9E3779B97F4A7C15ULL;
-}
-
 static bool block_info_for(const char *name, struct storage_device_info *info) {
   int32_t index = block_device_find(name);
   return index >= 0 && block_device_get_info((uint32_t)index, info);
@@ -219,11 +171,7 @@ static int32_t devfs_read(void *context, int32_t descriptor, void *buffer,
     memset(bytes, 0, count);
     return (int32_t)count;
   case DEVFS_RANDOM:
-    for (uint32_t i = 0; i < count;) {
-      uint64_t value = random_next();
-      for (uint32_t j = 0; j < 8 && i < count; j++, i++)
-        bytes[i] = (uint8_t)(value >> (j * 8));
-    }
+    krandom_fill(bytes, count);
     return (int32_t)count;
   case DEVFS_KMSG:
     return (int32_t)klog_read_since(&file->klog_cursor, (char *)buffer, count,
@@ -362,7 +310,7 @@ static int32_t devfs_write_file(void *context, const char *path,
   case DEVFS_FULL:
     return FS_ERROR_NO_SPACE;
   case DEVFS_RANDOM:
-    random_mix(buffer, count);
+    krandom_mix(buffer, count);
     return (int32_t)count;
   case DEVFS_KMSG: {
     char message[DEVFS_KMSG_WRITE_MAX + 1];

@@ -4,6 +4,8 @@
 #include "ext2/include/ext2_file.h"
 #include "ext2/include/ext2_format.h"
 #include "ext2/include/ext2_inode.h"
+#include "ext2/include/ext2_meta.h"
+#include "install_accounts.h"
 #include "ext2/include/ext2_super.h"
 #include "ext2/include/ext2_types.h"
 #include "vfs.h"
@@ -585,6 +587,74 @@ static int32_t install_standard_directories(void)
     return 0;
 }
 
+static struct install_account_request pending_accounts;
+
+void installer_set_accounts(const struct install_account_request *request)
+{
+    if (request && request->present)
+        pending_accounts = *request;
+    else
+        memset(&pending_accounts, 0, sizeof(pending_accounts));
+}
+
+static int32_t write_account_file(const char *path, const char *text,
+                                  uint16_t mode)
+{
+    uint32_t length = (uint32_t)strlen(text);
+    int32_t status = payload_write_file(path, text, length);
+    if (status < 0)
+    {
+        klogf(KLOG_ERROR, "install: write %s failed %d", path, status);
+        return status;
+    }
+    status = ext2_meta_set(path, mode, 0, 0);
+    if (status < 0)
+        klogf(KLOG_ERROR, "install: chmod %s failed %d", path, status);
+    return status < 0 ? status : 0;
+}
+
+static int32_t install_write_accounts(void)
+{
+    if (!pending_accounts.present)
+        return 0;
+    struct install_account_files files;
+    int32_t status = install_accounts_render(&pending_accounts, &files);
+    if (status < 0)
+    {
+        klogf(KLOG_ERROR, "install: account request rejected %d", status);
+        return status;
+    }
+    status = write_account_file("/etc/passwd", files.passwd, 0644);
+    if (status < 0)
+        return status;
+    status = write_account_file("/etc/shadow", files.shadow, 0600);
+    if (status < 0)
+        return status;
+    status = write_account_file("/etc/group", files.group, 0644);
+    if (status < 0)
+        return status;
+    status = write_account_file("/etc/hostname", files.hostname, 0644);
+    if (status < 0)
+        return status;
+    status = payload_mkdir("/root");
+    if (status < 0)
+        return status;
+    status = ext2_meta_set("/root", 0700, 0, 0);
+    if (status < 0)
+        return status;
+    status = payload_mkdir(files.home);
+    if (status < 0)
+        return status;
+    status = ext2_meta_set(files.home, 0700, pending_accounts.user_uid,
+                           INSTALL_USERS_GID);
+    if (status < 0)
+        return status;
+    memset(&pending_accounts, 0, sizeof(pending_accounts));
+    memset(&files, 0, sizeof(files));
+    klog(KLOG_OK, "install: accounts written");
+    return 0;
+}
+
 static int32_t install_program_payload(void)
 {
     int32_t status = install_standard_directories();
@@ -721,6 +791,11 @@ int32_t installer_install_device(const char *device_name,
         klogf(KLOG_ERROR, "install: system payload failed %d", status);
         return status;
     }
+    if (callback)
+        callback(89, "Creating user accounts");
+    status = install_write_accounts();
+    if (status < 0)
+        return status;
     if (!block_device_flush())
         return FS_ERROR_IO;
     if (callback)

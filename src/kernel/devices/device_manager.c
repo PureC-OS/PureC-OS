@@ -890,21 +890,30 @@ static char *devman_so_path(const char *elf, const char *directory,
   return out;
 }
 
-static void devman_probe_so(struct device_driver *drv) {
+static bool devman_probe_so(struct device_driver *drv) {
   if (!drv->module_path)
-    return;
+    return false;
   for (uint32_t d = 0;
        d < sizeof(devman_module_dirs) / sizeof(devman_module_dirs[0]); d++) {
     uint64_t path_phys = 0, path_pages = 0;
     char *path = devman_so_path(drv->module_path, devman_module_dirs[d],
                                 &path_phys, &path_pages);
     if (!path)
-      return;
+      return false;
     bool loaded = devman_load_so(drv, path);
     pmm_free_contiguous(path_phys, path_pages);
     if (loaded)
-      return;
+      return true;
   }
+  return false;
+}
+
+bool devman_load_module(const char *name, const char *elf_path) {
+  struct device_driver driver;
+  memset(&driver, 0, sizeof(driver));
+  driver.name = name;
+  driver.module_path = elf_path;
+  return devman_probe_so(&driver);
 }
 
 void devman_autoload(void) {

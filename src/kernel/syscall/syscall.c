@@ -13,10 +13,14 @@
 #include "../../drivers/storage/storage_probe.h"
 #include "../../drivers/usb/ehci.h"
 #include "../../drivers/usb/xhci.h"
+#include "../../fs/install.h"
+#include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
 #include "../../gfx/compositor.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
+#include "../random/krandom.h"
+#include "../time/wallclock.h"
 #include "../../net/api/ping.h"
 #include "../../net/config/dhcp.h"
 #include "../../net/core/net_device.h"
@@ -280,6 +284,86 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return 0;
   case SYS_GETPID:
     return process_current_pid();
+  case SYS_GETRANDOM: {
+    if (a2 > 0x100000 || !writable((void *)(uintptr_t)a1, a2))
+      return -1;
+    krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
+    return (int64_t)a2;
+  }
+  case SYS_TIME_GET: {
+    if (!writable((void *)(uintptr_t)a1, sizeof(struct time_info)))
+      return -1;
+    struct time_info *info = (struct time_info *)(uintptr_t)a1;
+    int64_t ms = wallclock_unix_ms();
+    info->unix_seconds = ms / 1000;
+    info->millis = (uint32_t)(ms % 1000);
+    info->tz_minutes = wallclock_tz_minutes();
+    info->uptime_ms = system_info_uptime_ms();
+    info->source = wallclock_source();
+    info->reserved = 0;
+    return 0;
+  }
+  case SYS_TIME_SET:
+    if (process_current_uid() != 0)
+      return -1;
+    return wallclock_set((int64_t)a1, (int32_t)a2);
+  case SYS_FILE_STAT_EX: {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_ex)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_stat_ex((const char *)(uintptr_t)a1,
+                                 (struct file_stat_ex *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_SESSION_BEGIN:
+    return process_session_begin((uint32_t)a1, (uint32_t)a2);
+  case SYS_GETUID:
+    return (int64_t)process_current_uid();
+  case SYS_GETGID:
+    return (int64_t)process_current_gid();
+  case SYS_SETUID:
+    return process_set_uid((uint32_t)a1);
+  case SYS_SETGID:
+    return process_set_gid((uint32_t)a1);
+  case SYS_CHMOD: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_chmod((const char *)(uintptr_t)a1, (uint16_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_CHOWN: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result =
+        vfs_chown((const char *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_FILE_PERM: {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a2, sizeof(struct file_perm_info)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_get_perm((const char *)(uintptr_t)a1,
+                                  (struct file_perm_info *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_USER_LOOKUP: {
+    if ((a1 && !readable_string((const char *)(uintptr_t)a1)) ||
+        !writable((void *)(uintptr_t)a3, sizeof(struct user_info)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_user_lookup((const char *)(uintptr_t)a1, (uint32_t)a2,
+                                     (struct user_info *)(uintptr_t)a3);
+    filesystem_syscall_unlock();
+    return result;
+  }
   case SYS_HEAP_GROW: {
     uint64_t address = process_heap_grow(a1);
     return address ? (int64_t)address : -1;
@@ -807,6 +891,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -12;
     memset(&install_job, 0, sizeof(install_job));
     memset(&install_history, 0, sizeof(install_history));
+    installer_set_accounts(0);
     strncpy(install_device, (const char *)(uintptr_t)a1,
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
@@ -830,8 +915,11 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -11;
     if (install_job.state == 1)
       return -12;
+    if (req->accounts.present && !install_accounts_valid(&req->accounts))
+      return -14;
     memset(&install_job, 0, sizeof(install_job));
     memset(&install_history, 0, sizeof(install_history));
+    installer_set_accounts(&req->accounts);
     strncpy(install_device, req->device, sizeof(install_device) - 1);
     strncpy(install_serial, req->serial, sizeof(install_serial) - 1);
     install_job.state = 1;

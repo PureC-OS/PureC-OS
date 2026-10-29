@@ -188,3 +188,4 @@
 /lib/modules/ar9285.so /lib/modules/ar9285.so - 0 bin/modules/ar9285.so
 /lib/modules/ext2.so /lib/modules/ext2.so - 0 bin/modules/ext2.so
 /lib/modules/wolf.so /lib/modules/wolf.so - 0 bin/modules/wolf.so
+/lib/modules/random.so /lib/modules/random.so - 0 bin/modules/random.so
