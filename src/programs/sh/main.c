@@ -2832,13 +2832,43 @@ static int run_file(const char *path) {
     return status;
 }
 
+static int read_console_line(char *line, size_t size) {
+    size_t length = 0;
+    for (;;) {
+        int c = fgetc(stdin);
+        if (c == EOF) {
+            line[length] = '\0';
+            return length ? 1 : 0;
+        }
+        if (c == '\r' || c == '\n') {
+            write(1, "\n", 1);
+            line[length++] = '\n';
+            line[length] = '\0';
+            return 1;
+        }
+        if (c == 8 || c == 127) {
+            if (length) {
+                length--;
+                write(1, "\b \b", 3);
+            }
+            continue;
+        }
+        if (c < 32 || c > 126) continue;
+        if (length + 2 < size) {
+            char ch = (char)c;
+            line[length++] = ch;
+            write(1, &ch, 1);
+        }
+    }
+}
+
 static void interactive_loop(void) {
     char line[1024];
     for (;;) {
         const char *ps1 = var_get("PS1");
-        fputs(ps1 ? ps1 : "$ ", stderr);
-        fflush(stderr);
-        if (!fgets(line, sizeof(line), stdin)) break;
+        const char *prompt = ps1 ? ps1 : "$ ";
+        write(1, prompt, strlen(prompt));
+        if (!read_console_line(line, sizeof(line))) break;
         last_status = run_string(line);
     }
 }
