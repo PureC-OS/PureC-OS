@@ -16,7 +16,7 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-perm test-hdrbg test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
@@ -124,8 +124,19 @@ test-ext2-append:
 		tests/ext2_append_test.c src/fs/ext2/block.c src/fs/ext2/dir.c \
 		src/fs/ext2/ext2.c src/fs/ext2/file.c src/fs/ext2/format.c \
 		src/fs/ext2/inode.c src/fs/ext2/super.c src/fs/ext2/debug.c \
+		src/fs/ext2/meta.c \
 		-o $(BIN_DIR)/tests/ext2_append_test
 	$(BIN_DIR)/tests/ext2_append_test
+
+test-ext2-meta:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/ext2_meta_test.c src/fs/ext2/block.c src/fs/ext2/dir.c \
+		src/fs/ext2/ext2.c src/fs/ext2/file.c src/fs/ext2/format.c \
+		src/fs/ext2/inode.c src/fs/ext2/super.c src/fs/ext2/debug.c \
+		src/fs/ext2/meta.c \
+		-o $(BIN_DIR)/tests/ext2_meta_test
+	$(BIN_DIR)/tests/ext2_meta_test
 
 test-sysfs:
 	@mkdir -p $(BIN_DIR)/tests
@@ -152,6 +163,19 @@ test-vfs-perm:
 	$(HOST_CC) $(HOST_TEST_FLAGS) tests/vfs_perm_test.c src/fs/vfs_perm.c \
 		-o $(BIN_DIR)/tests/vfs_perm_test
 	$(BIN_DIR)/tests/vfs_perm_test
+
+test-install-accounts:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) tests/install_accounts_test.c src/fs/install_accounts.c \
+		src/fs/vfs_perm.c -o $(BIN_DIR)/tests/install_accounts_test
+	$(BIN_DIR)/tests/install_accounts_test
+
+test-accounts:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/libxcrypt/include tests/accounts_test.c \
+		src/programs/accounts/accounts_core.c src/fs/install_accounts.c \
+		libxcrypt/src/sha512.c libxcrypt/src/crypt_sha512.c -o $(BIN_DIR)/tests/accounts_test
+	$(BIN_DIR)/tests/accounts_test
 
 test-hdrbg:
 	@mkdir -p $(BIN_DIR)/tests

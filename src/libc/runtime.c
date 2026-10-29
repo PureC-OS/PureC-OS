@@ -267,6 +267,22 @@ int32_t pc_file_stat(const char *path, struct file_stat_info *out){
         (uint64_t)(uintptr_t)out,0);
 }
 
+int32_t pc_session_begin(uint32_t uid, uint32_t gid){
+    return (int32_t)pc_syscall(SYS_SESSION_BEGIN,uid,gid,0);
+}
+
+int32_t pc_install_start_accounts(const char *device, const char *serial,
+                                  uint8_t fs_type,
+                                  const struct install_account_request *accounts){
+    if(!device || !serial) return -1;
+    struct install_start_request req={0};
+    pc_copy(req.device, device, sizeof(req.device));
+    pc_copy(req.serial, serial, sizeof(req.serial));
+    req.fs_type = fs_type;
+    if(accounts) req.accounts = *accounts;
+    return (int32_t)pc_syscall(SYS_INSTALL_START_EX, (uint64_t)(uintptr_t)&req, 0, 0);
+}
+
 int32_t pc_getrandom(void *buffer, uint32_t count){
     return (int32_t)pc_syscall(SYS_GETRANDOM,(uint64_t)(uintptr_t)buffer,count,0);
 }

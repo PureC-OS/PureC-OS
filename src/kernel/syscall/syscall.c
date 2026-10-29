@@ -13,6 +13,8 @@
 #include "../../drivers/storage/storage_probe.h"
 #include "../../drivers/usb/ehci.h"
 #include "../../drivers/usb/xhci.h"
+#include "../../fs/install.h"
+#include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
 #include "../../gfx/compositor.h"
 #include "../../lib/string.h"
@@ -287,6 +289,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
     return (int64_t)a2;
   }
+  case SYS_SESSION_BEGIN:
+    return process_session_begin((uint32_t)a1, (uint32_t)a2);
   case SYS_GETUID:
     return (int64_t)process_current_uid();
   case SYS_GETGID:
@@ -859,6 +863,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -12;
     memset(&install_job, 0, sizeof(install_job));
     memset(&install_history, 0, sizeof(install_history));
+    installer_set_accounts(0);
     strncpy(install_device, (const char *)(uintptr_t)a1,
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
@@ -882,8 +887,11 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -11;
     if (install_job.state == 1)
       return -12;
+    if (req->accounts.present && !install_accounts_valid(&req->accounts))
+      return -14;
     memset(&install_job, 0, sizeof(install_job));
     memset(&install_history, 0, sizeof(install_history));
+    installer_set_accounts(&req->accounts);
     strncpy(install_device, req->device, sizeof(install_device) - 1);
     strncpy(install_serial, req->serial, sizeof(install_serial) - 1);
     install_job.state = 1;

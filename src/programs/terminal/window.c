@@ -69,9 +69,9 @@ bool terminal_window_service(struct terminal_window *terminal){
     return pg_window_is_open(&terminal->gui);
 }
 
-bool terminal_window_read_line(struct terminal_window *terminal,
-                               const char *prompt,
-                               char *buffer, uint32_t capacity){
+static bool read_input(struct terminal_window *terminal,
+                       const char *prompt,
+                       char *buffer, uint32_t capacity, bool secret){
     if(!terminal || !buffer || !capacity) return false;
     if(!prompt) prompt="";
     uint32_t length=0;
@@ -111,10 +111,22 @@ bool terminal_window_read_line(struct terminal_window *terminal,
         if(character<' ' || character>'~' || length+1>=capacity) continue;
         buffer[length++]=character;
         buffer[length]='\0';
-        char echo[2]={character,'\0'};
+        char echo[2]={secret ? '*' : character,'\0'};
         pc_write(echo);
     }
     return false;
+}
+
+bool terminal_window_read_line(struct terminal_window *terminal,
+                               const char *prompt,
+                               char *buffer, uint32_t capacity){
+    return read_input(terminal,prompt,buffer,capacity,false);
+}
+
+bool terminal_window_read_secret(struct terminal_window *terminal,
+                                 const char *prompt,
+                                 char *buffer, uint32_t capacity){
+    return read_input(terminal,prompt,buffer,capacity,true);
 }
 
 void terminal_window_shutdown(struct terminal_window *terminal){

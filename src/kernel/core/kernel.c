@@ -123,7 +123,7 @@ void kernel_main(struct limine_framebuffer *fb) {
   devman_autoload();
   krandom_init();
   klogf(KLOG_INFO, "random: %s backend",
-        krandom_hardened() ? "wolfcrypt DRBG" : "fallback");
+        krandom_hardened() ? "purecrypt hash-drbg" : "fallback");
   devman_dump();
   klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
   {

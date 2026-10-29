@@ -355,6 +355,10 @@ static uint32_t oom_reap_zombie(uint32_t pid) {
   return pid;
 }
 
+static bool session_active;
+static uint32_t session_uid;
+static uint32_t session_gid;
+
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line) {
   MUTEX_SCOPE(&process_mutex);
@@ -520,6 +524,10 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   environment_initialize(process, parent);
   process->uid = parent ? parent->uid : 0;
   process->gid = parent ? parent->gid : 0;
+  if (session_active && parent && parent->uid == 0 && parent->pid != 1) {
+    process->uid = session_uid;
+    process->gid = session_gid;
+  }
   if (command_line) {
     strncpy(process->command_line, command_line,
             sizeof(process->command_line) - 1);
@@ -1072,5 +1080,15 @@ int32_t process_set_gid(uint32_t gid) {
   if (process->uid != 0 && process->gid != gid)
     return -1;
   process->gid = gid;
+  return 0;
+}
+
+int32_t process_session_begin(uint32_t uid, uint32_t gid) {
+  struct process *process = process_current();
+  if (!process || process->uid != 0)
+    return -1;
+  session_uid = uid;
+  session_gid = gid;
+  session_active = true;
   return 0;
 }

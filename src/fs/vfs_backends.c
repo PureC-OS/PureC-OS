@@ -5,9 +5,11 @@
 #include "./ext2/include/ext2_block.h"
 #include "./ext2/include/ext2_dir.h"
 #include "./ext2/include/ext2_inode.h"
+#include "./ext2/include/ext2_meta.h"
 #include "./ext2/include/ext2_types.h"
 #include "initramfs.h"
 #include "vfs_path.h"
+#include "vfs_perm.h"
 
 static bool ext2_ready(void *context) {
   (void)context;
@@ -111,6 +113,28 @@ static int32_t ext2_op_append_file(void *context, const char *path,
   return result;
 }
 
+static int32_t ext2_op_get_meta(void *context, const char *path,
+                                struct vfs_perm_meta *out) {
+  (void)context;
+  struct ext2_meta meta;
+  int32_t status = ext2_meta_get(path, &meta);
+  if (status < 0)
+    return status;
+  out->mode = meta.mode;
+  out->uid = meta.uid;
+  out->gid = meta.gid;
+  return 0;
+}
+
+static int32_t ext2_op_set_meta(void *context, const char *path,
+                                const struct vfs_perm_meta *meta) {
+  (void)context;
+  int32_t status = ext2_meta_set(path, meta->mode, meta->uid, meta->gid);
+  if (status >= 0)
+    block_device_flush();
+  return status;
+}
+
 const struct vfs_fs_ops vfs_ext2_ops = {
     .name = "ext2",
     .open = ext2_op_open,
@@ -127,6 +151,8 @@ const struct vfs_fs_ops vfs_ext2_ops = {
     .move = ext2_op_move,
     .write_file = ext2_op_write_file,
     .append_file = ext2_op_append_file,
+    .get_meta = ext2_op_get_meta,
+    .set_meta = ext2_op_set_meta,
     .is_ready = ext2_ready,
 };
 

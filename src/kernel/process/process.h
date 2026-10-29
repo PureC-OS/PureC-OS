@@ -72,6 +72,7 @@ int32_t process_parent_pid(uint32_t pid);
 bool process_current_is_user(void);
 uint32_t process_current_uid(void);
 uint32_t process_current_gid(void);
+int32_t process_session_begin(uint32_t uid, uint32_t gid);
 int32_t process_set_uid(uint32_t uid);
 int32_t process_set_gid(uint32_t gid);
 bool process_has_capability(uint32_t capability);

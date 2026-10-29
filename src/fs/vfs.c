@@ -236,10 +236,33 @@ static void parent_of(const char *path, char *out, uint32_t capacity) {
   }
 }
 
+static struct vfs_mount *meta_mount(const char *path, const char **relative,
+                                    char *buffer, uint32_t capacity) {
+  struct vfs_mount *mount = vfs_mount_find(path, relative, buffer, capacity);
+  if (!mount || !mount->ops->get_meta || !mount->ops->set_meta ||
+      !mount_ready(mount))
+    return 0;
+  return mount;
+}
+
 static void effective_meta(const char *path, bool directory,
                            struct vfs_perm_meta *meta) {
+  const char *relative;
+  char buffer[2];
+  struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
+  if (mount && mount->ops->get_meta(mount->context, relative, meta) >= 0)
+    return;
   if (!vfs_perm_get(path, meta))
     vfs_perm_default(meta, directory);
+}
+
+static int32_t store_meta(const char *path, const struct vfs_perm_meta *meta) {
+  const char *relative;
+  char buffer[2];
+  struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
+  if (mount && !(mount->flags & VFS_MOUNT_READ_ONLY))
+    return mount->ops->set_meta(mount->context, relative, meta);
+  return vfs_perm_set(path, meta);
 }
 
 static int32_t check_access(const char *path, bool directory, uint32_t want) {
@@ -274,7 +297,7 @@ static void own_created(const char *path, bool directory) {
   vfs_perm_default(&meta, directory);
   meta.uid = uid;
   meta.gid = process_current_gid();
-  (void)vfs_perm_set(path, &meta);
+  (void)store_meta(path, &meta);
 }
 
 static int32_t check_write_target(const struct vfs_resolved *resolved,
@@ -932,7 +955,7 @@ int32_t vfs_chmod(const char *path, uint16_t mode) {
   if (uid != 0 && uid != meta.uid)
     return FS_ERROR_DENIED;
   meta.mode = mode & VFS_MODE_MASK;
-  return vfs_perm_set(resolved.path, &meta);
+  return store_meta(resolved.path, &meta);
 }
 
 int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
@@ -952,7 +975,7 @@ int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
     meta.uid = uid;
   if (gid != USER_ID_NONE)
     meta.gid = gid;
-  return vfs_perm_set(resolved.path, &meta);
+  return store_meta(resolved.path, &meta);
 }
 
 int32_t vfs_get_perm(const char *path, struct file_perm_info *out) {

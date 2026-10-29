@@ -120,6 +120,7 @@
 #define SYS_FILE_PERM 315   /* (path, struct file_perm_info *) */
 #define SYS_USER_LOOKUP 316 /* (name|NULL, uid, struct user_info *) */
 #define SYS_GETRANDOM 317   /* (buf, len) -> len */
+#define SYS_SESSION_BEGIN 318 /* (uid, gid), root only */
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
@@ -132,11 +133,28 @@ struct format_request {
   uint8_t reserved[3];
 };
 
+#define INSTALL_HOSTNAME_MAX 64
+#define INSTALL_USER_MAX 32
+#define INSTALL_GECOS_MAX 64
+#define INSTALL_HASH_MAX 128
+#define INSTALL_FIRST_UID 1000
+
+struct install_account_request {
+  uint32_t present;
+  uint32_t user_uid;
+  char hostname[INSTALL_HOSTNAME_MAX];
+  char root_hash[INSTALL_HASH_MAX];
+  char user_name[INSTALL_USER_MAX];
+  char user_gecos[INSTALL_GECOS_MAX];
+  char user_hash[INSTALL_HASH_MAX];
+};
+
 struct install_start_request {
   char device[32];
   char serial[32];
   uint8_t fs_type;
   uint8_t reserved[3];
+  struct install_account_request accounts;
 };
 
 #define NETWORK_PING_TARGET_CAPACITY 128

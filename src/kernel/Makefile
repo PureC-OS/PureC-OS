@@ -120,12 +120,14 @@ C_SOURCES := \
 	fs/ext2/dir.c \
 	fs/ext2/file.c \
 	fs/ext2/format.c \
+	fs/ext2/meta.c \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
 	fs/vfs_path.c \
 	fs/vfs_alias.c \
 	fs/vfs_perm.c \
+	fs/install_accounts.c \
 	fs/vfs_mount.c \
 	fs/vfs_backends.c \
 	fs/devfs.c \
