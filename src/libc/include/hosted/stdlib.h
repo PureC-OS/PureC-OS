@@ -17,6 +17,7 @@ void free(void *pointer);
 int atoi(const char *text);
 long atol(const char *text);
 long long atoll(const char *text);
+double atof(const char *text);
 long strtol(const char *text, char **end, int base);
 unsigned long strtoul(const char *text, char **end, int base);
 unsigned long long strtoull(const char *text, char **end, int base);

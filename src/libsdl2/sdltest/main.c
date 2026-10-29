@@ -3,6 +3,27 @@
 #define WIDTH 480
 #define HEIGHT 320
 
+static volatile int beep_samples_left;
+static int beep_phase;
+
+static void audio_callback(void *userdata, Uint8 *stream, int len)
+{
+    Sint16 *out = (Sint16 *)stream;
+    int frames = len / (int)sizeof(Sint16);
+    int i;
+
+    (void)userdata;
+    for (i = 0; i < frames; ++i) {
+        if (beep_samples_left > 0) {
+            out[i] = (beep_phase / 25) % 2 ? 6000 : -6000;
+            beep_phase = (beep_phase + 1) % 50;
+            --beep_samples_left;
+        } else {
+            out[i] = 0;
+        }
+    }
+}
+
 static void fill(SDL_Surface *surface, SDL_Rect *rect, Uint32 color)
 {
     SDL_FillRect(surface, rect, color);
@@ -32,6 +53,20 @@ int main(int argc, char **argv)
         SDL_Quit();
         return 1;
     }
+    {
+        SDL_AudioSpec want, have;
+        SDL_zero(want);
+        want.freq = 22050;
+        want.format = AUDIO_S16SYS;
+        want.channels = 1;
+        want.samples = 512;
+        want.callback = audio_callback;
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0 || SDL_OpenAudio(&want, &have) != 0) {
+            SDL_Log("audio unavailable: %s", SDL_GetError());
+        } else {
+            SDL_PauseAudio(0);
+        }
+    }
     surface = SDL_GetWindowSurface(window);
     if (!surface) {
         SDL_Log("SDL_GetWindowSurface: %s", SDL_GetError());
@@ -49,6 +84,9 @@ int main(int argc, char **argv)
             case SDL_KEYDOWN:
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                     running = SDL_FALSE;
+                }
+                if (event.key.keysym.scancode == SDL_SCANCODE_SPACE && !event.key.repeat) {
+                    beep_samples_left = 22050 / 5;
                 }
                 if (!event.key.repeat) {
                     keys_down++;
@@ -104,6 +142,7 @@ int main(int argc, char **argv)
         SDL_Delay(16);
     }
 
+    SDL_CloseAudio();
     SDL_DestroyWindow(window);
     SDL_Quit();
     return 0;

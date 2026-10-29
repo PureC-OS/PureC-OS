@@ -68,6 +68,8 @@ int snprintf(char *buffer, size_t capacity, const char *format, ...);
 int vsnprintf(char *buffer, size_t capacity, const char *format, va_list args);
 int vfprintf(FILE *stream, const char *format, va_list args);
 int sprintf(char *buffer, const char *format, ...);
+int sscanf(const char *input, const char *format, ...);
+int vsscanf(const char *input, const char *format, va_list args);
 int setvbuf(FILE *stream, char *buffer, int mode, size_t size);
 void setbuf(FILE *stream, char *buffer);
 int remove(const char *path);

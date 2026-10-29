@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -175,6 +175,12 @@ test-hid-keymap:
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src tests/hid_keymap_test.c \
 		src/drivers/input/hid_keymap.c -o $(BIN_DIR)/tests/hid_keymap_test
 	$(BIN_DIR)/tests/hid_keymap_test
+
+test-scanf:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -Dsscanf=pc_sscanf -Dvsscanf=pc_vsscanf -c src/libc/scanf.c -o $(BIN_DIR)/tests/scanf_pc.o
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g tests/scanf_test.c $(BIN_DIR)/tests/scanf_pc.o -o $(BIN_DIR)/tests/scanf_test
+	$(BIN_DIR)/tests/scanf_test
 
 test-libm:
 	@mkdir -p $(BIN_DIR)/tests

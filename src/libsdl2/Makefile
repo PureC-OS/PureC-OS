@@ -13,6 +13,7 @@ SDL_SOURCES := \
 	$(wildcard $(SDL_DIR)/src/atomic/*.c) \
 	$(wildcard $(SDL_DIR)/src/audio/*.c) \
 	$(wildcard $(SDL_DIR)/src/audio/dummy/*.c) \
+	$(wildcard $(SDL_DIR)/src/audio/purec/*.c) \
 	$(wildcard $(SDL_DIR)/src/cpuinfo/*.c) \
 	$(wildcard $(SDL_DIR)/src/events/*.c) \
 	$(wildcard $(SDL_DIR)/src/file/*.c) \
@@ -69,9 +70,9 @@ $(SDLTEST_OBJECT): $(ROOT_DIR)/src/libsdl2/sdltest/main.c
 	@mkdir -p $(@D)
 	$(CC) $(DEPFLAGS) $(USER_CFLAGS) $(SDL_CFLAGS) -c $< -o $@
 
-$(SDLTEST): $(SDLTEST_OBJECT) $(LIB_DIR)/crt0.o $(TARGET) $(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpurec.a $(LINKER_SCRIPT)
+$(SDLTEST): $(SDLTEST_OBJECT) $(LIB_DIR)/crt0.o $(TARGET) $(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(SDLTEST_OBJECT) $(TARGET) $(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpurec.a
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(SDLTEST_OBJECT) $(TARGET) $(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a
 
 .PHONY: clean
 clean:

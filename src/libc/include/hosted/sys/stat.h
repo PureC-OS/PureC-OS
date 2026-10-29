@@ -23,3 +23,4 @@ struct stat {
 int stat(const char *path, struct stat *info);
 int fstat(int fd, struct stat *info);
 int lstat(const char *path, struct stat *info);
+int mkdir(const char *path, unsigned int mode);

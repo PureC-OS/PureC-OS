@@ -190,6 +190,15 @@ int stat(const char *path, struct stat *info) {
     return 0;
 }
 
+int mkdir(const char *path, unsigned int mode) {
+    (void)mode;
+    if (!path) { errno = EINVAL; return -1; }
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
+    if (pc_directory_create(path) < 0) { errno = EEXIST; return -1; }
+    return 0;
+}
+
 int fstat(int fd, struct stat *info) {
     if (!info) { errno = EINVAL; return -1; }
     if (fd < 3) {

@@ -431,5 +431,7 @@ void exit(int status) {
     fflush(0);
     pc_exit(status);
 }
+double atof(const char *text) { return strtod(text, 0); }
+
 void _exit(int status) { pc_exit(status); for (;;) { } }
 void abort(void) { pc_exit(134); }
