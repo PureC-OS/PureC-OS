@@ -272,7 +272,7 @@ $(PROGRAM_DIR)/monitor: $(OBJ_DIR)/monitor/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LI
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
