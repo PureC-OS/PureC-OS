@@ -63,6 +63,7 @@
 /usr/bin/notepad /usr/bin/notepad - 0 bin/programs/notepad
 /usr/bin/imgview /usr/bin/imgview - 0 bin/programs/imgview
 /usr/bin/hello /usr/bin/hello - 0 bin/programs/hello
+/usr/bin/forktest /usr/bin/forktest - 0 bin/programs/forktest
 /bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest

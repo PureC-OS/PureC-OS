@@ -9,6 +9,7 @@
 #include "../../../../kernel/diagnostics/klog.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "../../../../mm/vmm.h"
 #include "../../../../kernel/smp/smp.h"
 #include "../../../../kernel/smp/lapic.h"
 #include "../../../../kernel/smp/cpu.h"
@@ -54,7 +55,7 @@ static void idt_set_ist(int n, uint8_t ist){
 struct isr_regs {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rbp, rdi, rsi, rdx, rcx, rbx, rax;
     uint64_t vector, err;
-    uint64_t rip, cs, rflags;
+    uint64_t rip, cs, rflags, rsp, ss;
 };
 
 static inline void pic_eoi(uint8_t irq){
@@ -212,6 +213,7 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     }
     uint64_t cr2 = 0;
     if(vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+    if(vector == 14 && vmm_handle_cow_fault(process_current_address_space(), cr2, err)) return;
     if((cs&3)==3 && process_current_is_user()){
         scheduler_enter_kernel();
         klogf(KLOG_ERROR,

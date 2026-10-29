@@ -54,6 +54,7 @@ struct process {
   struct process *hnext;
   uint64_t node_phys;
   struct ipc_mbox *ipc_mailbox;
+  uint64_t fork_frame[22];
 };
 
 void process_init(void);
@@ -65,6 +66,8 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
                               int16_t affinity, uint8_t qos,
                               uint32_t capabilities);
 const char *process_last_spawn_error(void);
+struct syscall_regs;
+int32_t process_fork(const struct syscall_regs *regs);
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
 int32_t process_current_pid(void);

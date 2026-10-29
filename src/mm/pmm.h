@@ -16,3 +16,5 @@ void *pmm_physical_to_virtual(uint64_t physical_address);
 uint64_t pmm_total_bytes(void);
 uint64_t pmm_free_bytes(void);
 bool pmm_is_ready(void);
+bool pmm_frame_ref(uint64_t physical_address);
+uint32_t pmm_frame_shared(uint64_t physical_address);

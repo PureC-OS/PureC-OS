@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "sys/types.h"
 
 #ifndef SEEK_SET
 #define SEEK_SET 0
@@ -30,6 +31,8 @@ int isatty(int fd);
 unsigned int sleep(unsigned int seconds);
 char *getcwd(char *buffer, size_t capacity);
 int execvp(const char *file, char *const *argv);
+pid_t fork(void);
+pid_t getpid(void);
 
 #define F_OK 0
 #define R_OK 4

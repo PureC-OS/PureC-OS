@@ -15,6 +15,7 @@ static uint64_t pmm_free_bytes_locked(void);
 #define PMM_BITMAP_BYTES (PMM_MAX_PAGES / 8)
 
 static uint8_t frame_bitmap[PMM_BITMAP_BYTES];
+static uint16_t *frame_refs;
 static uint64_t direct_map_offset;
 static uint64_t frame_limit;
 static uint64_t free_frames;
@@ -70,6 +71,16 @@ void pmm_init(const struct limine_memmap_response *memory_map,
     }
   }
   ready = free_frames != 0;
+  frame_refs = 0;
+  if (ready) {
+    uint64_t ref_pages = (frame_limit * sizeof(uint16_t) + PMM_PAGE_SIZE - 1) /
+                         PMM_PAGE_SIZE;
+    uint64_t ref_phys = pmm_allocate_contiguous_locked(ref_pages);
+    if (ref_phys)
+      frame_refs = (uint16_t *)pmm_physical_to_virtual(ref_phys);
+    else
+      klog(KLOG_ERROR, "pmm: frame reference table unavailable, COW disabled");
+  }
   klogf(ready ? KLOG_OK : KLOG_ERROR,
         "pmm: managed=%llu MiB free=%llu MiB page=%u",
         (frame_limit * PMM_PAGE_SIZE) / (1024 * 1024),
@@ -158,6 +169,10 @@ static void pmm_free_page_locked(uint64_t physical_address) {
   uint64_t frame = physical_address / PMM_PAGE_SIZE;
   if (frame == 0 || frame >= frame_limit || !frame_is_used(frame))
     return;
+  if (frame_refs && frame_refs[frame]) {
+    frame_refs[frame]--;
+    return;
+  }
   clear_frame(frame);
   free_frames++;
   if (frame < allocation_cursor)
@@ -205,4 +220,25 @@ uint64_t pmm_free_bytes(void) {
   uint64_t result = pmm_free_bytes_locked();
   spin_unlock_irqrestore(&pmm_lock, irq_flags);
   return result;
+}
+
+bool pmm_frame_ref(uint64_t physical_address) {
+  uint64_t frame = physical_address / PMM_PAGE_SIZE;
+  uint64_t irq_flags = spin_lock_irqsave(&pmm_lock);
+  bool ok = false;
+  if (frame_refs && frame && frame < frame_limit && frame_is_used(frame) &&
+      frame_refs[frame] < UINT16_MAX) {
+    frame_refs[frame]++;
+    ok = true;
+  }
+  spin_unlock_irqrestore(&pmm_lock, irq_flags);
+  return ok;
+}
+
+uint32_t pmm_frame_shared(uint64_t physical_address) {
+  uint64_t frame = physical_address / PMM_PAGE_SIZE;
+  uint64_t irq_flags = spin_lock_irqsave(&pmm_lock);
+  uint32_t shared = (frame_refs && frame < frame_limit) ? frame_refs[frame] : 0;
+  spin_unlock_irqrestore(&pmm_lock, irq_flags);
+  return shared;
 }

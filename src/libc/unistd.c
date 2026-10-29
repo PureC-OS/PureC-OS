@@ -7,6 +7,7 @@
 #include "include/hosted/stdlib.h"
 #include "include/hosted/string.h"
 #include "include/hosted/errno.h"
+#include "include/hosted/sys/wait.h"
 #include "include/hosted/stdio.h"
 #include "include/hosted/sys/stat.h"
 #include "include/hosted/dirent.h"
@@ -444,3 +445,21 @@ char *realpath(const char *path, char *resolved) {
     memcpy(fresh, out, w + 1);
     return fresh;
 }
+
+pid_t fork(void) {
+    int32_t pid = pc_fork();
+    if (pid < 0) { errno = EAGAIN; return -1; }
+    return pid;
+}
+
+pid_t getpid(void) { return pc_getpid(); }
+
+pid_t waitpid(pid_t pid, int *status, int options) {
+    int32_t raw = 0;
+    int32_t result = pc_wait(pid, &raw, (options & WNOHANG) != 0);
+    if (result < 0) { errno = ECHILD; return -1; }
+    if (result > 0 && status) *status = (raw & 0xFF) << 8;
+    return result;
+}
+
+pid_t wait(int *status) { return waitpid(-1, status, 0); }

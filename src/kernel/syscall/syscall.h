@@ -5,6 +5,7 @@
 #define SYS_CLEAR 2
 #define SYS_SLEEP 3
 #define SYS_GETPID 39
+#define SYS_FORK 57
 #define SYS_EXEC 59
 #define SYS_EXIT 60
 #define SYS_WAIT 61
@@ -577,7 +578,7 @@ struct syscall_regs {
   uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rbp, rdi, rsi, rdx, rcx, rbx,
       rax;
   uint64_t vector, err;
-  uint64_t rip, cs, rflags;
+  uint64_t rip, cs, rflags, rsp, ss;
 };
 
 void syscall_init(void);

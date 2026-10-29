@@ -318,6 +318,31 @@ static struct process *allocate_process(void) {
   return process;
 }
 
+static void assign_pid(struct process *process) {
+  process->pid = next_pid++;
+  if (process->pid == 0)
+    process->pid = next_pid++;
+  for (;;) {
+    struct process *hit = process_find_by_pid(process->pid);
+    if (!hit || hit == process)
+      break;
+    process->pid = next_pid++;
+    if (process->pid == 0)
+      process->pid = next_pid++;
+  }
+}
+
+extern void arch_enter_user_frame(const uint64_t *frame);
+
+static void fork_child_entry(void *argument) {
+  struct process *process = (struct process *)argument;
+  mutex_lock(&process_mutex);
+  process->state = PROCESS_RUNNING;
+  mutex_unlock(&process_mutex);
+  scheduler_leave_kernel();
+  arch_enter_user_frame(process->fork_frame);
+}
+
 static void user_process_entry(void *argument) {
   struct process *process = (struct process *)argument;
   mutex_lock(&process_mutex);
@@ -488,17 +513,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     process_node_free(process);
     return -1;
   }
-  process->pid = next_pid++;
-  if (process->pid == 0)
-    process->pid = next_pid++;
-  for (;;) {
-    struct process *hit = process_find_by_pid(process->pid);
-    if (!hit || hit == process)
-      break;
-    process->pid = next_pid++;
-    if (process->pid == 0)
-      process->pid = next_pid++;
-  }
+  assign_pid(process);
   phash_insert(process);
   {
     uint64_t initial_user_pages = vmm_user_page_count(process->address_space);
@@ -552,6 +567,77 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   klogf(KLOG_OK, "process: pid=%u name=%s entry=0x%llx cr3=0x%llx",
         process->pid, process->name, process->entry, process->address_space);
   return (int32_t)process->pid;
+}
+
+int32_t process_fork(const struct syscall_regs *regs) {
+  MUTEX_SCOPE(&process_mutex);
+  struct process *parent = process_current();
+  if (!parent || !process_current_is_user() || !regs)
+    return -1;
+  if (!oom_gate_can_spawn()) {
+    klog(KLOG_WARN, "oom: fork denied, kernel reserve kept");
+    return -1;
+  }
+  struct process *child = allocate_process();
+  if (!child)
+    return -1;
+  child->address_space = vmm_clone_address_space(parent->address_space);
+  if (!child->address_space) {
+    process_node_free(child);
+    return -1;
+  }
+  assign_pid(child);
+  phash_insert(child);
+  uint64_t pages = vmm_user_page_count(child->address_space);
+  if (!oom_gate_try_charge_user(child->pid, pages)) {
+    klogf(KLOG_WARN, "oom: fork pid charge denied pages=%llu",
+          (unsigned long long)pages);
+    vmm_destroy_address_space(child->address_space);
+    child->address_space = 0;
+    process_node_free(child);
+    return -1;
+  }
+  child->parent_pid = parent->pid;
+  child->entry = parent->entry;
+  child->user_stack_top = parent->user_stack_top;
+  child->heap_base = parent->heap_base;
+  child->heap_break = parent->heap_break;
+  child->heap_mapped_end = parent->heap_mapped_end;
+  child->heap_limit = parent->heap_limit;
+  child->capabilities = parent->capabilities;
+  child->uid = parent->uid;
+  child->gid = parent->gid;
+  memcpy(child->environment, parent->environment, sizeof(child->environment));
+  memcpy(child->command_line, parent->command_line,
+         sizeof(child->command_line));
+  memcpy(child->name, parent->name, sizeof(child->name));
+  for (uint32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
+    int32_t handle = parent->descriptors[fd];
+    if (handle < VFS_FD_BASE)
+      continue;
+    if (vfs_ref(handle) < 0)
+      continue;
+    child->descriptors[fd] = handle;
+  }
+  memcpy(child->fork_frame, regs, sizeof(child->fork_frame));
+  child->fork_frame[14] = 0;
+  child->state = PROCESS_READY;
+  child->thread_id = scheduler_create_forked_thread(
+      fork_child_entry, child, child->name, USER_PROCESS_PRIORITY, -1,
+      child->address_space, child);
+  if (child->thread_id < 0) {
+    for (uint32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
+      if (child->descriptors[fd] >= VFS_FD_BASE)
+        (void)vfs_close(child->descriptors[fd]);
+    }
+    vmm_destroy_address_space(child->address_space);
+    child->address_space = 0;
+    process_node_free(child);
+    return -1;
+  }
+  klogf(KLOG_OK, "process: fork pid=%u ppid=%u name=%s", child->pid,
+        child->parent_pid, child->name);
+  return (int32_t)child->pid;
 }
 
 int32_t process_spawn_module(const char *path, const char *command_line) {

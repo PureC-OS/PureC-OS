@@ -149,6 +149,7 @@ TARGETS := \
  	$(PROGRAM_DIR)/hexedit \
   	$(PROGRAM_DIR)/imgview \
   	$(PROGRAM_DIR)/hello \
+  	$(PROGRAM_DIR)/forktest \
   	$(PROGRAM_DIR)/fputest \
   	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/cd \
@@ -460,6 +461,14 @@ $(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
 $(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/forktest/main.o: $(ROOT_DIR)/src/programs/forktest/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/forktest: $(OBJ_DIR)/forktest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/forktest/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

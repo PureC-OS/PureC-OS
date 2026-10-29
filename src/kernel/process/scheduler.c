@@ -426,7 +426,7 @@ void scheduler_free_thread_by_id(int tid) {
 static int create_thread(void (*entry)(void *), void *arg, const char *name,
                          uint8_t priority, int16_t affinity,
                          uint64_t address_space, struct process *process,
-                         bool user_mode) {
+                         bool user_mode, const void *fpu_image) {
   if (!local_scheduler()->initialized || !entry)
     return -1;
   if (affinity < -1 || affinity >= (int16_t)cpu_registered_count())
@@ -475,7 +475,10 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   t->user_mode = user_mode;
   strncpy(t->name, name ? name : "thread", sizeof(t->name) - 1);
   t->rsp = create_initial_stack(t);
-  fpu_thread_init(t->fpu_state);
+  if (fpu_image)
+    memcpy(t->fpu_state, fpu_image, FPU_STATE_SIZE);
+  else
+    fpu_thread_init(t->fpu_state);
   t->state = THREAD_READY;
   int id = (int)t->id;
   spin_unlock_irqrestore(&runqueue_lock, flags);
@@ -508,7 +511,7 @@ uint8_t scheduler_get_qos(int tid) {
 int scheduler_create_thread(void (*entry)(void *), void *arg, const char *name,
                             uint8_t priority, int16_t affinity) {
   return create_thread(entry, arg, name, priority, affinity,
-                       vmm_kernel_address_space(), NULL, false);
+                       vmm_kernel_address_space(), NULL, false, NULL);
 }
 int scheduler_create_user_thread(void (*entry)(void *), void *arg,
                                  const char *name, uint8_t priority,
@@ -517,7 +520,19 @@ int scheduler_create_user_thread(void (*entry)(void *), void *arg,
   if (!address_space || !process)
     return -1;
   return create_thread(entry, arg, name, priority, affinity, address_space,
-                       process, true);
+                       process, true, NULL);
+}
+
+int scheduler_create_forked_thread(void (*entry)(void *arg), void *arg,
+                                   const char *name, uint8_t priority,
+                                   int16_t affinity, uint64_t address_space,
+                                   struct process *process) {
+  if (!address_space || !process)
+    return -1;
+  uint8_t fpu_image[FPU_STATE_SIZE] __attribute__((aligned(16)));
+  fpu_save(fpu_image);
+  return create_thread(entry, arg, name, priority, affinity, address_space,
+                       process, true, fpu_image);
 }
 
 int scheduler_create_service_thread(void (*entry)(void *), void *arg,
@@ -527,7 +542,7 @@ int scheduler_create_service_thread(void (*entry)(void *), void *arg,
   if (!process)
     return -1;
   return create_thread(entry, arg, name, priority, affinity, address_space,
-                       process, false);
+                       process, false, NULL);
 }
 
 struct thread *scheduler_current_thread(void) {

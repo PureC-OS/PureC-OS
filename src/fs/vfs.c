@@ -42,6 +42,7 @@ struct vfs_handle {
   uint32_t position;
   uint64_t klog_cursor;
   bool klog_data_lost;
+  uint32_t refs;
 };
 
 struct vfs_resolved {
@@ -456,6 +457,7 @@ int32_t vfs_open(const char *path) {
     return idx;
   struct vfs_handle *h = &handles[idx];
   memset(h, 0, sizeof(*h));
+  h->refs = 1;
   h->backend_descriptor = -1;
   if (is_klog_path(resolved.path)) {
     h->type = VFS_HANDLE_KLOG;
@@ -520,11 +522,24 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
   return (int32_t)amt;
 }
 
+int32_t vfs_ref(int32_t descriptor) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_handle *h = get_handle(descriptor);
+  if (!h || h->refs == UINT32_MAX)
+    return FS_ERROR_INVALID;
+  h->refs++;
+  return 0;
+}
+
 int32_t vfs_close(int32_t descriptor) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_handle *h = get_handle(descriptor);
   if (!h)
     return FS_ERROR_INVALID;
+  if (h->refs > 1) {
+    h->refs--;
+    return 0;
+  }
   int32_t r = 0;
   if (h->type == VFS_HANDLE_BACKEND && h->mount->ops->close)
     r = h->mount->ops->close(h->mount->context, h->backend_descriptor);

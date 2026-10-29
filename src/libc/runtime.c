@@ -104,6 +104,8 @@ void pc_sleep(uint32_t milliseconds){
 
 int32_t pc_getpid(void){ return (int32_t)pc_syscall(SYS_GETPID,0,0,0); }
 
+int32_t pc_fork(void){ return (int32_t)pc_syscall(SYS_FORK,0,0,0); }
+
 int32_t pc_exec(const char *path){
     return (int32_t)pc_syscall(SYS_EXEC,(uint64_t)(uintptr_t)path,0,0);
 }
