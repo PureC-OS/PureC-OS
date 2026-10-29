@@ -33,8 +33,8 @@
 
 Драйверы, которые вызывают функции PCI (через `pci/pci.h`):
 
-- Хранение: `storage/ahci.c`, `storage/block_device.c`, `storage/ata_pio.c`, `storage/storage_probe.c`. См. [AHCI](storage-ahci.md).
-- USB: `usb/xhci.c`, `usb/ehci.c`. См. [xHCI](usb-xhci.md) и [EHCI](usb-ehci.md).
+- Хранение: `storage/ahci.c`, `storage/block_device.c`, `storage/ata_pio.c`, `storage/storage_probe.c`. См. [AHCI](ahci.md).
+- USB: `usb/xhci.c`, `usb/ehci.c`. См. [xHCI](xhci.md) и [EHCI](ehci.md).
 - Сеть: `net/e1000`, `net/82543gc`, `net/pcnet`, `net/ath9k`.
 - Аудио: `audio/audio_hda.c`.
 - Дисплей: `display/vbe.c`, `display/svga.c`.

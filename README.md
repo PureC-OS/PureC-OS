@@ -51,6 +51,10 @@ And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test 
 
 [Link to Syscall Reference](docs/syscalls-reference.md)
 
+## Details about Drivers PureC OS
+
+[Index of driver documentation](docs/drivers/README.md)
+
 ---
 
 ## Sources and Related Repositories
