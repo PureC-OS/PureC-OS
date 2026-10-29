@@ -67,6 +67,7 @@
 /bin/program/gltest /bin/program/gltest - 0 bin/programs/gltest
 /bin/program/sdltest /bin/program/sdltest - 0 bin/programs/sdltest
 /bin/program/doom /bin/program/doom - 0 bin/programs/chocolate-doom
+/usr/share/doom/freedoom1.wad /usr/share/doom/freedoom1.wad - 0 assets/doom/freedoom1.wad
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
 /bin/program/lua /bin/program/lua - 0 bin/programs/lua
 /bin/program/micropython /bin/program/micropython - 0 bin/programs/micropython

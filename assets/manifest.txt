@@ -68,6 +68,7 @@
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest
 /usr/bin/sdltest /usr/bin/sdltest - 0 bin/programs/sdltest
 /usr/bin/doom /usr/bin/doom - 0 bin/programs/chocolate-doom
+/usr/share/doom/freedoom1.wad /usr/share/doom/freedoom1.wad - 0 assets/doom/freedoom1.wad
 /usr/bin/burn /usr/bin/burn - 0 bin/programs/burn
 /usr/bin/eat /usr/bin/eat - 0 bin/programs/eat
 /usr/bin/tcc /usr/bin/tcc - 0 bin/programs/tcc
