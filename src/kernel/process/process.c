@@ -518,6 +518,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   process->heap_mapped_end = heap_base;
   process->heap_limit = heap_limit;
   environment_initialize(process, parent);
+  process->uid = parent ? parent->uid : 0;
+  process->gid = parent ? parent->gid : 0;
   if (command_line) {
     strncpy(process->command_line, command_line,
             sizeof(process->command_line) - 1);
@@ -676,6 +678,8 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
   process->entry = (uint64_t)(uintptr_t)entry;
   process->address_space = vmm_kernel_address_space();
   process->capabilities = capabilities;
+  process->uid = 0;
+  process->gid = 0;
   strncpy(process->name, name, sizeof(process->name) - 1);
   process->name[sizeof(process->name) - 1] = '\0';
   environment_initialize(process, init);
@@ -1039,4 +1043,34 @@ bool process_set_affinity(uint32_t pid, int16_t core) {
     }
   }
   return false;
+}
+
+uint32_t process_current_uid(void) {
+  struct process *process = process_current();
+  return process ? process->uid : 0;
+}
+
+uint32_t process_current_gid(void) {
+  struct process *process = process_current();
+  return process ? process->gid : 0;
+}
+
+int32_t process_set_uid(uint32_t uid) {
+  struct process *process = process_current();
+  if (!process)
+    return -1;
+  if (process->uid != 0 && process->uid != uid)
+    return -1;
+  process->uid = uid;
+  return 0;
+}
+
+int32_t process_set_gid(uint32_t gid) {
+  struct process *process = process_current();
+  if (!process)
+    return -1;
+  if (process->uid != 0 && process->gid != gid)
+    return -1;
+  process->gid = gid;
+  return 0;
 }

@@ -16,7 +16,7 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-perm test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
@@ -147,6 +147,18 @@ test-tmpfs:
 		tests/tmpfs_test.c src/fs/tmpfs.c -o $(BIN_DIR)/tests/tmpfs_test
 	$(BIN_DIR)/tests/tmpfs_test
 
+test-vfs-perm:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) tests/vfs_perm_test.c src/fs/vfs_perm.c \
+		-o $(BIN_DIR)/tests/vfs_perm_test
+	$(BIN_DIR)/tests/vfs_perm_test
+
+test-hdrbg:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/libxcrypt/include tests/hdrbg_test.c \
+		src/drivers/random/random_core.c libxcrypt/src/sha512.c -o $(BIN_DIR)/tests/hdrbg_test
+	$(BIN_DIR)/tests/hdrbg_test
+
 test-vfs-alias:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
@@ -252,8 +264,12 @@ kernel:
 	$(MAKE) -C src/drivers/net/pcnet    module
 	$(MAKE) -C src/drivers/net/ath9k    module
 	$(MAKE) -C $(CRYPT_DIR)             module
+	$(MAKE) -C $(CRYPT_DIR)             BIN_DIR=$(BIN_DIR)
+	@mkdir -p $(BIN_DIR)/lib
+	cp $(CRYPT_DIR)/build/libpurecrypt.a $(BIN_DIR)/lib/libpurecrypt.a
 	$(MAKE) -C $(ACPI_DIR)              module
 	$(MAKE) -C $(WOLFSSL_DIR)           module lib
+	$(MAKE) -C src/drivers/random       module
 
 iso: kernel programs
 	@set -eu; \
@@ -282,7 +298,7 @@ iso: kernel programs
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
 	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
-	for mod in ext2 crypt acpi wolf e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
+	for mod in ext2 crypt acpi wolf random e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
 			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/lib/modules/$$mod.$$ext" || true; \

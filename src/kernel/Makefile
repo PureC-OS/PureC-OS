@@ -7,10 +7,6 @@ FALLBACK := $(KERNEL_DIR)/kernel-fallback.elf
 KERNEL_MAP := $(KERNEL_DIR)/kernel.map
 KERNEL_LD_MAP := $(KERNEL_DIR)/kernel-limine.ld.map
 LINKER_SCRIPT := $(ROOT_DIR)/linker-limine.ld
-CRYPT_DIR := $(ROOT_DIR)/libxcrypt
-CRYPT_REPO ?= https://github.com/PureC-OS/libxcrypt.git
-CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
-CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
 ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/src/uacpi_glue.c acpi/src/uacpi_heap.c acpi/src/acpi_ec.c acpi/src/acpi_battery.c acpi/src/acpi_sensors.c \
@@ -52,6 +48,7 @@ C_SOURCES := \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \
 	kernel/module/kmod_so.c \
+	kernel/random/krandom.c \
 	kernel/ipc/ipc.c \
 	mm/pmm.c \
 	mm/vmm.c \
@@ -128,6 +125,7 @@ C_SOURCES := \
 	fs/vfs.c \
 	fs/vfs_path.c \
 	fs/vfs_alias.c \
+	fs/vfs_perm.c \
 	fs/vfs_mount.c \
 	fs/vfs_backends.c \
 	fs/devfs.c \
@@ -171,20 +169,14 @@ ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
 GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(CRYPT_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
 
 BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all crypt-fetch acpi-fetch force
-all: crypt-fetch acpi-fetch $(TARGET)
+.PHONY: all acpi-fetch force
+all: acpi-fetch $(TARGET)
 	@if [ ! -f $(FALLBACK) ]; then cp $(TARGET) $(FALLBACK); fi
-
-crypt-fetch:
-	@if [ ! -f $(CRYPT_DIR)/src/sha512.c ]; then \
-		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
-		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
-	fi
 
 acpi-fetch:
 	@if [ ! -f $(ACPI_DIR)/src/acpi.c ]; then \
@@ -192,7 +184,7 @@ acpi-fetch:
 		git clone $(ACPI_REPO) $(ACPI_DIR); \
 	fi
 
--include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d) $(GEN_STAMP_OBJ:.o=.d)
+-include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d) $(GEN_STAMP_OBJ:.o=.d)
 
 $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -216,10 +208,6 @@ $(GEN_STAMP_OBJ): $(GEN_STAMP)
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
-
-$(OBJ_DIR)/libxcrypt/%.o: $(CRYPT_DIR)/src/%.c
-	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/acpi/%.o: $(ACPI_DIR)/%.c
 	@mkdir -p $(@D)

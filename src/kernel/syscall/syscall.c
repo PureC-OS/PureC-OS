@@ -17,6 +17,7 @@
 #include "../../gfx/compositor.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
+#include "../random/krandom.h"
 #include "../../net/api/ping.h"
 #include "../../net/config/dhcp.h"
 #include "../../net/core/net_device.h"
@@ -280,6 +281,57 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return 0;
   case SYS_GETPID:
     return process_current_pid();
+  case SYS_GETRANDOM: {
+    if (a2 > 0x100000 || !writable((void *)(uintptr_t)a1, a2))
+      return -1;
+    krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
+    return (int64_t)a2;
+  }
+  case SYS_GETUID:
+    return (int64_t)process_current_uid();
+  case SYS_GETGID:
+    return (int64_t)process_current_gid();
+  case SYS_SETUID:
+    return process_set_uid((uint32_t)a1);
+  case SYS_SETGID:
+    return process_set_gid((uint32_t)a1);
+  case SYS_CHMOD: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_chmod((const char *)(uintptr_t)a1, (uint16_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_CHOWN: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result =
+        vfs_chown((const char *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_FILE_PERM: {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a2, sizeof(struct file_perm_info)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_get_perm((const char *)(uintptr_t)a1,
+                                  (struct file_perm_info *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_USER_LOOKUP: {
+    if ((a1 && !readable_string((const char *)(uintptr_t)a1)) ||
+        !writable((void *)(uintptr_t)a3, sizeof(struct user_info)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_user_lookup((const char *)(uintptr_t)a1, (uint32_t)a2,
+                                     (struct user_info *)(uintptr_t)a3);
+    filesystem_syscall_unlock();
+    return result;
+  }
   case SYS_HEAP_GROW: {
     uint64_t address = process_heap_grow(a1);
     return address ? (int64_t)address : -1;

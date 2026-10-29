@@ -111,6 +111,15 @@
 #define SYS_TCP_CLOSE 306   /* (handle) */
 #define SYS_TCP_ABORT 307   /* (handle) send RST and release */
 #define SYS_TCP_INFO 308    /* (handle, struct net_tcp_info *) */
+#define SYS_GETUID 309
+#define SYS_GETGID 310
+#define SYS_SETUID 311
+#define SYS_SETGID 312
+#define SYS_CHMOD 313       /* (path, mode) */
+#define SYS_CHOWN 314       /* (path, uid, gid) */
+#define SYS_FILE_PERM 315   /* (path, struct file_perm_info *) */
+#define SYS_USER_LOOKUP 316 /* (name|NULL, uid, struct user_info *) */
+#define SYS_GETRANDOM 317   /* (buf, len) -> len */
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
@@ -436,6 +445,21 @@ struct file_stat_info {
   uint64_t size;
   uint32_t is_directory;
   uint32_t reserved;
+};
+
+struct file_perm_info {
+  uint32_t mode;
+  uint32_t uid;
+  uint32_t gid;
+  uint32_t reserved;
+};
+
+struct user_info {
+  char name[32];
+  uint32_t uid;
+  uint32_t gid;
+  char home[64];
+  char shell[64];
 };
 
 struct ext2_stat_info {

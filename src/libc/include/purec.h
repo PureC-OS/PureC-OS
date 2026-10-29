@@ -69,6 +69,15 @@ int32_t pc_file_open(const char *path);
 int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity);
 int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence);
 int32_t pc_file_stat(const char *path, struct file_stat_info *out);
+int32_t pc_getrandom(void *buffer, uint32_t count);
+int32_t pc_getuid(void);
+int32_t pc_getgid(void);
+int32_t pc_setuid(uint32_t uid);
+int32_t pc_setgid(uint32_t gid);
+int32_t pc_chmod(const char *path, uint32_t mode);
+int32_t pc_chown(const char *path, uint32_t uid, uint32_t gid);
+int32_t pc_file_perm(const char *path, struct file_perm_info *out);
+int32_t pc_user_lookup(const char *name, uint32_t uid, struct user_info *out);
 int32_t pc_file_close(int32_t descriptor);
 int32_t pc_file_write(const char *path, const void *buffer, uint32_t size);
 int32_t pc_directory_list(const char *path,

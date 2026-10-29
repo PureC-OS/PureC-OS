@@ -112,6 +112,7 @@ int devman_register_driver(struct device_driver *driver);
 void devman_driver_probe_all(void);
 void devman_register_builtin_drivers(void);
 void devman_autoload(void);
+bool devman_load_module(const char *name, const char *elf_path);
 uint32_t devman_bound_count(void);
 uint32_t devman_unbound_count(void);
 bool devman_is_ready(void);

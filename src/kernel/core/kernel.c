@@ -21,6 +21,7 @@
 #include "../smp/smp.h"
 #include "../syscall/syscall.h"
 #include "init.h"
+#include "../random/krandom.h"
 #include "system_info.h"
 extern struct limine_memmap_response *memmap_response_ptr;
 extern struct limine_smp_response *smp_response_ptr;
@@ -120,6 +121,9 @@ void kernel_main(struct limine_framebuffer *fb) {
   devman_enumerate();
   devman_register_builtin_drivers();
   devman_autoload();
+  krandom_init();
+  klogf(KLOG_INFO, "random: %s backend",
+        krandom_hardened() ? "wolfcrypt DRBG" : "fallback");
   devman_dump();
   klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
   {
