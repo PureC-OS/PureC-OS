@@ -81,6 +81,17 @@ int32_t pa_sfx_play(const int16_t *frames, uint32_t frame_count);
 int32_t pa_sfx_stop(void);
 int32_t pa_update(void);
 
+// Continuous PCM stream: 22050 Hz mono 16-bit. pa_stream_pump() asks the
+// fill callback for exactly as many frames as the hardware clock needs
+// and keeps the kernel staging buffer about 4096 frames ahead. Call it
+// at least every 40 ms; there is no audio thread. Only one stream can
+// be open at a time and it replaces any sample started by pa_sfx_play.
+typedef void (*pa_stream_fill_fn)(int16_t *frames, uint32_t count, void *user);
+int32_t pa_stream_open(pa_stream_fill_fn fill, void *user);
+int32_t pa_stream_pump(void);
+void pa_stream_close(void);
+bool pa_stream_is_open(void);
+
 #ifdef __cplusplus
 }
 #endif

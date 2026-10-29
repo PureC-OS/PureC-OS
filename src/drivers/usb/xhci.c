@@ -4,13 +4,14 @@
 #include "../storage/storage_probe.h"
 #include "../../arch/x86_64/mmio.h"
 #include "../../kernel/diagnostics/klog.h"
+#include "../../kernel/sync/spinlock.h"
 #include "../../lib/string.h"
 #include "../mouse/usb_mouse.h"
 
 #define XHCI_DEVICE_LIMIT 64
 #define XHCI_RING_ENTRIES 64
 #define XHCI_EVENT_ENTRIES 128
-#define XHCI_TIMEOUT 200000000U
+#define XHCI_TIMEOUT_MS 5000U
 #define XHCI_MMIO_MAP_SIZE 0x100000U
 #define XHCI_SCRATCHPAD_LIMIT 1023
 #define XHCI_NO_DEVICE 0xFF
@@ -35,6 +36,8 @@
 #define XHCI_TRB_ADDRESS_DEVICE 11
 #define XHCI_TRB_CONFIGURE_EP 12
 #define XHCI_TRB_EVALUATE_CTX 13
+#define XHCI_TRB_RESET_EP 14
+#define XHCI_TRB_SET_TR_DEQUEUE 16
 #define XHCI_EVENT_TRANSFER 32
 #define XHCI_EVENT_COMMAND 33
 #define XHCI_COMPLETION_SUCCESS 1
@@ -118,6 +121,7 @@ struct xhci_device
     uint16_t interrupt_packet;
     uint8_t interrupt_errors;
     bool interrupt_pending;
+    bool interrupt_halted;
     bool sync_cache_supported;
 };
 
@@ -170,6 +174,12 @@ static bool mapping_ready;
 static bool probe_complete;
 static uint64_t known_port_bitmap;
 static struct xhci_probe_stats probe_stats;
+static spinlock_t xhci_lock = SPINLOCK_INIT;
+
+static bool xhci_try_lock(void)
+{
+    return !__atomic_exchange_n(&xhci_lock.value, 1, __ATOMIC_ACQUIRE);
+}
 
 static uint64_t connected_port_bitmap(void)
 {
@@ -202,15 +212,30 @@ static inline uint64_t rdtsc(void)
 
 static uint32_t tsc_mhz(void)
 {
-    uint32_t eax, ebx, ecx, edx;
-    __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+    static uint32_t cached;
+    if (cached)
+        return cached;
+    uint32_t eax, ebx, ecx, edx, maximum_leaf;
+    __asm__ volatile("cpuid" : "=a"(maximum_leaf), "=b"(ebx), "=c"(ecx), "=d"(edx)
                      : "a"(0), "c"(0));
+    if (maximum_leaf >= 0x15)
+    {
+        __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+                         : "a"(0x15), "c"(0));
+        if (eax && ebx && ecx)
+        {
+            uint64_t mhz = (uint64_t)ecx * ebx / eax / 1000000ULL;
+            if (mhz >= 100 && mhz <= 10000)
+                return cached = (uint32_t)mhz;
+        }
+    }
+    eax = maximum_leaf;
     if (eax >= 0x16)
     {
         __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
                          : "a"(0x16), "c"(0));
         if (eax >= 100 && eax <= 10000)
-            return eax;
+            return cached = eax;
     }
     return 5000;
 }
@@ -282,9 +307,14 @@ static struct xhci_trb *ring_next(struct xhci_ring_state *ring)
     return trb;
 }
 
+static uint64_t timeout_deadline(void)
+{
+    return rdtsc() + (uint64_t)tsc_mhz() * 1000ULL * XHCI_TIMEOUT_MS;
+}
+
 static bool wait_register(volatile uint32_t *reg, uint32_t mask, bool set)
 {
-    for (uint32_t wait = 0; wait < XHCI_TIMEOUT; wait++)
+    for (uint64_t deadline = timeout_deadline(); (int64_t)(rdtsc() - deadline) < 0;)
     {
         if (((*reg & mask) != 0) == set)
             return true;
@@ -321,6 +351,7 @@ static bool dispatch_mouse_event(const struct xhci_trb *event)
             probe_stats.last_completion_code = code;
             if (device->interrupt_errors < UINT8_MAX)
                 device->interrupt_errors++;
+            device->interrupt_halted = true;
             if (device->interrupt_errors == 1 || device->interrupt_errors == 3)
                 klogf(KLOG_WARN, "xhci%u: HID mouse transfer error slot=%u ep=%u code=%u; retrying",
                       controller_number, slot, endpoint, code);
@@ -334,7 +365,7 @@ static bool next_event(uint8_t wanted_type, uint8_t slot, uint8_t endpoint,
                        struct xhci_trb *result)
 {
     volatile uint32_t *interrupter = runtime + 0x20 / 4;
-    for (uint32_t wait = 0; wait < XHCI_TIMEOUT; wait++)
+    for (uint64_t deadline = timeout_deadline(); (int64_t)(rdtsc() - deadline) < 0;)
     {
         volatile struct xhci_trb *event = &event_trbs[event_index];
         if ((event->control & 1) == event_cycle)
@@ -385,13 +416,13 @@ static bool next_event(uint8_t wanted_type, uint8_t slot, uint8_t endpoint,
     return false;
 }
 
-static bool submit_command(uint64_t parameter, uint32_t type, uint8_t slot,
-                           uint8_t *result_slot)
+static bool submit_endpoint_command(uint64_t parameter, uint32_t type, uint8_t slot,
+                                    uint8_t endpoint, uint8_t *result_slot)
 {
     struct xhci_trb *trb = ring_next(&command_ring);
     trb->parameter_low = (uint32_t)parameter;
     trb->parameter_high = (uint32_t)(parameter >> 32);
-    trb->control = (type << 10) | ((uint32_t)slot << 24) | command_ring.cycle;
+    trb->control = (type << 10) | ((uint32_t)endpoint << 16) | ((uint32_t)slot << 24) | command_ring.cycle;
     __sync_synchronize();
     doorbells[0] = 0;
     struct xhci_trb event;
@@ -403,6 +434,12 @@ static bool submit_command(uint64_t parameter, uint32_t type, uint8_t slot,
     if (result_slot)
         *result_slot = (uint8_t)(event.control >> 24);
     return true;
+}
+
+static bool submit_command(uint64_t parameter, uint32_t type, uint8_t slot,
+                           uint8_t *result_slot)
+{
+    return submit_endpoint_command(parameter, type, slot, 0, result_slot);
 }
 
 static bool transfer(uint8_t device_index, uint8_t endpoint,
@@ -825,6 +862,7 @@ static bool configure_boot_mouse(uint8_t index, uint8_t configuration,
     devices[index].interrupt_packet = packet_size;
     devices[index].interrupt_errors = 0;
     devices[index].interrupt_pending = false;
+    devices[index].interrupt_halted = false;
     return true;
 }
 
@@ -1416,7 +1454,7 @@ static bool initialize_controller(const struct storage_controller_info *controll
     return true;
 }
 
-bool xhci_init(uint32_t linux_name_base)
+static bool xhci_init_locked(uint32_t linux_name_base)
 {
     if (probe_complete)
     {
@@ -1470,7 +1508,7 @@ bool xhci_init(uint32_t linux_name_base)
     return device_count > 0;
 }
 
-bool xhci_rescan(uint32_t linux_name_base)
+static bool xhci_rescan_locked(uint32_t linux_name_base)
 {
     if (!mapping_ready)
     {
@@ -1570,9 +1608,27 @@ static bool poll_async_event(void)
     return true;
 }
 
+static bool recover_mouse_endpoint(uint8_t index)
+{
+    struct xhci_device *device = &devices[index];
+    struct xhci_ring_state *ring = &bulk_in_rings[index];
+    uint8_t endpoint = device->interrupt_in_dci;
+    device->interrupt_halted = false;
+    if (!submit_endpoint_command(0, XHCI_TRB_RESET_EP, device->slot_id, endpoint, 0))
+        return false;
+    uint64_t dequeue = physical_address(&ring->trbs[ring->enqueue]) | ring->cycle;
+    if (!submit_endpoint_command(dequeue, XHCI_TRB_SET_TR_DEQUEUE, device->slot_id, endpoint, 0))
+        return false;
+    klogf(KLOG_INFO, "xhci%u: HID mouse endpoint slot=%u ep=%u reset after %u errors",
+          controller_number, device->slot_id, device->interrupt_in_dci, device->interrupt_errors);
+    return true;
+}
+
 void xhci_poll_mouse(void)
 {
     if (!operational || !doorbells || !runtime)
+        return;
+    if (!xhci_try_lock())
         return;
     for (uint16_t count = 0; count < XHCI_EVENT_ENTRIES && poll_async_event(); count++)
     {
@@ -1581,9 +1637,12 @@ void xhci_poll_mouse(void)
     {
         if (devices[index].kind != XHCI_DEVICE_MOUSE)
             continue;
+        if (devices[index].interrupt_halted)
+            (void)recover_mouse_endpoint(index);
         if (!devices[index].interrupt_pending)
             queue_mouse_report(index);
     }
+    spin_unlock(&xhci_lock);
 }
 
 uint32_t xhci_device_count(void) { return device_count; }
@@ -1679,17 +1738,17 @@ static bool xhci_sync_cache(void)
     return true;
 }
 
-bool xhci_read_sector(uint32_t lba, void *buffer)
+static bool xhci_read_sector_locked(uint32_t lba, void *buffer)
 {
     return scsi_sector_command(SCSI_READ10, lba, buffer, true);
 }
 
-bool xhci_read_sectors(uint32_t lba, void *buffer, uint32_t count)
+static bool xhci_read_sectors_locked(uint32_t lba, void *buffer, uint32_t count)
 {
     return scsi_blocks_command(SCSI_READ10, lba, buffer, count, true);
 }
 
-bool xhci_write_sector(uint32_t lba, const void *buffer)
+static bool xhci_write_sector_locked(uint32_t lba, const void *buffer)
 {
     if (selected_device >= slot_count || devices[selected_device].kind != XHCI_DEVICE_STORAGE || !devices[selected_device].info.writable)
     {
@@ -1698,7 +1757,7 @@ bool xhci_write_sector(uint32_t lba, const void *buffer)
     return scsi_sector_command(SCSI_WRITE10, lba, (void *)buffer, false);
 }
 
-bool xhci_write_sectors(uint32_t lba, const void *buffer, uint32_t count)
+static bool xhci_write_sectors_locked(uint32_t lba, const void *buffer, uint32_t count)
 {
     if (selected_device >= slot_count || devices[selected_device].kind != XHCI_DEVICE_STORAGE || !devices[selected_device].info.writable)
     {
@@ -1707,7 +1766,7 @@ bool xhci_write_sectors(uint32_t lba, const void *buffer, uint32_t count)
     return scsi_blocks_command(SCSI_WRITE10, lba, (void *)buffer, count, false);
 }
 
-bool xhci_flush_cache(void)
+static bool xhci_flush_cache_locked(void)
 {
     return xhci_sync_cache();
 }
@@ -1723,4 +1782,60 @@ void xhci_get_probe_stats(struct xhci_probe_stats *stats)
 {
     if (stats)
         *stats = probe_stats;
+}
+
+bool xhci_init(uint32_t linux_name_base)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_init_locked(linux_name_base);
+    spin_unlock(&xhci_lock);
+    return ok;
+}
+
+bool xhci_rescan(uint32_t linux_name_base)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_rescan_locked(linux_name_base);
+    spin_unlock(&xhci_lock);
+    return ok;
+}
+
+bool xhci_read_sector(uint32_t lba, void *buffer)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_read_sector_locked(lba, buffer);
+    spin_unlock(&xhci_lock);
+    return ok;
+}
+
+bool xhci_read_sectors(uint32_t lba, void *buffer, uint32_t count)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_read_sectors_locked(lba, buffer, count);
+    spin_unlock(&xhci_lock);
+    return ok;
+}
+
+bool xhci_write_sector(uint32_t lba, const void *buffer)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_write_sector_locked(lba, buffer);
+    spin_unlock(&xhci_lock);
+    return ok;
+}
+
+bool xhci_write_sectors(uint32_t lba, const void *buffer, uint32_t count)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_write_sectors_locked(lba, buffer, count);
+    spin_unlock(&xhci_lock);
+    return ok;
+}
+
+bool xhci_flush_cache(void)
+{
+    spin_lock(&xhci_lock);
+    bool ok = xhci_flush_cache_locked();
+    spin_unlock(&xhci_lock);
+    return ok;
 }

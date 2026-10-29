@@ -9,6 +9,8 @@
 #include "include/hosted/errno.h"
 #include "include/hosted/stdio.h"
 #include "include/hosted/sys/stat.h"
+#include "include/hosted/dirent.h"
+#include "../fs/types/fs_types.h"
 #include "include/hosted/sys/mman.h"
 #include "include/purec.h"
 #include <stdarg.h>
@@ -164,13 +166,107 @@ static void fill_stat(struct stat *info, uint64_t size, bool is_dir) {
     info->st_mode = is_dir ? S_IFDIR : S_IFREG;
 }
 
+static void fill_stat_ex(struct stat *info, const struct file_stat_ex *raw) {
+    memset(info, 0, sizeof(*info));
+    info->st_size = raw->size;
+    info->st_mode = (raw->is_directory ? S_IFDIR : S_IFREG) | (raw->mode & 07777);
+    info->st_uid = raw->uid;
+    info->st_gid = raw->gid;
+    info->st_atime = (long)raw->atime;
+    info->st_mtime = (long)raw->mtime;
+    info->st_ctime = (long)raw->ctime;
+}
+
 int stat(const char *path, struct stat *info) {
     if (!path || !info) { errno = EINVAL; return -1; }
     char abs[512];
     path = resolve_user_path(path, abs, sizeof(abs));
+    struct file_stat_ex extended;
+    if (pc_file_stat_ex(path, &extended) == 0) {
+        fill_stat_ex(info, &extended);
+        return 0;
+    }
     struct file_stat_info raw;
     if (pc_file_stat(path, &raw) < 0) { errno = ENOENT; return -1; }
     fill_stat(info, raw.size, raw.is_directory != 0);
+    return 0;
+}
+
+struct dir_impl {
+    struct fs_directory_entry_long *entries;
+    int count;
+    int index;
+    struct dirent current;
+};
+
+#define DIR_CAPACITY 1024
+
+DIR *opendir(const char *path) {
+    if (!path) { errno = EINVAL; return 0; }
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
+    DIR *directory = malloc(sizeof(*directory));
+    if (!directory) { errno = ENOMEM; return 0; }
+    directory->entries = malloc(sizeof(*directory->entries) * DIR_CAPACITY);
+    if (!directory->entries) {
+        free(directory);
+        errno = ENOMEM;
+        return 0;
+    }
+    int32_t count = pc_directory_list_long(path, directory->entries, DIR_CAPACITY);
+    if (count < 0) {
+        free(directory->entries);
+        free(directory);
+        errno = ENOENT;
+        return 0;
+    }
+    directory->count = count;
+    directory->index = 0;
+    return directory;
+}
+
+struct dirent *readdir(DIR *directory) {
+    if (!directory || directory->index >= directory->count) return 0;
+    const struct fs_directory_entry_long *entry = &directory->entries[directory->index++];
+    memset(&directory->current, 0, sizeof(directory->current));
+    size_t length = strnlen(entry->name, sizeof(directory->current.d_name) - 1);
+    memcpy(directory->current.d_name, entry->name, length);
+    directory->current.d_ino = (unsigned long)directory->index;
+    if (entry->attributes & FS_ATTRIBUTE_DIRECTORY) directory->current.d_type = DT_DIR;
+    else if (entry->attributes & FS_ATTRIBUTE_CHAR_DEVICE) directory->current.d_type = DT_CHR;
+    else if (entry->attributes & FS_ATTRIBUTE_BLOCK_DEVICE) directory->current.d_type = DT_BLK;
+    else directory->current.d_type = DT_REG;
+    return &directory->current;
+}
+
+void rewinddir(DIR *directory) {
+    if (directory) directory->index = 0;
+}
+
+int closedir(DIR *directory) {
+    if (!directory) { errno = EBADF; return -1; }
+    free(directory->entries);
+    free(directory);
+    return 0;
+}
+
+int fileno(FILE *stream) {
+    if (stream == stdin) return 0;
+    if (stream == stdout) return 1;
+    if (stream == stderr) return 2;
+    for (int fd = 3; fd < UNIX_FD_MAX; fd++) {
+        if (fd_slots[fd] == stream) return fd;
+    }
+    errno = EBADF;
+    return -1;
+}
+
+int mkdir(const char *path, unsigned int mode) {
+    (void)mode;
+    if (!path) { errno = EINVAL; return -1; }
+    char abs[512];
+    path = resolve_user_path(path, abs, sizeof(abs));
+    if (pc_directory_create(path) < 0) { errno = EEXIST; return -1; }
     return 0;
 }
 

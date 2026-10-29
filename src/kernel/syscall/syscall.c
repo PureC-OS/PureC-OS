@@ -13,15 +13,21 @@
 #include "../../drivers/storage/storage_probe.h"
 #include "../../drivers/usb/ehci.h"
 #include "../../drivers/usb/xhci.h"
+#include "../../fs/install.h"
+#include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
+#include "../../gfx/blit.h"
 #include "../../gfx/compositor.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
+#include "../random/krandom.h"
+#include "../time/wallclock.h"
 #include "../../net/api/ping.h"
 #include "../../net/config/dhcp.h"
 #include "../../net/core/net_device.h"
 #include "../../net/name/dns.h"
 #include "../../net/network/ipv4.h"
+#include "../../net/transport/tcp.h"
 #include "../../net/wifi/wifi.h"
 #include "../../userspace/display_mode.h"
 #include "../../userspace/userspace.h"
@@ -44,7 +50,6 @@ static struct install_status install_job;
 static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
-static uint8_t install_fs_type;
 
 static bool readable(const void *buffer, uint64_t size) {
   return process_user_buffer(buffer, size, false);
@@ -94,9 +99,8 @@ static void install_worker(void *argument) {
   (void)argument;
   filesystem_syscall_lock();
   block_device_begin_exclusive_io();
-  int32_t result;
-  result = fat32_format_uefi_device_progress_ex(
-      install_device, install_serial, install_progress, install_fs_type);
+  int32_t result = installer_install_device(install_device, install_serial,
+                                            install_progress);
   block_device_end_exclusive_io();
   filesystem_syscall_unlock();
   install_job.result = result;
@@ -281,6 +285,103 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return 0;
   case SYS_GETPID:
     return process_current_pid();
+  case SYS_GETRANDOM: {
+    if (a2 > 0x100000 || !writable((void *)(uintptr_t)a1, a2))
+      return -1;
+    krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
+    return (int64_t)a2;
+  }
+  case SYS_FB_BLIT: {
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
+      return -1;
+    struct fb_blit_request req =
+        *(const struct fb_blit_request *)(uintptr_t)a1;
+    uint64_t bytes;
+    if (!blit_source_bytes(req.stride, req.width, req.height, &bytes))
+      return -1;
+    if (!readable((const void *)(uintptr_t)req.pixels, bytes))
+      return -1;
+    if (!compositor_blit((uint32_t)process_current_pid(), req.x, req.y,
+                         req.width, req.height,
+                         (const uint32_t *)(uintptr_t)req.pixels, req.stride,
+                         req.flags))
+      return -2;
+    return 0;
+  }
+  case SYS_TIME_GET: {
+    if (!writable((void *)(uintptr_t)a1, sizeof(struct time_info)))
+      return -1;
+    struct time_info *info = (struct time_info *)(uintptr_t)a1;
+    int64_t ms = wallclock_unix_ms();
+    info->unix_seconds = ms / 1000;
+    info->millis = (uint32_t)(ms % 1000);
+    info->tz_minutes = wallclock_tz_minutes();
+    info->uptime_ms = system_info_uptime_ms();
+    info->source = wallclock_source();
+    info->reserved = 0;
+    return 0;
+  }
+  case SYS_TIME_SET:
+    if (process_current_uid() != 0)
+      return -1;
+    return wallclock_set((int64_t)a1, (int32_t)a2);
+  case SYS_FILE_STAT_EX: {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_ex)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_stat_ex((const char *)(uintptr_t)a1,
+                                 (struct file_stat_ex *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_SESSION_BEGIN:
+    return process_session_begin((uint32_t)a1, (uint32_t)a2);
+  case SYS_GETUID:
+    return (int64_t)process_current_uid();
+  case SYS_GETGID:
+    return (int64_t)process_current_gid();
+  case SYS_SETUID:
+    return process_set_uid((uint32_t)a1);
+  case SYS_SETGID:
+    return process_set_gid((uint32_t)a1);
+  case SYS_CHMOD: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_chmod((const char *)(uintptr_t)a1, (uint16_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_CHOWN: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result =
+        vfs_chown((const char *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_FILE_PERM: {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a2, sizeof(struct file_perm_info)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_get_perm((const char *)(uintptr_t)a1,
+                                  (struct file_perm_info *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_USER_LOOKUP: {
+    if ((a1 && !readable_string((const char *)(uintptr_t)a1)) ||
+        !writable((void *)(uintptr_t)a3, sizeof(struct user_info)))
+      return -1;
+    filesystem_syscall_lock();
+    int32_t result = vfs_user_lookup((const char *)(uintptr_t)a1, (uint32_t)a2,
+                                     (struct user_info *)(uintptr_t)a3);
+    filesystem_syscall_unlock();
+    return result;
+  }
   case SYS_HEAP_GROW: {
     uint64_t address = process_heap_grow(a1);
     return address ? (int64_t)address : -1;
@@ -505,7 +606,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     return storage_controller_list(
         (struct storage_controller_info *)(uintptr_t)a1, (uint32_t)a2);
-  case SYS_FAT32_FORMAT: {
+  case SYS_FS_FORMAT: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
@@ -519,7 +620,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FAT32_FORMAT_FORCE: {
+  case SYS_FS_FORMAT_FORCE: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
@@ -531,15 +632,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FAT32_FORMAT_UEFI: {
+  case SYS_INSTALL_DEVICE: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
     filesystem_syscall_lock();
-    int32_t result = vfs_format_uefi_device((const char *)(uintptr_t)a1,
-                                            (const char *)(uintptr_t)a2);
+    int32_t result = vfs_install_device((const char *)(uintptr_t)a1,
+                                        (const char *)(uintptr_t)a2, 0);
     filesystem_syscall_unlock();
     return result;
   }
@@ -798,6 +899,12 @@ int64_t syscall_handler(struct syscall_regs *r) {
     uint8_t key;
     return keyboard_try_get_special(&key) ? key : -1;
   }
+  case SYS_KEY_EVENT_GET: {
+    struct key_event *out = (struct key_event *)(uintptr_t)a1;
+    if (!writable(out, sizeof(*out)))
+      return -1;
+    return keyboard_try_get_event(out) ? 1 : 0;
+  }
   case SYS_INSTALL_START:
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -10;
@@ -808,11 +915,11 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -12;
     memset(&install_job, 0, sizeof(install_job));
     memset(&install_history, 0, sizeof(install_history));
+    installer_set_accounts(0);
     strncpy(install_device, (const char *)(uintptr_t)a1,
             sizeof(install_device) - 1);
     strncpy(install_serial, (const char *)(uintptr_t)a2,
             sizeof(install_serial) - 1);
-    install_fs_type = FS_TYPE_EXT2;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
@@ -832,12 +939,13 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -11;
     if (install_job.state == 1)
       return -12;
+    if (req->accounts.present && !install_accounts_valid(&req->accounts))
+      return -14;
     memset(&install_job, 0, sizeof(install_job));
     memset(&install_history, 0, sizeof(install_history));
+    installer_set_accounts(&req->accounts);
     strncpy(install_device, req->device, sizeof(install_device) - 1);
     strncpy(install_serial, req->serial, sizeof(install_serial) - 1);
-    install_fs_type =
-        req->fs_type <= FS_TYPE_EXT2 ? req->fs_type : FS_TYPE_FAT32;
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
@@ -1016,17 +1124,20 @@ int64_t syscall_handler(struct syscall_regs *r) {
     memcpy(buffer, name, len + 1);
     return (int64_t)len;
   }
-  case SYS_FAT32_FORMAT_CUSTOM: {
-    const struct fat32_custom_format_request *user_req =
-        (const struct fat32_custom_format_request *)(uintptr_t)a1;
+  case SYS_FS_FORMAT_CUSTOM: {
+    const struct custom_format_request *user_req =
+        (const struct custom_format_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
       return -1;
-    struct fat32_custom_format_request req = *user_req;
+    struct custom_format_request req = *user_req;
     req.device[sizeof(req.device) - 1] = '\0';
     if (req.partition_count == 0 || req.partition_count > 4)
       return -1;
-    return fat32_format_custom_device(req.device, req.partition_count,
-                                      req.sizes_gb);
+    filesystem_syscall_lock();
+    int32_t result = installer_format_custom_device(
+        req.device, req.partition_count, req.sizes_gb);
+    filesystem_syscall_unlock();
+    return result;
   }
   case SYS_FORMAT_DEVICE_EX: {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
@@ -1042,7 +1153,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_lock();
     int32_t res = vfs_format_device_ex(
         r.device, r.serial, r.erase,
-        r.fs_type == FS_TYPE_EXT2 ? VFS_FS_EXT2 : VFS_FS_FAT32);
+        VFS_FS_EXT2);
     filesystem_syscall_unlock();
     return res;
   }
@@ -1091,6 +1202,67 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (a1 && readable_string((const char *)(uintptr_t)a1))
       msg = (const char *)(uintptr_t)a1;
     KERNEL_PANIC_HERE(msg);
+  }
+  case SYS_TCP_SOCKET:
+    return tcp_socket_owned(process_current()->pid);
+  case SYS_TCP_CONNECT:
+  case SYS_TCP_LISTEN:
+  case SYS_TCP_ACCEPT:
+  case SYS_TCP_SEND:
+  case SYS_TCP_RECV:
+  case SYS_TCP_CLOSE:
+  case SYS_TCP_ABORT:
+  case SYS_TCP_INFO: {
+    int32_t handle = (int32_t)(uint32_t)a1;
+    uint32_t timeout_ms = (uint32_t)(a1 >> 32);
+    if (!tcp_is_owner(handle, process_current()->pid))
+      return TCP_ERR_INVALID;
+    switch (n) {
+    case SYS_TCP_CONNECT:
+      return tcp_connect(handle, (uint32_t)a2, (uint16_t)a3, timeout_ms);
+    case SYS_TCP_LISTEN:
+      return tcp_listen(handle, (uint16_t)a2, (uint8_t)a3);
+    case SYS_TCP_ACCEPT:
+      return tcp_accept(handle, timeout_ms);
+    case SYS_TCP_SEND: {
+      uint32_t length = (uint32_t)a3;
+      if (!length)
+        return 0;
+      if (!readable((const void *)(uintptr_t)a2, length))
+        return TCP_ERR_INVALID;
+      return tcp_send(handle, (const void *)(uintptr_t)a2, length, timeout_ms);
+    }
+    case SYS_TCP_RECV: {
+      uint32_t length = (uint32_t)a3;
+      if (!length)
+        return 0;
+      if (!writable((void *)(uintptr_t)a2, length))
+        return TCP_ERR_INVALID;
+      return tcp_receive(handle, (void *)(uintptr_t)a2, length, timeout_ms);
+    }
+    case SYS_TCP_CLOSE:
+      return tcp_close(handle);
+    case SYS_TCP_ABORT:
+      return tcp_abort(handle);
+    default: {
+      struct net_tcp_info *out = (struct net_tcp_info *)(uintptr_t)a2;
+      struct tcp_socket_info info;
+      if (!writable(out, sizeof(*out)))
+        return TCP_ERR_INVALID;
+      if (!tcp_get_info(handle, &info))
+        return TCP_ERR_INVALID;
+      out->state = (uint32_t)info.state;
+      out->local_address = info.local_address;
+      out->remote_address = info.remote_address;
+      out->local_port = info.local_port;
+      out->remote_port = info.remote_port;
+      out->bytes_unread = info.bytes_unread;
+      out->bytes_unsent = info.bytes_unsent;
+      out->cwnd = info.cwnd;
+      out->rto_ms = info.rto_ms;
+      return 0;
+    }
+    }
   }
   case SYS_NET_IF_LIST: {
     struct net_if_info *buffer = (struct net_if_info *)(uintptr_t)a1;
@@ -1301,8 +1473,8 @@ void syscall_init(void) {
         }
       }
     } else {
-      klog(KLOG_WARN, "vfs: no PURECOS FAT32 root found (use 'install' or "
-                      "'mkfs.fat32' to create)");
+      klog(KLOG_WARN, "vfs: no ext2 root found (use 'install' or "
+                      "'mkfs' to create)");
     }
     boot_diag_checkpoint(BOOT_STAGE_SYSCALLS,
                          "storage and filesystem probe complete");

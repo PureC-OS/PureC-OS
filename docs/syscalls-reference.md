@@ -100,11 +100,11 @@
 | **207** | `SYS_DIR_CREATE` (`SYS_MKDIR`) | `pc_directory_create()`, `mkdir()` | Создание каталога |
 | **208** | `SYS_DISK_LIST` | `pc_list_disks()` | Перечисление блочных дисковых устройств |
 | **209** | `SYS_STORAGE_CONTROLLERS` | `pc_syscall(SYS_STORAGE_CONTROLLERS, ...)` | Список контроллеров хранения (AHCI, XHCI) |
-| **210** | `SYS_FAT32_FORMAT` | `pc_syscall(SYS_FAT32_FORMAT, ...)` | Форматирование накопителя в FAT32 (GPT) |
+| **210** | `SYS_FS_FORMAT` | `pc_syscall(SYS_FS_FORMAT, ...)` | Форматирование накопителя в ext2 |
 | **211** | `SYS_FILE_WRITE` | `pc_file_write()`, `write()`, `fwrite()` | Запись буфера в файл целиком |
 | **212** | `SYS_USB_RESCAN` | `pc_syscall(SYS_USB_RESCAN, ...)` | Повторное сканирование шины USB (XHCI/EHCI) |
-| **213** | `SYS_FAT32_FORMAT_FORCE` | `pc_syscall(SYS_FAT32_FORMAT_FORCE, ...)` | Принудительное форматирование в FAT32 |
-| **214** | `SYS_FAT32_FORMAT_UEFI` | `pc_syscall(SYS_FAT32_FORMAT_UEFI, ...)` | Форматирование с созданием UEFI ESP раздела |
+| **213** | `SYS_FS_FORMAT_FORCE` | `pc_syscall(SYS_FS_FORMAT_FORCE, ...)` | Принудительное форматирование в ext2 |
+| **214** | `SYS_INSTALL_DEVICE` | `pc_syscall(SYS_INSTALL_DEVICE, ...)` | Установка: GPT + ext2 системный раздел (ESP не форматируется) |
 | **215** | `SYS_CPU_INFO` | `pc_cpu_info()` | Информация о процессоре, загрузке и аптайме |
 | **216** | `SYS_MEMORY_INFO` | `pc_memory_info()` | Статистика RAM (всего, занято, свободно) |
 | **283** | `SYS_CPU_CORE_INFO` | `pc_cpu_core_info()` | Per-core счётчики total/idle ticks для realtime-мониторинга |
@@ -161,7 +161,7 @@
 | **264** | `SYS_WIFI_STATUS` | `pc_wifi_status()` | Статус Wi-Fi, IP, MAC и качество сигнала |
 | **265** | `SYS_SAVE_KLOG` | `pc_save_klog()` | Сохранение логов ядра (klog) на накопитель |
 | **266** | `SYS_GET_ROOT_DEVICE` | `pc_get_root_device()` | Имя дискового устройства корня VFS |
-| **267** | `SYS_FAT32_FORMAT_CUSTOM` | `pc_format_custom()` | Форматирование с произвольной разметкой разделов |
+| **267** | `SYS_FS_FORMAT_CUSTOM` | `pc_format_custom()` | Форматирование с произвольной разметкой разделов |
 | **268** | `SYS_FORMAT_DEVICE_EX` | `pc_format_device_ex()` | Форматирование устройства в FAT32 или ext2 |
 | **269** | `SYS_INSTALL_START_EX` | `pc_install_start_ex()` | Запуск установщика с выбором ФС (FAT32/ext2) |
 | **270** | `SYS_GET_FS_TYPE` | `pc_get_fs_type()` | Тип корневой файловой системы ("FAT32"/"ext2") |
@@ -1880,10 +1880,10 @@ void rescan_usb(void) {
 
 ---
 
-#### `SYS_FORMAT_DEVICE_EX` (268) и `SYS_FAT32_FORMAT_CUSTOM` (267)
+#### `SYS_FORMAT_DEVICE_EX` (268) и `SYS_FS_FORMAT_CUSTOM` (267)
 - **Регистры**:
   - `SYS_FORMAT_DEVICE_EX`: `rax = 268`, `rbx = (uintptr_t)req`
-  - `SYS_FAT32_FORMAT_CUSTOM`: `rax = 267`, `rbx = (uintptr_t)req`
+  - `SYS_FS_FORMAT_CUSTOM`: `rax = 267`, `rbx = (uintptr_t)req`
 - **Обертки stdlib**:
   - `int32_t pc_format_device_ex(const char *device, const char *serial, uint8_t fs_type)`
   - `int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb)`
@@ -2193,3 +2193,26 @@ void dump_kernel_log(void) {
 }
 ```
 
+
+
+## TCP-сокеты (300–308)
+
+Стек TCP живёт в ядре (`src/net/transport/tcp.c`); сокет принадлежит создавшему
+процессу и закрывается (RST) при его завершении. В `rbx` для блокирующих вызовов
+упаковано `handle | timeout_ms << 32` (0 — не блокировать, `0xFFFFFFFF` — ждать
+бесконечно). Ошибки: -1 invalid, -2 нет сокетов, -3 не подключён, -4 reset,
+-5 таймаут, -6 нет маршрута, -7 порт занят, -8 would block.
+
+| № | Имя | Аргументы (rbx, rcx, rdx) | Результат |
+|---|-----|---------------------------|-----------|
+| **300** | `SYS_TCP_SOCKET` | — | handle |
+| **301** | `SYS_TCP_CONNECT` | handle+timeout, ipv4, port | 0 |
+| **302** | `SYS_TCP_LISTEN` | handle, port, backlog (≤4) | 0 |
+| **303** | `SYS_TCP_ACCEPT` | handle+timeout | новый handle |
+| **304** | `SYS_TCP_SEND` | handle+timeout, buf, len | принято байт |
+| **305** | `SYS_TCP_RECV` | handle+timeout, buf, len | байт, 0 = EOF |
+| **306** | `SYS_TCP_CLOSE` | handle | 0 |
+| **307** | `SYS_TCP_ABORT` | handle | 0 |
+| **308** | `SYS_TCP_INFO` | handle, `struct net_tcp_info *` | 0 |
+
+Обёртки: `pc_tcp_*` в `libc/include/purec.h`.

@@ -17,6 +17,7 @@ void free(void *pointer);
 int atoi(const char *text);
 long atol(const char *text);
 long long atoll(const char *text);
+double atof(const char *text);
 long strtol(const char *text, char **end, int base);
 unsigned long strtoul(const char *text, char **end, int base);
 unsigned long long strtoull(const char *text, char **end, int base);
@@ -31,7 +32,9 @@ void qsort(void *base, size_t count, size_t size,
 int rand(void);
 void srand(unsigned int seed);
 char *getenv(const char *name);
+int putenv(char *entry);
 char *realpath(const char *path, char *resolved);
 int system(const char *cmd);
 void exit(int status);
+void _exit(int status) __attribute__((noreturn));
 void abort(void);

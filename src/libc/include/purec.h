@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "../../fs/types/fs_types.h"
 #include "../../drivers/mouse/ps2_mouse.h"
+#include "../../drivers/input/key_event.h"
 #include "../../drivers/input/keyboard.h"
 #include "../../drivers/storage/storage_types.h"
 #include "../../kernel/syscall/syscall.h"
@@ -33,6 +34,7 @@ int32_t pc_exec_with_args(const char *path, const char *arguments);
 int32_t pc_wait(int32_t pid, int32_t *status, bool nohang);
 int32_t pc_try_getchar(void);
 int32_t pc_try_get_special(void);
+int32_t pc_key_event_get(struct key_event *event);
 int32_t pc_get_command_line(char *buffer, uint32_t capacity);
 int32_t pc_get_process_name(char *buffer, uint32_t capacity);
 int32_t pc_getenv(const char *name, char *buffer, uint32_t capacity);
@@ -47,6 +49,18 @@ int32_t pc_process_list_page(struct process_monitor_info *processes,
 bool pc_cpu_info(struct cpu_monitor_info *info);
 bool pc_memory_info(struct memory_monitor_info *info);
 int32_t pc_cpu_core_info(struct cpu_core_info *info);
+int32_t pc_tcp_socket(void);
+int32_t pc_tcp_connect(int32_t handle, uint32_t ipv4, uint16_t port,
+                       uint32_t timeout_ms);
+int32_t pc_tcp_listen(int32_t handle, uint16_t port, uint8_t backlog);
+int32_t pc_tcp_accept(int32_t handle, uint32_t timeout_ms);
+int32_t pc_tcp_send(int32_t handle, const void *data, uint32_t length,
+                    uint32_t timeout_ms);
+int32_t pc_tcp_recv(int32_t handle, void *data, uint32_t length,
+                    uint32_t timeout_ms);
+int32_t pc_tcp_close(int32_t handle);
+int32_t pc_tcp_abort(int32_t handle);
+int32_t pc_tcp_info(int32_t handle, struct net_tcp_info *info);
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result);
 void *pc_heap_grow(uint64_t size);
@@ -55,6 +69,24 @@ int32_t pc_file_open(const char *path);
 int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity);
 int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence);
 int32_t pc_file_stat(const char *path, struct file_stat_info *out);
+int32_t pc_getrandom(void *buffer, uint32_t count);
+int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
+                   uint32_t height, int32_t x, int32_t y, uint32_t flags);
+int32_t pc_time_get(struct time_info *out);
+int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes);
+int32_t pc_file_stat_ex(const char *path, struct file_stat_ex *out);
+int32_t pc_session_begin(uint32_t uid, uint32_t gid);
+int32_t pc_install_start_accounts(const char *device, const char *serial,
+                                  uint8_t fs_type,
+                                  const struct install_account_request *accounts);
+int32_t pc_getuid(void);
+int32_t pc_getgid(void);
+int32_t pc_setuid(uint32_t uid);
+int32_t pc_setgid(uint32_t gid);
+int32_t pc_chmod(const char *path, uint32_t mode);
+int32_t pc_chown(const char *path, uint32_t uid, uint32_t gid);
+int32_t pc_file_perm(const char *path, struct file_perm_info *out);
+int32_t pc_user_lookup(const char *name, uint32_t uid, struct user_info *out);
 int32_t pc_file_close(int32_t descriptor);
 int32_t pc_file_write(const char *path, const void *buffer, uint32_t size);
 int32_t pc_directory_list(const char *path,

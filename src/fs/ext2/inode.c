@@ -6,11 +6,13 @@
 bool ext2_group_desc_read(uint32_t group, uint8_t *out)
 {
     struct ext2_volume *vol = ext2_volume();
+    if (!vol->mounted || vol->block_size < 32)
+        return false;
     uint32_t gd_block = (vol->block_size == 1024) ? 2 : 1;
     uint32_t per_block = vol->block_size / 32;
     uint32_t block = gd_block + group / per_block;
     uint32_t index = group % per_block;
-    uint8_t *tmp = ext2_scratch_block();
+    uint8_t *tmp = ext2_scratch_group();
     if (!ext2_read_block(block, tmp))
     {
         return false;

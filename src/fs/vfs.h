@@ -2,7 +2,7 @@
 
 #include "../kernel/syscall/syscall.h"
 #include "./ext2/include/ext2.h"
-#include "./fat/include/fat32.h"
+#include "install.h"
 #include "types/fs_types.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -12,11 +12,19 @@
 #define VFS_FD_STDERR 2
 #define VFS_FD_BASE 3
 
-#define VFS_FS_FAT32 0
 #define VFS_FS_EXT2 1
 #define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
 
+struct vfs_mount_info {
+  char path[512];
+  char source[64];
+  char type[16];
+  uint32_t flags;
+};
+
+void vfs_selftest(void);
+int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out);
 bool vfs_mount_root(void);
 bool vfs_mount_initramfs(void);
 bool vfs_mount_root_with_fs(uint8_t fs_type);
@@ -41,6 +49,11 @@ int32_t vfs_create_file(const char *path);
 int32_t vfs_write_file(const char *path, const void *buffer, uint32_t count);
 int32_t vfs_append_file(const char *path, const void *buffer, uint32_t count);
 int32_t vfs_create_directory(const char *path);
+int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out);
+int32_t vfs_chmod(const char *path, uint16_t mode);
+int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid);
+int32_t vfs_get_perm(const char *path, struct file_perm_info *out);
+int32_t vfs_user_lookup(const char *name, uint32_t uid, struct user_info *out);
 int32_t vfs_format_device(const char *device_name,
                           const char *serial_confirmation,
                           const char *erase_confirmation);
@@ -49,11 +62,9 @@ int32_t vfs_format_device_force(const char *device_name,
 int32_t vfs_format_device_ex(const char *device_name,
                              const char *serial_confirmation,
                              const char *erase_confirmation, uint8_t fs_type);
-int32_t vfs_format_uefi_device(const char *device_name,
-                               const char *serial_confirmation);
-int32_t vfs_format_uefi_device_progress(const char *device_name,
-                                        const char *serial_confirmation,
-                                        fat32_progress_callback callback);
+int32_t vfs_install_device(const char *device_name,
+                           const char *serial_confirmation,
+                           install_progress_callback callback);
 int32_t vfs_save_klog_to_device(const char *device, const char *path);
 int32_t vfs_ext2_stat(const char *path, struct ext2_stat_info *out);
 int32_t vfs_ext2_inode(uint32_t ino, struct ext2_stat_info *out);

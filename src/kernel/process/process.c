@@ -4,6 +4,7 @@ static mutex_t process_mutex;
 #include "../../drivers/interrupts/timer.h"
 #include "../../fs/initramfs.h"
 #include "../../fs/vfs.h"
+#include "../../fs/vfs_alias.h"
 #include "../../lib/string.h"
 #include "../../mm/oom/oom_account.h"
 #include "../../mm/oom/oom_gate.h"
@@ -11,6 +12,7 @@ static mutex_t process_mutex;
 #include "../../mm/oom/oom_victim.h"
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
+#include "../../net/transport/tcp.h"
 #include "../../userspace/window_manager.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
@@ -150,7 +152,14 @@ static bool spawn_images_have(struct spawn_image *images, uint64_t count,
   return false;
 }
 
-static bool spawn_load_image(const char *path, struct spawn_image *out) {
+static const char *canonical_path(const char *path, char *buffer,
+                                  uint32_t capacity) {
+  return vfs_alias_resolve(path, buffer, capacity) >= 0 ? buffer : path;
+}
+
+static bool spawn_load_image(const char *requested, struct spawn_image *out) {
+  char canonical[512];
+  const char *path = canonical_path(requested, canonical, sizeof(canonical));
   memset(out, 0, sizeof(*out));
   strncpy(out->path, path, sizeof(out->path) - 1);
   out->path[sizeof(out->path) - 1] = 0;
@@ -283,7 +292,7 @@ static void environment_initialize(struct process *process,
   environment_put(process, "PWD", "/");
   environment_put(process, "USER", "purec");
   environment_put(process, "SHELL", "/bin/program/terminal");
-  environment_put(process, "PATH", "/bin/program:/bin");
+  environment_put(process, "PATH", "/usr/bin:/bin:/usr/games:/sbin");
 }
 
 static struct process *allocate_process(void) {
@@ -345,6 +354,10 @@ static uint32_t oom_reap_zombie(uint32_t pid) {
   process_node_free(target);
   return pid;
 }
+
+static bool session_active;
+static uint32_t session_uid;
+static uint32_t session_gid;
 
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line) {
@@ -509,6 +522,12 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   process->heap_mapped_end = heap_base;
   process->heap_limit = heap_limit;
   environment_initialize(process, parent);
+  process->uid = parent ? parent->uid : 0;
+  process->gid = parent ? parent->gid : 0;
+  if (session_active && parent && parent->uid == 0 && parent->pid != 1) {
+    process->uid = session_uid;
+    process->gid = session_gid;
+  }
   if (command_line) {
     strncpy(process->command_line, command_line,
             sizeof(process->command_line) - 1);
@@ -556,7 +575,9 @@ int32_t process_spawn_module(const char *path, const char *command_line) {
      copy of the executable during the memory-constrained boot phase. */
   const void *initramfs_image = 0;
   uint32_t initramfs_size = 0;
-  if (initramfs_find(path, &initramfs_image, &initramfs_size))
+  char canonical[512];
+  const char *resolved = canonical_path(path, canonical, sizeof(canonical));
+  if (initramfs_find(resolved, &initramfs_image, &initramfs_size))
     return process_spawn_elf(initramfs_image, initramfs_size, name,
                              command_line);
   if (program_alias_resolve(path, &module_path) &&
@@ -665,6 +686,8 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
   process->entry = (uint64_t)(uintptr_t)entry;
   process->address_space = vmm_kernel_address_space();
   process->capabilities = capabilities;
+  process->uid = 0;
+  process->gid = 0;
   strncpy(process->name, name, sizeof(process->name) - 1);
   process->name[sizeof(process->name) - 1] = '\0';
   environment_initialize(process, init);
@@ -812,6 +835,7 @@ void process_exit_current(int32_t status) {
     }
     window_manager_unregister(process->pid);
     gop_console_release(process->pid);
+    tcp_release_owner(process->pid);
     for (uint32_t fd = 3; fd < PROCESS_FD_COUNT; fd++) {
       if (process->descriptors[fd] >= VFS_FD_BASE) {
         (void)vfs_close(process->descriptors[fd]);
@@ -1027,4 +1051,44 @@ bool process_set_affinity(uint32_t pid, int16_t core) {
     }
   }
   return false;
+}
+
+uint32_t process_current_uid(void) {
+  struct process *process = process_current();
+  return process ? process->uid : 0;
+}
+
+uint32_t process_current_gid(void) {
+  struct process *process = process_current();
+  return process ? process->gid : 0;
+}
+
+int32_t process_set_uid(uint32_t uid) {
+  struct process *process = process_current();
+  if (!process)
+    return -1;
+  if (process->uid != 0 && process->uid != uid)
+    return -1;
+  process->uid = uid;
+  return 0;
+}
+
+int32_t process_set_gid(uint32_t gid) {
+  struct process *process = process_current();
+  if (!process)
+    return -1;
+  if (process->uid != 0 && process->gid != gid)
+    return -1;
+  process->gid = gid;
+  return 0;
+}
+
+int32_t process_session_begin(uint32_t uid, uint32_t gid) {
+  struct process *process = process_current();
+  if (!process || process->uid != 0)
+    return -1;
+  session_uid = uid;
+  session_gid = gid;
+  session_active = true;
+  return 0;
 }

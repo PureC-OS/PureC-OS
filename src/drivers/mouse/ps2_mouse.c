@@ -198,6 +198,15 @@ void mouse_set_bounds(int32_t w, int32_t h)
         state.y = h - 1;
 }
 
+void mouse_add_wheel(int32_t delta)
+{
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    state.wheel += delta;
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
+}
+
 struct mouse_state mouse_get_state(void)
 {
     uint64_t flags;
@@ -403,13 +412,7 @@ static bool process_mouse_byte(uint8_t data)
         }
         mouse_handle_relative(b0 & 0x07, dx, (int8_t)-dy);
         if (scroll)
-        {
-            uint64_t flags;
-            __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
-            state.wheel += -scroll;
-            if (flags & (1ULL << 9))
-                __asm__ volatile("sti" ::: "memory");
-        }
+            mouse_add_wheel(-scroll);
         debug_state.packet_count++;
 
         if (!packet_seen)

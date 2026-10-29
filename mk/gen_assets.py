@@ -67,11 +67,15 @@ def parse_manifest(path):
     return entries
 
 
+BOOT_MODULES = ("ext2", "crypt", "acpi")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True)
     parser.add_argument("--iso", required=True)
     parser.add_argument("--staged", required=True)
+    parser.add_argument("--modules")
     args = parser.parse_args()
 
     manifest_path = os.path.join(args.root, "assets", MANIFEST_NAME)
@@ -111,6 +115,12 @@ def main():
     modules_path = os.path.join(args.staged, "limine.modules")
     with open(modules_path, "w", encoding="utf-8") as handle:
         handle.write("    module_path: boot():/boot/initramfs.cpio\n")
+        handle.write("    module_path: boot():/boot/esp.img\n")
+        if args.modules:
+            for name in BOOT_MODULES:
+                for ext in ("elf", "ko"):
+                    if os.path.isfile(os.path.join(args.modules, name + "." + ext)):
+                        handle.write("    module_path: boot():/lib/modules/%s.%s\n" % (name, ext))
 
     template_path = os.path.join(args.root, "src", "boot", "limine.conf.in")
     with open(template_path, "r", encoding="utf-8") as handle:

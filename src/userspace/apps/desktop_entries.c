@@ -5,7 +5,7 @@
 #include "../../lib/string.h"
 
 #define ENTRY_FILE_MAX 4096
-#define DIR_CAP 32
+#define DIR_CAP 128
 #define GRID_X0 40u
 #define GRID_DX 72u
 #define GRID_Y0 48u

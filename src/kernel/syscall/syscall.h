@@ -29,11 +29,11 @@
 #define SYS_DIR_CREATE 207
 #define SYS_DISK_LIST 208
 #define SYS_STORAGE_CONTROLLERS 209
-#define SYS_FAT32_FORMAT 210
+#define SYS_FS_FORMAT 210
 #define SYS_FILE_WRITE 211
 #define SYS_USB_RESCAN 212
-#define SYS_FAT32_FORMAT_FORCE 213
-#define SYS_FAT32_FORMAT_UEFI 214
+#define SYS_FS_FORMAT_FORCE 213
+#define SYS_INSTALL_DEVICE 214
 #define SYS_CPU_INFO 215
 #define SYS_MEMORY_INFO 216
 #define SYS_DISK_STATS 217
@@ -87,7 +87,7 @@
 #define SYS_WIFI_STATUS 264
 #define SYS_SAVE_KLOG 265
 #define SYS_GET_ROOT_DEVICE 266
-#define SYS_FAT32_FORMAT_CUSTOM 267
+#define SYS_FS_FORMAT_CUSTOM 267
 #define SYS_FORMAT_DEVICE_EX 268
 #define SYS_INSTALL_START_EX 269
 #define SYS_FILE_SEEK 275
@@ -100,8 +100,33 @@
 #define SYS_IPC_SEND 291
 #define SYS_IPC_RECV 292
 #define SYS_PANIC_TEST 299
+/* TCP sockets. a1 packs handle (low 32 bits) | timeout_ms << 32 where the
+ * call can block; timeout 0 = never block, 0xFFFFFFFF = wait forever. */
+#define SYS_TCP_SOCKET 300  /* () -> handle */
+#define SYS_TCP_CONNECT 301 /* (handle|timeout<<32, ipv4, port) */
+#define SYS_TCP_LISTEN 302  /* (handle, port, backlog) */
+#define SYS_TCP_ACCEPT 303  /* (handle|timeout<<32) -> new handle */
+#define SYS_TCP_SEND 304    /* (handle|timeout<<32, buf, len) -> bytes */
+#define SYS_TCP_RECV 305    /* (handle|timeout<<32, buf, len) -> bytes, 0=EOF */
+#define SYS_TCP_CLOSE 306   /* (handle) */
+#define SYS_TCP_ABORT 307   /* (handle) send RST and release */
+#define SYS_TCP_INFO 308    /* (handle, struct net_tcp_info *) */
+#define SYS_GETUID 309
+#define SYS_GETGID 310
+#define SYS_SETUID 311
+#define SYS_SETGID 312
+#define SYS_CHMOD 313       /* (path, mode) */
+#define SYS_CHOWN 314       /* (path, uid, gid) */
+#define SYS_FILE_PERM 315   /* (path, struct file_perm_info *) */
+#define SYS_USER_LOOKUP 316 /* (name|NULL, uid, struct user_info *) */
+#define SYS_GETRANDOM 317   /* (buf, len) -> len */
+#define SYS_SESSION_BEGIN 318 /* (uid, gid), root only */
+#define SYS_TIME_GET 319      /* (struct time_info *) */
+#define SYS_TIME_SET 320      /* (unix_seconds, tz_minutes), root only */
+#define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
+#define SYS_FB_BLIT 322       /* (struct fb_blit_request *) */
+#define SYS_KEY_EVENT_GET 323 /* (struct key_event *) -> 1 event, 0 empty */
 
-#define FS_TYPE_FAT32 0
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
 
@@ -113,11 +138,28 @@ struct format_request {
   uint8_t reserved[3];
 };
 
+#define INSTALL_HOSTNAME_MAX 64
+#define INSTALL_USER_MAX 32
+#define INSTALL_GECOS_MAX 64
+#define INSTALL_HASH_MAX 128
+#define INSTALL_FIRST_UID 1000
+
+struct install_account_request {
+  uint32_t present;
+  uint32_t user_uid;
+  char hostname[INSTALL_HOSTNAME_MAX];
+  char root_hash[INSTALL_HASH_MAX];
+  char user_name[INSTALL_USER_MAX];
+  char user_gecos[INSTALL_GECOS_MAX];
+  char user_hash[INSTALL_HASH_MAX];
+};
+
 struct install_start_request {
   char device[32];
   char serial[32];
   uint8_t fs_type;
   uint8_t reserved[3];
+  struct install_account_request accounts;
 };
 
 #define NETWORK_PING_TARGET_CAPACITY 128
@@ -408,7 +450,7 @@ struct save_klog_request {
   char path[64];
 };
 
-struct fat32_custom_format_request {
+struct custom_format_request {
   char device[32];
   uint32_t partition_count;
   uint64_t sizes_gb[4];
@@ -426,6 +468,54 @@ struct file_stat_info {
   uint64_t size;
   uint32_t is_directory;
   uint32_t reserved;
+};
+
+#define FB_BLIT_KEEP_ALPHA 1u
+
+struct fb_blit_request {
+  uint64_t pixels;
+  uint32_t stride;
+  uint32_t width;
+  uint32_t height;
+  int32_t x;
+  int32_t y;
+  uint32_t flags;
+};
+
+struct time_info {
+  int64_t unix_seconds;
+  uint32_t millis;
+  int32_t tz_minutes;
+  uint64_t uptime_ms;
+  uint32_t source;
+  uint32_t reserved;
+};
+
+struct file_stat_ex {
+  uint64_t size;
+  uint32_t mode;
+  uint32_t uid;
+  uint32_t gid;
+  uint32_t is_directory;
+  uint32_t atime;
+  uint32_t mtime;
+  uint32_t ctime;
+  uint32_t reserved;
+};
+
+struct file_perm_info {
+  uint32_t mode;
+  uint32_t uid;
+  uint32_t gid;
+  uint32_t reserved;
+};
+
+struct user_info {
+  char name[32];
+  uint32_t uid;
+  uint32_t gid;
+  char home[64];
+  char shell[64];
 };
 
 struct ext2_stat_info {
@@ -469,6 +559,18 @@ struct ext2_blocks_info {
   uint32_t ino;
   uint32_t logical_count;
   uint32_t blocks[64];
+};
+
+struct net_tcp_info {
+  uint32_t state;
+  uint32_t local_address;
+  uint32_t remote_address;
+  uint16_t local_port;
+  uint16_t remote_port;
+  uint32_t bytes_unread;
+  uint32_t bytes_unsent;
+  uint32_t cwnd;
+  uint32_t rto_ms;
 };
 
 struct syscall_regs {

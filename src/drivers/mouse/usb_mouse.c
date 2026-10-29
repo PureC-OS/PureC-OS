@@ -31,6 +31,8 @@ void usb_mouse_report(const uint8_t *report, uint32_t length)
     int8_t dx = (int8_t)report[1];
     int8_t dy = (int8_t)report[2];
     mouse_handle_relative(buttons, dx, dy);
+    if (length >= 4 && (int8_t)report[3])
+        mouse_add_wheel((int8_t)report[3]);
     info.reports++;
 }
 

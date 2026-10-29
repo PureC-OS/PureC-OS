@@ -1,4 +1,5 @@
 #include "include/ext2_types.h"
+#include "include/ext2_time.h"
 #include "include/ext2_block.h"
 #include "include/ext2_inode.h"
 #include "include/ext2_dir.h"
@@ -484,7 +485,8 @@ int32_t ext2_dir_create(uint32_t parent_ino, const char *name)
     ext2_write_u32(ib + 4, bsz);
     ext2_write_u32(ib + 28, bsz / 512);
     ext2_write_u32(ib + 40, blk);
-    ext2_write_u16(ib + 24, 2);
+    ext2_write_u16(ib + EXT2_INODE_LINKS, 2);
+    ext2_stamp_new(ib);
     if (!ext2_write_inode(new_ino, ib))
         return -1;
     uint8_t *b = ext2_scratch_block();

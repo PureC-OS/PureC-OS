@@ -1,4 +1,5 @@
 #include "compositor.h"
+#include "blit.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/display/svga.h"
 #include "../kernel/process/scheduler.h"
@@ -411,6 +412,30 @@ bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy, uint32_t uw,
         line[k] = value;
     }
     mark_dirty(w, ix0, iy0, ix1, iy1);
+    flush_if_idle(w);
+  }
+  comp_leave(&c);
+  return true;
+}
+
+bool compositor_blit(uint32_t pid, int32_t x, int32_t y, uint32_t width,
+                     uint32_t height, const uint32_t *pixels, uint32_t stride,
+                     uint32_t flags) {
+  struct comp_ctx c;
+  comp_enter(&c);
+  struct comp_window *w = find_window(pid);
+  if (!w || !w->pixels) {
+    comp_leave(&c);
+    return false;
+  }
+  struct blit_span span;
+  if (blit_clip(x, y, width, height, w->x, w->y, w->aw, w->ah, &span)) {
+    blit_copy(&w->pixels[(uint64_t)span.dst_y * w->aw + span.dst_x], w->aw,
+              &pixels[(uint64_t)span.src_y * stride + span.src_x], stride,
+              span.width, span.height, (flags & BLIT_KEEP_ALPHA) != 0);
+    int64_t x0 = (int64_t)w->x + span.dst_x;
+    int64_t y0 = (int64_t)w->y + span.dst_y;
+    mark_dirty(w, x0, y0, x0 + span.width, y0 + span.height);
     flush_if_idle(w);
   }
   comp_leave(&c);

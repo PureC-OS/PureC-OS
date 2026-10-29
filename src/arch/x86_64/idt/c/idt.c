@@ -8,6 +8,7 @@
 #include "../../../../kernel/process/process.h"
 #include "../../../../kernel/diagnostics/klog.h"
 #include <stdint.h>
+#include <stdbool.h>
 #include "../../../../kernel/smp/smp.h"
 #include "../../../../kernel/smp/lapic.h"
 #include "../../../../kernel/smp/cpu.h"
@@ -74,6 +75,15 @@ static inline void pic_imr_write(uint16_t port, uint8_t v){
 static void *irq_handler_fn[16] = {0};
 static void *irq_handler_ctx[16] = {0};
 
+static void (*vector_handler_fn[256])(void*);
+static void *vector_handler_ctx[256];
+
+void idt_set_vector_handler(uint8_t vector, void (*fn)(void*), void *ctx){
+    if(vector<48) return;
+    vector_handler_ctx[vector]=ctx;
+    __atomic_store_n(&vector_handler_fn[vector],fn,__ATOMIC_RELEASE);
+}
+
 void idt_set_irq_handler(uint8_t irq, void *fn, void *ctx){
     if(irq>=16) return;
     uint64_t flags;
@@ -107,7 +117,55 @@ void idt_mask_irq(uint8_t irq){
 }
 extern void ps2_mouse_handler(void);
 
+#define IRQ_STORM_INTERVAL_MS 5000U
+#define IRQ_STORM_RATE 2000U
+
+static uint64_t vector_counts[256];
+
+uint64_t idt_vector_count(uint8_t vector){
+    return __atomic_load_n(&vector_counts[vector],__ATOMIC_RELAXED);
+}
+
+void idt_check_interrupt_rates(void){
+    static uint64_t snapshot[256];
+    static uint64_t last_ms;
+    static bool baseline_logged;
+    uint64_t now=timer_ticks();
+    if(!last_ms){
+        for(unsigned v=0;v<256;v++) snapshot[v]=idt_vector_count((uint8_t)v);
+        last_ms=now;
+        return;
+    }
+    uint64_t elapsed=now-last_ms;
+    if(elapsed<IRQ_STORM_INTERVAL_MS) return;
+    uint32_t top_vector[3]={0,0,0};
+    uint64_t top_rate[3]={0,0,0};
+    for(unsigned v=0;v<256;v++){
+        uint64_t count=idt_vector_count((uint8_t)v);
+        uint64_t rate=(count-snapshot[v])*1000ULL/elapsed;
+        snapshot[v]=count;
+        if(v==0x80 || !rate) continue;
+        if(rate>IRQ_STORM_RATE && v!=SMP_TIMER_VECTOR)
+            klogf(KLOG_WARN,"irq: storm? vector=0x%02x (irq%d) %llu/s",
+                  v,(v>=32 && v<48) ? (int)(v-32) : -1,rate);
+        for(unsigned slot=0;slot<3;slot++){
+            if(rate<=top_rate[slot]) continue;
+            for(unsigned k=2;k>slot;k--){ top_rate[k]=top_rate[k-1]; top_vector[k]=top_vector[k-1]; }
+            top_rate[slot]=rate; top_vector[slot]=v;
+            break;
+        }
+    }
+    if(!baseline_logged){
+        baseline_logged=true;
+        klogf(KLOG_INFO,"irq: top rates 0x%02x=%llu/s 0x%02x=%llu/s 0x%02x=%llu/s",
+              top_vector[0],top_rate[0],top_vector[1],top_rate[1],
+              top_vector[2],top_rate[2]);
+    }
+    last_ms=now;
+}
+
 void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint64_t rflags, struct isr_regs *regs) {
+    __atomic_fetch_add(&vector_counts[vector&0xFF],1,__ATOMIC_RELAXED);
     if(vector==2 && smp_handle_nmi()) return;
     if(vector==SMP_SPURIOUS_VECTOR) return;
     if(vector==SMP_RESCHEDULE_VECTOR || vector==SMP_TIMER_VECTOR){
@@ -141,6 +199,11 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
             fn(irq_handler_ctx[irq]);
         }
         pic_eoi(irq);
+        return;
+    }
+    if (vector >= 48 && vector < 256 && vector_handler_fn[vector]) {
+        vector_handler_fn[vector](vector_handler_ctx[vector]);
+        lapic_eoi();
         return;
     }
     if (vector == 3) {

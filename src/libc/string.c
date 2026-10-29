@@ -224,3 +224,24 @@ char *strerror(int code) {
         default: return "Unknown error";
     }
 }
+
+static int ascii_lower(int c) { return (c >= 'A' && c <= 'Z') ? c - 'A' + 'a' : c; }
+
+int strcasecmp(const char *left, const char *right) {
+    for (;; left++, right++) {
+        int a = ascii_lower((unsigned char)*left);
+        int b = ascii_lower((unsigned char)*right);
+        if (a != b) return a - b;
+        if (!a) return 0;
+    }
+}
+
+int strncasecmp(const char *left, const char *right, size_t count) {
+    for (; count; count--, left++, right++) {
+        int a = ascii_lower((unsigned char)*left);
+        int b = ascii_lower((unsigned char)*right);
+        if (a != b) return a - b;
+        if (!a) return 0;
+    }
+    return 0;
+}

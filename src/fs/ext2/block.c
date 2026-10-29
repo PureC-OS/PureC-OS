@@ -9,6 +9,7 @@ static uint8_t g_sector[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
 static uint8_t g_block[4096] __attribute__((aligned(2)));
 static uint8_t g_block2[4096] __attribute__((aligned(2)));
 static uint8_t g_block3[4096] __attribute__((aligned(2)));
+static uint8_t g_group_block[4096] __attribute__((aligned(2)));
 
 struct ext2_volume *ext2_volume(void)
 {
@@ -33,6 +34,11 @@ uint8_t *ext2_scratch_block2(void)
 uint8_t *ext2_scratch_block3(void)
 {
     return g_block3;
+}
+
+uint8_t *ext2_scratch_group(void)
+{
+    return g_group_block;
 }
 
 uint16_t ext2_read_u16(const uint8_t *p)
@@ -120,11 +126,11 @@ bool ext2_group_write(uint32_t group, const uint8_t *gd)
     uint32_t per = g_vol.block_size / 32;
     uint32_t block = gd_block + group / per;
     uint32_t idx = group % per;
-    if (!ext2_read_block(block, g_block))
+    if (!ext2_read_block(block, g_group_block))
         return false;
     for (int i = 0; i < 32; i++)
-        g_block[idx * 32 + i] = gd[i];
-    return ext2_write_block(block, g_block);
+        g_group_block[idx * 32 + i] = gd[i];
+    return ext2_write_block(block, g_group_block);
 }
 
 bool ext2_write_inode(uint32_t ino, const uint8_t *in)

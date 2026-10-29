@@ -29,3 +29,4 @@ size_t strspn(const char *text, const char *accept);
 size_t strcspn(const char *text, const char *reject);
 char *strpbrk(const char *text, const char *accept);
 size_t strnlen(const char *text, size_t capacity);
+#include "strings.h"

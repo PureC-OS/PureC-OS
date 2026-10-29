@@ -2,7 +2,7 @@
 #include "../../lib/string.h"
 
 static const char *system_program_names[] = {
-    "disks", "usbscan", "mkfs.fat32", "install", "setup",      "update",
+    "disks", "usbscan", "mkfs.ext2", "install", "setup",      "update",
     "dmesg", "savelog", "uname",      "about",   "systeminfo", "htop",
     "font",  "snake",   "mouse",      "debug"};
 
@@ -25,6 +25,10 @@ bool program_alias_resolve(const char *requested_path,
   if (strncmp(requested_path, "/bin/program/", 13) == 0)
     prefix_ok = true;
   else if (strncmp(requested_path, "/bin/", 5) == 0)
+    prefix_ok = true;
+  else if (strncmp(requested_path, "/usr/bin/", 9) == 0)
+    prefix_ok = true;
+  else if (strncmp(requested_path, "/sbin/", 6) == 0)
     prefix_ok = true;
   else if (!has_slash)
     prefix_ok = true;

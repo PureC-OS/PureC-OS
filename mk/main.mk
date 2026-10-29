@@ -15,15 +15,15 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path \
+.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -38,6 +38,12 @@ test-ipc:
 	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
 		tests/ipc_mailbox_test.c -o $(BIN_DIR)/tests/ipc_mailbox_test
 	$(BIN_DIR)/tests/ipc_mailbox_test
+
+test-tcp:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST \
+		tests/tcp_test.c src/net/transport/tcp.c -o $(BIN_DIR)/tests/tcp_test
+	$(BIN_DIR)/tests/tcp_test
 
 test-initramfs:
 	@mkdir -p $(BIN_DIR)/tests
@@ -94,6 +100,129 @@ test-path:
 		tests/path_test.c src/programs/terminal/path.c src/programs/files/path.c \
 		-o $(BIN_DIR)/tests/path_test
 	$(BIN_DIR)/tests/path_test
+
+test-vfs-mount:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/vfs_mount_test.c src/fs/vfs_path.c src/fs/vfs_mount.c \
+		-o $(BIN_DIR)/tests/vfs_mount_test
+	$(BIN_DIR)/tests/vfs_mount_test
+
+test-devfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src -I$(ROOT_DIR)/src/lib \
+		tests/devfs_test.c src/fs/devfs.c -o $(BIN_DIR)/tests/devfs_test
+	$(BIN_DIR)/tests/devfs_test
+
+test-format:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/format_test.c src/lib/format.c -o $(BIN_DIR)/tests/format_test
+	$(BIN_DIR)/tests/format_test
+
+test-ext2-append:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/ext2_append_test.c src/fs/ext2/block.c src/fs/ext2/dir.c \
+		src/fs/ext2/ext2.c src/fs/ext2/file.c src/fs/ext2/format.c \
+		src/fs/ext2/inode.c src/fs/ext2/super.c src/fs/ext2/debug.c \
+		src/fs/ext2/meta.c \
+		-o $(BIN_DIR)/tests/ext2_append_test
+	$(BIN_DIR)/tests/ext2_append_test
+
+test-ext2-meta:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/ext2_meta_test.c src/fs/ext2/block.c src/fs/ext2/dir.c \
+		src/fs/ext2/ext2.c src/fs/ext2/file.c src/fs/ext2/format.c \
+		src/fs/ext2/inode.c src/fs/ext2/super.c src/fs/ext2/debug.c \
+		src/fs/ext2/meta.c \
+		-o $(BIN_DIR)/tests/ext2_meta_test
+	$(BIN_DIR)/tests/ext2_meta_test
+
+test-sysfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/sysfs_test.c src/fs/sysfs.c src/lib/format.c \
+		-o $(BIN_DIR)/tests/sysfs_test
+	$(BIN_DIR)/tests/sysfs_test
+
+test-procfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/procfs_test.c src/fs/procfs.c src/lib/format.c \
+		-o $(BIN_DIR)/tests/procfs_test
+	$(BIN_DIR)/tests/procfs_test
+
+test-tmpfs:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -I$(ROOT_DIR)/src \
+		tests/tmpfs_test.c src/fs/tmpfs.c -o $(BIN_DIR)/tests/tmpfs_test
+	$(BIN_DIR)/tests/tmpfs_test
+
+test-vfs-perm:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) tests/vfs_perm_test.c src/fs/vfs_perm.c \
+		-o $(BIN_DIR)/tests/vfs_perm_test
+	$(BIN_DIR)/tests/vfs_perm_test
+
+test-blit:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src -I$(ROOT_DIR)/src/lib tests/blit_test.c \
+		src/gfx/blit.c -o $(BIN_DIR)/tests/blit_test
+	$(BIN_DIR)/tests/blit_test
+
+test-hid-keymap:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src tests/hid_keymap_test.c \
+		src/drivers/input/hid_keymap.c -o $(BIN_DIR)/tests/hid_keymap_test
+	$(BIN_DIR)/tests/hid_keymap_test
+
+test-scanf:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -Dsscanf=pc_sscanf -Dvsscanf=pc_vsscanf -Dfscanf=pc_fscanf -Dvfscanf=pc_vfscanf -c src/libc/scanf.c -o $(BIN_DIR)/tests/scanf_pc.o
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g tests/scanf_test.c $(BIN_DIR)/tests/scanf_pc.o -o $(BIN_DIR)/tests/scanf_test
+	$(BIN_DIR)/tests/scanf_test
+
+test-libm:
+	@mkdir -p $(BIN_DIR)/tests
+	cc -std=gnu11 -O1 -Wall -Wextra -ffreestanding -fno-builtin -include tests/libm_rename.h -c src/libc/math.c -o $(BIN_DIR)/tests/libm_math.o
+	cc -std=gnu11 -O1 -Wall -Wextra -ffreestanding -fno-builtin -include tests/libm_rename.h -c src/libc/libm.c -o $(BIN_DIR)/tests/libm_libm.o
+	cc -std=gnu11 -O1 -Wall -Wextra -c tests/libm_test.c -o $(BIN_DIR)/tests/libm_test.o
+	cc $(BIN_DIR)/tests/libm_test.o $(BIN_DIR)/tests/libm_math.o $(BIN_DIR)/tests/libm_libm.o -lm -o $(BIN_DIR)/tests/libm_test
+	$(BIN_DIR)/tests/libm_test
+
+test-civil:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src tests/civil_test.c \
+		src/kernel/time/civil.c src/kernel/time/rtc.c -o $(BIN_DIR)/tests/civil_test
+	$(BIN_DIR)/tests/civil_test
+
+test-install-accounts:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) tests/install_accounts_test.c src/fs/install_accounts.c \
+		src/fs/vfs_perm.c -o $(BIN_DIR)/tests/install_accounts_test
+	$(BIN_DIR)/tests/install_accounts_test
+
+test-accounts:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/libxcrypt/include tests/accounts_test.c \
+		src/programs/accounts/accounts_core.c src/fs/install_accounts.c \
+		libxcrypt/src/sha512.c libxcrypt/src/crypt_sha512.c -o $(BIN_DIR)/tests/accounts_test
+	$(BIN_DIR)/tests/accounts_test
+
+test-hdrbg:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/libxcrypt/include tests/hdrbg_test.c \
+		src/drivers/random/random_core.c libxcrypt/src/sha512.c -o $(BIN_DIR)/tests/hdrbg_test
+	$(BIN_DIR)/tests/hdrbg_test
+
+test-vfs-alias:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) \
+		tests/vfs_alias_test.c src/fs/vfs_alias.c src/fs/vfs_path.c \
+		-o $(BIN_DIR)/tests/vfs_alias_test
+	$(BIN_DIR)/tests/vfs_alias_test
 
 test-dot11:
 	@mkdir -p $(BIN_DIR)/tests
@@ -164,7 +293,19 @@ libraries:
 programs: libraries notepad
 	$(MAKE) -C src/programs
 	$(MAKE) -C src/programs/micropython
+	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
+	$(MAKE) -C src/doom
+	$(MAKE) -C src/chocolate
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
+
+sdl2: libraries
+	$(MAKE) -C src/libsdl2
+
+doomgeneric: libraries
+	$(MAKE) -C src/doom
+
+chocolate-doom: sdl2
+	$(MAKE) -C src/chocolate
 
 notepad:
 	@test -f "$(NOTEPAD_DIR)/Makefile" || \
@@ -193,8 +334,12 @@ kernel:
 	$(MAKE) -C src/drivers/net/pcnet    module
 	$(MAKE) -C src/drivers/net/ath9k    module
 	$(MAKE) -C $(CRYPT_DIR)             module
+	$(MAKE) -C $(CRYPT_DIR)             BIN_DIR=$(BIN_DIR)
+	@mkdir -p $(BIN_DIR)/lib
+	cp $(CRYPT_DIR)/build/libpurecrypt.a $(BIN_DIR)/lib/libpurecrypt.a
 	$(MAKE) -C $(ACPI_DIR)              module
 	$(MAKE) -C $(WOLFSSL_DIR)           module lib
+	$(MAKE) -C src/drivers/random       module
 
 iso: kernel programs
 	@set -eu; \
@@ -211,24 +356,27 @@ iso: kernel programs
 	fi; \
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
-		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/bin/modules" \
+		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
+		"$(ISO_ROOT)/lib/firmware" \
 		"$(ISO_ROOT)/src/demo"; \
 	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
 		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
 	fi; \
 	command -v python3 >/dev/null || { echo "python3 required (mk/gen_assets.py)" >&2; exit 1; }; \
-	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged"; \
+	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
 	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
-	for mod in ext2 crypt acpi wolf e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
+	for mod in ext2 crypt acpi wolf random e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
-			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/bin/modules/$$mod.$$ext" || true; \
+			[ -f "$$f" ] && cp "$$f" "$(ISO_ROOT)/lib/modules/$$mod.$$ext" || true; \
 		done; \
 	done; \
-	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/bin/modules/" 2>/dev/null || true; \
+	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/lib/modules/" 2>/dev/null || true; \
+	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
+	sh "$(ROOT_DIR)/mk/make_esp_image.sh" "$(ISO_ROOT)" "$(ISO_ROOT)/boot/esp.img"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys"          "$(ISO_ROOT)/boot/limine/"; \
@@ -249,6 +397,10 @@ clean:
 	$(MAKE) -C src/libgui      clean 2>/dev/null || true
 	$(MAKE) -C src/libfs       clean 2>/dev/null || true
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
+	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true
+	$(MAKE) -C src/doom        clean 2>/dev/null || true
+	$(MAKE) -C src/chocolate   clean 2>/dev/null || true
+	$(MAKE) -C src/libsdl2_mixer clean 2>/dev/null || true
 	$(MAKE) -C src/programs    clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
 	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true

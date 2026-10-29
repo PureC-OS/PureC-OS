@@ -13,6 +13,9 @@ bool compositor_window_exists(uint32_t pid);
 
 bool compositor_draw_rect(uint32_t pid, uint32_t x, uint32_t y, uint32_t w,
                           uint32_t h, uint32_t color);
+bool compositor_blit(uint32_t pid, int32_t x, int32_t y, uint32_t width,
+                     uint32_t height, const uint32_t *pixels, uint32_t stride,
+                     uint32_t flags);
 bool compositor_draw_line(uint32_t pid, uint32_t x0, uint32_t y0, uint32_t x1,
                           uint32_t y1, uint32_t color);
 bool compositor_scroll_rect_up(uint32_t pid, uint32_t x, uint32_t y, uint32_t w,

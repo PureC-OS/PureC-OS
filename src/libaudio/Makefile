@@ -3,7 +3,7 @@ include $(ROOT_DIR)/mk/toolchain.mk
 
 OBJ_DIR := $(BIN_DIR)/obj/libaudio
 LIB_DIR := $(BIN_DIR)/lib
-SOURCES := audio.c
+SOURCES := audio.c stream.c
 OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGET := $(LIB_DIR)/libpureaudio.a
 

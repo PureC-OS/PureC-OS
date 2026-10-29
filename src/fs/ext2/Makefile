@@ -7,7 +7,7 @@ TARGET_ELF := $(MODULE_DIR)/ext2.elf
 TARGET_KO := $(MODULE_DIR)/ext2.ko
 TARGET_SO := $(MODULE_DIR)/ext2.so
 
-SOURCES := block.c super.c inode.c dir.c file.c format.c ext2.c debug.c
+SOURCES := block.c super.c inode.c dir.c file.c format.c meta.c ext2.c debug.c
 OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o)
 SO_OBJ_DIR := $(OBJ_DIR)/pic
 SO_OBJECTS := $(SOURCES:%.c=$(SO_OBJ_DIR)/%.o)

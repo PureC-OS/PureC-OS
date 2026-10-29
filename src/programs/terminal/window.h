@@ -18,4 +18,7 @@ bool terminal_window_service(struct terminal_window *terminal);
 bool terminal_window_read_line(struct terminal_window *terminal,
                                const char *prompt,
                                char *buffer, uint32_t capacity);
+bool terminal_window_read_secret(struct terminal_window *terminal,
+                                 const char *prompt,
+                                 char *buffer, uint32_t capacity);
 void terminal_window_shutdown(struct terminal_window *terminal);

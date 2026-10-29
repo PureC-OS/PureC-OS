@@ -126,6 +126,10 @@ int32_t pc_try_get_special(void){
     return (int32_t)pc_syscall(SYS_TRY_GET_SPECIAL,0,0,0);
 }
 
+int32_t pc_key_event_get(struct key_event *event){
+    return (int32_t)pc_syscall(SYS_KEY_EVENT_GET,(uint64_t)(uintptr_t)event,0,0);
+}
+
 int32_t pc_get_command_line(char *buffer, uint32_t capacity){
     return (int32_t)pc_syscall(SYS_GET_COMMAND_LINE,
         (uint64_t)(uintptr_t)buffer,capacity,0);
@@ -181,6 +185,56 @@ int32_t pc_cpu_core_info(struct cpu_core_info *info){
     return (int32_t)pc_syscall(SYS_CPU_CORE_INFO,(uint64_t)(uintptr_t)info,0,0);
 }
 
+static uint64_t tcp_arg(int32_t handle, uint32_t timeout_ms){
+    return (uint64_t)(uint32_t)handle|((uint64_t)timeout_ms<<32);
+}
+
+int32_t pc_tcp_socket(void){
+    return (int32_t)pc_syscall(SYS_TCP_SOCKET,0,0,0);
+}
+
+int32_t pc_tcp_connect(int32_t handle, uint32_t ipv4, uint16_t port,
+                       uint32_t timeout_ms){
+    return (int32_t)pc_syscall(SYS_TCP_CONNECT,tcp_arg(handle,timeout_ms),
+                               ipv4,port);
+}
+
+int32_t pc_tcp_listen(int32_t handle, uint16_t port, uint8_t backlog){
+    return (int32_t)pc_syscall(SYS_TCP_LISTEN,tcp_arg(handle,0),port,backlog);
+}
+
+int32_t pc_tcp_accept(int32_t handle, uint32_t timeout_ms){
+    return (int32_t)pc_syscall(SYS_TCP_ACCEPT,tcp_arg(handle,timeout_ms),0,0);
+}
+
+int32_t pc_tcp_send(int32_t handle, const void *data, uint32_t length,
+                    uint32_t timeout_ms){
+    if(length && !data) return -1;
+    return (int32_t)pc_syscall(SYS_TCP_SEND,tcp_arg(handle,timeout_ms),
+                               (uint64_t)(uintptr_t)data,length);
+}
+
+int32_t pc_tcp_recv(int32_t handle, void *data, uint32_t length,
+                    uint32_t timeout_ms){
+    if(length && !data) return -1;
+    return (int32_t)pc_syscall(SYS_TCP_RECV,tcp_arg(handle,timeout_ms),
+                               (uint64_t)(uintptr_t)data,length);
+}
+
+int32_t pc_tcp_close(int32_t handle){
+    return (int32_t)pc_syscall(SYS_TCP_CLOSE,tcp_arg(handle,0),0,0);
+}
+
+int32_t pc_tcp_abort(int32_t handle){
+    return (int32_t)pc_syscall(SYS_TCP_ABORT,tcp_arg(handle,0),0,0);
+}
+
+int32_t pc_tcp_info(int32_t handle, struct net_tcp_info *info){
+    if(!info) return -1;
+    return (int32_t)pc_syscall(SYS_TCP_INFO,tcp_arg(handle,0),
+                               (uint64_t)(uintptr_t)info,0);
+}
+
 int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms,
                 struct network_ping_result *result){
     if(!target || !result) return -1;
@@ -215,6 +269,76 @@ int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence){
 int32_t pc_file_stat(const char *path, struct file_stat_info *out){
     return (int32_t)pc_syscall(SYS_FILE_STAT,(uint64_t)(uintptr_t)path,
         (uint64_t)(uintptr_t)out,0);
+}
+
+int32_t pc_session_begin(uint32_t uid, uint32_t gid){
+    return (int32_t)pc_syscall(SYS_SESSION_BEGIN,uid,gid,0);
+}
+
+int32_t pc_install_start_accounts(const char *device, const char *serial,
+                                  uint8_t fs_type,
+                                  const struct install_account_request *accounts){
+    if(!device || !serial) return -1;
+    struct install_start_request req={0};
+    pc_copy(req.device, device, sizeof(req.device));
+    pc_copy(req.serial, serial, sizeof(req.serial));
+    req.fs_type = fs_type;
+    if(accounts) req.accounts = *accounts;
+    return (int32_t)pc_syscall(SYS_INSTALL_START_EX, (uint64_t)(uintptr_t)&req, 0, 0);
+}
+
+int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
+                   uint32_t height, int32_t x, int32_t y, uint32_t flags){
+    struct fb_blit_request req={
+        .pixels=(uint64_t)(uintptr_t)pixels,
+        .stride=stride,
+        .width=width,
+        .height=height,
+        .x=x,
+        .y=y,
+        .flags=flags};
+    return (int32_t)pc_syscall(SYS_FB_BLIT,(uint64_t)(uintptr_t)&req,0,0);
+}
+
+int32_t pc_time_get(struct time_info *out){
+    return (int32_t)pc_syscall(SYS_TIME_GET,(uint64_t)(uintptr_t)out,0,0);
+}
+
+int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes){
+    return (int32_t)pc_syscall(SYS_TIME_SET,(uint64_t)unix_seconds,
+        (uint64_t)(int64_t)tz_minutes,0);
+}
+
+int32_t pc_file_stat_ex(const char *path, struct file_stat_ex *out){
+    return (int32_t)pc_syscall(SYS_FILE_STAT_EX,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)out,0);
+}
+
+int32_t pc_getrandom(void *buffer, uint32_t count){
+    return (int32_t)pc_syscall(SYS_GETRANDOM,(uint64_t)(uintptr_t)buffer,count,0);
+}
+
+int32_t pc_getuid(void){ return (int32_t)pc_syscall(SYS_GETUID,0,0,0); }
+int32_t pc_getgid(void){ return (int32_t)pc_syscall(SYS_GETGID,0,0,0); }
+int32_t pc_setuid(uint32_t uid){ return (int32_t)pc_syscall(SYS_SETUID,uid,0,0); }
+int32_t pc_setgid(uint32_t gid){ return (int32_t)pc_syscall(SYS_SETGID,gid,0,0); }
+
+int32_t pc_chmod(const char *path, uint32_t mode){
+    return (int32_t)pc_syscall(SYS_CHMOD,(uint64_t)(uintptr_t)path,mode,0);
+}
+
+int32_t pc_chown(const char *path, uint32_t uid, uint32_t gid){
+    return (int32_t)pc_syscall(SYS_CHOWN,(uint64_t)(uintptr_t)path,uid,gid);
+}
+
+int32_t pc_file_perm(const char *path, struct file_perm_info *out){
+    return (int32_t)pc_syscall(SYS_FILE_PERM,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)out,0);
+}
+
+int32_t pc_user_lookup(const char *name, uint32_t uid, struct user_info *out){
+    return (int32_t)pc_syscall(SYS_USER_LOOKUP,(uint64_t)(uintptr_t)name,uid,
+        (uint64_t)(uintptr_t)out);
 }
 
 int32_t pc_file_close(int32_t descriptor){
@@ -479,11 +603,11 @@ int32_t pc_get_root_device(char *buffer, uint32_t capacity){
 }
 int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb){
     if(!device || !partition_count || !sizes_gb) return -1;
-    struct fat32_custom_format_request req={0};
+    struct custom_format_request req={0};
     pc_copy(req.device, device, sizeof(req.device));
     req.partition_count=partition_count;
     for(uint32_t i=0;i<partition_count && i<4;i++) req.sizes_gb[i]=sizes_gb[i];
-    return (int32_t)pc_syscall(SYS_FAT32_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
+    return (int32_t)pc_syscall(SYS_FS_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
 }
 
 int32_t pc_format_device_ex(const char *device, const char *serial, uint8_t fs_type){

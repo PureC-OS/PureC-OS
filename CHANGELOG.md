@@ -1,5 +1,259 @@
 # Changelog
 
+## V1.2.28 — Права доступа и аккаунты, новый установщик, драйвер RNG, ext2 без заглушек, VFS на таблице монтирования, драйверы железа
+
+## SDL2 и Chocolate Doom: порт игровой экосистемы
+
+### События ввода: отпускание клавиш, сканкоды, колесо (`src/drivers/input`, `src/drivers/mouse`, libc, libgui)
+- Клавиатура отдаёт отдельную очередь `struct key_event` (сканкод, нажатие/отпускание,
+  признак повтора, маска модификаторов). Сканкоды — USB HID (страница 7), та же нумерация,
+  что у `SDL_Scancode`. Таблицы Scan Code Set 1 и 2 (в том числе `E0`-коды) лежат в
+  `hid_keymap.c`; модификаторы приходят и как обычные клавиши, и в маске `mods`.
+  Очередь на 64 события, при переполнении старые отбрасываются. Старые пути `getchar` и
+  «special»-клавиш не изменены.
+- Новый syscall `SYS_KEY_EVENT_GET` (323), `pc_key_event_get()` в libc,
+  `pg_window_poll_key_event()` в libgui (только для окна в фокусе).
+- Колесо мыши: USB-мышь теперь отдаёт 4-й байт отчёта (`mouse_add_wheel()`), PS/2-колесо
+  работало и раньше. `pg_window_take_wheel()` возвращает дельту (положительная — вверх).
+  `logview` прокручивается колесом (3 строки за щелчок).
+- `pg_window_set_esc_closes()`: Esc перестаёт закрывать окно, когда он нужен приложению
+  (игры). Поведение остальных программ прежнее.
+- Тест `tests/hid_keymap_test.c` (`make test-hid-keymap`): таблицы обоих наборов,
+  сверка наборов между собой, биты модификаторов.
+
+### libc для портов (`src/libc`)
+- Строки: `strcasecmp`, `strncasecmp`, заголовки `strings.h` и `sys/types.h`.
+- `sscanf`, `vsscanf`, `fscanf`, `vfscanf` (`scanf.c`): `%d %i %u %o %x %c %s %[set] %f %p %n %%`,
+  ширина, `*`, модификаторы `hh h l ll z j t L`. Тест `tests/scanf_test.c` (`make test-scanf`),
+  в том числе формат конфига Doom `%79s %99[^\n]\n`. Ограничение: один вызов `fscanf`
+  разбирает не больше 4096 байт.
+- `opendir`, `readdir`, `closedir`, `rewinddir` (`dirent.h`) поверх листинга каталога ядра;
+  `mkdir`, `atof`, `_exit`, `putenv`, `fileno`, `vprintf`.
+
+### PureAudio: потоковый вывод (`src/libaudio/stream.c`)
+- `pa_stream_open/pump/close`: непрерывный PCM 22050 Гц, моно, 16 бит. Библиотека следит
+  за часами, просит у приложения ровно столько кадров, сколько нужно, и держит очередь
+  ядра на ~4096 кадров вперёд; потоков нет, `pa_stream_pump()` вызывается чаще 40 мс.
+  Задержка около 190 мс.
+
+### SDL2 (`SDL/`, ветка `purec-sdl2` форка PureC-OS/SDL, SDL 2.33; сборка `src/libsdl2`)
+- Платформа PureC: `SDL_config_purec.h`, видеодрайвер `src/video/purec` (окно SDL = окно
+  PureGUI, поверхность выводится через `pg_window_blit`, клавиши по сканкодам,
+  текстовый ввод, мышь, колесо, закрытие, сворачивание; размер окна урезается под экран),
+  таймер `src/timer/purec`, `SDL_DYNAMIC_API` выключен для PureC.
+- Аудиодрайвер `src/audio/purec` поверх `pa_stream`: SDL сам конвертирует формат, частоту и
+  каналы в 22050 Гц моно. Потоков нет, колбэк приложения вызывается из `SDL_PumpEvents` и
+  `SDL_Delay`. Если PCM-вывода нет, драйвер всё равно открывается и крутит колбэк в
+  реальном времени без вывода звука (иначе приложения, которым нужен колбэк, не стартуют).
+- Без потоков условные переменные работают: `SDL_CondWait` даёт `SDL_Delay` выполнить
+  колбэки (иначе ожидание вечно крутилось на 100% ядра).
+- Исправлены типы в `SDL_string.c` (`strtoll` без libc-версии).
+- Сборка: `make sdl2` (шаг пропускается, если нет `SDL/`), `bin/lib/libSDL2.a`, тестовая
+  программа `/usr/bin/sdltest` (окно, клавиши с отпусканием, мышь, колесо, звук по пробелу).
+- Ограничения: одно окно на процесс, без изменения размера, без потоков, джойстиков, OpenGL,
+  относительной мыши, стерео.
+
+### Chocolate Doom (форк PureC-OS/chocolate-doom, сборка `src/chocolate`)
+- Chocolate Doom 3.1.1 собирается на нашем SDL2 без изменений кода, кроме одного: по
+  умолчанию оконный режим вместо полноэкранного (`fullscreen = false`, окно 800×600).
+  Сеть отключена штатным `DISABLE_SDL2NET`, `textscreen` целиком, кроме выбора файла.
+- Прослойка SDL_mixer (`src/libsdl2_mixer`, около 25 функций): каналы звуков с панорамой,
+  пост-обработка и хук музыки для встроенного OPL-эмулятора. Файлы MIDI/Ogg/MP3 не играет.
+- Freedoom 0.13.0 (`assets/doom/freedoom1.wad`, 28,8 МБ) в образе как
+  `/usr/share/doom/freedoom1.wad`; `/usr/bin/doom` запускает игру.
+- Запасной путь: платформенный слой для doomgeneric (`src/doom`, `make doomgeneric`),
+  звуковой модуль и клавиши, без SDL.
+- Проверено на VirtualBox: игра запускается и играется.
+
+## libm: настоящая математика для портов
+
+### Математика (`src/libc/libm.c`, `src/libc/math.c`, `include/hosted/math.h`)
+- Раньше `sin`, `cos`, `log`, `exp` были только объявлены, а дробная `pow`
+  возвращала NaN. Теперь в libc полный набор: `sin cos tan asin acos atan atan2
+  sinh cosh tanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot`,
+  `round rint nearbyint lround llround lrint llrint copysign fmax fmin fdim
+  scalbn nan` и float-версии всех (`sinf`, `cosf`, `powf`, `atan2f`, ...).
+- Реализация на x87 в расширенной точности (ядро хранит x87/SSE-состояние потока
+  через `fxsave`), `sqrt` на SSE. Точность 1–2 ULP от glibc; степени с точным
+  результатом (`pow(10, 15)`) считаются точно.
+- `sin`/`cos`/`tan`: аргумент приводится по частям π/2 (около 160 бит) до 3,3·10⁹;
+  дальше точность падает (приведение через `FPREM1` с 66-битным π).
+- Исправлены старые функции `math.c`: `fmod` ошибался на экстремальных отношениях
+  и терял знак нуля (теперь через `FPREM`, точно), `trunc(-0.5)` возвращал `+0`.
+- Заголовок: константы `M_PI_2`, `M_SQRT2`, `M_LN2` и др., макросы `isnan`,
+  `isinf`, `isfinite`, `signbit`, `fpclassify`.
+- Тест `tests/libm_test.c` (`make test-libm`): сверка с glibc по ULP на сотнях
+  тысяч значений, особые значения (±0, ±inf, NaN) для всех функций, точные
+  степени, float-версии.
+
+
+
+### Блит буфера пикселей в окно (`src/gfx/blit.[ch]`, композитор, libgui, libc)
+- Новый syscall `SYS_FB_BLIT` (322): программа отдаёт готовый буфер ARGB/XRGB
+  (`struct fb_blit_request`: указатель, шаг строки, размер, позиция, флаги), и
+  композитор копирует его в поверхность своего окна одним вызовом, с обрезкой по
+  границам и одним `present` на кадр (внутри `pg_window_begin/end` — вместе с
+  остальной отрисовкой кадра). Раньше кадр можно было собрать только из
+  сотен вызовов `SYS_DRAW_RECT`.
+- Источник проверяется целиком (`blit_source_bytes`: шаг не меньше ширины,
+  размеры до 16384, не больше 256 МиБ), затем `vmm_user_range_accessible`.
+  Альфа-канал по умолчанию форсируется в непрозрачный (формат `0x00RRGGBB`
+  работает как есть); флаг `FB_BLIT_KEEP_ALPHA` сохраняет альфу источника.
+- `pc_fb_blit()` в libc и `pg_window_blit()` в PureGUI (координаты клиентской
+  области, обрезка по её границам).
+- `gltest` переписан: рендер в собственный буфер 480×360, один блит за кадр,
+  `sinf`/`cosf` из новой libm, счётчик FPS и времени кадра.
+- Тест `tests/blit_test.c` (`make test-blit`): обрезка со всех сторон, огромные
+  размеры без переполнения, копирование с форсированием альфы и без, проверка
+  границ источника.
+- Ограничение: у окна один буфер на процесс, блит работает только когда окно уже
+  зарегистрировано оконным менеджером (иначе `-2`).
+
+### VFS на таблице монтирования (`src/fs/vfs*.c`, `vfs_ops.h`)
+- VFS переписан на таблицу монтирования: `vfs_mount.c` (до 16 точек, `vfs_mount_find`
+  по самому длинному префиксу), `vfs_path.c` (нормализация путей), `vfs_ops.h`
+  (`struct vfs_fs_ops`: open/read/write/seek/stat/list/create/unlink/rename/move/append),
+  `vfs_backends.c` (ext2, initramfs, kernelfs).
+- Новые файловые системы: `devfs` (`/dev`: null, zero, full, random, urandom, kmsg
+  и блочные устройства), `procfs` (`/proc`, общий форматтер `src/lib/format.c`),
+  `sysfs` (`/sys`), `tmpfs` в RAM (`/tmp`, `/run`; в live-режиме ещё `/var`, `/home`, `/root`).
+- FHS-раскладка: манифест `assets/manifest.txt`, `/etc` из `rootfs/etc`
+  (`passwd`, `group`, `hostname`, `fstab`, `motd`, `os-release`, `shells`),
+  таблица алиасов старых путей `vfs_alias.c`, самотест `vfs_selftest()` при загрузке.
+- Модули и прошивки едут в `/lib/modules` и `/lib/firmware`; `gen_assets.py` и
+  `limine.conf.in` подхватывают модули динамически.
+- Исправлено: `vfs_append_file` возвращает реально записанные байты; листинг
+  initramfs дополняет путь каталога слэшем; `DIR_CAP` рабочего стола 32 → 128
+  (раньше часть ярлыков пропадала); `block_device_is_ready()` для `sysfs`.
+
+### ext2 без заглушек (`src/fs/ext2/`)
+- `ext2_delete`, `ext2_rename`, `ext2_move` раньше возвращали `-10`. Теперь это
+  настоящие операции (`meta.c`): удаление файлов и пустых каталогов с освобождением
+  блоков и inode, переименование в каталоге, перенос между каталогами с
+  обновлением `..` и счётчиков ссылок, защита от переноса каталога внутрь себя
+  и от удаления служебных inode.
+- Владелец, группа и режим читаются и пишутся в inode (`ext2_meta_get/set`),
+  включая 32-битные uid/gid через `uid_high/gid_high`.
+- `ext2_append_file` с тестом на файле больше 12+256+256² блоков.
+- Исправлена паника ядра на bare metal при персонализации после установки на ext2.
+- Исправлены ошибки inode: смещение 24 — это `i_gid`, а не счётчик ссылок; код
+  писал туда 1 и 2, и у всех файлов был gid=1, а `links_count` оставался 0
+  (`e2fsck` считал такие inode удалёнными). Теперь счётчик ссылок на смещении 26
+  (файл 1, каталог 2, корень 2), gid 0. Перезапись файла больше не сбрасывает
+  режим в 0644: владелец, группа и права сохраняются.
+- Тесты: `tests/ext2_meta_test.c` (`make test-ext2-meta`) — после удаления всего
+  число свободных блоков возвращается к исходному; `tests/ext2_append_test.c`.
+
+### Права доступа и пользователи (`src/fs/vfs_perm.c`, ядро, libc)
+- Проверка rwx по владельцу, группе и остальным в open/create/mkdir/write/append/
+  delete/rename/move; root обходит проверки. Новая ошибка `FS_ERROR_DENIED`.
+  Новый файл получает владельцем создателя; `/tmp` и `/run` создаются с режимом 1777.
+- Права хранятся в inode на ext2 (через `get_meta/set_meta` в `vfs_fs_ops`),
+  на остальных ФС — в таблице в памяти.
+- У процесса появились `uid` и `gid`, наследуются от родителя; сменить их может
+  только root.
+- Syscalls 309–318: `getuid`, `getgid`, `setuid`, `setgid`, `chmod`, `chown`,
+  `file_perm`, `user_lookup`, `getrandom`, `session_begin`. Обёртки в libc:
+  `pc_getuid`, `pc_chmod`, `pc_chown`, `pc_file_perm`, `pc_user_lookup`,
+  `pc_getrandom`, `pc_session_begin`.
+- Разбор `/etc/passwd` (7 полей) в `vfs_perm.c`; тест `tests/vfs_perm_test.c`.
+
+### Драйвер случайных чисел (`src/drivers/random/`, `src/kernel/random/`)
+- Модуль `random.so`: Hash_DRBG по SP 800-90A на `pure_sha512` из `libxcrypt`
+  (`random_core.c`). Энтропия — RDRAND + джиттер TSC через SHA-512, reseed каждые
+  4096 запросов и при записи в `/dev/random`.
+- Фасад ядра `krandom.c` грузит модуль после `devman_autoload`, проверяет версию
+  ABI; если модуля нет — запасной xorshift (в логе `random: fallback backend`).
+- `/dev/random` и `/dev/urandom` читают из DRBG; новый syscall `SYS_GETRANDOM`.
+- `devman_load_module()` — загрузка `.so`, не привязанных к устройству.
+- Тест `tests/hdrbg_test.c` (`make test-hdrbg`): сверка с независимой реализацией
+  на `hashlib`, включая reseed.
+
+### Криптография вне ядра (`libxcrypt`, `mk/main.mk`)
+- `libxcrypt` больше не линкуется в образ ядра (там он не использовался);
+  собирается как библиотека `bin/lib/libpurecrypt.a` для `login` и установщика.
+- Исправлена ошибка `purecrypt_verify`: соль, начинающаяся с `r`, принималась за
+  префикс `rounds=` и корректный хеш отвергался (`-1`). Регрессия в `test_crypt.c`.
+
+### Новый установщик (`src/programs/installer/`, `src/fs/install*.c`)
+- Шаги: диск → имя компьютера → пароль root (дважды, ввод скрыт) → обычный
+  пользователь (имя, полное имя, пароль) → сводка и подтверждение `ERASE`;
+  на сводке `E` возвращает к настройкам.
+- Пароли хешируются в ring 3 (`$6$`, соль из `getrandom`), в ядро уходят только
+  хеши (`struct install_account_request` в `SYS_INSTALL_START_EX`).
+- Ядро после копирования системы пишет `/etc/passwd`, `/etc/shadow` (0600),
+  `/etc/group`, `/etc/hostname`, `/root` (0700) и `/home/<user>` (0700, владелец —
+  пользователь). Запрос валидируется (`install_accounts.c`): имена, хеши, запрет
+  `:` и переводов строк, пользователь не может быть `root`.
+- Тесты: `tests/install_accounts_test.c`, `tests/accounts_test.c`.
+
+### Экран входа (`src/programs/login/`, `src/programs/accounts/`)
+- Поля имени и пароля (Tab, мышь, Enter), проверка по `/etc/shadow` через
+  `purecrypt_verify`, растущая задержка после неудач.
+- Успешный вход вызывает `SYS_SESSION_BEGIN`: программы, запускаемые от десктопа
+  (root-родитель, кроме init), получают uid/gid пользователя.
+- Без `/etc/shadow` (live-ISO) остаётся вход одной кнопкой как root.
+
+### Часы и время (`src/kernel/time/`, libc)
+- Раньше `time()` считал секунды от загрузки, десктопные часы жили в
+  `/purec/datetime.cfg`. Теперь есть настоящие часы ядра: `rtc.c` читает CMOS RTC
+  (ожидание конца обновления, двойное чтение до совпадения, BCD/двоичный
+  режим, 12/24 часа, век), `wallclock.c` держит календарное время поверх
+  аптайма TSC, `civil.c` — перевод даты в unix-время и обратно.
+- В лог при загрузке: `time: RTC 2026-10-29 11:39:58 UTC` (сверено с хостом).
+- Syscalls `SYS_TIME_GET` (319), `SYS_TIME_SET` (320, только root: ставит время и
+  пишет его в RTC, плюс смещение пояса), `SYS_FILE_STAT_EX` (321: размер, режим,
+  uid, gid, atime/mtime/ctime). Обёртки `pc_time_get`, `pc_time_set`,
+  `pc_file_stat_ex`.
+- Hosted libc: `time()`, `gettimeofday()`, новый `clock_gettime()`
+  (`CLOCK_REALTIME`/`CLOCK_MONOTONIC`) читают календарное время; `localtime()` и
+  `mktime()` учитывают пояс ядра (без летнего времени); `stat()` отдаёт
+  `st_mode`, `st_uid`, `st_gid` и времена файлов.
+- ext2 записывает atime/ctime/mtime при создании, записи, дозаписи и смене
+  прав, время удаления — в `dtime`; tmpfs хранит времена своих узлов.
+- Тест `tests/civil_test.c` (`make test-civil`): сверка с `gmtime_r` хоста на
+  десятках тысяч дат, високосные годы (2000, 2100), граница 2038, разбор RTC во
+  всех режимах и битые значения.
+
+### Железо: ввод, USB, питание (`src/drivers/`, `src/kernel/smp/`)
+- Новый драйвер I2C-HID тачпада (ELAN, Intel LPSS) с прерываниями в IDT.
+- `cpufreq.c`: управление частотой процессора, HWP и EIST.
+- xHCI: глобальная блокировка контроллера, таймауты по TSC вместо счётчика
+  (частота из CPUID 0x15), восстановление зависшей конечной точки USB-мыши
+  (Reset Endpoint + Set TR Dequeue). Исправляет лаги и пропадание мыши на
+  bare metal (i5-1235U).
+- Клавиатура: буферы обычных и специальных клавиш под IRQ-safe спинлоком.
+
+### Wi-Fi AR9285 (порт ath9k, `src/drivers/net/ath9k/`)
+- Аппаратный слой: регистры, initvals (`mk/gen_ath9k.py`), чтение EEPROM,
+  `ath9k_hw.c`, spur mitigation, тестовые хуки чтения/записи.
+- 802.11: конвертация data-кадров (`src/net/802.11/data.c`), RSSI в `wifi.c`.
+- Тест `tests/ath9k_test.c`.
+
+### Графика (`src/userspace/window_manager.c`)
+- Оконный менеджер использует композитор: создание, поднятие, обновление и
+  уничтожение окон проходят через `compositor_window_*`; окна, которыми уже
+  занимается композитор, не получают лишних перерисовок.
+
+### Сборка и инструменты
+- `purec.py`: живой вывод по стадиям сборки; `db/builds.db` пополняется при каждой
+  линковке ядра.
+- `make test` дополнен: `test-vfs-perm`, `test-install-accounts`, `test-accounts`,
+  `test-hdrbg`, `test-ext2-meta`, `test-devfs`, `test-procfs`, `test-sysfs`,
+  `test-tmpfs`, `test-vfs-mount`, `test-vfs-alias`, `test-format`.
+
+### Известные ограничения
+- Права на не-ext2 файловых системах живут только в памяти; бит `x` и обход
+  каталогов пока не проверяются.
+- Сквозная установка с аккаунтами и вход под обычным пользователем проверены
+  по частям (хост-тесты, загрузка в QEMU), полный прогон на VirtualBox и bare
+  metal ещё впереди.
+- Десктопные часы (Rust, `desk_datetime`) пока живут в `/purec/datetime.cfg` и не
+  читают время ядра: нужен переход на `SYS_TIME_GET`/`SYS_TIME_SET`.
+- Открыто: z-order окон «Мониторинг» и Device Manager, пропадающая рамка в
+  установщике, паника Limine на первом пункте установленной системы,
+  дублирование символа клавиатуры в консоли.
+
 ## V1.2.27 — Lua 5.4 REPL: порт, hosted libc, эхо ввода, Портирували MicroPython
 
 ### kernel.map и Build UUID (`src/kernel/Makefile`, `linker-limine.ld`, `mk/toolchain.mk`)

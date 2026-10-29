@@ -2,8 +2,7 @@
 // Bit-level + CVTTSD2SI/CVTSI2SD/DIVSD/SQRTSD only: no libm calls, so it
 // links under -ffreestanding. Userspace MAY use SSE (kernel keeps FPU
 // state per thread); -mgeneral-regs-only targets must not link this.
-// pow is integer-exact + x^0.5 via sqrt; general fractional pow is NaN
-// (documented v1 limitation, full soft-fp later).
+// Transcendental functions, sqrt and pow live in libm.c.
 
 #include "include/hosted/math.h"
 #include <stdbool.h>
@@ -70,20 +69,6 @@ double ldexp(double value, int exponent) {
     return value;
 }
 
-static double math_nan(void) {
-    uint64_t b = 0x7FF8000000000000ULL;
-    double d = 0;
-    memcpy(&d, &b, sizeof(d));
-    return d;
-}
-
-static double math_inf(int neg) {
-    uint64_t b = neg ? 0xFFF0000000000000ULL : 0x7FF0000000000000ULL;
-    double d = 0;
-    memcpy(&d, &b, sizeof(d));
-    return d;
-}
-
 static bool math_is_nan(double x) {
     uint64_t b = 0;
     memcpy(&b, &x, sizeof(b));
@@ -102,7 +87,10 @@ double trunc(double x) {
     if (x >= 9.223372036854776e18 || x <= -9.223372036854776e18)
         return x;
     int64_t i = (int64_t)x;
-    return (double)i;
+    double t = (double)i;
+    if (t == 0.0 && x < 0.0)
+        return -0.0;
+    return t;
 }
 
 double floor(double x) {
@@ -123,15 +111,6 @@ double ceil(double x) {
     if (x >= 9.223372036854776e18 || x <= -9.223372036854776e18)
         return x;
     return -floor(-x);
-}
-
-double fmod(double a, double b) {
-    if (math_is_nan(a) || math_is_nan(b) || math_is_inf(a) || b == 0.0)
-        return math_nan();
-    if (math_is_inf(b))
-        return a;
-    double q = trunc(a / b);
-    return a - q * b;
 }
 
 double modf(double x, double *whole) {
@@ -174,36 +153,4 @@ double frexp(double x, int *exp) {
     b = (b & 0x800FFFFFFFFFFFFFULL) | (0x3FEULL << 52);
     memcpy(&x, &b, sizeof(x));
     return x;
-}
-
-double sqrt(double x) {
-    return __builtin_sqrt(x);
-}
-
-double pow(double base, double expn) {
-    if (expn == 2.0)
-        return base * base;
-    if (expn == 0.0)
-        return 1.0;
-    if (base == 0.0)
-        return (expn > 0.0) ? 0.0 : math_inf(0);
-    if (expn == 0.5 && base >= 0.0)
-        return __builtin_sqrt(base);
-    if (expn == trunc(expn) && expn >= -64.0 && expn <= 64.0) {
-        int n = (int)expn;
-        int neg = 0;
-        double r = 1.0;
-        if (n < 0) {
-            neg = 1;
-            n = -n;
-        }
-        while (n) {
-            if (n & 1)
-                r *= base;
-            base *= base;
-            n >>= 1;
-        }
-        return neg ? 1.0 / r : r;
-    }
-    return math_nan();
 }

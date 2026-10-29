@@ -15,6 +15,7 @@
 #include "../drivers/mouse/ps2_mouse.h"
 #include "../drivers/mouse/usb_mouse.h"
 #include "../drivers/interrupts/timer.h"
+#include "../arch/x86_64/idt/include/idt.h"
 #include "../drivers/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/diagnostics/boot_diag.h"
@@ -567,6 +568,7 @@ void userspace_input_thread(void *arg){
     (void)arg;
     klog(KLOG_INFO, "sched: input thread started (mouse polling + desktop)");
     for(;;){
+        idt_check_interrupt_rates();
         ps2_mouse_poll();
         block_device_poll_usb_hotplug();
         usb_mouse_poll();
@@ -649,7 +651,7 @@ void userspace_log_thread(void *arg){
         if(amount > remaining) amount = (uint32_t)remaining;
         if(amount == 0){
             klogf(KLOG_WARN,
-                  "klog-disk: file reached FAT32 limit bytes=%llu path=%s",
+                  "klog-disk: file reached size limit bytes=%llu path=%s",
                   file_size, PERSISTENT_LOG_PATH);
             scheduler_exit();
             return;

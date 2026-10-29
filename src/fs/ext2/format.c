@@ -198,9 +198,9 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors)
             uint8_t *ino2 = blk + 128;
             ext2_write_u16(ino2 + 0, 0x41ED);
             ext2_write_u32(ino2 + 4, 1024);
-            ext2_write_u32(ino2 + 28, 1);
+            ext2_write_u32(ino2 + 28, 2);
             ext2_write_u32(ino2 + 40, root_data_block);
-            ext2_write_u16(ino2 + 24, 1);
+            ext2_write_u16(ino2 + 26, 2);
             uint32_t lba = part_lba + (itb0 + b) * 2;
             if (!block_device_write_sectors(lba, blk, 2))
                 return -1;

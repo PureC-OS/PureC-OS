@@ -7,10 +7,6 @@ FALLBACK := $(KERNEL_DIR)/kernel-fallback.elf
 KERNEL_MAP := $(KERNEL_DIR)/kernel.map
 KERNEL_LD_MAP := $(KERNEL_DIR)/kernel-limine.ld.map
 LINKER_SCRIPT := $(ROOT_DIR)/linker-limine.ld
-CRYPT_DIR := $(ROOT_DIR)/libxcrypt
-CRYPT_REPO ?= https://github.com/PureC-OS/libxcrypt.git
-CRYPT_SOURCES := $(CRYPT_DIR)/src/sha512.c $(CRYPT_DIR)/src/crypt_sha512.c
-CRYPT_OBJECTS := $(OBJ_DIR)/libxcrypt/sha512.o $(OBJ_DIR)/libxcrypt/crypt_sha512.o
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
 ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/src/uacpi_glue.c acpi/src/uacpi_heap.c acpi/src/acpi_ec.c acpi/src/acpi_battery.c acpi/src/acpi_sensors.c \
@@ -45,12 +41,17 @@ C_SOURCES := \
 	kernel/smp/cpu.c \
 	kernel/smp/smp.c \
 	kernel/smp/lapic.c \
+	kernel/smp/cpufreq.c \
 	kernel/smp/selftest.c \
 	kernel/sync/mutex.c \
 	kernel/process/process.c \
 	kernel/process/program_alias.c \
 	kernel/process/elf.c \
 	kernel/module/kmod_so.c \
+	kernel/random/krandom.c \
+	kernel/time/civil.c \
+	kernel/time/rtc.c \
+	kernel/time/wallclock.c \
 	kernel/ipc/ipc.c \
 	mm/pmm.c \
 	mm/vmm.c \
@@ -74,10 +75,12 @@ C_SOURCES := \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
 	gfx/compositor.c \
+	gfx/blit.c \
 	drivers/display/vbe.c \
 	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
+	drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \
@@ -86,22 +89,27 @@ C_SOURCES := \
 	kernel/diagnostics/panic_qr.c \
 	kernel/diagnostics/panic.c \
 	drivers/input/keyboard.c \
+	drivers/input/hid_keymap.c \
 	drivers/pci/pci.c \
 	drivers/net/e1000/e1000_82540em.c \
 	drivers/net/82543gc/e1000_82543gc.c \
 	drivers/net/pcnet/pcnet_am79c970a.c \
 	net/wifi/wifi.c \
 	net/802.11/assoc.c \
+	net/802.11/data.c \
 	net/802.11/b/b_rates.c \
 	net/802.11/b/b_chan.c \
 	net/802.11/b/b_plcp.c \
 	net/802.11/b/b_mgmt.c \
 	drivers/net/ath9k/ar9285.c \
+	drivers/net/ath9k/ath9k_hw.c \
+	drivers/net/ath9k/ath9k_eeprom.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \
 	net/link/arp.c \
 	net/network/ipv4.c \
 	net/transport/udp.c \
+	net/transport/tcp.c \
 	net/name/dns.c \
 	net/config/dhcp.c \
 	net/diagnostics/icmp.c \
@@ -114,16 +122,28 @@ C_SOURCES := \
 	drivers/storage/storage_probe.c \
 	drivers/usb/xhci.c \
 	drivers/usb/ehci.c \
-	fs/fat/fat32.c \
+	fs/install.c \
 	fs/ext2/block.c \
 	fs/ext2/super.c \
 	fs/ext2/inode.c \
 	fs/ext2/dir.c \
 	fs/ext2/file.c \
 	fs/ext2/format.c \
+	fs/ext2/meta.c \
 	fs/ext2/ext2.c \
 	fs/ext2/debug.c \
 	fs/vfs.c \
+	fs/vfs_path.c \
+	fs/vfs_alias.c \
+	fs/vfs_perm.c \
+	fs/install_accounts.c \
+	fs/vfs_mount.c \
+	fs/vfs_backends.c \
+	fs/devfs.c \
+	fs/procfs.c \
+	fs/sysfs.c \
+	fs/tmpfs.c \
+	lib/format.c \
 	fs/initramfs.c \
 	userspace/display.c \
 	userspace/display_mode.c \
@@ -160,20 +180,14 @@ ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
 GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(CRYPT_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
 
 BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
-.PHONY: all crypt-fetch acpi-fetch force
-all: crypt-fetch acpi-fetch $(TARGET)
+.PHONY: all acpi-fetch force
+all: acpi-fetch $(TARGET)
 	@if [ ! -f $(FALLBACK) ]; then cp $(TARGET) $(FALLBACK); fi
-
-crypt-fetch:
-	@if [ ! -f $(CRYPT_DIR)/src/sha512.c ]; then \
-		echo "libxcrypt not found, cloning $(CRYPT_REPO)..."; \
-		git clone $(CRYPT_REPO) $(CRYPT_DIR); \
-	fi
 
 acpi-fetch:
 	@if [ ! -f $(ACPI_DIR)/src/acpi.c ]; then \
@@ -181,7 +195,7 @@ acpi-fetch:
 		git clone $(ACPI_REPO) $(ACPI_DIR); \
 	fi
 
--include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(CRYPT_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d) $(GEN_STAMP_OBJ:.o=.d)
+-include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d) $(GEN_STAMP_OBJ:.o=.d)
 
 $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -205,10 +219,6 @@ $(GEN_STAMP_OBJ): $(GEN_STAMP)
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
-
-$(OBJ_DIR)/libxcrypt/%.o: $(CRYPT_DIR)/src/%.c
-	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/acpi/%.o: $(ACPI_DIR)/%.c
 	@mkdir -p $(@D)
