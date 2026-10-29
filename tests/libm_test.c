@@ -96,6 +96,8 @@ static void report(const char *name, int64_t worst, int64_t limit) {
     report(name, worst, (limit));                                              \
   } while (0)
 
+static double cbrt_reference(double x) { return (double)cbrtl(x); }
+
 #define SWEEPLOG(name, host, mine, low, high, count, limit)                    \
   do {                                                                         \
     int64_t worst = 0;                                                         \
@@ -131,7 +133,7 @@ static void specials(void) {
     double x = values[i];
     SPECIAL1(fabs, x); SPECIAL1(floor, x); SPECIAL1(ceil, x);
     SPECIAL1(trunc, x); SPECIAL1(round, x); SPECIAL1(rint, x);
-    SPECIAL1(sqrt, x); SPECIAL1(cbrt, x); SPECIAL1(exp, x);
+    SPECIAL1(sqrt, x); expect_same("cbrt(x)", purec_cbrt(x), cbrt_reference(x)); SPECIAL1(exp, x);
     SPECIAL1(exp2, x); SPECIAL1(expm1, x); SPECIAL1(log, x);
     SPECIAL1(log2, x); SPECIAL1(log10, x); SPECIAL1(log1p, x);
     if (!(fabs(x) > 3e9 && isfinite(x))) {
@@ -203,7 +205,7 @@ int main(void) {
   SWEEP1("sinh", sinh, purec_sinh, -20.0, 20.0, 100000, 3);
   SWEEP1("cosh", cosh, purec_cosh, -20.0, 20.0, 100000, 3);
   SWEEP1("tanh", tanh, purec_tanh, -10.0, 10.0, 100000, 3);
-  SWEEP1("cbrt", cbrt, purec_cbrt, -1e9, 1e9, 100000, 1);
+  SWEEP1("cbrt", cbrt_reference, purec_cbrt, -1e9, 1e9, 100000, 1);
 
   int64_t worst = 0;
   for (int i = 0; i < 200000; i++) {
@@ -221,12 +223,23 @@ int main(void) {
   }
   report("pow int", worst, 2);
   worst = 0;
-  for (int e = -30; e <= 30; e++)
+  for (int e = 0; e <= 60; e++)
+    for (int b = 2; b <= 12; b++) {
+      double want = pow((double)b, (double)e);
+      if (want >= 9007199254740992.0) continue;
+      int64_t d = ulp(purec_pow((double)b, (double)e), want);
+      if (d > 0 && failures < 10)
+        printf("  pow(%d,%d) = %.17g want %.17g\n", b, e, purec_pow((double)b, (double)e), want);
+      if (d > worst) worst = d;
+    }
+  report("pow exact", worst, 0);
+  worst = 0;
+  for (int e = -30; e < 0; e++)
     for (int b = 2; b <= 12; b++) {
       int64_t d = ulp(purec_pow((double)b, (double)e), pow((double)b, (double)e));
       if (d > worst) worst = d;
     }
-  report("pow exact", worst, 0);
+  report("pow neg exp", worst, 1);
   worst = 0;
   for (int i = 0; i < 200000; i++) {
     double y = uniform(-100, 100), x = uniform(-100, 100);

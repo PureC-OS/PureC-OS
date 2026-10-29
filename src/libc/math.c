@@ -69,13 +69,6 @@ double ldexp(double value, int exponent) {
     return value;
 }
 
-static double math_nan(void) {
-    uint64_t b = 0x7FF8000000000000ULL;
-    double d = 0;
-    memcpy(&d, &b, sizeof(d));
-    return d;
-}
-
 static bool math_is_nan(double x) {
     uint64_t b = 0;
     memcpy(&b, &x, sizeof(b));

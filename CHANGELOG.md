@@ -2,6 +2,29 @@
 
 ## V1.2.28 — Права доступа и аккаунты, новый установщик, драйвер RNG, ext2 без заглушек, VFS на таблице монтирования, драйверы железа
 
+## libm: настоящая математика для портов
+
+### Математика (`src/libc/libm.c`, `src/libc/math.c`, `include/hosted/math.h`)
+- Раньше `sin`, `cos`, `log`, `exp` были только объявлены, а дробная `pow`
+  возвращала NaN. Теперь в libc полный набор: `sin cos tan asin acos atan atan2
+  sinh cosh tanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot`,
+  `round rint nearbyint lround llround lrint llrint copysign fmax fmin fdim
+  scalbn nan` и float-версии всех (`sinf`, `cosf`, `powf`, `atan2f`, ...).
+- Реализация на x87 в расширенной точности (ядро хранит x87/SSE-состояние потока
+  через `fxsave`), `sqrt` на SSE. Точность 1–2 ULP от glibc; степени с точным
+  результатом (`pow(10, 15)`) считаются точно.
+- `sin`/`cos`/`tan`: аргумент приводится по частям π/2 (около 160 бит) до 3,3·10⁹;
+  дальше точность падает (приведение через `FPREM1` с 66-битным π).
+- Исправлены старые функции `math.c`: `fmod` ошибался на экстремальных отношениях
+  и терял знак нуля (теперь через `FPREM`, точно), `trunc(-0.5)` возвращал `+0`.
+- Заголовок: константы `M_PI_2`, `M_SQRT2`, `M_LN2` и др., макросы `isnan`,
+  `isinf`, `isfinite`, `signbit`, `fpclassify`.
+- Тест `tests/libm_test.c` (`make test-libm`): сверка с glibc по ULP на сотнях
+  тысяч значений, особые значения (±0, ±inf, NaN) для всех функций, точные
+  степени, float-версии.
+
+
+
 ### VFS на таблице монтирования (`src/fs/vfs*.c`, `vfs_ops.h`)
 - VFS переписан на таблицу монтирования: `vfs_mount.c` (до 16 точек, `vfs_mount_find`
   по самому длинному префиксу), `vfs_path.c` (нормализация путей), `vfs_ops.h`

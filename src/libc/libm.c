@@ -302,9 +302,11 @@ double sinh(double x) {
     if (is_nan(x) || is_inf(x) || x == 0.0) return x;
     double a = fabs(x);
     double r;
-    if (a > 710.0) {
+    if (a > 709.0) {
         double half = exp(a / 2.0);
-        r = 0.5 * half * half;
+        r = half * (0.5 * half);
+    } else if (a > 22.0) {
+        r = 0.5 * exp(a);
     } else {
         double em1 = expm1(a);
         r = 0.5 * (em1 + em1 / (em1 + 1.0));
@@ -316,9 +318,9 @@ double cosh(double x) {
     if (is_nan(x)) return x;
     double a = fabs(x);
     if (is_inf(a)) return a;
-    if (a > 710.0) {
+    if (a > 709.0) {
         double half = exp(a / 2.0);
-        return 0.5 * half * half;
+        return half * (0.5 * half);
     }
     double e = exp(a);
     return 0.5 * (e + 1.0 / e);
