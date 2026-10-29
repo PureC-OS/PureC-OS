@@ -29,3 +29,5 @@ uint64_t vmm_clone_address_space(uint64_t source);
 bool vmm_handle_cow_fault(uint64_t address_space, uint64_t virtual_address,
                           uint64_t error_code);
 bool vmm_user_address(uint64_t virtual_address);
+bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
+                            uint64_t page_count, uint64_t flags);

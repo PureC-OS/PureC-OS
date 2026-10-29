@@ -3,7 +3,7 @@ include $(ROOT_DIR)/mk/toolchain.mk
 
 OBJ_DIR := $(BIN_DIR)/obj/libc
 LIB_DIR := $(BIN_DIR)/lib
-OBJECTS := $(OBJ_DIR)/runtime.o $(OBJ_DIR)/stdlib.o $(OBJ_DIR)/string.o $(OBJ_DIR)/ctype.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/scanf.o $(OBJ_DIR)/unistd.o $(OBJ_DIR)/time.o $(OBJ_DIR)/setjmp.o $(OBJ_DIR)/dlfcn.o $(OBJ_DIR)/math.o $(OBJ_DIR)/libm.o $(OBJ_DIR)/signal.o $(OBJ_DIR)/locale.o
+OBJECTS := $(OBJ_DIR)/runtime.o $(OBJ_DIR)/stdlib.o $(OBJ_DIR)/string.o $(OBJ_DIR)/ctype.o $(OBJ_DIR)/stdio.o $(OBJ_DIR)/scanf.o $(OBJ_DIR)/unistd.o $(OBJ_DIR)/time.o $(OBJ_DIR)/setjmp.o $(OBJ_DIR)/dlfcn.o $(OBJ_DIR)/math.o $(OBJ_DIR)/libm.o $(OBJ_DIR)/signal.o $(OBJ_DIR)/locale.o $(OBJ_DIR)/process.o
 SO_OBJ_DIR := $(OBJ_DIR)/pic
 SO_OBJECTS := $(OBJECTS:$(OBJ_DIR)/%.o=$(SO_OBJ_DIR)/%.o)
 TARGET := $(LIB_DIR)/libpurec.a

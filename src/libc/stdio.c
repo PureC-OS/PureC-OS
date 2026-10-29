@@ -28,6 +28,9 @@ struct file_impl {
     bool line_buffered;
     int pushed;
     bool has_pushed;
+    int kfd;
+    bool kernel;
+    int child_pid;
 };
 
 static struct file_impl std_in_impl;
@@ -47,6 +50,9 @@ static void stdio_init_std(void) {
     memset(&std_in_impl, 0, sizeof(std_in_impl));
     memset(&std_out_impl, 0, sizeof(std_out_impl));
     memset(&std_err_impl, 0, sizeof(std_err_impl));
+    std_in_impl.kfd = -1;
+    std_out_impl.kfd = -1;
+    std_err_impl.kfd = -1;
     std_in_impl.fd = 0;
     std_in_impl.readable = true;
     std_out_impl.fd = 1;
@@ -68,6 +74,71 @@ static void registry_remove(FILE *stream) {
         if (open_registry[i] == stream) open_registry[i] = 0;
     }
 }
+
+
+static int stdin_console_state = -1;
+
+void stdio_stdin_reset(void) { stdin_console_state = -1; }
+
+static bool stdin_is_console(void) {
+    if (stdin_console_state < 0) {
+        int64_t kind = pc_syscall(SYS_FD_CTL, 0, FD_CTL_KIND, 0);
+        stdin_console_state = (kind < 0 || kind == FD_KIND_CONSOLE) ? 1 : 0;
+    }
+    return stdin_console_state == 1;
+}
+
+int stdio_fd_write_all(int fd, const void *data, size_t size) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    size_t done = 0;
+    while (done < size) {
+        int64_t wrote = pc_syscall(SYS_FD_WRITE, (uint64_t)fd,
+                                   (uint64_t)(uintptr_t)(bytes + done), size - done);
+        if (wrote < 0) { errno = (int)-wrote; return -1; }
+        if (wrote == 0) { errno = EIO; return -1; }
+        done += (size_t)wrote;
+    }
+    return 0;
+}
+
+FILE *stdio_open_fd(int fd, const char *mode) {
+    stdio_init_std();
+    if (fd < 0 || !mode) { errno = EBADF; return 0; }
+    bool read = false, write = false, append = false;
+    for (const char *m = mode; *m; m++) {
+        if (*m == 'r') read = true;
+        else if (*m == 'w') write = true;
+        else if (*m == 'a') { write = true; append = true; }
+        else if (*m == '+') { read = true; write = true; }
+    }
+    if (!read && !write) { errno = EINVAL; return 0; }
+    FILE *stream = (FILE *)malloc(sizeof(FILE));
+    if (!stream) { errno = ENOMEM; return 0; }
+    memset(stream, 0, sizeof(*stream));
+    stream->fd = -1;
+    stream->kfd = fd;
+    stream->kernel = true;
+    stream->readable = read && !write;
+    stream->writable = write;
+    stream->append = append;
+    stream->buffer = (uint8_t *)malloc(BUFSIZ);
+    if (!stream->buffer) { free(stream); errno = ENOMEM; return 0; }
+    stream->capacity = BUFSIZ;
+    registry_add(stream);
+    open_count++;
+    return stream;
+}
+
+int stdio_stream_fd(const FILE *stream) {
+    if (!stream) return -1;
+    if (stream == stdin) return 0;
+    if (stream == stdout) return 1;
+    if (stream == stderr) return 2;
+    return stream->kernel ? stream->kfd : -1;
+}
+
+void stdio_set_child(FILE *stream, int pid) { if (stream) stream->child_pid = pid; }
+int stdio_get_child(const FILE *stream) { return stream ? stream->child_pid : 0; }
 
 // ---- open/close ----
 
@@ -95,6 +166,7 @@ FILE *fopen(const char *path, const char *mode) {
     if (!stream) return 0;
     memset(stream, 0, sizeof(*stream));
     stream->fd = -1;
+    stream->kfd = -1;
     strncpy(stream->path, path, sizeof(stream->path) - 1);
     stream->readable = read;
     stream->writable = write;
@@ -177,9 +249,19 @@ int fflush(FILE *stream) {
     if (stream == stdout || stream == stderr || stream == stdin) {
         // Console streams flush inline on write; drain stdout's line buffer.
         if (stream == stdout && stream->buffer && stream->size) {
-            pc_syscall(SYS_WRITE, (uint64_t)(uintptr_t)stream->buffer, stream->size, 1);
+            stdio_fd_write_all(1, stream->buffer, stream->size);
             stream->size = 0;
         }
+        return 0;
+    }
+    if (stream->kernel) {
+        if (!stream->writable || !stream->buffer || !stream->size) return 0;
+        if (stdio_fd_write_all(stream->kfd, stream->buffer, stream->size) < 0) {
+            stream->error = true;
+            return EOF;
+        }
+        stream->size = 0;
+        stream->position = 0;
         return 0;
     }
     if (!stream->writable || !stream->buffer || !stream->size) return 0;
@@ -204,6 +286,9 @@ int fclose(FILE *stream) {
     }
     if (!known) { errno = EBADF; return EOF; }
     int result = fflush(stream);
+    if (stream->kernel && stream->kfd >= 0) {
+        if (pc_syscall(SYS_FILE_CLOSE, (uint64_t)stream->kfd, 0, 0) < 0 && result == 0) result = EOF;
+    }
     if (stream->fd >= 0) pc_file_close(stream->fd);
     free(stream->buffer);
     registry_remove(stream);
@@ -241,6 +326,7 @@ int fseek(FILE *stream, long offset, int origin) {
     if (!stream) { errno = EINVAL; return -1; }
     if (stream == stdin) { errno = ESPIPE; return -1; }
     if (stream == stdout || stream == stderr) { errno = ESPIPE; return -1; }
+    if (stream->kernel) { errno = ESPIPE; return -1; }
     if (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END) {
         errno = EINVAL;
         return -1;
@@ -279,6 +365,23 @@ static int file_getc_buffered(FILE *stream) {
         return stream->pushed;
     }
     if (stream->position >= stream->size) {
+        if (stream->kernel && stream->readable && stream->kfd >= 0) {
+            if (!stream->buffer) {
+                stream->buffer = (uint8_t *)malloc(BUFSIZ);
+                if (!stream->buffer) { stream->error = true; return EOF; }
+                stream->capacity = BUFSIZ;
+            }
+            int64_t got = pc_syscall(SYS_FD_READ, (uint64_t)stream->kfd,
+                                     (uint64_t)(uintptr_t)stream->buffer, stream->capacity);
+            if (got <= 0) {
+                if (got < 0) { stream->error = true; errno = (int)-got; }
+                stream->eof = true;
+                return EOF;
+            }
+            stream->size = (size_t)got;
+            stream->position = 0;
+            return stream->buffer[stream->position++];
+        }
         stream->eof = true;
         return EOF;
     }
@@ -288,8 +391,28 @@ static int file_getc_buffered(FILE *stream) {
 int fgetc(FILE *stream) {
     if (!stream) { errno = EINVAL; return EOF; }
     if (stream == stdin) {
-        int32_t c = (int32_t)pc_syscall(SYS_GETCHAR, 0, 0, 0); // blocking
-        return c < 0 ? EOF : c & 0xFF;
+        if (stdin_is_console()) {
+            int32_t c = (int32_t)pc_syscall(SYS_GETCHAR, 0, 0, 0); // blocking
+            return c < 0 ? EOF : c & 0xFF;
+        }
+        stdio_init_std();
+        if (stream->has_pushed) { stream->has_pushed = false; return stream->pushed; }
+        if (stream->position >= stream->size) {
+            if (!stream->buffer) {
+                stream->buffer = (uint8_t *)malloc(BUFSIZ);
+                if (!stream->buffer) { stream->error = true; return EOF; }
+                stream->capacity = BUFSIZ;
+            }
+            int64_t got = pc_syscall(SYS_FD_READ, 0, (uint64_t)(uintptr_t)stream->buffer, stream->capacity);
+            if (got <= 0) {
+                if (got < 0) { stream->error = true; errno = (int)-got; }
+                stream->eof = true;
+                return EOF;
+            }
+            stream->size = (size_t)got;
+            stream->position = 0;
+        }
+        return stream->buffer[stream->position++];
     }
     if (!stream->readable) { stream->error = true; errno = EBADF; return EOF; }
     return file_getc_buffered(stream);
@@ -330,7 +453,7 @@ int fputc(int value, FILE *stream) {
     if (stream == stdout || stream == stderr) {
         uint8_t c = (uint8_t)value;
         if (stream == stderr) {
-            pc_syscall(1, (uint64_t)(uintptr_t)&c, 1, 1);
+            stdio_fd_write_all(2, &c, 1);
             return value & 0xFF;
         }
         // stdout: line buffered.
@@ -346,6 +469,12 @@ int fputc(int value, FILE *stream) {
         return value & 0xFF;
     }
     if (!stream->writable) { stream->error = true; errno = EBADF; return EOF; }
+    if (stream->kernel) {
+        if (stream->size >= stream->capacity && fflush(stream) != 0) return EOF;
+        stream->buffer[stream->size++] = (uint8_t)value;
+        stream->position = stream->size;
+        return value & 0xFF;
+    }
     if (stream->append) stream->position = stream->size;
     if (!file_ensure_capacity(stream, 1)) return EOF;
     if (stream->position >= stream->size) stream->size = stream->position + 1;

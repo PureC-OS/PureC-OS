@@ -7,6 +7,10 @@
 #define S_IFMT 0170000
 #define S_IFDIR 0040000
 #define S_IFREG 0100000
+#define S_IFCHR 0020000
+#define S_IFIFO 0010000
+#define S_ISCHR(mode) (((mode) & S_IFMT) == S_IFCHR)
+#define S_ISFIFO(mode) (((mode) & S_IFMT) == S_IFIFO)
 #define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
 #define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
 

@@ -19,26 +19,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define UNIX_FD_MAX 32
-
-static FILE *fd_slots[UNIX_FD_MAX];
-
-static int fd_allocate(FILE *stream) {
-    for (int fd = 3; fd < UNIX_FD_MAX; fd++) {
-        if (!fd_slots[fd]) { fd_slots[fd] = stream; return fd; }
-    }
-    errno = EMFILE;
-    return -1;
-}
-
-static FILE *fd_lookup(int fd) {
-    if (fd < 3 || fd >= UNIX_FD_MAX || !fd_slots[fd]) {
-        errno = EBADF;
-        return 0;
-    }
-    return fd_slots[fd];
-}
-
 // FILE layout (path field) is internal to stdio.c; fstat reaches it
 // through this accessor to avoid a header cycle.
 const char *stdio_stream_path(const FILE *stream);
@@ -55,44 +35,22 @@ static const char *resolve_user_path(const char *path, char *buf, size_t cap) {
     return buf;
 }
 
+static int syscall_result(int64_t result) {
+    if (result < 0) {
+        errno = (int)-result;
+        return -1;
+    }
+    return (int)result;
+}
+
+int stdio_stream_fd(const FILE *stream);
+FILE *stdio_open_fd(int fd, const char *mode);
+void stdio_stdin_reset(void);
+
 int open(const char *path, int flags, ...) {
     if (!path) { errno = EINVAL; return -1; }
-    char abs[512];
-    path = resolve_user_path(path, abs, sizeof(abs));
-    bool create = (flags & O_CREAT) != 0;
-    bool exclusive = (flags & O_EXCL) != 0;
-    bool truncate = (flags & O_TRUNC) != 0;
-    bool append = (flags & O_APPEND) != 0;
-    int access_mode = flags & O_ACCMODE;
-
-    int32_t probe = pc_file_open(path);
-    bool exists = probe >= 0;
-    if (exists) pc_file_close(probe);
-    if (exists && create && exclusive) { errno = EEXIST; return -1; }
-    if (!exists) {
-        if (!create) { errno = ENOENT; return -1; }
-        if (pc_file_create(path) < 0) { errno = ENOENT; return -1; }
-        exists = true;
-    }
-    if (exists && truncate && access_mode == O_RDONLY) {
-        // POSIX allows O_TRUNC|O_RDONLY (truncate without write); emulate.
-        static char empty = 0;
-        if (pc_file_write(path, &empty, 0) < 0) { errno = EIO; return -1; }
-    }
-
-    const char *mode = "r";
-    // NOTE: plain O_WRONLY without O_TRUNC maps to "r+" (reads stay
-    // technically possible) to avoid ever truncating content that POSIX
-    // says must survive. TCC only uses O_WRONLY with O_CREAT|O_TRUNC.
-    if (access_mode == O_WRONLY) mode = append ? "a" : (truncate ? "w" : "r+");
-    else if (access_mode == O_RDWR) mode = append ? "a+" : (truncate ? "w+" : "r+");
-    else mode = "r";
-
-    FILE *stream = fopen(path, mode);
-    if (!stream) return -1; // errno already set by fopen
-    int fd = fd_allocate(stream);
-    if (fd < 0) { fclose(stream); return -1; }
-    return fd;
+    return syscall_result(pc_syscall(SYS_FD_OPEN, (uint64_t)(uintptr_t)path,
+                                     (uint64_t)(uint32_t)flags, 0));
 }
 
 int creat(const char *path, int mode) {
@@ -101,64 +59,89 @@ int creat(const char *path, int mode) {
 }
 
 ssize_t read(int fd, void *buffer, size_t count) {
-    if (!buffer) { errno = EINVAL; return -1; }
-    if (fd == STDIN_FILENO) {
+    if (!buffer && count) { errno = EINVAL; return -1; }
+    if (!count) return 0;
+    int64_t result = pc_syscall(SYS_FD_READ, (uint64_t)fd, (uint64_t)(uintptr_t)buffer, count);
+    if (result == -KERR_CONSOLE) {
         uint8_t *out = (uint8_t *)buffer;
         size_t done = 0;
         while (done < count) {
             int c = fgetc(stdin);
             if (c == EOF) break;
             out[done++] = (uint8_t)c;
+            if (c == '\n') break;
         }
         return (ssize_t)done;
     }
-    if (fd == STDOUT_FILENO || fd == STDERR_FILENO) { errno = EBADF; return -1; }
-    FILE *stream = fd_lookup(fd);
-    if (!stream) return -1;
-    return (ssize_t)fread(buffer, 1, count, stream);
+    return (ssize_t)syscall_result(result);
 }
 
 ssize_t write(int fd, const void *buffer, size_t count) {
-    if (!buffer) { errno = EINVAL; return -1; }
-    if (fd == STDOUT_FILENO || fd == STDERR_FILENO) {
-        if (!count) return 0;
-        int64_t result = pc_syscall(SYS_WRITE, (uint64_t)(uintptr_t)buffer, count, 1);
-        return result < 0 ? -1 : (ssize_t)result;
-    }
-    if (fd == STDIN_FILENO) { errno = EBADF; return -1; }
-    FILE *stream = fd_lookup(fd);
-    if (!stream) return -1;
-    return (ssize_t)fwrite(buffer, 1, count, stream);
+    if (!buffer && count) { errno = EINVAL; return -1; }
+    if (!count) return 0;
+    return (ssize_t)syscall_result(pc_syscall(SYS_FD_WRITE, (uint64_t)fd,
+                                              (uint64_t)(uintptr_t)buffer, count));
 }
 
 int close(int fd) {
-    if (fd < 3) return 0; // console streams stay open
-    FILE *stream = fd_lookup(fd);
-    if (!stream) return -1;
-    fd_slots[fd] = 0;
-    return fclose(stream);
+    int result = syscall_result(pc_syscall(SYS_FILE_CLOSE, (uint64_t)fd, 0, 0) < 0 ? -KERR_BADF : 0);
+    if (result == 0 && fd == 0) stdio_stdin_reset();
+    return result;
 }
 
-// Shares the FILE* owned by the fd slot (same model as the kernel fd
-// table pointing at one VFS handle). Close exactly once, through either
-// handle: fclose() on an already-removed stream fails safely.
 FILE *fdopen(int fd, const char *mode) {
-    (void)mode;
-    if (fd < 3) {
-        errno = EBADF;
-        return 0;
-    }
-    FILE *stream = fd_lookup(fd);
-    if (!stream) return 0;
-    return stream;
+    return stdio_open_fd(fd, mode ? mode : "r");
 }
 
 off_t lseek(int fd, off_t offset, int origin) {
-    if (fd < 3) { errno = ESPIPE; return -1; }
-    FILE *stream = fd_lookup(fd);
-    if (!stream) return -1;
-    if (fseek(stream, (long)offset, origin) != 0) return -1;
-    return (off_t)ftell(stream);
+    int64_t result = pc_syscall(SYS_FILE_SEEK, (uint64_t)fd, (uint64_t)(int64_t)offset,
+                                (uint64_t)(uint32_t)origin);
+    if (result < 0) { errno = ESPIPE; return -1; }
+    return (off_t)result;
+}
+
+int dup(int fd) {
+    return syscall_result(pc_syscall(SYS_DUP, (uint64_t)fd, 0, 0));
+}
+
+int dup2(int old_fd, int new_fd) {
+    int result = syscall_result(pc_syscall(SYS_DUP2, (uint64_t)old_fd, (uint64_t)new_fd, 0));
+    if (result == 0 || new_fd == 0) stdio_stdin_reset();
+    return result;
+}
+
+int pipe(int fds[2]) {
+    if (!fds) { errno = EFAULT; return -1; }
+    return syscall_result(pc_syscall(SYS_PIPE, (uint64_t)(uintptr_t)fds, 0, 0));
+}
+
+int pipe2(int fds[2], int flags) {
+    if (!fds) { errno = EFAULT; return -1; }
+    return syscall_result(pc_syscall(SYS_PIPE, (uint64_t)(uintptr_t)fds,
+                                     (uint64_t)(uint32_t)flags, 0));
+}
+
+int fcntl(int fd, int command, ...) {
+    va_list arguments;
+    va_start(arguments, command);
+    long argument = va_arg(arguments, long);
+    va_end(arguments);
+    switch (command) {
+    case F_GETFD:
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_GETFD, 0));
+    case F_SETFD:
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_SETFD, (uint64_t)argument));
+    case F_DUPFD:
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_DUPFD, (uint64_t)argument));
+    case F_DUPFD_CLOEXEC:
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_DUPFD_CLOEXEC, (uint64_t)argument));
+    case F_GETFL:
+    case F_SETFL:
+        return syscall_result(pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_GETFD, 0)) < 0 ? -1 : 0;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
 }
 
 static void fill_stat(struct stat *info, uint64_t size, bool is_dir) {
@@ -252,14 +235,9 @@ int closedir(DIR *directory) {
 }
 
 int fileno(FILE *stream) {
-    if (stream == stdin) return 0;
-    if (stream == stdout) return 1;
-    if (stream == stderr) return 2;
-    for (int fd = 3; fd < UNIX_FD_MAX; fd++) {
-        if (fd_slots[fd] == stream) return fd;
-    }
-    errno = EBADF;
-    return -1;
+    int fd = stdio_stream_fd(stream);
+    if (fd < 0) errno = EBADF;
+    return fd;
 }
 
 int mkdir(const char *path, unsigned int mode) {
@@ -273,14 +251,18 @@ int mkdir(const char *path, unsigned int mode) {
 
 int fstat(int fd, struct stat *info) {
     if (!info) { errno = EINVAL; return -1; }
-    if (fd < 3) {
-        memset(info, 0, sizeof(*info));
-        info->st_mode = S_IFREG;
-        return 0;
+    int64_t kind = pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_KIND, 0);
+    if (kind < 0) { errno = EBADF; return -1; }
+    memset(info, 0, sizeof(*info));
+    if (kind == FD_KIND_CONSOLE) { info->st_mode = S_IFCHR | 0620; return 0; }
+    if (kind == FD_KIND_PIPE) { info->st_mode = S_IFIFO | 0600; return 0; }
+    struct file_stat_info raw;
+    if (pc_syscall(SYS_FD_STAT, (uint64_t)fd, (uint64_t)(uintptr_t)&raw, 0) < 0) {
+        errno = EBADF;
+        return -1;
     }
-    FILE *stream = fd_lookup(fd);
-    if (!stream) return -1;
-    return stat(stdio_stream_path(stream), info);
+    fill_stat(info, raw.size, raw.is_directory != 0);
+    return 0;
 }
 
 int lstat(const char *path, struct stat *info) {
@@ -310,7 +292,10 @@ int access(const char *path, int mode) {
 }
 
 int isatty(int fd) {
-    return fd >= 0 && fd < 3 ? 1 : 0;
+    int64_t kind = pc_syscall(SYS_FD_CTL, (uint64_t)fd, FD_CTL_KIND, 0);
+    if (kind < 0) { errno = EBADF; return 0; }
+    if (kind != FD_KIND_CONSOLE) { errno = ENOTTY; return 0; }
+    return 1;
 }
 
 unsigned int sleep(unsigned int seconds) {
@@ -320,26 +305,15 @@ unsigned int sleep(unsigned int seconds) {
     return 0;
 }
 char *getcwd(char *buffer, size_t capacity) {
-    // No kernel cwd; the shell keeps logical location in $PWD.
-    static char fallback[] = "/";
     if (!buffer || !capacity) { errno = EINVAL; return 0; }
-    char value[128];
-    const char *pwd = fallback;
-    if (pc_getenv("PWD", value, sizeof(value)) >= 0 && value[0]) pwd = value;
-    size_t n = 0;
-    while (pwd[n] && n + 1 < capacity) { buffer[n] = pwd[n]; n++; }
-    if (pwd[n]) { errno = ERANGE; return 0; }
-    buffer[n] = '\0';
+    int64_t result = pc_syscall(SYS_GETCWD, (uint64_t)(uintptr_t)buffer, capacity, 0);
+    if (result < 0) { errno = result == -KERR_INVAL ? ERANGE : (int)-result; return 0; }
     return buffer;
 }
 
-int execvp(const char *file, char *const *argv) {
-    // No fork/exec-search on PureC OS: only absolute module paths via
-    // the process spawner. Used by TCC's cross-driver tool only.
-    (void)file;
-    (void)argv;
-    errno = ENOSYS;
-    return -1;
+int chdir(const char *path) {
+    if (!path) { errno = EINVAL; return -1; }
+    return syscall_result(pc_syscall(SYS_CHDIR, (uint64_t)(uintptr_t)path, 0, 0));
 }
 
 // ---- mmap family: ENOSYS until the executable-memory syscall lands ----
@@ -446,20 +420,3 @@ char *realpath(const char *path, char *resolved) {
     return fresh;
 }
 
-pid_t fork(void) {
-    int32_t pid = pc_fork();
-    if (pid < 0) { errno = EAGAIN; return -1; }
-    return pid;
-}
-
-pid_t getpid(void) { return pc_getpid(); }
-
-pid_t waitpid(pid_t pid, int *status, int options) {
-    int32_t raw = 0;
-    int32_t result = pc_wait(pid, &raw, (options & WNOHANG) != 0);
-    if (result < 0) { errno = ECHILD; return -1; }
-    if (result > 0 && status) *status = (raw & 0xFF) << 8;
-    return result;
-}
-
-pid_t wait(int *status) { return waitpid(-1, status, 0); }

@@ -518,3 +518,12 @@ bool vmm_handle_cow_fault(uint64_t address_space, uint64_t virtual_address,
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return result;
 }
+
+bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
+                            uint64_t page_count, uint64_t flags) {
+  uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
+  bool result = vmm_map_new_pages_locked(address_space, virtual_address,
+                                         page_count, flags);
+  spin_unlock_irqrestore(&vmm_lock, irq_flags);
+  return result;
+}

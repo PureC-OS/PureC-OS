@@ -41,6 +41,8 @@ FILE *freopen(const char *filename, const char *mode, FILE *stream);
 FILE *tmpfile(void);
 char *tmpnam(char *s);
 FILE *fdopen(int fd, const char *mode);
+FILE *popen(const char *command, const char *type);
+int pclose(FILE *stream);
 int fclose(FILE *stream);
 int fflush(FILE *stream);
 size_t fread(void *buffer, size_t size, size_t count, FILE *stream);
