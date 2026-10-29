@@ -124,6 +124,7 @@
 #define SYS_TIME_GET 319      /* (struct time_info *) */
 #define SYS_TIME_SET 320      /* (unix_seconds, tz_minutes), root only */
 #define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
+#define SYS_FB_BLIT 322       /* (struct fb_blit_request *) */
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
@@ -466,6 +467,18 @@ struct file_stat_info {
   uint64_t size;
   uint32_t is_directory;
   uint32_t reserved;
+};
+
+#define FB_BLIT_KEEP_ALPHA 1u
+
+struct fb_blit_request {
+  uint64_t pixels;
+  uint32_t stride;
+  uint32_t width;
+  uint32_t height;
+  int32_t x;
+  int32_t y;
+  uint32_t flags;
 };
 
 struct time_info {

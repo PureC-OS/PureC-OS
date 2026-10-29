@@ -283,6 +283,19 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
     return (int32_t)pc_syscall(SYS_INSTALL_START_EX, (uint64_t)(uintptr_t)&req, 0, 0);
 }
 
+int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
+                   uint32_t height, int32_t x, int32_t y, uint32_t flags){
+    struct fb_blit_request req={
+        .pixels=(uint64_t)(uintptr_t)pixels,
+        .stride=stride,
+        .width=width,
+        .height=height,
+        .x=x,
+        .y=y,
+        .flags=flags};
+    return (int32_t)pc_syscall(SYS_FB_BLIT,(uint64_t)(uintptr_t)&req,0,0);
+}
+
 int32_t pc_time_get(struct time_info *out){
     return (int32_t)pc_syscall(SYS_TIME_GET,(uint64_t)(uintptr_t)out,0,0);
 }

@@ -16,6 +16,7 @@
 #include "../../fs/install.h"
 #include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
+#include "../../gfx/blit.h"
 #include "../../gfx/compositor.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
@@ -289,6 +290,23 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
     return (int64_t)a2;
+  }
+  case SYS_FB_BLIT: {
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
+      return -1;
+    struct fb_blit_request req =
+        *(const struct fb_blit_request *)(uintptr_t)a1;
+    uint64_t bytes;
+    if (!blit_source_bytes(req.stride, req.width, req.height, &bytes))
+      return -1;
+    if (!readable((const void *)(uintptr_t)req.pixels, bytes))
+      return -1;
+    if (!compositor_blit((uint32_t)process_current_pid(), req.x, req.y,
+                         req.width, req.height,
+                         (const uint32_t *)(uintptr_t)req.pixels, req.stride,
+                         req.flags))
+      return -2;
+    return 0;
   }
   case SYS_TIME_GET: {
     if (!writable((void *)(uintptr_t)a1, sizeof(struct time_info)))

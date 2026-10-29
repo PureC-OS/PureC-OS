@@ -108,6 +108,27 @@ void pg_window_rect(struct pg_window *window, struct pg_rect bounds,
     pc_draw_rect(screen.x,screen.y,screen.width,screen.height,color);
 }
 
+bool pg_window_blit(struct pg_window *window, int32_t x, int32_t y,
+                    uint32_t width, uint32_t height, const uint32_t *pixels,
+                    uint32_t stride){
+    if(!window || !window->open || window->minimized || !pixels
+       || !width || !height || stride<width) return false;
+    int64_t left=x;
+    int64_t top=y;
+    int64_t right=left+(int64_t)width;
+    int64_t bottom=top+(int64_t)height;
+    if(left<0) left=0;
+    if(top<0) top=0;
+    if(right>(int64_t)window->client.width) right=window->client.width;
+    if(bottom>(int64_t)window->client.height) bottom=window->client.height;
+    if(left>=right || top>=bottom) return true;
+    const uint32_t *origin=pixels+(uint64_t)(top-y)*stride+(uint64_t)(left-x);
+    int32_t screen_x=(int32_t)(window->client.x+(uint32_t)left);
+    int32_t screen_y=(int32_t)(window->client.y+(uint32_t)top);
+    return pc_fb_blit(origin,stride,(uint32_t)(right-left),
+                      (uint32_t)(bottom-top),screen_x,screen_y,0)==0;
+}
+
 void pg_window_text(struct pg_window *window, uint32_t x, uint32_t y,
                     const char *text, uint32_t color){
     if(!window || !window->open || window->minimized) return;

@@ -75,6 +75,7 @@ C_SOURCES := \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
 	gfx/compositor.c \
+	gfx/blit.c \
 	drivers/display/vbe.c \
 	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
