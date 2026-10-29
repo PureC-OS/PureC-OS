@@ -431,6 +431,17 @@ void exit(int status) {
     fflush(0);
     pc_exit(status);
 }
+int putenv(char *entry) {
+    if (!entry) return -1;
+    char name[128];
+    size_t length = 0;
+    while (entry[length] && entry[length] != '=') length++;
+    if (!entry[length] || length == 0 || length >= sizeof(name)) return -1;
+    memcpy(name, entry, length);
+    name[length] = '\0';
+    return pc_setenv(name, entry + length + 1) < 0 ? -1 : 0;
+}
+
 double atof(const char *text) { return strtod(text, 0); }
 
 void _exit(int status) { pc_exit(status); for (;;) { } }

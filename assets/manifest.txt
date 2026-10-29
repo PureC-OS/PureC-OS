@@ -67,6 +67,7 @@
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest
 /usr/bin/sdltest /usr/bin/sdltest - 0 bin/programs/sdltest
+/usr/bin/doom /usr/bin/doom - 0 bin/programs/chocolate-doom
 /usr/bin/burn /usr/bin/burn - 0 bin/programs/burn
 /usr/bin/eat /usr/bin/eat - 0 bin/programs/eat
 /usr/bin/tcc /usr/bin/tcc - 0 bin/programs/tcc

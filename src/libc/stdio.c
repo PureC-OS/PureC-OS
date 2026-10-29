@@ -877,6 +877,32 @@ int fprintf(FILE *stream, const char *format, ...) {
     return result;
 }
 
+int vprintf(const char *format, va_list args) {
+    return vfprintf(stdout, format, args);
+}
+
+size_t stdio_stream_peek(FILE *stream, char *out, size_t capacity) {
+    if (!stream || !stream->readable) return 0;
+    if (stream->has_pushed) return 0;
+    if (stream->position >= stream->size) {
+        stream->eof = true;
+        return 0;
+    }
+    size_t available = stream->size - stream->position;
+    if (available > capacity) available = capacity;
+    memcpy(out, stream->buffer + stream->position, available);
+    return available;
+}
+
+void stdio_stream_advance(FILE *stream, size_t count) {
+    if (!stream) return;
+    stream->position += count;
+    if (stream->position >= stream->size) {
+        stream->position = stream->size;
+        stream->eof = true;
+    }
+}
+
 int printf(const char *format, ...) {
     va_list args;
     va_start(args, format);

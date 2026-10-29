@@ -9,7 +9,7 @@ OBJ_DIR := $(BIN_DIR)/obj/doom
 LIB_DIR := $(BIN_DIR)/lib
 PROGRAM_DIR := $(BIN_DIR)/programs
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
-TARGET := $(PROGRAM_DIR)/doom
+TARGET := $(PROGRAM_DIR)/doomgeneric
 
 DOOM_OBJECTS := dummy am_map doomdef doomstat dstrings d_event d_items d_iwad \
 	d_loop d_main d_mode d_net f_finale f_wipe g_game hu_lib hu_stuff info \

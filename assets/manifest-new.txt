@@ -66,6 +66,7 @@
 /bin/program/fputest /bin/program/fputest - 0 bin/programs/fputest
 /bin/program/gltest /bin/program/gltest - 0 bin/programs/gltest
 /bin/program/sdltest /bin/program/sdltest - 0 bin/programs/sdltest
+/bin/program/doom /bin/program/doom - 0 bin/programs/chocolate-doom
 /bin/program/tcc /bin/program/tcc - 0 bin/programs/tcc
 /bin/program/lua /bin/program/lua - 0 bin/programs/lua
 /bin/program/micropython /bin/program/micropython - 0 bin/programs/micropython

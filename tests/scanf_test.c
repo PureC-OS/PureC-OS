@@ -1,7 +1,38 @@
 #include <assert.h>
 #include <string.h>
 
+#include <stddef.h>
+
 int pc_sscanf(const char *input, const char *format, ...);
+
+struct file_impl {
+  const char *data;
+  size_t position;
+  size_t size;
+  int eof;
+};
+typedef struct file_impl FILE;
+
+int pc_fscanf(FILE *stream, const char *format, ...);
+
+size_t stdio_stream_peek(FILE *stream, char *out, size_t capacity) {
+  if (stream->position >= stream->size) {
+    stream->eof = 1;
+    return 0;
+  }
+  size_t available = stream->size - stream->position;
+  if (available > capacity) available = capacity;
+  memcpy(out, stream->data + stream->position, available);
+  return available;
+}
+
+void stdio_stream_advance(FILE *stream, size_t count) {
+  stream->position += count;
+  if (stream->position >= stream->size) {
+    stream->position = stream->size;
+    stream->eof = 1;
+  }
+}
 
 static void test_integers(void) {
   int v = 0;
@@ -54,7 +85,24 @@ static void test_misc(void) {
   assert(pc_sscanf("-1.5e2", "%f", &f) == 1 && f == -150.0f);
 }
 
+static void test_fscanf(void) {
+  static const char text[] = "sfx_volume    8\nplayer_name   Doom Guy\nlast 3\n";
+  FILE f = { text, 0, sizeof(text) - 1, 0 };
+  char name[80], value[100];
+
+  assert(pc_fscanf(&f, "%79s %99[^\n]\n", name, value) == 2);
+  assert(!strcmp(name, "sfx_volume") && !strcmp(value, "8"));
+  assert(!f.eof);
+  assert(pc_fscanf(&f, "%79s %99[^\n]\n", name, value) == 2);
+  assert(!strcmp(name, "player_name") && !strcmp(value, "Doom Guy"));
+  assert(pc_fscanf(&f, "%79s %99[^\n]\n", name, value) == 2);
+  assert(!strcmp(name, "last") && !strcmp(value, "3"));
+  assert(f.eof);
+  assert(pc_fscanf(&f, "%79s", name) == -1);
+}
+
 int main(void) {
+  test_fscanf();
   test_integers();
   test_failures();
   test_strings();

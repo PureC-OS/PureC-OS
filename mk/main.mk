@@ -15,7 +15,7 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doom \
+.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
@@ -178,7 +178,7 @@ test-hid-keymap:
 
 test-scanf:
 	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -Dsscanf=pc_sscanf -Dvsscanf=pc_vsscanf -c src/libc/scanf.c -o $(BIN_DIR)/tests/scanf_pc.o
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -Dsscanf=pc_sscanf -Dvsscanf=pc_vsscanf -Dfscanf=pc_fscanf -Dvfscanf=pc_vfscanf -c src/libc/scanf.c -o $(BIN_DIR)/tests/scanf_pc.o
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -g tests/scanf_test.c $(BIN_DIR)/tests/scanf_pc.o -o $(BIN_DIR)/tests/scanf_test
 	$(BIN_DIR)/tests/scanf_test
 
@@ -293,13 +293,17 @@ programs: libraries notepad
 	$(MAKE) -C src/programs/micropython
 	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
 	$(MAKE) -C src/doom
+	$(MAKE) -C src/chocolate
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 sdl2: libraries
 	$(MAKE) -C src/libsdl2
 
-doom: libraries
+doomgeneric: libraries
 	$(MAKE) -C src/doom
+
+chocolate-doom: sdl2
+	$(MAKE) -C src/chocolate
 
 notepad:
 	@test -f "$(NOTEPAD_DIR)/Makefile" || \
@@ -393,6 +397,8 @@ clean:
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true
 	$(MAKE) -C src/doom        clean 2>/dev/null || true
+	$(MAKE) -C src/chocolate   clean 2>/dev/null || true
+	$(MAKE) -C src/libsdl2_mixer clean 2>/dev/null || true
 	$(MAKE) -C src/programs    clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
 	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true

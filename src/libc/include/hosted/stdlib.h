@@ -32,6 +32,7 @@ void qsort(void *base, size_t count, size_t size,
 int rand(void);
 void srand(unsigned int seed);
 char *getenv(const char *name);
+int putenv(char *entry);
 char *realpath(const char *path, char *resolved);
 int system(const char *cmd);
 void exit(int status);

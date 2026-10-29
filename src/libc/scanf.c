@@ -56,7 +56,7 @@ static bool in_set(const char *set, size_t set_length, bool negate, int c) {
     return found != negate;
 }
 
-int vsscanf(const char *input, const char *format, va_list args_in) {
+static int scan_core(const char *input, const char *format, va_list args_in, size_t *consumed) {
     va_list args;
     va_copy(args, args_in);
     const char *p = input;
@@ -221,13 +221,44 @@ int vsscanf(const char *input, const char *format, va_list args_in) {
 
 done:
     va_end(args);
+    if (consumed) *consumed = (size_t)(p - input);
     return assigned;
+}
+
+int vsscanf(const char *input, const char *format, va_list args) {
+    return scan_core(input, format, args, 0);
 }
 
 int sscanf(const char *input, const char *format, ...) {
     va_list args;
     va_start(args, format);
     int result = vsscanf(input, format, args);
+    va_end(args);
+    return result;
+}
+
+// Streams are fully buffered in memory (see stdio.c), so a scan runs on the
+// next chunk of the buffer; one call can consume at most this many bytes.
+#define SCAN_CHUNK 4096
+
+size_t stdio_stream_peek(FILE *stream, char *out, size_t capacity);
+void stdio_stream_advance(FILE *stream, size_t count);
+
+int vfscanf(FILE *stream, const char *format, va_list args) {
+    char chunk[SCAN_CHUNK + 1];
+    size_t available = stdio_stream_peek(stream, chunk, SCAN_CHUNK);
+    size_t consumed = 0;
+    if (available == 0) return EOF;
+    chunk[available] = '\0';
+    int result = scan_core(chunk, format, args, &consumed);
+    stdio_stream_advance(stream, consumed);
+    return result;
+}
+
+int fscanf(FILE *stream, const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    int result = vfscanf(stream, format, args);
     va_end(args);
     return result;
 }

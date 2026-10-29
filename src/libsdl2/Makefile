@@ -42,7 +42,6 @@ SDL_SOURCES := \
 	$(wildcard $(SDL_DIR)/src/video/*.c) \
 	$(wildcard $(SDL_DIR)/src/video/yuv2rgb/*.c) \
 	$(wildcard $(SDL_DIR)/src/video/purec/*.c)
-SDL_SOURCES := $(filter-out %/SDL_steam_virtual_gamepad.c,$(SDL_SOURCES))
 SDL_OBJECTS := $(SDL_SOURCES:$(SDL_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 SDL_CFLAGS := -D__PUREC__ -fno-strict-aliasing \
