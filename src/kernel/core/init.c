@@ -64,7 +64,6 @@ void init_process_start(void) {
       scheduler_set_qos(t, SCHED_QOS_BACKGROUND);
   }
   klog(KLOG_OK, "sched: init threads created, starting scheduler");
-  smp_selftest_start();
   serial_write_string("[SCHED] start\n");
   scheduler_start();
 
