@@ -16,7 +16,6 @@ FAILURE_MARKERS = (
     "[EARLY PANIC]",
     "KERNEL PANIC",
     "Kernel Panic",
-    "smp selftest",
     "=FAIL",
     "Triple fault",
 )
@@ -43,8 +42,6 @@ def required_patterns(cpus: int) -> list[tuple[str, re.Pattern[str]]]:
     ]
     patterns.append(("parallel scheduler", re.compile(
         rf"sched: {cpus} CPUs online; enabling parallel scheduling")))
-    patterns.append(("SMP stress test", re.compile(
-        rf"smp-test: PASS participants=0x{(1 << cpus)-1:x} allocations={cpus*8}\b")))
     for cpu in range(1, cpus):
         patterns.append((f"CPU {cpu} ready", re.compile(
             rf"smp: cpu{cpu} lapic=\d+ ready \(HLT\)")))

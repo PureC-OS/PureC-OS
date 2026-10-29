@@ -15,6 +15,12 @@ PureC OS is a simple 64-bit operating system written in C and x86_64 assembly la
 
 ---
 
+## Software Port
+
+[Porting Guide](ported-software.md)
+
+---
+
 ## Network Support
 
 Intel Pro 1000 MT Desktop 82540EM Supported only in VirtualBox or QEMU
@@ -44,6 +50,10 @@ And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test 
 ## Details about Syscall PureC OS
 
 [Link to Syscall Reference](docs/syscalls-reference.md)
+
+## Details about Drivers PureC OS
+
+[Index of driver documentation](docs/drivers/README.md)
 
 ---
 
