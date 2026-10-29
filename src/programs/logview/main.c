@@ -536,7 +536,19 @@ int main(void){
                 break;
             }
         }
-                pc_sleep(16);
+        int32_t wheel=pg_window_take_wheel(&st.window);
+        if(wheel){
+            int32_t max_scroll=st.filtered_count - LOGVIEW_VISIBLE_LINES;
+            if(max_scroll<0) max_scroll=0;
+            int32_t next=st.scroll_offset - wheel*3;
+            if(next<0) next=0;
+            if(next>max_scroll) next=max_scroll;
+            if(next!=st.scroll_offset){
+                st.scroll_offset=next;
+                draw_ui(&st);
+            }
+        }
+        pc_sleep(16);
     }
     pg_window_close(&st.window);
     return 0;
