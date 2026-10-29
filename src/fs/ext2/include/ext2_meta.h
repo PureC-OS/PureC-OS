@@ -10,6 +10,10 @@ struct ext2_meta {
   bool directory;
   uint32_t uid;
   uint32_t gid;
+  uint32_t size;
+  uint32_t atime;
+  uint32_t mtime;
+  uint32_t ctime;
 };
 
 int32_t ext2_meta_get(const char *path, struct ext2_meta *out);

@@ -164,10 +164,26 @@ static void fill_stat(struct stat *info, uint64_t size, bool is_dir) {
     info->st_mode = is_dir ? S_IFDIR : S_IFREG;
 }
 
+static void fill_stat_ex(struct stat *info, const struct file_stat_ex *raw) {
+    memset(info, 0, sizeof(*info));
+    info->st_size = raw->size;
+    info->st_mode = (raw->is_directory ? S_IFDIR : S_IFREG) | (raw->mode & 07777);
+    info->st_uid = raw->uid;
+    info->st_gid = raw->gid;
+    info->st_atime = (long)raw->atime;
+    info->st_mtime = (long)raw->mtime;
+    info->st_ctime = (long)raw->ctime;
+}
+
 int stat(const char *path, struct stat *info) {
     if (!path || !info) { errno = EINVAL; return -1; }
     char abs[512];
     path = resolve_user_path(path, abs, sizeof(abs));
+    struct file_stat_ex extended;
+    if (pc_file_stat_ex(path, &extended) == 0) {
+        fill_stat_ex(info, &extended);
+        return 0;
+    }
     struct file_stat_info raw;
     if (pc_file_stat(path, &raw) < 0) { errno = ENOENT; return -1; }
     fill_stat(info, raw.size, raw.is_directory != 0);

@@ -1,6 +1,5 @@
-// PureC hosted libc: uptime-based time (no RTC in userspace).
-// Epoch runs from boot; UTC, no DST. Enough for compiler timestamps
-// (tcc -dt, __DATE__-style stamping) and timeouts.
+// PureC hosted libc: wall clock from the kernel (RTC-backed, UTC epoch).
+// localtime() applies the kernel time zone offset; no DST.
 
 #include "include/hosted/time.h"
 #include "include/hosted/sys/time.h"
@@ -18,8 +17,35 @@ static uint64_t time_uptime_ms(void) {
     return info.uptime_ms;
 }
 
+static bool time_read(struct time_info *info) {
+    return pc_time_get(info) == 0;
+}
+
+static long time_zone_seconds(void) {
+    struct time_info info;
+    if (!time_read(&info)) return 0;
+    return (long)info.tz_minutes * 60L;
+}
+
+int clock_gettime(int clock_id, struct timespec *out) {
+    if (!out) { errno = EINVAL; return -1; }
+    struct time_info info;
+    if (!time_read(&info)) { errno = EINVAL; return -1; }
+    if (clock_id == CLOCK_MONOTONIC) {
+        out->tv_sec = (time_t)(info.uptime_ms / 1000ULL);
+        out->tv_nsec = (long)((info.uptime_ms % 1000ULL) * 1000000ULL);
+        return 0;
+    }
+    if (clock_id != CLOCK_REALTIME) { errno = EINVAL; return -1; }
+    out->tv_sec = (time_t)info.unix_seconds;
+    out->tv_nsec = (long)info.millis * 1000000L;
+    return 0;
+}
+
 time_t time(time_t *result) {
-    time_t now = (time_t)(time_uptime_ms() / 1000ULL);
+    struct time_info info;
+    time_t now = time_read(&info) ? (time_t)info.unix_seconds
+                                  : (time_t)(time_uptime_ms() / 1000ULL);
     if (result) *result = now;
     return now;
 }
@@ -37,9 +63,15 @@ int gettimeofday(struct timeval *tv, void *tz) {
         errno = EINVAL;
         return -1;
     }
-    uint64_t ms = time_uptime_ms();
-    tv->tv_sec = (time_t)(ms / 1000ULL);
-    tv->tv_usec = (suseconds_t)((ms % 1000ULL) * 1000ULL);
+    struct time_info info;
+    if (time_read(&info)) {
+        tv->tv_sec = (time_t)info.unix_seconds;
+        tv->tv_usec = (suseconds_t)info.millis * 1000;
+    } else {
+        uint64_t ms = time_uptime_ms();
+        tv->tv_sec = (time_t)(ms / 1000ULL);
+        tv->tv_usec = (suseconds_t)((ms % 1000ULL) * 1000ULL);
+    }
     (void)tz; // no zones on PureC OS
     return 0;
 }
@@ -90,9 +122,9 @@ time_t mktime(struct tm *parts) {
         + (long long)parts->tm_hour * 3600LL
         + (long long)parts->tm_min * 60LL
         + (long long)parts->tm_sec;
-    // Normalize back so wday/yday are always filled.
-    time_t result = (time_t)seconds;
-    struct tm *back = gmtime(&result);
+    // Parts are local time: convert to UTC, then normalize back to local.
+    time_t result = (time_t)(seconds - time_zone_seconds());
+    struct tm *back = localtime(&result);
     if (back) *parts = *back;
     return result;
 }
@@ -125,7 +157,8 @@ struct tm *gmtime(const time_t *value) {
 }
 
 struct tm *localtime(const time_t *value) {
-    return gmtime(value); // UTC everywhere, no zones
+    if (!value) { errno = EINVAL; return 0; }
+    return time_fill(*value + time_zone_seconds());
 }
 
 char *asctime(const struct tm *parts) {

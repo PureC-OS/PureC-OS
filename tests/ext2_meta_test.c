@@ -45,6 +45,8 @@ void klogf(int level, const char *format, ...) {
   }
 }
 
+static uint32_t fake_clock = 1000000000;
+uint32_t wallclock_unix_seconds(void) { return fake_clock; }
 bool block_device_init(void) { return true; }
 uint32_t block_device_count(void) { return 1; }
 bool block_device_select(uint32_t index) { return index == 0; }
@@ -144,6 +146,39 @@ int main(void) {
   CHECK(ext2_meta_get("/home/ann/a.txt", &meta) == 0);
   CHECK(meta.mode == 0600 && meta.uid == 70000 && meta.gid == 5);
   CHECK(ext2_meta_get("/nope", &meta) < 0);
+
+  {
+    uint32_t ino;
+    uint8_t record[256];
+    CHECK(ext2_dir_resolve("/home/ann/a.txt", &ino) == 0);
+    CHECK(ext2_inode_read(ino, record));
+    CHECK(ext2_read_u16(record + 26) == 1);
+    CHECK(ext2_dir_resolve("/home/ann", &ino) == 0);
+    CHECK(ext2_inode_read(ino, record));
+    CHECK(ext2_read_u16(record + 26) == 2);
+    CHECK(ext2_dir_resolve("/", &ino) == 0);
+    CHECK(ext2_inode_read(ino, record));
+    CHECK(ext2_read_u16(record + 26) >= 2);
+    CHECK(ext2_read_u16(record + 24) == 0);
+  }
+
+  fake_clock = 1000000100u;
+  CHECK(ext2_meta_get("/home/ann/c.txt", &meta) == 0);
+  CHECK(meta.gid == 0 && meta.mtime == 1000000000u && meta.size == 7);
+  CHECK(ext2_meta_set("/home/ann/c.txt", 0640, 1000, 1000) == 0);
+  CHECK(ext2_meta_get("/home/ann/c.txt", &meta) == 0);
+  CHECK(meta.ctime == 1000000100u && meta.mtime == 1000000000u);
+  fake_clock = 1000000200u;
+  CHECK(ext2_write_file("/home/ann/c.txt", "rewritten!", 10) == 10);
+  CHECK(ext2_meta_get("/home/ann/c.txt", &meta) == 0);
+  CHECK(meta.mode == 0640 && meta.uid == 1000 && meta.gid == 1000);
+  CHECK(meta.size == 10 && meta.mtime == 1000000200u);
+  fake_clock = 1000000300u;
+  CHECK(ext2_append_file("/home/ann/c.txt", "++", 2) == 2);
+  CHECK(ext2_meta_get("/home/ann/c.txt", &meta) == 0);
+  CHECK(meta.mode == 0640 && meta.uid == 1000 && meta.size == 12);
+  CHECK(meta.mtime == 1000000300u);
+  CHECK(ext2_meta_set("/home/ann/c.txt", 0644, 0, 0) == 0);
 
   CHECK(ext2_rename("/home/ann/b.txt", "bb.txt") == 0);
   CHECK(!exists("/home/ann/b.txt") && exists("/home/ann/bb.txt"));

@@ -14,6 +14,8 @@ static int failures;
   } while (0)
 
 static int allocations;
+static uint32_t fake_clock = 1700000000;
+uint32_t wallclock_unix_seconds(void) { return fake_clock; }
 uint64_t pmm_total_bytes(void) { return 512ULL * 1024 * 1024; }
 uint64_t pmm_allocate_contiguous(uint64_t pages) {
   void *memory = malloc((size_t)pages * 4096);
@@ -138,6 +140,24 @@ int main(void) {
   CHECK(opened == 32 && held[32] == FS_ERROR_NO_SPACE);
   for (int i = 0; i < 32; i++)
     ops->close(fs, held[i]);
+
+  {
+    struct file_stat_ex ex;
+    void *fs = vfs_tmpfs_create();
+    CHECK(fs != 0);
+    CHECK(ops->create_file(fs, "/clock.txt") == 0);
+    CHECK(ops->stat_ex(fs, "/clock.txt", &ex) == 0);
+    CHECK(ex.mtime == 1700000000u && ex.ctime == 1700000000u && !ex.is_directory);
+    fake_clock = 1700000100u;
+    CHECK(ops->write_file(fs, "/clock.txt", "abc", 3) == 3);
+    CHECK(ops->stat_ex(fs, "/clock.txt", &ex) == 0);
+    CHECK(ex.size == 3 && ex.mtime == 1700000100u && ex.atime == 1700000000u);
+    fake_clock = 1700000200u;
+    CHECK(ops->append_file(fs, "/clock.txt", "de", 2) == 2);
+    CHECK(ops->stat_ex(fs, "/clock.txt", &ex) == 0);
+    CHECK(ex.size == 5 && ex.mtime == 1700000200u);
+    CHECK(ops->stat_ex(fs, "/absent", &ex) == FS_ERROR_NOT_FOUND);
+  }
 
   if (failures) {
     printf("tmpfs_test: %d failure(s)\n", failures);

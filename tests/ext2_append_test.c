@@ -43,6 +43,8 @@ void klogf(int level, const char *format, ...) {
   }
 }
 
+static uint32_t fake_clock = 1000000000;
+uint32_t wallclock_unix_seconds(void) { return fake_clock; }
 bool block_device_init(void) { return true; }
 uint32_t block_device_count(void) { return 1; }
 bool block_device_select(uint32_t index) { return index == 0; }

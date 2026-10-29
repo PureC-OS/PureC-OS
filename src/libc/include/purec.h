@@ -70,6 +70,9 @@ int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity);
 int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence);
 int32_t pc_file_stat(const char *path, struct file_stat_info *out);
 int32_t pc_getrandom(void *buffer, uint32_t count);
+int32_t pc_time_get(struct time_info *out);
+int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes);
+int32_t pc_file_stat_ex(const char *path, struct file_stat_ex *out);
 int32_t pc_session_begin(uint32_t uid, uint32_t gid);
 int32_t pc_install_start_accounts(const char *device, const char *serial,
                                   uint8_t fs_type,

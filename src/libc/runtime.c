@@ -283,6 +283,20 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
     return (int32_t)pc_syscall(SYS_INSTALL_START_EX, (uint64_t)(uintptr_t)&req, 0, 0);
 }
 
+int32_t pc_time_get(struct time_info *out){
+    return (int32_t)pc_syscall(SYS_TIME_GET,(uint64_t)(uintptr_t)out,0,0);
+}
+
+int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes){
+    return (int32_t)pc_syscall(SYS_TIME_SET,(uint64_t)unix_seconds,
+        (uint64_t)(int64_t)tz_minutes,0);
+}
+
+int32_t pc_file_stat_ex(const char *path, struct file_stat_ex *out){
+    return (int32_t)pc_syscall(SYS_FILE_STAT_EX,(uint64_t)(uintptr_t)path,
+        (uint64_t)(uintptr_t)out,0);
+}
+
 int32_t pc_getrandom(void *buffer, uint32_t count){
     return (int32_t)pc_syscall(SYS_GETRANDOM,(uint64_t)(uintptr_t)buffer,count,0);
 }

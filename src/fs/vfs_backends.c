@@ -113,6 +113,25 @@ static int32_t ext2_op_append_file(void *context, const char *path,
   return result;
 }
 
+static int32_t ext2_op_stat_ex(void *context, const char *path,
+                               struct file_stat_ex *out) {
+  (void)context;
+  struct ext2_meta meta;
+  int32_t status = ext2_meta_get(path, &meta);
+  if (status < 0)
+    return status;
+  memset(out, 0, sizeof(*out));
+  out->size = meta.size;
+  out->mode = meta.mode;
+  out->uid = meta.uid;
+  out->gid = meta.gid;
+  out->is_directory = meta.directory ? 1 : 0;
+  out->atime = meta.atime;
+  out->mtime = meta.mtime;
+  out->ctime = meta.ctime;
+  return 0;
+}
+
 static int32_t ext2_op_get_meta(void *context, const char *path,
                                 struct vfs_perm_meta *out) {
   (void)context;
@@ -151,6 +170,7 @@ const struct vfs_fs_ops vfs_ext2_ops = {
     .move = ext2_op_move,
     .write_file = ext2_op_write_file,
     .append_file = ext2_op_append_file,
+    .stat_ex = ext2_op_stat_ex,
     .get_meta = ext2_op_get_meta,
     .set_meta = ext2_op_set_meta,
     .is_ready = ext2_ready,

@@ -1,5 +1,5 @@
 #pragma once
-// PureC hosted libc: sys/time (uptime-based wall clock).
+// PureC hosted libc: sys/time (kernel wall clock).
 
 #include "../time.h"
 

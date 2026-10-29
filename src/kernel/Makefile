@@ -49,6 +49,9 @@ C_SOURCES := \
 	kernel/process/elf.c \
 	kernel/module/kmod_so.c \
 	kernel/random/krandom.c \
+	kernel/time/civil.c \
+	kernel/time/rtc.c \
+	kernel/time/wallclock.c \
 	kernel/ipc/ipc.c \
 	mm/pmm.c \
 	mm/vmm.c \

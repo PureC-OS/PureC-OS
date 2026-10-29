@@ -2,6 +2,8 @@
 #include "../lib/string.h"
 #include "../mm/pmm.h"
 
+uint32_t wallclock_unix_seconds(void);
+
 #define TMPFS_MAX_NODES 256
 #define TMPFS_MAX_OPEN 32
 #define TMPFS_NAME_MAX 63
@@ -18,6 +20,9 @@ struct node {
   uint64_t physical;
   uint64_t pages;
   uint32_t size;
+  uint32_t atime;
+  uint32_t mtime;
+  uint32_t ctime;
 };
 
 struct handle {
@@ -126,6 +131,8 @@ static int32_t allocate_node(struct tmpfs *fs, int32_t parent, const char *name,
     fs->nodes[i].parent = (int16_t)parent;
     memcpy(fs->nodes[i].name, name, length);
     fs->nodes[i].name[length] = '\0';
+    fs->nodes[i].atime = fs->nodes[i].mtime = fs->nodes[i].ctime =
+        wallclock_unix_seconds();
     return i;
   }
   return FS_ERROR_NO_SPACE;
@@ -282,6 +289,21 @@ static int32_t list_directory(struct tmpfs *fs, const char *path, void *entries,
   return (int32_t)count;
 }
 
+static int32_t tmpfs_stat_ex(void *context, const char *path,
+                             struct file_stat_ex *out) {
+  struct tmpfs *fs = context;
+  int32_t node = lookup(fs, path);
+  if (node < 0)
+    return node;
+  memset(out, 0, sizeof(*out));
+  out->size = fs->nodes[node].size;
+  out->is_directory = fs->nodes[node].directory ? 1 : 0;
+  out->atime = fs->nodes[node].atime;
+  out->mtime = fs->nodes[node].mtime;
+  out->ctime = fs->nodes[node].ctime;
+  return 0;
+}
+
 static int32_t tmpfs_list(void *context, const char *path,
                           struct fs_directory_entry *entries, uint32_t capacity) {
   struct tmpfs *fs = context;
@@ -428,6 +450,7 @@ static int32_t tmpfs_write_file(void *context, const char *path, const void *buf
   if (count)
     memcpy(fs->nodes[node].data, buffer, count);
   fs->nodes[node].size = count;
+  fs->nodes[node].mtime = fs->nodes[node].ctime = wallclock_unix_seconds();
   return (int32_t)count;
 }
 
@@ -446,6 +469,7 @@ static int32_t tmpfs_append_file(void *context, const char *path, const void *bu
   if (count)
     memcpy(fs->nodes[node].data + fs->nodes[node].size, buffer, count);
   fs->nodes[node].size += count;
+  fs->nodes[node].mtime = fs->nodes[node].ctime = wallclock_unix_seconds();
   return (int32_t)count;
 }
 
@@ -456,6 +480,7 @@ const struct vfs_fs_ops vfs_tmpfs_ops = {
     .seek = tmpfs_seek,
     .close = tmpfs_close,
     .stat = tmpfs_stat,
+    .stat_ex = tmpfs_stat_ex,
     .list = tmpfs_list,
     .list_long = tmpfs_list_long,
     .create_file = tmpfs_create_file,

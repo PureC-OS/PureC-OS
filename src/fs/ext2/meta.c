@@ -3,17 +3,44 @@
 #include "include/ext2_inode.h"
 #include "include/ext2_dir.h"
 #include "include/ext2_meta.h"
+#include "include/ext2_time.h"
 #include "../../lib/string.h"
 
 #define INODE_MODE 0
 #define INODE_UID 2
-#define INODE_DTIME 20
 #define INODE_GID 24
-#define INODE_LINKS 26
+#define INODE_LINKS EXT2_INODE_LINKS
 #define INODE_UID_HIGH 120
 #define INODE_GID_HIGH 122
 #define EXT2_TYPE_MASK 0xF000
 #define EXT2_PERM_MASK 0x0FFF
+
+uint32_t wallclock_unix_seconds(void);
+
+uint32_t ext2_now(void)
+{
+    return wallclock_unix_seconds();
+}
+
+void ext2_stamp_new(uint8_t *inode)
+{
+    uint32_t now = ext2_now();
+    ext2_write_u32(inode + EXT2_INODE_ATIME, now);
+    ext2_write_u32(inode + EXT2_INODE_CTIME, now);
+    ext2_write_u32(inode + EXT2_INODE_MTIME, now);
+}
+
+void ext2_stamp_modified(uint8_t *inode)
+{
+    uint32_t now = ext2_now();
+    ext2_write_u32(inode + EXT2_INODE_CTIME, now);
+    ext2_write_u32(inode + EXT2_INODE_MTIME, now);
+}
+
+void ext2_stamp_changed(uint8_t *inode)
+{
+    ext2_write_u32(inode + EXT2_INODE_CTIME, ext2_now());
+}
 
 static bool split_path(const char *path, char *parent, uint32_t parent_cap,
                        char *base, uint32_t base_cap)
@@ -70,6 +97,10 @@ int32_t ext2_meta_get(const char *path, struct ext2_meta *out)
                ((uint32_t)ext2_read_u16(ib + INODE_UID_HIGH) << 16);
     out->gid = ext2_read_u16(ib + INODE_GID) |
                ((uint32_t)ext2_read_u16(ib + INODE_GID_HIGH) << 16);
+    out->size = ext2_read_u32(ib + 4);
+    out->atime = ext2_read_u32(ib + EXT2_INODE_ATIME);
+    out->mtime = ext2_read_u32(ib + EXT2_INODE_MTIME);
+    out->ctime = ext2_read_u32(ib + EXT2_INODE_CTIME);
     return 0;
 }
 
@@ -100,6 +131,7 @@ int32_t ext2_meta_set(const char *path, int32_t mode, uint32_t uid,
         ext2_write_u16(ib + INODE_GID, (uint16_t)(gid & 0xFFFF));
         ext2_write_u16(ib + INODE_GID_HIGH, (uint16_t)(gid >> 16));
     }
+    ext2_stamp_changed(ib);
     return ext2_write_inode(ino, ib) ? 0 : -1;
 }
 
@@ -252,7 +284,7 @@ int32_t ext2_unlink_path(const char *path)
             return -1;
         ext2_inode_free_blocks(ib);
         memset(ib, 0, sizeof(ib));
-        ext2_write_u32(ib + INODE_DTIME, 1);
+        ext2_write_u32(ib + EXT2_INODE_DTIME, ext2_now());
         if (!ext2_write_inode(ino, ib))
             return -1;
         if (!ext2_free_inode(ino))

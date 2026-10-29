@@ -940,6 +940,53 @@ static int32_t resolve_existing(const char *path, struct vfs_resolved *resolved,
   return 0;
 }
 
+int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
+  MUTEX_SCOPE(&vfs_mutex);
+  if (!out)
+    return FS_ERROR_INVALID;
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  memset(out, 0, sizeof(*out));
+  bool filled = false;
+  if (ops->stat_ex && mount_ready(resolved.mount) &&
+      !is_klog_path(resolved.path)) {
+    status = ops->stat_ex(resolved.mount->context, resolved.relative, out);
+    if (status < 0 && !is_virtual_dir(resolved.path))
+      return status;
+    filled = status >= 0;
+  }
+  if (!filled) {
+    struct file_stat_info info;
+    if (is_klog_path(resolved.path)) {
+      out->size = klog_total_bytes();
+    } else {
+      const void *data = 0;
+      uint32_t size = 0;
+      if (overlay_find(resolved.path, &data, &size)) {
+        out->size = size;
+      } else if (ops->stat && mount_ready(resolved.mount) &&
+                 ops->stat(resolved.mount->context, resolved.relative,
+                           &info) >= 0) {
+        out->size = info.size;
+        out->is_directory = info.is_directory;
+      } else if (is_virtual_dir(resolved.path)) {
+        out->is_directory = 1;
+      } else {
+        return FS_ERROR_NOT_FOUND;
+      }
+    }
+  }
+  struct vfs_perm_meta meta;
+  effective_meta(resolved.path, out->is_directory != 0, &meta);
+  out->mode = meta.mode;
+  out->uid = meta.uid;
+  out->gid = meta.gid;
+  return 0;
+}
+
 int32_t vfs_chmod(const char *path, uint16_t mode) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved resolved;
