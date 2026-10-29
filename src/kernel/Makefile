@@ -79,6 +79,7 @@ C_SOURCES := \
 	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
+	drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \
@@ -93,11 +94,14 @@ C_SOURCES := \
 	drivers/net/pcnet/pcnet_am79c970a.c \
 	net/wifi/wifi.c \
 	net/802.11/assoc.c \
+	net/802.11/data.c \
 	net/802.11/b/b_rates.c \
 	net/802.11/b/b_chan.c \
 	net/802.11/b/b_plcp.c \
 	net/802.11/b/b_mgmt.c \
 	drivers/net/ath9k/ar9285.c \
+	drivers/net/ath9k/ath9k_hw.c \
+	drivers/net/ath9k/ath9k_eeprom.c \
 	net/core/net_device.c \
 	net/link/ethernet.c \
 	net/link/arp.c \

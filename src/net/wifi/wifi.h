@@ -86,3 +86,4 @@ bool wifi_report_scan_result(const struct wifi_network *net);
 void wifi_notify_scan_done(void);
 void wifi_notify_connected(const char *ssid, const uint8_t bssid[6], int8_t rssi, uint8_t channel, uint8_t security);
 void wifi_notify_connect_failed(int32_t error);
+void wifi_update_rssi(int8_t rssi);

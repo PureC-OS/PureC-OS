@@ -87,6 +87,9 @@ bool wifi_trigger_scan(void){
     if(mgr.scanning){
         return false;
     }
+    if(mgr.state == WIFI_STATE_CONNECTED){
+        return false;
+    }
     if(mgr.connecting){
         klog(KLOG_INFO, "wifi: scan deferred while connecting");
         return false;
@@ -181,6 +184,10 @@ void wifi_notify_connected(const char *ssid, const uint8_t bssid[6], int8_t rssi
             ssid, bssid?bssid[0]:0,bssid?bssid[1]:0,bssid?bssid[2]:0,bssid?bssid[3]:0,bssid?bssid[4]:0,bssid?bssid[5]:0, rssi);
         klog(KLOG_INFO, "wifi: DHCP will configure IP via net stack (no fake addresses)");
     }
+}
+
+void wifi_update_rssi(int8_t rssi){
+    mgr.connected_rssi = rssi;
 }
 
 void wifi_notify_connect_failed(int32_t error){
@@ -309,7 +316,7 @@ bool wifi_get_status(struct wifi_status *out){
     } else if(mgr.connecting){
         strncpy(out->ssid, mgr.target_ssid, sizeof(out->ssid)-1);
         memcpy(out->bssid, mgr.target_bssid, 6);
-        out->rssi = -60;
+        out->rssi = mgr.connected_rssi;
         out->channel = mgr.target_channel;
         out->security = mgr.target_security;
     }
@@ -328,7 +335,7 @@ void wifi_poll(uint64_t now_ms){
             wifi_notify_scan_done();
         }
     } else {
-        if(!mgr.connecting && (now_ms - mgr.last_scan_ms >= WIFI_SCAN_INTERVAL_MS)){
+        if(!mgr.connecting && mgr.state != WIFI_STATE_CONNECTED && (now_ms - mgr.last_scan_ms >= WIFI_SCAN_INTERVAL_MS)){
             if(!mgr.active) mgr.last_scan_ms = now_ms;
             else (void)wifi_trigger_scan();
         }
@@ -338,7 +345,7 @@ void wifi_poll(uint64_t now_ms){
         if(mgr.active->ops->is_connected(mgr.active->context)){
 
             if(mgr.state == WIFI_STATE_CONNECTING){
-                wifi_notify_connected(mgr.target_ssid, mgr.target_bssid, -45, mgr.target_channel, mgr.target_security);
+                wifi_notify_connected(mgr.target_ssid, mgr.target_bssid, mgr.connected_rssi, mgr.target_channel, mgr.target_security);
             }
         } else if(mgr.state == WIFI_STATE_CONNECTING &&
                   (now_ms - mgr.connect_start_ms >= WIFI_CONNECT_TIMEOUT_MS)){

@@ -75,6 +75,15 @@ static inline void pic_imr_write(uint16_t port, uint8_t v){
 static void *irq_handler_fn[16] = {0};
 static void *irq_handler_ctx[16] = {0};
 
+static void (*vector_handler_fn[256])(void*);
+static void *vector_handler_ctx[256];
+
+void idt_set_vector_handler(uint8_t vector, void (*fn)(void*), void *ctx){
+    if(vector<48) return;
+    vector_handler_ctx[vector]=ctx;
+    __atomic_store_n(&vector_handler_fn[vector],fn,__ATOMIC_RELEASE);
+}
+
 void idt_set_irq_handler(uint8_t irq, void *fn, void *ctx){
     if(irq>=16) return;
     uint64_t flags;
@@ -190,6 +199,11 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
             fn(irq_handler_ctx[irq]);
         }
         pic_eoi(irq);
+        return;
+    }
+    if (vector >= 48 && vector < 256 && vector_handler_fn[vector]) {
+        vector_handler_fn[vector](vector_handler_ctx[vector]);
+        lapic_eoi();
         return;
     }
     if (vector == 3) {

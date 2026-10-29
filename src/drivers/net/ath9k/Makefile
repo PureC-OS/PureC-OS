@@ -9,12 +9,12 @@ TARGET_ELF := $(MODULE_DIR)/ar9285.elf
 TARGET_KO := $(MODULE_DIR)/ar9285.ko
 TARGET_SO := $(MODULE_DIR)/ar9285.so
 
-SOURCES := ar9285.c
+SOURCES := ar9285.c ath9k_hw.c ath9k_eeprom.c
 DOT11_B_NAMES := b_rates b_chan b_plcp b_mgmt
-OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o) $(OBJ_DIR)/dot11_assoc.o \
+OBJECTS := $(SOURCES:%.c=$(OBJ_DIR)/%.o) $(OBJ_DIR)/dot11_assoc.o $(OBJ_DIR)/dot11_data.o \
 	$(DOT11_B_NAMES:%=$(OBJ_DIR)/dot11_b_%.o)
 SO_OBJ_DIR := $(OBJ_DIR)/pic
-SO_OBJECTS := $(SOURCES:%.c=$(SO_OBJ_DIR)/%.o) $(SO_OBJ_DIR)/dot11_assoc.o \
+SO_OBJECTS := $(SOURCES:%.c=$(SO_OBJ_DIR)/%.o) $(SO_OBJ_DIR)/dot11_assoc.o $(SO_OBJ_DIR)/dot11_data.o \
 	$(DOT11_B_NAMES:%=$(SO_OBJ_DIR)/dot11_b_%.o)
 DEPS := $(OBJECTS:.o=.d)
 SO_DEPS := $(SO_OBJECTS:.o=.d)
@@ -32,6 +32,14 @@ $(OBJ_DIR)/%.o: $(ATH9K_DIR)/%.c
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(MOD_CFLAGS) -c $< -o $@
 
 $(SO_OBJ_DIR)/%.o: $(ATH9K_DIR)/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KMOD_SO_CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/dot11_data.o: $(DOT11_DIR)/data.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(MOD_CFLAGS) -c $< -o $@
+
+$(SO_OBJ_DIR)/dot11_data.o: $(DOT11_DIR)/data.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KMOD_SO_CFLAGS) -c $< -o $@
 

@@ -28,6 +28,13 @@
 #define DOT11_FC_TYPE(fc) (((fc) >> 2) & 0x3)
 #define DOT11_FC_STYPE(fc) (((fc) >> 4) & 0xF)
 #define DOT11_FC_VERSION_MASK 0x0003
+#define DOT11_FC_TODS 0x0100
+#define DOT11_FC_FROMDS 0x0200
+#define DOT11_FC_PROTECTED 0x4000
+#define DOT11_FC_ORDER 0x8000
+#define DOT11_STYPE_DATA_QOS_BIT 0x08
+#define DOT11_STYPE_DATA_NULL_BIT 0x04
+#define DOT11_LLC_SNAP_LEN 8
 
 #define DOT11_AUTH_ALG_OPEN 0x0000
 #define DOT11_AUTH_SEQ_REQ 0x0001
@@ -171,4 +178,12 @@ bool dot11_parse_beacon(const uint8_t *frame, uint16_t len,
 bool dot11_parse_bss(const uint8_t *frame, uint16_t len, struct dot11_bss *bss_out);
 
 bool dot11_addr_is_zero(const uint8_t a[DOT11_ADDR_LEN]);
+
+uint16_t dot11_data_header_len(uint16_t frame_control);
+uint16_t dot11_data_to_ethernet(const uint8_t *frame, uint16_t len,
+                                const uint8_t bssid[DOT11_ADDR_LEN],
+                                uint8_t *eth_out, uint16_t eth_cap);
+uint16_t dot11_ethernet_to_data(const uint8_t *eth, uint16_t eth_len,
+                                const uint8_t bssid[DOT11_ADDR_LEN],
+                                uint16_t seq_ctrl, uint8_t *out, uint16_t out_cap);
 bool dot11_addr_eq(const uint8_t a[DOT11_ADDR_LEN], const uint8_t b[DOT11_ADDR_LEN]);
