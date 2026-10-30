@@ -291,6 +291,16 @@ bool compositor_window_create(uint32_t pid, uint32_t x, uint32_t y,
   return true;
 }
 
+static void clear_outside_frame(struct comp_window *w) {
+  for (uint32_t row = 0; row < w->ah; row++) {
+    uint32_t *line = &w->pixels[(uint64_t)row * w->aw];
+    if (row >= w->fh)
+      memset(line, 0, (uint64_t)w->aw * sizeof(uint32_t));
+    else if (w->fw < w->aw)
+      memset(line + w->fw, 0, (uint64_t)(w->aw - w->fw) * sizeof(uint32_t));
+  }
+}
+
 bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
                               uint32_t width, uint32_t height) {
   struct comp_ctx c;
@@ -325,10 +335,13 @@ bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
     w->aw = naw;
     w->ah = nah;
   }
+  bool resized = w->fw != width || w->fh != height;
   w->x = (int32_t)x;
   w->y = (int32_t)y;
   w->fw = width;
   w->fh = height;
+  if (resized)
+    clear_outside_frame(w);
   present_pair_locked(ox0, oy0, ox1, oy1, w->x, w->y,
                       (int64_t)w->x + visible_w(w),
                       (int64_t)w->y + visible_h(w));
