@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "types.h"
 
 #define S_IFMT 0170000
 #define S_IFDIR 0040000
@@ -15,6 +16,10 @@
 #define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
 
 struct stat {
+    unsigned long long st_dev;
+    unsigned long long st_ino;
+    unsigned int st_nlink;
+    unsigned long st_blksize;
     unsigned long long st_size;
     unsigned int st_mode;
     unsigned int st_uid;
@@ -28,3 +33,4 @@ int stat(const char *path, struct stat *info);
 int fstat(int fd, struct stat *info);
 int lstat(const char *path, struct stat *info);
 int mkdir(const char *path, unsigned int mode);
+mode_t umask(mode_t mask);
