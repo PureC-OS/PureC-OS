@@ -555,6 +555,19 @@ const uint32_t *gop_backbuffer_row(uint32_t y){
     return &backbuffer[(uint64_t)y * backbuffer_width];
 }
 
+bool gop_backbuffer_put(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                        const uint32_t *pixels, uint32_t stride){
+    if(!pixels || !w || !h || stride<w || !gop.available) return false;
+    if(!ensure_backbuffer()) return false;
+    if(x>=backbuffer_width || y>=backbuffer_height) return false;
+    if(w>backbuffer_width-x) w=backbuffer_width-x;
+    if(h>backbuffer_height-y) h=backbuffer_height-y;
+    for(uint32_t row=0;row<h;row++)
+        memcpy(&backbuffer[(uint64_t)(y+row)*backbuffer_width+x],
+               &pixels[(uint64_t)row*stride], (uint64_t)w*sizeof(uint32_t));
+    return true;
+}
+
 void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count){
     if(!gop.available || !gop.addr || !pixels || x>=gop.width || y>=gop.height) return;
     if(count>gop.width-x) count=gop.width-x;

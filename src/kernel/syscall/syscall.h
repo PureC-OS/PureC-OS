@@ -149,6 +149,10 @@
 #define SYS_FD_PATH 343
 #define SYS_FD_SEEK 344
 #define SYS_FD_TRUNCATE 345
+#define SYS_DESKTOP_CLAIM 346 /* () -> 0, root only, desktop=rs session */
+#define SYS_DESKTOP_BLIT 347  /* (struct fb_blit_request *) into desktop layer */
+#define SYS_DESKTOP_WAIT 348  /* (timeout_ms) -> RS_WAIT_* bits */
+#define SYS_DESKTOP_WM 349    /* (op, arg1, arg2) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2

@@ -67,4 +67,6 @@ bool gop_has_backbuffer(void);
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color);
 const uint32_t *gop_backbuffer_row(uint32_t y);
+bool gop_backbuffer_put(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                        const uint32_t *pixels, uint32_t stride);
 void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count);

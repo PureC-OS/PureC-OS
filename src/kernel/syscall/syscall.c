@@ -30,6 +30,7 @@
 #include "../../net/transport/tcp.h"
 #include "../../net/wifi/wifi.h"
 #include "../../userspace/display_mode.h"
+#include "../../userspace/rs_session.h"
 #include "../../userspace/userspace.h"
 #include "../../userspace/window_manager.h"
 #include "../core/system_info.h"
@@ -317,6 +318,25 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -2;
     return 0;
   }
+  case SYS_DESKTOP_CLAIM:
+    return rs_session_claim((uint32_t)process_current_pid(),
+                            process_current_uid());
+  case SYS_DESKTOP_BLIT: {
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
+      return -1;
+    struct fb_blit_request req =
+        *(const struct fb_blit_request *)(uintptr_t)a1;
+    uint64_t bytes;
+    if (!blit_source_bytes(req.stride, req.width, req.height, &bytes))
+      return -1;
+    if (!readable((const void *)(uintptr_t)req.pixels, bytes))
+      return -1;
+    return rs_session_blit((uint32_t)process_current_pid(), &req);
+  }
+  case SYS_DESKTOP_WAIT:
+    return rs_session_wait((uint32_t)process_current_pid(), (uint32_t)a1);
+  case SYS_DESKTOP_WM:
+    return rs_session_wm((uint32_t)process_current_pid(), a1, a2, a3);
   case SYS_TIME_GET: {
     if (!writable((void *)(uintptr_t)a1, sizeof(struct time_info)))
       return -1;

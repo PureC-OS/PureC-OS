@@ -156,6 +156,7 @@ C_SOURCES := \
 	userspace/audio.c \
 	userspace/audio_overlay.c \
 	userspace/userspace.c \
+	userspace/rs_session.c \
 	userspace/window_manager.c \
 	userspace/apps/datetime_service.c \
 	userspace/apps/desktop_entries.c \

@@ -5,6 +5,8 @@
 #include "../../drivers/serial/serial.h"
 #include "../../net/core/net_service.h"
 #include "../../net/tests/qemu_network_test.h"
+#include "../../boot/boot_options.h"
+#include "../../userspace/rs_session.h"
 #include "../../userspace/userspace.h"
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/klog.h"
@@ -33,16 +35,19 @@ void init_process_start(void) {
   klog(KLOG_OK, "process: /bin/init started as PID 1");
 
   serial_write_string("[INIT] PID 1 registered, initializing desktop\n");
-  userspace_init();
+  bool rust_desktop = boot_desktop_rust() && rs_session_start();
+  if (!rust_desktop)
+    userspace_init();
   boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
                        "init and desktop ready, starting scheduler");
 
   int32_t input_pid = process_spawn_service(
-      userspace_input_thread, 0, "init-input", 1, -1,
-      SCHED_QOS_USER_INTERACTIVE, 0);
-  int32_t kbd_pid = process_spawn_service(
-      userspace_keyboard_thread, 0, "desktop-keyboard", 1, -1,
-      SCHED_QOS_USER_INTERACTIVE, 0);
+      rust_desktop ? rs_session_input_thread : userspace_input_thread, 0,
+      "init-input", 1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
+  int32_t kbd_pid = rust_desktop
+      ? 0
+      : process_spawn_service(userspace_keyboard_thread, 0, "desktop-keyboard",
+                              1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
   if (input_pid < 0 || kbd_pid < 0)
     klog(KLOG_WARN, "sched: failed to start input service processes");
   int32_t log_tid =

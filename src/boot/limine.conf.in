@@ -17,3 +17,12 @@ serial: yes
     kernel_path: boot():/boot/kernel-fallback.elf
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
 @MODULES@
+
+/PureC OS 64-bit (Rust desktop, experimental)
+    protocol: limine
+    resolution: 1920x1080x32
+    kernel_path: boot():/boot/kernel.elf
+    kernel_cmdline: desktop=rs
+    module_path: boot():/boot/kernel-fallback.elf
+    module_path: boot():/EFI/BOOT/BOOTX64.EFI
+@MODULES@

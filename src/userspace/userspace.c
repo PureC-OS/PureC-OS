@@ -7,6 +7,7 @@
 #include "apps/audio_panel.h"
 #include "apps/bottom_panel.h"
 #include "window_manager.h"
+#include "rs_session.h"
 #include "syscall.h"
 #include "audio.h"
 #include "display.h"
@@ -334,6 +335,10 @@ static bool service_desktop_redraw(void){
 }
 
 void userspace_redraw_desktop(void){
+    if(rs_session_active()){
+        rs_session_request_redraw();
+        return;
+    }
     while(__atomic_test_and_set(&desktop_redraw_busy, __ATOMIC_ACQUIRE))
         scheduler_sleep(1);
     desktop_redraw_requester = (uint32_t)process_current_pid();
