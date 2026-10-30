@@ -17,3 +17,5 @@ typedef struct {
 
 int select(int count, fd_set *read_set, fd_set *write_set, fd_set *error_set,
            struct timeval *timeout);
+int pselect(int count, fd_set *read_set, fd_set *write_set, fd_set *error_set,
+            const struct timespec *timeout, const void *mask);

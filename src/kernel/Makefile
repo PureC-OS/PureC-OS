@@ -56,6 +56,7 @@ C_SOURCES := \
 	kernel/process/signal.c \
 	kernel/process/fdtable.c \
 	kernel/process/ofd.c \
+	kernel/tty/tty.c \
 	mm/pmm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \
@@ -77,6 +78,7 @@ C_SOURCES := \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	drivers/display/console_vt.c \
 	gfx/compositor.c \
 	gfx/blit.c \
 	drivers/display/vbe.c \

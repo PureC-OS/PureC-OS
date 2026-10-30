@@ -9,3 +9,4 @@ void pipe_release(int32_t id, bool write_end);
 int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock);
 int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
                    bool nonblock);
+int32_t pipe_poll(int32_t id, bool write_end);

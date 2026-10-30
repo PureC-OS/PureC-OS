@@ -1,6 +1,7 @@
 #include "ofd.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/serial/serial.h"
+#include "../tty/tty.h"
 #include "../../fs/vfs.h"
 #include "../../lib/string.h"
 #include "../ipc/pipe.h"
@@ -137,13 +138,14 @@ int32_t ofd_kind_of(int32_t index) {
 }
 
 static void console_write(const char *text, uint32_t count) {
-  for (uint32_t i = 0; i < count; i++) {
+  for (uint32_t i = 0; i < count; i++)
     serial_putc(text[i]);
-    if (gop_console_is_active())
-      gop_console_putc(text[i]);
-    else
-      gop_putc(text[i]);
+  if (gop_console_is_active()) {
+    gop_console_write(text, count);
+    return;
   }
+  for (uint32_t i = 0; i < count; i++)
+    gop_putc(text[i]);
 }
 
 int32_t ofd_read(int32_t index, void *buffer, uint32_t count) {
@@ -256,4 +258,22 @@ int32_t ofd_flags_set(int32_t index, uint32_t flags) {
                          (flags & (OFD_O_APPEND | OFD_O_NONBLOCK));
   mutex_unlock(&ofd_mutex);
   return ok ? 0 : -KERR_BADF;
+}
+
+int32_t ofd_poll(int32_t index) {
+  struct ofd o;
+  if (!snapshot(index, &o))
+    return KPOLLNVAL;
+  switch (o.kind) {
+  case OFD_CONSOLE_IN:
+    return tty_input_ready() ? KPOLLIN : 0;
+  case OFD_CONSOLE_OUT:
+    return KPOLLOUT;
+  case OFD_PIPE:
+    return pipe_poll(o.object, o.write_end);
+  case OFD_FILE:
+    return KPOLLIN | KPOLLOUT;
+  default:
+    return KPOLLNVAL;
+  }
 }

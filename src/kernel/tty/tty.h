@@ -35,16 +35,6 @@
 #define TTY_VSTOP 9
 #define TTY_VSUSP 10
 
-#define TTY_TCGETS 0x5401u
-#define TTY_TCSETS 0x5402u
-#define TTY_TCSETSW 0x5403u
-#define TTY_TCSETSF 0x5404u
-#define TTY_TCFLSH 0x540Bu
-#define TTY_TIOCGWINSZ 0x5413u
-#define TTY_TIOCSWINSZ 0x5414u
-#define TTY_FIONREAD 0x541Bu
-#define TTY_RAW_ACTIVE 0x7F01u
-
 struct tty_termios {
     uint32_t iflag;
     uint32_t oflag;

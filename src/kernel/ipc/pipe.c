@@ -223,3 +223,24 @@ int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
   }
   return (int32_t)written;
 }
+
+int32_t pipe_poll(int32_t id, bool write_end) {
+  int32_t revents = 0;
+  mutex_lock(&pipe_mutex);
+  struct pipe *pipe = pipe_get(id);
+  if (!pipe) {
+    revents = KPOLLNVAL;
+  } else if (write_end) {
+    if (pipe->count < PIPE_CAPACITY)
+      revents |= KPOLLOUT;
+    if (!pipe->readers)
+      revents |= KPOLLERR;
+  } else {
+    if (pipe->count)
+      revents |= KPOLLIN;
+    if (!pipe->writers)
+      revents |= KPOLLHUP;
+  }
+  mutex_unlock(&pipe_mutex);
+  return revents;
+}

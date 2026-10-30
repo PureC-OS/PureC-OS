@@ -157,6 +157,9 @@
 #define SYS_GUI_WINDOW_FLAGS 351 /* (GUI_WINDOW_FLAG_*) */
 #define SYS_GUI_WINDOW_CMD 352   /* (GUI_WINDOW_CMD_*) */
 #define SYS_GUI_WINDOW_TITLE 353 /* (const char *title) */
+#define SYS_TTY_READ 354         /* (buffer, count) -> bytes, console input */
+#define SYS_TTY_IOCTL 355        /* (TTY_* request, argument pointer) */
+#define SYS_POLL 356             /* (struct kernel_pollfd *, count, timeout_ms) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -169,6 +172,28 @@
 #define FD_KIND_CONSOLE 0
 #define FD_KIND_FILE 1
 #define FD_KIND_PIPE 2
+
+#define TTY_TCGETS 0x5401u
+#define TTY_TCSETS 0x5402u
+#define TTY_TCSETSW 0x5403u
+#define TTY_TCSETSF 0x5404u
+#define TTY_TCFLSH 0x540Bu
+#define TTY_TIOCGWINSZ 0x5413u
+#define TTY_TIOCSWINSZ 0x5414u
+#define TTY_FIONREAD 0x541Bu
+#define TTY_RAW_ACTIVE 0x7F01u
+
+#define KPOLLIN 0x001
+#define KPOLLOUT 0x004
+#define KPOLLERR 0x008
+#define KPOLLHUP 0x010
+#define KPOLLNVAL 0x020
+
+struct kernel_pollfd {
+  int32_t fd;
+  int16_t events;
+  int16_t revents;
+};
 
 #define KERR_PERM 1
 #define KERR_NOENT 2
@@ -187,6 +212,7 @@
 #define KERR_NOTDIR 20
 #define KERR_INVAL 22
 #define KERR_NFILE 23
+#define KERR_NOTTY 25
 #define KERR_MFILE 24
 #define KERR_SPIPE 29
 #define KERR_PIPE 32

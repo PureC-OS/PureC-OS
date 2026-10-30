@@ -31,3 +31,4 @@ int32_t ofd_stat(int32_t ofd, struct file_stat_info *out);
 int32_t ofd_path(int32_t ofd, char *out, uint32_t capacity);
 int32_t ofd_flags_get(int32_t ofd);
 int32_t ofd_flags_set(int32_t ofd, uint32_t flags);
+int32_t ofd_poll(int32_t ofd);

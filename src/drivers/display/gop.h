@@ -40,6 +40,8 @@ bool gop_console_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t heig
 bool gop_console_configure_owner(uint32_t owner_pid, uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t foreground, uint32_t background);
 bool gop_console_is_active(void);
 void gop_console_putc(char character);
+void gop_console_write(const char *text, uint32_t count);
+bool gop_console_get_size(uint32_t *columns, uint32_t *rows, uint32_t *width, uint32_t *height);
 void gop_console_clear(void);
 void gop_console_disable(void);
 void gop_console_release(uint32_t owner_pid);

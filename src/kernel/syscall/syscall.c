@@ -43,6 +43,7 @@
 #include "../process/fdtable.h"
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
+#include "../tty/tty.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -147,6 +148,77 @@ static void print_hex(uint64_t v) {
   }
   serial_write_string("0x");
   serial_write_string(buf);
+}
+
+static int64_t tty_ioctl_request(uint32_t request, uint64_t argument) {
+  void *pointer = (void *)(uintptr_t)argument;
+  switch (request) {
+  case TTY_TCGETS:
+    if (!writable(pointer, sizeof(struct tty_termios)))
+      return -KERR_FAULT;
+    tty_get_termios((struct tty_termios *)pointer);
+    return 0;
+  case TTY_TCSETS:
+  case TTY_TCSETSW:
+  case TTY_TCSETSF: {
+    if (!readable(pointer, sizeof(struct tty_termios)))
+      return -KERR_FAULT;
+    struct tty_termios mode = *(const struct tty_termios *)pointer;
+    tty_set_termios(&mode, request == TTY_TCSETSF,
+                    (uint32_t)process_current_pid());
+    return 0;
+  }
+  case TTY_TIOCGWINSZ:
+    if (!writable(pointer, sizeof(struct tty_winsize)))
+      return -KERR_FAULT;
+    tty_get_winsize((struct tty_winsize *)pointer);
+    return 0;
+  case TTY_TIOCSWINSZ:
+    return 0;
+  case TTY_FIONREAD:
+    if (!writable(pointer, sizeof(int32_t)))
+      return -KERR_FAULT;
+    *(int32_t *)pointer = (int32_t)tty_pending();
+    return 0;
+  case TTY_TCFLSH:
+    if (argument == 0 || argument == 2)
+      tty_flush_input();
+    return 0;
+  case TTY_RAW_ACTIVE:
+    return tty_raw_mode() ? 1 : 0;
+  default:
+    return -KERR_NOTTY;
+  }
+}
+
+#define POLL_MAX_DESCRIPTORS 256
+
+static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,
+                                int64_t timeout_ms) {
+  if (count > POLL_MAX_DESCRIPTORS ||
+      (count && !writable(fds, count * sizeof(*fds))))
+    return -KERR_FAULT;
+  uint64_t started = timer_ticks();
+  for (;;) {
+    int64_t ready = 0;
+    for (uint64_t i = 0; i < count; i++) {
+      int32_t revents = 0;
+      if (fds[i].fd >= 0) {
+        revents = fd_poll(fds[i].fd);
+        revents &= (uint16_t)fds[i].events | KPOLLERR | KPOLLHUP | KPOLLNVAL;
+      }
+      fds[i].revents = (int16_t)revents;
+      if (revents)
+        ready++;
+    }
+    if (ready || !timeout_ms)
+      return ready;
+    if (timeout_ms > 0 && timer_ticks() - started >= (uint64_t)timeout_ms)
+      return 0;
+    if (signal_pending_current())
+      return -KERR_INTR;
+    scheduler_sleep(1);
+  }
 }
 
 int64_t syscall_handler(struct syscall_regs *r) {
@@ -302,6 +374,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
                                     (uint32_t)a1)
                ? 0
                : -1;
+  case SYS_TTY_READ:
+    if (a2 > 0x7FFFFFFFULL || !writable((void *)(uintptr_t)a1, a2))
+      return -KERR_FAULT;
+    return tty_read((void *)(uintptr_t)a1, (uint32_t)a2);
+  case SYS_TTY_IOCTL:
+    return tty_ioctl_request((uint32_t)a1, a2);
+  case SYS_POLL:
+    return poll_descriptors((struct kernel_pollfd *)(uintptr_t)a1, a2,
+                            (int64_t)(int32_t)a3);
   case SYS_GUI_WINDOW_TITLE: {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;

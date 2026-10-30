@@ -87,6 +87,11 @@ int32_t fd_read(int32_t fd, void *buffer, uint32_t count) {
   return object < 0 ? -KERR_BADF : ofd_read(object, buffer, count);
 }
 
+int32_t fd_poll(int32_t fd) {
+  int32_t object = object_get(fd);
+  return object < 0 ? KPOLLNVAL : ofd_poll(object);
+}
+
 int32_t fd_write(int32_t fd, const void *buffer, uint32_t count) {
   int32_t object = object_get(fd);
   return object < 0 ? -KERR_BADF : ofd_write(object, buffer, count);

@@ -18,6 +18,7 @@ static mutex_t process_mutex;
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../syscall/syscall.h"
+#include "../tty/tty.h"
 #include "../ipc/ipc.h"
 #include "elf.h"
 #include "process.h"
@@ -956,6 +957,7 @@ static void process_terminate(int32_t status, int32_t signal) {
     }
     window_manager_unregister(process->pid);
     gop_console_release(process->pid);
+    tty_process_exit(process->pid);
     tcp_release_owner(process->pid);
     fd_close_all(process);
     klogf(KLOG_INFO, "process: pid=%u exited status=%d signal=%d", process->pid,

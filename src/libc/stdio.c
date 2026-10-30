@@ -347,6 +347,12 @@ int fgetc(FILE *stream) {
     if (stream == stdin) {
         stdio_init_std();
         if (stdin_is_console()) {
+            if (pc_syscall(SYS_TTY_IOCTL, TTY_RAW_ACTIVE, 0, 0) == 1) {
+                uint8_t byte;
+                return pc_syscall(SYS_TTY_READ, (uint64_t)(uintptr_t)&byte, 1, 0) == 1
+                           ? byte
+                           : EOF;
+            }
             int32_t c = (int32_t)pc_syscall(SYS_GETCHAR, 0, 0, 0);
             return c < 0 ? EOF : c & 0xFF;
         }
