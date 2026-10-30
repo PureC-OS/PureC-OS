@@ -5,6 +5,7 @@
 #define SYS_CLEAR 2
 #define SYS_SLEEP 3
 #define SYS_GETPID 39
+#define SYS_FORK 57
 #define SYS_EXEC 59
 #define SYS_EXIT 60
 #define SYS_WAIT 61
@@ -126,6 +127,77 @@
 #define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
 #define SYS_FB_BLIT 322       /* (struct fb_blit_request *) */
 #define SYS_KEY_EVENT_GET 323 /* (struct key_event *) -> 1 event, 0 empty */
+#define SYS_EXECVE 324
+#define SYS_WAITPID 325
+#define SYS_PIPE 326
+#define SYS_DUP 327
+#define SYS_DUP2 328
+#define SYS_FD_READ 329
+#define SYS_FD_WRITE 330
+#define SYS_FD_OPEN 331
+#define SYS_FD_CTL 332
+#define SYS_CHDIR 333
+#define SYS_GETCWD 334
+#define SYS_KILL 335
+#define SYS_SIGACTION 336
+#define SYS_SIGPROCMASK 337
+#define SYS_SIGRETURN 338
+#define SYS_GETPPID 339
+#define SYS_FD_STAT 340
+#define SYS_SIGPENDING 341
+#define SYS_PAUSE 342
+#define SYS_FD_PATH 343
+#define SYS_FD_SEEK 344
+#define SYS_FD_TRUNCATE 345
+
+#define FD_CTL_GETFD 1
+#define FD_CTL_SETFD 2
+#define FD_CTL_DUPFD 3
+#define FD_CTL_KIND 4
+#define FD_CTL_DUPFD_CLOEXEC 5
+#define FD_CTL_GETFL 6
+#define FD_CTL_SETFL 7
+
+#define FD_KIND_CONSOLE 0
+#define FD_KIND_FILE 1
+#define FD_KIND_PIPE 2
+
+#define KERR_PERM 1
+#define KERR_NOENT 2
+#define KERR_SRCH 3
+#define KERR_INTR 4
+#define KERR_IO 5
+#define KERR_2BIG 7
+#define KERR_NOEXEC 8
+#define KERR_BADF 9
+#define KERR_CHILD 10
+#define KERR_AGAIN 11
+#define KERR_NOMEM 12
+#define KERR_ACCES 13
+#define KERR_FAULT 14
+#define KERR_EXIST 17
+#define KERR_NOTDIR 20
+#define KERR_INVAL 22
+#define KERR_NFILE 23
+#define KERR_MFILE 24
+#define KERR_SPIPE 29
+#define KERR_PIPE 32
+#define KERR_NAMETOOLONG 36
+#define KERR_NOSYS 38
+#define KERR_CONSOLE 1000
+
+#define SIGNAL_ACTION_DEFAULT 0ULL
+#define SIGNAL_ACTION_IGNORE 1ULL
+#define SIGNAL_FLAG_NODEFER 0x40000000U
+#define SIGNAL_FLAG_RESETHAND 0x80000000U
+
+struct ksigaction {
+  uint64_t handler;
+  uint64_t mask;
+  uint64_t restorer;
+  uint32_t flags;
+  uint32_t reserved;
+};
 
 #define FS_TYPE_EXT2 1
 #define FS_TYPE_AUTO 255
@@ -577,7 +649,7 @@ struct syscall_regs {
   uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rbp, rdi, rsi, rdx, rcx, rbx,
       rax;
   uint64_t vector, err;
-  uint64_t rip, cs, rflags;
+  uint64_t rip, cs, rflags, rsp, ss;
 };
 
 void syscall_init(void);

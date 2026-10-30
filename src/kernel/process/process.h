@@ -3,7 +3,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PROCESS_FD_COUNT 32
+#define PROCESS_FD_COUNT 64
+#define PROCESS_CWD_CAPACITY 256
+#define PROCESS_FD_CLOEXEC 1
+#define FD_PIPE_BASE 0x40000000
 #define PROCESS_COMMAND_LINE_CAPACITY 256
 #define PROCESS_ENVIRONMENT_COUNT 16
 #define PROCESS_ENVIRONMENT_NAME_CAPACITY 32
@@ -18,6 +21,7 @@ struct process_environment_entry {
 };
 
 struct ipc_mbox;
+struct process_signals;
 
 enum process_state {
   PROCESS_FREE = 0,
@@ -54,6 +58,16 @@ struct process {
   struct process *hnext;
   uint64_t node_phys;
   struct ipc_mbox *ipc_mailbox;
+  uint64_t fork_frame[22];
+  uint8_t fd_flags[PROCESS_FD_COUNT];
+  char cwd[PROCESS_CWD_CAPACITY];
+  uint64_t stack_limit;
+  uint64_t stack_low;
+  int32_t term_signal;
+  int32_t child_waiter_tid;
+  uint64_t sig_pending;
+  uint64_t sig_blocked;
+  struct process_signals *signals;
 };
 
 void process_init(void);
@@ -65,6 +79,16 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
                               int16_t affinity, uint8_t qos,
                               uint32_t capabilities);
 const char *process_last_spawn_error(void);
+struct syscall_regs;
+int32_t process_fork(const struct syscall_regs *regs);
+int32_t process_waitpid(int32_t pid, int32_t *status, uint32_t options);
+int32_t process_execve(struct syscall_regs *regs, const char *path,
+                       const char *const *argv, const char *const *envp);
+int32_t process_resolve_path(const char *path, char *out, uint32_t capacity);
+int32_t process_chdir(const char *path);
+int32_t process_getcwd(char *buffer, uint32_t capacity);
+bool process_handle_stack_fault(uint64_t address);
+void process_exit_signal(int32_t signal) __attribute__((noreturn));
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
 int32_t process_current_pid(void);

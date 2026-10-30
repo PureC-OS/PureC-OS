@@ -29,6 +29,7 @@ void pc_write_i64(int64_t value);
 void pc_read_line(const char *prompt, char *buffer, uint32_t capacity);
 void pc_sleep(uint32_t milliseconds);
 int32_t pc_getpid(void);
+int32_t pc_fork(void);
 int32_t pc_exec(const char *path);
 int32_t pc_exec_with_args(const char *path, const char *arguments);
 int32_t pc_wait(int32_t pid, int32_t *status, bool nohang);

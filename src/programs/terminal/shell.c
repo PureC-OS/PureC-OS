@@ -460,11 +460,101 @@ static void execute_program(struct terminal_window *terminal,
     pc_write(": command not found\n");
 }
 
+#define SHELL_ENV_MAX 16
+#define SHELL_ENV_ENTRY 176
+
+static bool has_shell_syntax(const char *line){
+    for(const char *cursor=line;*cursor;cursor++){
+        switch(*cursor){
+        case '|': case '&': case ';': case '<': case '>': case '(': case ')':
+        case '$': case '`': case '"': case '\'': case '*': case '?': case '[':
+        case '{': case '}': case '\\': case '#': case '~':
+            return true;
+        default: break;
+        }
+    }
+    return false;
+}
+
+static const char *find_shell(void){
+    static const char *candidates[]={"/usr/bin/sh","/bin/sh","/bin/program/sh"};
+    struct file_stat_info info;
+    for(uint32_t index=0;index<sizeof(candidates)/sizeof(candidates[0]);index++){
+        if(pc_file_stat(candidates[index],&info)==0 && !info.is_directory)
+            return candidates[index];
+    }
+    return 0;
+}
+
+static int32_t run_with_shell(struct terminal_window *terminal, const char *line){
+    const char *shell=find_shell();
+    if(!shell) return -1;
+    static struct process_environment_variable variables[SHELL_ENV_MAX];
+    static char entries[SHELL_ENV_MAX][SHELL_ENV_ENTRY];
+    char *environment[SHELL_ENV_MAX+1];
+    uint32_t count=0;
+    int32_t listed=pc_listenv(variables,SHELL_ENV_MAX);
+    for(int32_t index=0;index<listed && count<SHELL_ENV_MAX;index++){
+        if(!variables[index].used) continue;
+        uint32_t length=0;
+        for(uint32_t k=0;variables[index].name[k] && length+2<SHELL_ENV_ENTRY;k++)
+            entries[count][length++]=variables[index].name[k];
+        entries[count][length++]='=';
+        for(uint32_t k=0;variables[index].value[k] && length+1<SHELL_ENV_ENTRY;k++)
+            entries[count][length++]=variables[index].value[k];
+        entries[count][length]='\0';
+        environment[count]=entries[count];
+        count++;
+    }
+    environment[count]=0;
+    char *arguments[4]={(char*)"sh",(char*)"-c",(char*)line,0};
+    int32_t pid=pc_fork();
+    if(pid<0) return -1;
+    if(pid==0){
+        pc_syscall(SYS_EXECVE,(uint64_t)(uintptr_t)shell,
+                   (uint64_t)(uintptr_t)arguments,(uint64_t)(uintptr_t)environment);
+        pc_exit(127);
+    }
+    int32_t status=0;
+    int64_t waited;
+    do{
+        waited=pc_syscall(SYS_WAITPID,(uint64_t)pid,(uint64_t)(uintptr_t)&status,0);
+    }while(waited==-KERR_INTR);
+    (void)terminal_window_restore(terminal);
+    if(waited<0){
+        pc_write("shell: wait failed\n");
+        return pid;
+    }
+    if(status&0x7F){
+        pc_write("shell: terminated by signal ");
+        pc_write_i64(status&0x7F);
+        pc_write("\n");
+    } else if((status>>8)&0xFF){
+        pc_write("shell: program exited with status ");
+        pc_write_i64((status>>8)&0xFF);
+        pc_write("\n");
+    }
+    return pid;
+}
+
+static bool is_terminal_builtin(const char *command){
+    static const char *names[]={"exit","cd","env","ping","set","unset","stat",
+                                "inode","super","blocks","fsinfo","dumpi","panic"};
+    for(uint32_t index=0;index<sizeof(names)/sizeof(names[0]);index++)
+        if(pc_strcmp(command,names[index])==0) return true;
+    return false;
+}
+
 static bool execute_line(struct terminal_window *terminal, char *line){
+    char original[SHELL_LINE_CAPACITY];
+    pc_copy(original,line,sizeof(original));
     char *command;
     const char *arguments;
     split_line(line,&command,&arguments);
     if(!command[0]) return true;
+    if(pc_strcmp(command,"exit")==0) return false;
+    bool builtin=is_terminal_builtin(command) && !has_shell_syntax(original);
+    if(!builtin && run_with_shell(terminal,original)>=0) return true;
     if(pc_strcmp(command,"exit")==0) return false;
     else if(pc_strcmp(command,"cd")==0) change_directory(terminal,arguments);
     else if(pc_strcmp(command,"env")==0) shell_print_environment();

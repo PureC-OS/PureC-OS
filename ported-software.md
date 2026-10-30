@@ -28,6 +28,7 @@ the build system.
 | SDL2 | 2.33.0 | zlib | `SDL/` | Userspace (lib) | `/usr/bin/sdltest` (optional) | Working; software rendering only |
 | SDL2_mixer | n/a — in-house shim | n/a | `src/libsdl2_mixer/` | Userspace (lib) | via consumers | Working (channels + OPL hook) |
 | Chocolate Doom | 3.1.1 | GPL-2.0 | `chocolate-doom/`, `src/chocolate/` | Userspace | `/usr/bin/doom` (optional) | Working; Doom only, no netplay |
+| GNU Make | 4.4.1 | GPL-3.0-or-later | `gnumake/`, `src/make/` | Userspace | `/usr/bin/make` (optional) | Ported and starts (`make --version`); Makefile runs not yet verified; `-j1` only |
 | Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | `/usr/share/doom/freedoom1.wad` (optional) | Working (Phase 1) |
 | doomgeneric | unspecified | GPL-2.0 | `src/doom/` (+ external clone) | Userspace | Not shipped | Fallback driver; build skipped without sources |
 | wolfSSL | 5.9.4 | GPLv2/3 or commercial | `wolfssl/` | Kernel module + lib | `/lib/modules/wolf.*` | Buildable; **no consumer yet** |
@@ -234,13 +235,45 @@ the build system.
 
 ---
 
+## GNU Make
+
+- **Location**: unpacked upstream tarball at `gnumake/` (not tracked by git,
+  like the other third-party checkouts); port build hooks in `src/make/`
+  (`Makefile`, hand-written `config.h`, `shim.c`).
+- **Upstream**: GNU Make **4.4.1**, GPL-3.0-or-later.
+- **Scope**: the full `src/*.c` tree except the platform ports (Amiga, DOS,
+  VMS, Windows). `glob` and `fnmatch` come from make's bundled `lib/`;
+  `find_in_given_path` is provided by `src/make/shim.c`. Disabled: jobserver
+  (only `-j1` works until `pselect` exists), `load`, archive (`.a`) members,
+  and output sync.
+- **Code changes**: none in the upstream sources. Everything lives in
+  `src/make/config.h` and `src/make/shim.c`.
+- **Process model**: recipes run through `posix_spawn` (`USE_POSIX_SPAWN`)
+  and the PureC `sh` (`/usr/bin/sh`, also shipped as `/bin/sh`). This relies on
+  the kernel `fork`/`execve`/`waitpid`, pipes, `dup2`, signals and per-process
+  working directory added with the process-model rework, plus the libc
+  additions in `src/libc/posix.c` (`umask`, `mkstemp`, `getpwnam`, `uname`,
+  `getrlimit`, `stpcpy`, `mempcpy`, `asprintf`, `st_ino`/`st_dev`, …).
+- **Build**: `mk/main.mk` `programs` → `make -C src/make`; links `libpurefs.a
+  libpurec.a` → `bin/programs/make`. Skipped if `gnumake/src/main.c` is
+  missing. Standalone target: `make gnumake`.
+- **Ships as**: optional `/usr/bin/make`.
+- **Verification**: tested on VirtualBox; `make --version` works and make
+  parses Makefiles (it reports `missing separator` on a recipe indented with
+  spaces). Running a full recipe is not yet confirmed. Recipe lines must start
+  with a Tab (the bundled `nano` does not insert one; use `printf` or
+  `.RECIPEPREFIX`).
+- **Limits**: no jobserver or `-j` greater than 1; recipe utilities
+  (`rm -f`, `mkdir -p`, `cp`, `mv`, `touch`, `sed`, `grep`) depend on what the
+  PureC system programs support.
+
 ## Build and Fetch Map
 
 The top-level `Makefile` includes `mk/main.mk`. Relevant targets:
 
 | Package | Target | Skipped when |
 |---|---|---|
-| Lua, MicroPython, TCC, Chocolate Doom | `make programs` | Sources missing |
+| Lua, MicroPython, TCC, Chocolate Doom, GNU Make | `make programs` | Sources missing |
 | SDL2 | `make sdl2` | `SDL/src/SDL.c` absent |
 | doomgeneric | `make doomgeneric` | `doomgeneric/` (external clone) absent |
 | wolfSSL | `make wolf` / `kernel` | `wolfssl/` absent |

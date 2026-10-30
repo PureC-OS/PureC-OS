@@ -6,9 +6,11 @@
 #include "../../../../drivers/interrupts/timer.h"
 #include "../../../../kernel/process/scheduler.h"
 #include "../../../../kernel/process/process.h"
+#include "../../../../kernel/process/signal.h"
 #include "../../../../kernel/diagnostics/klog.h"
 #include <stdint.h>
 #include <stdbool.h>
+#include "../../../../mm/vmm.h"
 #include "../../../../kernel/smp/smp.h"
 #include "../../../../kernel/smp/lapic.h"
 #include "../../../../kernel/smp/cpu.h"
@@ -54,8 +56,17 @@ static void idt_set_ist(int n, uint8_t ist){
 struct isr_regs {
     uint64_t r15, r14, r13, r12, r11, r10, r9, r8, rbp, rdi, rsi, rdx, rcx, rbx, rax;
     uint64_t vector, err;
-    uint64_t rip, cs, rflags;
+    uint64_t rip, cs, rflags, rsp, ss;
 };
+
+static void deliver_timer_signals(struct isr_regs *regs, uint64_t cs){
+    if((cs&3)!=3) return;
+    struct process *p=process_current();
+    if(!p || !(p->sig_pending & ~p->sig_blocked)) return;
+    scheduler_enter_kernel();
+    signal_deliver((struct syscall_regs*)regs);
+    scheduler_leave_kernel();
+}
 
 static inline void pic_eoi(uint8_t irq){
     if(irq>=8) __asm__ volatile("outb %0,%1"::"a"((uint8_t)0x20),"Nd"((uint16_t)0xA0));
@@ -172,12 +183,14 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         lapic_eoi();
         if(vector==SMP_TIMER_VECTOR) scheduler_on_timer_interrupt();
         else scheduler_on_reschedule_interrupt();
+        deliver_timer_signals(regs, cs);
         return;
     }
     if (vector == 0x80) {
         scheduler_enter_kernel();
         int64_t ret = syscall_handler((struct syscall_regs*)regs);
         regs->rax = (uint64_t)ret;
+        if((regs->cs&3)==3) signal_deliver((struct syscall_regs*)regs);
         scheduler_leave_kernel();
         return;
     }
@@ -190,6 +203,7 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         timer_tick();
         pic_eoi(0);
         scheduler_on_timer_interrupt();
+        deliver_timer_signals(regs, cs);
         return;
     }
     if (vector >= 32 && vector < 48) {
@@ -212,12 +226,21 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     }
     uint64_t cr2 = 0;
     if(vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
+    if(vector == 14 && vmm_handle_cow_fault(process_current_address_space(), cr2, err)) return;
+    if(vector == 14 && !(err & 1) && process_handle_stack_fault(cr2)) return;
     if((cs&3)==3 && process_current_is_user()){
         scheduler_enter_kernel();
         klogf(KLOG_ERROR,
               "process: pid=%d exception=%u rip=0x%llx cr2=0x%llx",
               process_current_pid(),(uint32_t)vector,rip,cr2);
-        process_exit_current(128+(int32_t)vector);
+        int32_t sig = SIGSEGV;
+        if(vector==0 || vector==16 || vector==19) sig = SIGFPE;
+        else if(vector==6) sig = SIGILL;
+        else if(vector==17) sig = SIGBUS;
+        else if(vector==1 || vector==3) sig = SIGTRAP;
+        signal_fault(sig,(struct syscall_regs*)regs);
+        scheduler_leave_kernel();
+        return;
     }
     kernel_panic_exception(vector, err, rip, cs, rflags, cr2,
                            (const struct panic_registers*)regs);

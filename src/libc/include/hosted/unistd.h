@@ -4,6 +4,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "sys/types.h"
 
 #ifndef SEEK_SET
 #define SEEK_SET 0
@@ -29,7 +30,35 @@ int access(const char *path, int mode);
 int isatty(int fd);
 unsigned int sleep(unsigned int seconds);
 char *getcwd(char *buffer, size_t capacity);
+#define _CS_PATH 0
+size_t confstr(int name, char *buffer, size_t length);
+char *getlogin(void);
+pid_t fork(void);
+pid_t vfork(void);
+uid_t getuid(void);
+uid_t geteuid(void);
+gid_t getgid(void);
+gid_t getegid(void);
+int setpgid(pid_t pid, pid_t group);
+pid_t getpgrp(void);
+pid_t tcgetpgrp(int fd);
+int tcsetpgrp(int fd, pid_t group);
+pid_t getpid(void);
+pid_t getppid(void);
+int dup(int fd);
+int ftruncate(int fd, off_t length);
+int dup2(int old_fd, int new_fd);
+int pipe(int fds[2]);
+int pipe2(int fds[2], int flags);
+int chdir(const char *path);
+int execve(const char *path, char *const *argv, char *const *envp);
+int execv(const char *path, char *const *argv);
 int execvp(const char *file, char *const *argv);
+int execvpe(const char *file, char *const *argv, char *const *envp);
+int execl(const char *path, const char *argument, ...);
+int execlp(const char *file, const char *argument, ...);
+int pause(void);
+unsigned int alarm(unsigned int seconds);
 
 #define F_OK 0
 #define R_OK 4
