@@ -372,3 +372,10 @@ char *getlogin(void)
 }
 
 long long strtoll(const char *text, char **end, int base) { return (long long)strtol(text, end, base); }
+
+int getloadavg(double loadavg[], int count)
+{
+    (void)loadavg;
+    (void)count;
+    return -1;
+}

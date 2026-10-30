@@ -37,6 +37,7 @@ int setenv(const char *name, const char *value, int overwrite);
 int unsetenv(const char *name);
 int clearenv(void);
 int mkstemp(char *path);
+int getloadavg(double loadavg[], int count);
 char *mktemp(char *path);
 char *mkdtemp(char *path);
 int putenv(char *entry);
