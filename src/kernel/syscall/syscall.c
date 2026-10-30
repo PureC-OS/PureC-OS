@@ -171,7 +171,7 @@ int64_t syscall_handler(struct syscall_regs *r) {
       serial_putc(s[i]);
       if (gop_console_is_active())
         gop_console_putc(s[i]);
-      else
+      else if (!rs_session_active())
         gop_putc(s[i]);
     }
     return (int64_t)len;

@@ -9,6 +9,7 @@ bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
                               uint32_t width, uint32_t height);
 void compositor_window_destroy(uint32_t pid);
 void compositor_window_raise(uint32_t pid);
+void compositor_window_set_topmost(uint32_t pid, bool topmost);
 bool compositor_window_exists(uint32_t pid);
 
 bool compositor_draw_rect(uint32_t pid, uint32_t x, uint32_t y, uint32_t w,

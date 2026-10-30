@@ -179,6 +179,22 @@ int64_t rs_session_wm(uint32_t pid, uint64_t op, uint64_t arg1,
     return 0;
   case RS_WM_FOCUSED_PID:
     return (int64_t)window_manager_focused_pid();
+  case RS_WM_TASKS: {
+    uint32_t capacity = (uint32_t)arg2;
+    if (capacity > 32)
+      capacity = 32;
+    if (!capacity ||
+        !process_user_buffer((void *)(uintptr_t)arg1,
+                             (uint64_t)capacity * sizeof(struct gui_task_info),
+                             true))
+      return -1;
+    return (int64_t)window_manager_tasks(
+        (struct gui_task_info *)(uintptr_t)arg1, capacity);
+  }
+  case RS_WM_ACTIVATE:
+    return window_manager_activate((uint32_t)arg1) ? 0 : -1;
+  case RS_WM_COMMAND:
+    return window_manager_command((uint32_t)arg1, (uint32_t)arg2) ? 0 : -1;
   default:
     return -1;
   }

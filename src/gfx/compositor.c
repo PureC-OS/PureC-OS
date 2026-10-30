@@ -28,6 +28,7 @@ struct comp_window {
   uint64_t phys;
   uint64_t pages;
   uint32_t depth;
+  bool topmost;
   bool dirty;
   int32_t dx0;
   int32_t dy0;
@@ -358,21 +359,48 @@ void compositor_window_destroy(uint32_t pid) {
   comp_leave(&c);
 }
 
-void compositor_window_raise(uint32_t pid) {
-  struct comp_ctx c;
-  comp_enter(&c);
-  struct comp_window *w = find_window(pid);
-  if (!w || zcount == 0 || zorder[zcount - 1] == w) {
-    comp_leave(&c);
-    return;
-  }
+static void restack_locked(struct comp_window *w) {
   uint32_t out = 0;
   for (uint32_t i = 0; i < zcount; i++)
     if (zorder[i] != w)
       zorder[out++] = zorder[i];
-  zorder[out++] = w;
-  zcount = out;
+  uint32_t at = out;
+  if (!w->topmost) {
+    for (uint32_t i = 0; i < out; i++) {
+      if (zorder[i]->topmost) {
+        at = i;
+        break;
+      }
+    }
+  }
+  for (uint32_t i = out; i > at; i--)
+    zorder[i] = zorder[i - 1];
+  zorder[at] = w;
+  zcount = out + 1;
+}
+
+void compositor_window_raise(uint32_t pid) {
+  struct comp_ctx c;
+  comp_enter(&c);
+  struct comp_window *w = find_window(pid);
+  if (!w || zcount == 0) {
+    comp_leave(&c);
+    return;
+  }
+  restack_locked(w);
   present_window_locked(w);
+  comp_leave(&c);
+}
+
+void compositor_window_set_topmost(uint32_t pid, bool topmost) {
+  struct comp_ctx c;
+  comp_enter(&c);
+  struct comp_window *w = find_window(pid);
+  if (w && w->topmost != topmost) {
+    w->topmost = topmost;
+    restack_locked(w);
+    present_window_locked(w);
+  }
   comp_leave(&c);
 }
 

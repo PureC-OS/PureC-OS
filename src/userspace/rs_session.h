@@ -15,6 +15,9 @@ struct fb_blit_request;
 #define RS_WM_REQUEST_REPAINT 3
 #define RS_WM_FOCUSED_PID 4
 #define RS_WM_SET_WORK_AREA 5
+#define RS_WM_TASKS 6
+#define RS_WM_ACTIVATE 7
+#define RS_WM_COMMAND 8
 
 bool rs_session_start(void);
 void rs_session_input_thread(void *arg);

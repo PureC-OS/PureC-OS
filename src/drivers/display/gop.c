@@ -39,8 +39,8 @@ static gfx_font_face_t console_gfx_face(void){
     return GFX_FONT_CLEAN;
 }
 
-#define GOP_CONSOLE_COLUMNS 128
-#define GOP_CONSOLE_ROWS 64
+#define GOP_CONSOLE_COLUMNS 480
+#define GOP_CONSOLE_ROWS 216
 #define GOP_CONSOLE_SLOTS 8
 
 struct gop_console {

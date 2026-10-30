@@ -2,6 +2,7 @@
 #include "../drivers/display/gop.h"
 #include "../drivers/interrupts/timer.h"
 #include "../gfx/compositor.h"
+#include "../kernel/process/process.h"
 #include "../kernel/process/scheduler.h"
 #include "../kernel/sync/spinlock.h"
 #include "../lib/string.h"
@@ -26,6 +27,8 @@ struct managed_window {
     uint32_t z_order;
     uint32_t flags;
     uint32_t generation;
+    uint32_t sequence;
+    uint32_t previous_focus;
     bool used;
     bool repaint_pending;
     bool minimized;
@@ -42,6 +45,7 @@ struct wm_chunk {
 static struct wm_chunk *wm_chunks;
 static uint32_t focused_pid;
 static uint32_t next_z_order=1;
+static uint32_t next_sequence=1;
 static uint32_t repainting_pid;
 static bool registry_suspended;
 static bool server_mode;
@@ -217,6 +221,7 @@ static enum wm_zone zone_at(const struct managed_window *window,
                             int32_t x, int32_t y){
     struct gui_window_request frame=visible_frame(window);
     if(!point_inside(x,y,&frame)) return ZONE_NONE;
+    if(window->flags&GUI_WINDOW_FLAG_POPUP) return ZONE_CLIENT;
     int32_t relative_x=x-(int32_t)frame.x;
     int32_t relative_y=y-(int32_t)frame.y;
     if(relative_y>=WM_TITLEBAR_HEIGHT+WM_BORDER*2) return ZONE_CLIENT;
@@ -331,6 +336,8 @@ static bool register_locked(uint32_t pid,
     window->close_requested=false;
     window->flags=0;
     window->generation=0;
+    window->sequence=next_sequence++;
+    window->previous_focus=focused_pid;
     window->z_order=next_z_order++;
     focused_pid=pid;
     (void)compositor_window_create(pid,request->x,request->y,
@@ -475,7 +482,12 @@ uint32_t window_manager_pointer(int32_t x, int32_t y, uint8_t buttons,
         return 0;
     }
     struct managed_window *top=top_window_at(x,y);
-    if(pressed){
+    bool over_popup=top && (top->flags&GUI_WINDOW_FLAG_POPUP);
+    if(over_popup) top=0;
+    if(pressed && over_popup){
+        press_pid=0;
+        press_zone=ZONE_NONE;
+    } else if(pressed){
         uint32_t previous=focused_pid;
         if(top){
             focused_pid=top->pid;
@@ -651,7 +663,18 @@ bool window_manager_info(uint32_t pid, struct gui_window_info *out){
 bool window_manager_set_flags(uint32_t pid, uint32_t flags){
     struct wm_guard guard=wm_enter();
     struct managed_window *window=find_window(pid);
-    if(window) window->flags=flags;
+    if(window){
+        bool was_popup=(window->flags&GUI_WINDOW_FLAG_POPUP)!=0;
+        window->flags=flags;
+        if((flags&GUI_WINDOW_FLAG_POPUP) && !was_popup){
+            if(focused_pid==pid)
+                focused_pid=find_window(window->previous_focus)
+                    ? window->previous_focus : 0;
+            compositor_window_set_topmost(pid,true);
+        } else if(!(flags&GUI_WINDOW_FLAG_POPUP) && was_popup){
+            compositor_window_set_topmost(pid,false);
+        }
+    }
     wm_leave(guard);
     return window!=0;
 }
@@ -665,6 +688,60 @@ bool window_manager_command(uint32_t pid, uint32_t command){
         else if(command==GUI_WINDOW_CMD_MAXIMIZE) maximize_window(window);
         else if(command==GUI_WINDOW_CMD_UNMAXIMIZE) unmaximize_window(window);
         else window=0;
+    }
+    wm_leave(guard);
+    return window!=0;
+}
+
+uint32_t window_manager_tasks(struct gui_task_info *out, uint32_t capacity){
+    struct wm_guard guard=wm_enter();
+    uint32_t count=0;
+    uint32_t last=0;
+    for(;;){
+        struct managed_window *best=0;
+        uint32_t total=wm_slot_total();
+        for(uint32_t index=0;index<total;index++){
+            struct managed_window *window=wm_slot_at(index);
+            if(!window || !window->used || window->sequence<=last
+               || (window->flags&GUI_WINDOW_FLAG_POPUP))
+                continue;
+            if(!best || window->sequence<best->sequence) best=window;
+        }
+        if(!best) break;
+        last=best->sequence;
+        if(out && count<capacity){
+            struct gui_task_info *task=&out[count];
+            memset(task,0,sizeof(*task));
+            task->pid=best->pid;
+            task->flags=(best->minimized ? GUI_TASK_MINIMIZED : 0)
+                | (focused_pid==best->pid ? GUI_TASK_FOCUSED : 0);
+            struct process *process=process_lookup_by_pid(best->pid);
+            if(process){
+                const char *name=process->name;
+                const char *base=name;
+                for(const char *p=name;*p;p++)
+                    if(*p=='/') base=p+1;
+                uint32_t i=0;
+                for(;base[i] && i+1<sizeof(task->name);i++)
+                    task->name[i]=base[i];
+                task->name[i]='\0';
+            }
+        }
+        count++;
+    }
+    wm_leave(guard);
+    return count;
+}
+
+bool window_manager_activate(uint32_t pid){
+    struct wm_guard guard=wm_enter();
+    struct managed_window *window=registry_suspended ? 0 : find_window(pid);
+    if(window && (window->flags&GUI_WINDOW_FLAG_POPUP)) window=0;
+    if(window){
+        if(window->minimized) set_minimized(window,false);
+        focused_pid=pid;
+        window->z_order=next_z_order++;
+        compositor_window_raise(pid);
     }
     wm_leave(guard);
     return window!=0;

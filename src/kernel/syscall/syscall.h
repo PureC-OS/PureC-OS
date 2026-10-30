@@ -292,6 +292,7 @@ struct net_if_info {
 
 #define GUI_WINDOW_FLAG_FIXED 1
 #define GUI_WINDOW_FLAG_NOCLOSE 2
+#define GUI_WINDOW_FLAG_POPUP 4
 
 #define GUI_WINDOW_CMD_MINIMIZE 1
 #define GUI_WINDOW_CMD_RESTORE 2
@@ -304,6 +305,15 @@ struct gui_window_request {
   uint32_t width;
   uint32_t height;
 };
+
+struct gui_task_info {
+  uint32_t pid;
+  uint32_t flags;
+  char name[32];
+};
+
+#define GUI_TASK_MINIMIZED 1
+#define GUI_TASK_FOCUSED 2
 
 struct gui_window_info {
   uint32_t x;
