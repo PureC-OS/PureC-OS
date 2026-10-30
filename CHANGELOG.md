@@ -2,6 +2,18 @@
 
 ## V1.2.28 — Права доступа и аккаунты, новый установщик, драйвер RNG, ext2 без заглушек, VFS на таблице монтирования, драйверы железа
 
+
+## Процессная модель и порт GNU Make
+
+- Настоящие `fork` (COW, счётчики ссылок на фреймы) и `execve` с `argv`/`envp`, `waitpid` с POSIX-статусом, сигналы (`kill`, `sigaction`, `sigprocmask`, доставка на выходе из syscall и по таймеру), рост пользовательского стека по page fault.
+- Файловые дескрипторы на общих open-file-description: `dup`, `dup2`, `fork`, `execve` разделяют смещение; каналы, `FD_CLOEXEC`, `O_NONBLOCK`, `O_RDWR`, запись по смещению, `lseek`, `ftruncate`; `stdio` переписан поверх fd.
+- Рабочий каталог процесса (`chdir`/`getcwd`), `SYS_WRITE` родных программ уважает редирект fd 1.
+- Новый POSIX `sh` (`/usr/bin/sh`, `/bin/sh`); терминал выполняет команды через `sh -c`.
+- libc: `posix_spawn`, `system`, `popen`, `pipe`, `fcntl`, `mkstemp`, `getpwnam`, `uname`, `getrlimit`, `umask` и другое (`src/libc/process.c`, `src/libc/posix.c`).
+- Порт **GNU Make 4.4.1** (`src/make/`, исходники в `gnumake/`): запускается на PureC OS (`make --version`, разбор Makefile), `-j1`; выполнение рецептов ещё не подтверждено. Подробности в `ported-software.md`.
+- Тесты: `proctest`, `forktest`, `tests/pmm_refcount_test.c`.
+
+
 ## SDL2 и Chocolate Doom: порт игровой экосистемы
 
 ### События ввода: отпускание клавиш, сканкоды, колесо (`src/drivers/input`, `src/drivers/mouse`, libc, libgui)
