@@ -3,6 +3,7 @@
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/process/scheduler.h"
 #include "../../kernel/sync/spinlock.h"
+#include "../../kernel/tty/tty.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -100,6 +101,7 @@ static uint8_t special_buf[KBD_SPECIAL_BUF_SIZE];
 static uint8_t special_head = 0, special_tail = 0, special_count = 0;
 
 static void kbd_push(char c){
+    tty_feed_char(c);
     if(kbd_count >= KBD_BUF_SIZE) return;
     kbd_buf[kbd_head] = c;
     kbd_head = (kbd_head + 1) % KBD_BUF_SIZE;
@@ -119,6 +121,7 @@ static bool kbd_pop(char *out){
 }
 
 static void special_push(uint8_t key){
+    tty_feed_special(key);
     if(special_count >= KBD_SPECIAL_BUF_SIZE) return;
     special_buf[special_head] = key;
     special_head = (special_head + 1) % KBD_SPECIAL_BUF_SIZE;
@@ -135,6 +138,14 @@ static bool special_pop(uint8_t *out){
     }
     spin_unlock_irqrestore(&keyboard_lock, flags);
     return ok;
+}
+
+static void function_key_push(uint8_t number){
+    static const char *const sequences[] = {
+        "\033OS", "\033[15~", "\033[17~", "\033[18~", "\033[19~",
+        "\033[20~", "\033[21~", "\033[23~", "\033[24~"
+    };
+    if(number >= 4 && number <= 12) tty_feed_sequence(sequences[number-4]);
 }
 
 #define KBD_EVENT_BUF_SIZE 64
@@ -213,6 +224,7 @@ static void handle_scancode_set1(uint8_t sc){
             case 0x48: special_push(KEYBOARD_SPECIAL_UP); break;
             case 0x50: special_push(KEYBOARD_SPECIAL_DOWN); break;
             case 0x53: special_push(KEYBOARD_SPECIAL_DELETE); break;
+            case 0x52: tty_feed_sequence("\033[2~"); break;
             default: break;
         }
         return;
@@ -251,6 +263,14 @@ static void handle_scancode_set1(uint8_t sc){
     }
     if(sc == 0x3D){
         special_push(KEYBOARD_SPECIAL_F3);
+        return;
+    }
+    if(sc >= 0x3E && sc <= 0x44){
+        function_key_push((uint8_t)(sc - 0x3E + 4));
+        return;
+    }
+    if(sc == 0x57 || sc == 0x58){
+        function_key_push((uint8_t)(sc - 0x57 + 11));
         return;
     }
     if(sc >= 128) return;
@@ -304,6 +324,7 @@ static void handle_scancode_set2(uint8_t sc){
         if(sc == 0x75) special_push(KEYBOARD_SPECIAL_UP);
         if(sc == 0x72) special_push(KEYBOARD_SPECIAL_DOWN);
         if(sc == 0x71) special_push(KEYBOARD_SPECIAL_DELETE);
+        if(sc == 0x70) tty_feed_sequence("\033[2~");
         return;
     }
     if(sc == 0x05){
@@ -317,6 +338,17 @@ static void handle_scancode_set2(uint8_t sc){
     if(sc == 0x04){
         special_push(KEYBOARD_SPECIAL_F3);
         return;
+    }
+    {
+        static const uint8_t function_codes[] = {
+            0x0C, 0x03, 0x0B, 0x83, 0x0A, 0x01, 0x09, 0x78, 0x07
+        };
+        for(uint8_t i = 0; i < sizeof(function_codes); i++){
+            if(sc == function_codes[i]){
+                function_key_push((uint8_t)(i + 4));
+                return;
+            }
+        }
     }
     if(sc == 0x58){
         caps_lock = !caps_lock;
@@ -454,6 +486,13 @@ void keyboard_poll(void){
         uint8_t sc = inb(KBD_DATA);
         handle_scancode(sc);
     }
+    spin_unlock_irqrestore(&keyboard_lock, flags);
+}
+
+void keyboard_flush_legacy(void){
+    uint64_t flags = spin_lock_irqsave(&keyboard_lock);
+    kbd_head = kbd_tail = kbd_count = 0;
+    special_head = special_tail = special_count = 0;
     spin_unlock_irqrestore(&keyboard_lock, flags);
 }
 

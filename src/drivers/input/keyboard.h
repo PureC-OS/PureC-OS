@@ -23,6 +23,7 @@ bool keyboard_has_key(void);
 bool keyboard_try_getc(char *out);
 char keyboard_getc(void);
 void keyboard_poll(void);
+void keyboard_flush_legacy(void);
 void keyboard_set_leds(bool caps, bool num, bool scroll);
 bool keyboard_try_get_special(uint8_t *out);
 bool keyboard_try_get_event(struct key_event *out);
