@@ -413,17 +413,107 @@ int rand(void) {
 
 void srand(unsigned int seed) { rand_state = seed ? seed : 1; }
 
+char **environ;
+static bool environ_owned;
+
+static size_t environ_count(void) {
+    size_t count = 0;
+    if (environ) while (environ[count]) count++;
+    return count;
+}
+
+static bool environ_match(const char *entry, const char *name, size_t length) {
+    return strncmp(entry, name, length) == 0 && entry[length] == '=';
+}
+
+static bool environ_make_owned(size_t extra) {
+    size_t count = environ_count();
+    char **fresh = (char **)malloc((count + extra + 1) * sizeof(char *));
+    if (!fresh) return false;
+    for (size_t i = 0; i < count; i++) {
+        if (environ_owned) { fresh[i] = environ[i]; continue; }
+        size_t length = strlen(environ[i]) + 1;
+        fresh[i] = (char *)malloc(length);
+        if (!fresh[i]) return false;
+        memcpy(fresh[i], environ[i], length);
+    }
+    fresh[count] = 0;
+    if (environ_owned) free(environ);
+    environ = fresh;
+    environ_owned = true;
+    return true;
+}
+
 char *getenv(const char *name) {
     static char value[128];
-    if (!name) return 0;
+    if (!name || !name[0]) return 0;
+    if (environ) {
+        size_t length = strlen(name);
+        for (size_t i = 0; environ[i]; i++) {
+            if (environ_match(environ[i], name, length))
+                return environ[i] + length + 1;
+        }
+        return 0;
+    }
     if (pc_getenv(name, value, sizeof(value)) < 0) return 0;
     return value;
 }
 
-int system(const char *cmd) {
-    // No shell on PureC OS: NULL probe returns 0, any command fails.
-    (void)cmd;
-    return (cmd == 0) ? 0 : -1;
+int setenv(const char *name, const char *value, int overwrite) {
+    if (!name || !name[0] || !value || strchr(name, '=')) { errno = EINVAL; return -1; }
+    if (!environ) {
+        if (!overwrite && getenv(name)) return 0;
+        return pc_setenv(name, value) < 0 ? -1 : 0;
+    }
+    size_t length = strlen(name);
+    for (size_t i = 0; environ[i]; i++) {
+        if (!environ_match(environ[i], name, length)) continue;
+        if (!overwrite) return 0;
+        if (!environ_make_owned(0)) { errno = ENOMEM; return -1; }
+        char *entry = (char *)malloc(length + strlen(value) + 2);
+        if (!entry) { errno = ENOMEM; return -1; }
+        memcpy(entry, name, length);
+        entry[length] = '=';
+        strcpy(entry + length + 1, value);
+        environ[i] = entry;
+        (void)pc_setenv(name, value);
+        return 0;
+    }
+    if (!environ_make_owned(1)) { errno = ENOMEM; return -1; }
+    char *entry = (char *)malloc(length + strlen(value) + 2);
+    if (!entry) { errno = ENOMEM; return -1; }
+    memcpy(entry, name, length);
+    entry[length] = '=';
+    strcpy(entry + length + 1, value);
+    size_t count = environ_count();
+    environ[count] = entry;
+    environ[count + 1] = 0;
+    (void)pc_setenv(name, value);
+    return 0;
+}
+
+int unsetenv(const char *name) {
+    if (!name || !name[0] || strchr(name, '=')) { errno = EINVAL; return -1; }
+    if (!environ) return pc_unsetenv(name) < 0 ? -1 : 0;
+    size_t length = strlen(name);
+    for (size_t i = 0; environ[i]; i++) {
+        if (!environ_match(environ[i], name, length)) continue;
+        if (!environ_make_owned(0)) { errno = ENOMEM; return -1; }
+        size_t count = environ_count();
+        for (size_t j = i; j < count; j++) environ[j] = environ[j + 1];
+        (void)pc_unsetenv(name);
+        return 0;
+    }
+    return 0;
+}
+
+int clearenv(void) {
+    if (environ_owned) free(environ);
+    environ = (char **)malloc(sizeof(char *));
+    if (!environ) { errno = ENOMEM; return -1; }
+    environ[0] = 0;
+    environ_owned = true;
+    return 0;
 }
 
 void exit(int status) {
@@ -439,7 +529,7 @@ int putenv(char *entry) {
     if (!entry[length] || length == 0 || length >= sizeof(name)) return -1;
     memcpy(name, entry, length);
     name[length] = '\0';
-    return pc_setenv(name, entry + length + 1) < 0 ? -1 : 0;
+    return setenv(name, entry + length + 1, 1);
 }
 
 double atof(const char *text) { return strtod(text, 0); }

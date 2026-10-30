@@ -28,9 +28,21 @@ int cat_main(void){
         return 0;
     }
 
-    if(!*cursor){
-        pc_write("cat: file path required\n");
-        return 1;
+    if(!*cursor || pc_strcmp(cursor, "-") == 0){
+        if(pc_syscall(SYS_FD_CTL, 0, FD_CTL_KIND, 0) == FD_KIND_CONSOLE){
+            pc_write("cat: file path required\n");
+            return 1;
+        }
+        for(;;){
+            char chunk[CAT_BUFFER_CAPACITY + 1];
+            int64_t got = pc_syscall(SYS_FD_READ, 0, (uint64_t)(uintptr_t)chunk, CAT_BUFFER_CAPACITY);
+            if(got < 0){
+                pc_write("cat: read failed\n");
+                return 1;
+            }
+            if(!got) return 0;
+            pc_syscall(SYS_WRITE, (uint64_t)(uintptr_t)chunk, (uint64_t)got, 1);
+        }
     }
 
     char target[CAT_PATH_CAPACITY];

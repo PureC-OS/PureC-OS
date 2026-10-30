@@ -66,6 +66,10 @@ int scheduler_create_user_thread(void (*entry)(void *arg), void *arg,
                                  const char *name, uint8_t priority,
                                  int16_t affinity, uint64_t address_space,
                                  struct process *process);
+int scheduler_create_forked_thread(void (*entry)(void *arg), void *arg,
+                                   const char *name, uint8_t priority,
+                                   int16_t affinity, uint64_t address_space,
+                                   struct process *process);
 int scheduler_create_service_thread(void (*entry)(void *arg), void *arg,
                                     const char *name, uint8_t priority,
                                     int16_t affinity, uint64_t address_space,

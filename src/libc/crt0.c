@@ -4,9 +4,11 @@
 // Ported programs link bin/lib/crt0.o explicitly and write a normal
 // int main(int argc, char *argv[]).
 //
-// Command line comes from pc_get_command_line (256 bytes max); it is
-// split on ASCII whitespace with double-quote grouping. Environment is
-// published via environ[] (static storage, well-known variables).
+// Entry contract: rsp points at a fake return address, followed by argc,
+// argv[], NULL, envp[], NULL. Processes created by execve carry the real
+// vectors there; processes created by the legacy spawn syscall have
+// argc == 0 and fall back to pc_get_command_line (256 bytes max, split
+// on whitespace with double-quote grouping) and the kernel environment.
 
 #include "include/purec.h"
 #include "include/hosted/stdio.h"
@@ -22,7 +24,7 @@
 
 int main(int argc, char *argv[]);
 
-char **environ;
+extern char **environ;
 
 static char crt0_cmdline[CRT0_CMDLINE];
 static char *crt0_argv[CRT0_MAX_ARGS];
@@ -31,24 +33,17 @@ static char crt0_env_storage[CRT0_ENV_COUNT][CRT0_ENV_NAME + CRT0_ENV_VALUE + 2]
 static char *crt0_environ[CRT0_ENV_COUNT + 1];
 
 static void crt0_build_environ(void) {
-    static const char *names[] = {
-        "HOME", "PWD", "USER", "SHELL", "PATH"
-    };
-    char value[CRT0_ENV_VALUE];
+    static struct process_environment_variable list[CRT0_ENV_COUNT];
+    int32_t listed = pc_listenv(list, CRT0_ENV_COUNT);
     uint32_t count = 0;
-    for (uint32_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
-        if (count >= CRT0_ENV_COUNT) break;
-        if (pc_getenv(names[i], value, sizeof(value)) < 0) continue;
+    for (int32_t i = 0; i < listed && count < CRT0_ENV_COUNT; i++) {
+        if (!list[i].used) continue;
         uint32_t n = 0;
-        while (names[i][n] && n + 1 < CRT0_ENV_NAME) {
-            crt0_env_storage[count][n] = names[i][n];
-            n++;
-        }
+        for (uint32_t k = 0; list[i].name[k] && n + 1 < sizeof(crt0_env_storage[count]); k++)
+            crt0_env_storage[count][n++] = list[i].name[k];
         crt0_env_storage[count][n++] = '=';
-        uint32_t v = 0;
-        while (value[v] && n + 1 < sizeof(crt0_env_storage[count])) {
-            crt0_env_storage[count][n++] = value[v++];
-        }
+        for (uint32_t k = 0; list[i].value[k] && n + 1 < sizeof(crt0_env_storage[count]); k++)
+            crt0_env_storage[count][n++] = list[i].value[k];
         crt0_env_storage[count][n] = '\0';
         crt0_environ[count] = crt0_env_storage[count];
         count++;
@@ -57,9 +52,27 @@ static void crt0_build_environ(void) {
     environ = crt0_environ;
 }
 
-void _start(void) {
-    crt0_build_environ();
+__asm__(
+    ".text\n"
+    ".global _start\n"
+    "_start:\n"
+    "    xorl %ebp, %ebp\n"
+    "    leaq 8(%rsp), %rdi\n"
+    "    andq $-16, %rsp\n"
+    "    call crt0_main\n"
+    "    hlt\n");
+
+void crt0_main(uint64_t *frame) {
     int argc = 0;
+    if (frame[0] > 0) {
+        char **vector = (char **)(frame + 1);
+        int count = (int)frame[0];
+        environ = vector + count + 1;
+        int status = main(count, vector);
+        fflush(0);
+        pc_exit(status);
+    }
+    crt0_build_environ();
     if (pc_get_process_name(crt0_program, 32) >= 0
         && crt0_program[0]) {
         crt0_argv[argc++] = crt0_program;
@@ -74,12 +87,12 @@ void _start(void) {
             while (crt0_cmdline[i] == ' ' || crt0_cmdline[i] == '\t'
                    || crt0_cmdline[i] == '\n' || crt0_cmdline[i] == '\r') i++;
             if (!crt0_cmdline[i]) break;
-            bool quoted = false;
-            if (crt0_cmdline[i] == '"') { quoted = true; i++; }
+            char quote = 0;
+            if (crt0_cmdline[i] == '"' || crt0_cmdline[i] == '\'') { quote = crt0_cmdline[i]; i++; }
             crt0_argv[argc++] = &crt0_cmdline[i];
             while (crt0_cmdline[i]
-                   && ((quoted && crt0_cmdline[i] != '"')
-                       || (!quoted && crt0_cmdline[i] != ' ' && crt0_cmdline[i] != '\t'
+                   && ((quote && crt0_cmdline[i] != quote)
+                       || (!quote && crt0_cmdline[i] != ' ' && crt0_cmdline[i] != '\t'
                            && crt0_cmdline[i] != '\n' && crt0_cmdline[i] != '\r'))) i++;
             if (crt0_cmdline[i]) crt0_cmdline[i++] = '\0';
         }

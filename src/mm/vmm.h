@@ -6,6 +6,7 @@
 #define VMM_PAGE_PRESENT (1ULL << 0)
 #define VMM_PAGE_WRITABLE (1ULL << 1)
 #define VMM_PAGE_USER (1ULL << 2)
+#define VMM_PAGE_COW (1ULL << 9)
 #define VMM_PAGE_NX (1ULL << 63)
 
 void vmm_init(void);
@@ -24,3 +25,9 @@ bool vmm_user_range_accessible(uint64_t address_space, uint64_t address,
                                uint64_t size, bool writable);
 uint64_t vmm_user_page_count(uint64_t address_space);
 void vmm_switch_address_space(uint64_t address_space);
+uint64_t vmm_clone_address_space(uint64_t source);
+bool vmm_handle_cow_fault(uint64_t address_space, uint64_t virtual_address,
+                          uint64_t error_code);
+bool vmm_user_address(uint64_t virtual_address);
+bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
+                            uint64_t page_count, uint64_t flags);

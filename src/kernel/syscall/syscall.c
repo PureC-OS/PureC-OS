@@ -38,6 +38,8 @@
 #include "../diagnostics/panic.h"
 #include "../ipc/ipc.h"
 #include "../process/process.h"
+#include "../process/signal.h"
+#include "../process/fdtable.h"
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
 #include <stdbool.h>
@@ -157,6 +159,13 @@ int64_t syscall_handler(struct syscall_regs *r) {
     uint64_t len = a2;
     if (!readable(s, len))
       return -1;
+    struct process *writer = process_current();
+    if (writer && writer->descriptors[1] != VFS_FD_STDOUT) {
+      if (len > 0x7FFFFFFFULL)
+        return -1;
+      int32_t sent = fd_write(1, s, (uint32_t)len);
+      return sent < 0 ? -1 : (int64_t)sent;
+    }
     for (uint64_t i = 0; i < len; i++) {
       serial_putc(s[i]);
       if (gop_console_is_active())
@@ -386,6 +395,130 @@ int64_t syscall_handler(struct syscall_regs *r) {
     uint64_t address = process_heap_grow(a1);
     return address ? (int64_t)address : -1;
   }
+  case SYS_EXECVE:
+    if (!process_user_string((const char *)(uintptr_t)a1, 4096))
+      return -KERR_FAULT;
+    return process_execve(r, (const char *)(uintptr_t)a1,
+                          (const char *const *)(uintptr_t)a2,
+                          (const char *const *)(uintptr_t)a3);
+  case SYS_WAITPID: {
+    if (a2 && !writable((void *)(uintptr_t)a2, sizeof(int32_t)))
+      return -KERR_FAULT;
+    int32_t wait_status = 0;
+    int32_t waited = process_waitpid((int32_t)a1, &wait_status, (uint32_t)a3);
+    if (waited > 0 && a2)
+      *(int32_t *)(uintptr_t)a2 = wait_status;
+    return waited;
+  }
+  case SYS_PIPE: {
+    if (!writable((void *)(uintptr_t)a1, 2 * sizeof(int32_t)))
+      return -KERR_FAULT;
+    int32_t pair[2];
+    int32_t made = fd_pipe(pair, (uint32_t)a2);
+    if (made < 0)
+      return made;
+    ((int32_t *)(uintptr_t)a1)[0] = pair[0];
+    ((int32_t *)(uintptr_t)a1)[1] = pair[1];
+    return 0;
+  }
+  case SYS_DUP:
+    return fd_dup((int32_t)a1, 0, false);
+  case SYS_DUP2:
+    return fd_dup2((int32_t)a1, (int32_t)a2);
+  case SYS_FD_READ:
+    if (a3 > 0x7FFFFFFFULL ||
+        !writable((void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    return fd_read((int32_t)a1, (void *)(uintptr_t)a2, (uint32_t)a3);
+  case SYS_FD_WRITE:
+    if (a3 > 0x7FFFFFFFULL || !readable((const void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    return fd_write((int32_t)a1, (const void *)(uintptr_t)a2, (uint32_t)a3);
+  case SYS_FD_OPEN: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -KERR_FAULT;
+    char absolute[512];
+    int32_t resolved =
+        process_resolve_path((const char *)(uintptr_t)a1, absolute,
+                             sizeof(absolute));
+    if (resolved < 0)
+      return resolved;
+    return fd_open(absolute, (uint32_t)a2);
+  }
+  case SYS_FD_CTL:
+    return fd_ctl((int32_t)a1, (uint32_t)a2, a3);
+  case SYS_FD_STAT:
+    if (!writable((void *)(uintptr_t)a2, sizeof(struct file_stat_info)))
+      return -KERR_FAULT;
+    return fd_stat((int32_t)a1, (struct file_stat_info *)(uintptr_t)a2);
+  case SYS_FD_PATH:
+    if (a3 > 4096 || !writable((void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    return fd_path((int32_t)a1, (char *)(uintptr_t)a2, (uint32_t)a3);
+  case SYS_FD_SEEK:
+    return fd_seek((int32_t)a1, (int64_t)a2, (uint32_t)a3);
+  case SYS_FD_TRUNCATE:
+    return fd_truncate((int32_t)a1, a2);
+  case SYS_CHDIR:
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -KERR_FAULT;
+    return process_chdir((const char *)(uintptr_t)a1);
+  case SYS_GETCWD:
+  {
+    uint32_t cwd_capacity =
+        a2 > PROCESS_CWD_CAPACITY ? PROCESS_CWD_CAPACITY : (uint32_t)a2;
+    if (!writable((void *)(uintptr_t)a1, cwd_capacity))
+      return -KERR_FAULT;
+    return process_getcwd((char *)(uintptr_t)a1, cwd_capacity);
+  }
+  case SYS_KILL:
+    if ((int32_t)a1 <= 0)
+      return -KERR_SRCH;
+    return signal_send((uint32_t)a1, (int32_t)a2);
+  case SYS_SIGACTION: {
+    if ((a2 && !readable((const void *)(uintptr_t)a2,
+                         sizeof(struct ksigaction))) ||
+        (a3 && !writable((void *)(uintptr_t)a3, sizeof(struct ksigaction))))
+      return -KERR_FAULT;
+    struct ksigaction incoming;
+    if (a2)
+      incoming = *(const struct ksigaction *)(uintptr_t)a2;
+    struct ksigaction outgoing;
+    int32_t changed = signal_action_set((int32_t)a1, a2 ? &incoming : 0,
+                                        a3 ? &outgoing : 0);
+    if (changed >= 0 && a3)
+      *(struct ksigaction *)(uintptr_t)a3 = outgoing;
+    return changed;
+  }
+  case SYS_SIGPROCMASK: {
+    if ((a2 && !readable((const void *)(uintptr_t)a2, sizeof(uint64_t))) ||
+        (a3 && !writable((void *)(uintptr_t)a3, sizeof(uint64_t))))
+      return -KERR_FAULT;
+    uint64_t incoming = a2 ? *(const uint64_t *)(uintptr_t)a2 : 0;
+    uint64_t outgoing = 0;
+    int32_t changed = signal_mask_change((int32_t)a1, a2 ? &incoming : 0,
+                                         a3 ? &outgoing : 0);
+    if (changed >= 0 && a3)
+      *(uint64_t *)(uintptr_t)a3 = outgoing;
+    return changed;
+  }
+  case SYS_SIGPENDING: {
+    if (!writable((void *)(uintptr_t)a1, sizeof(uint64_t)))
+      return -KERR_FAULT;
+    uint64_t pending = 0;
+    int32_t got = signal_pending_get(&pending);
+    if (got >= 0)
+      *(uint64_t *)(uintptr_t)a1 = pending;
+    return got;
+  }
+  case SYS_SIGRETURN:
+    return signal_return(r);
+  case SYS_PAUSE:
+    return signal_pause();
+  case SYS_GETPPID:
+    return process_parent_pid((uint32_t)process_current_pid());
+  case SYS_FORK:
+    return process_fork(r);
   case SYS_EXEC:
     if (!readable_string((const char *)(uintptr_t)a1) ||
         (a2 && !readable_string((const char *)(uintptr_t)a2)))

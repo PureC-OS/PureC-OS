@@ -52,6 +52,10 @@ C_SOURCES := \
 	kernel/time/rtc.c \
 	kernel/time/wallclock.c \
 	kernel/ipc/ipc.c \
+	kernel/ipc/pipe.c \
+	kernel/process/signal.c \
+	kernel/process/fdtable.c \
+	kernel/process/ofd.c \
 	mm/pmm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \

@@ -1,7 +1,6 @@
 #pragma once
-// PureC hosted libc: signal. No signal delivery exists yet, so this is
-// declarations plus ENOSYS stubs (see signal.c) — enough for TCC's
-// -run backtrace sources to compile; AOT never arms handlers.
+// PureC hosted libc: signal. Kernel-backed: handlers run on return to
+// user mode (syscall exit or timer tick); siginfo is not populated.
 
 typedef void (*sighandler_t)(int);
 typedef unsigned long sigset_t;
@@ -35,6 +34,8 @@ typedef int sig_atomic_t;
 
 #define SA_SIGINFO 4
 #define SA_RESTART 0x10000000
+#define SA_NODEFER 0x40000000
+#define SA_RESETHAND 0x80000000
 #define SA_NOCLDSTOP 1
 
 // Minimal siginfo for TCC's -run backtrace sources to compile.
@@ -65,7 +66,9 @@ struct sigaction {
 
 int sigprocmask(int how, const sigset_t *set, sigset_t *previous);
 
-int signal(int signum, sighandler_t handler);
+sighandler_t signal(int signum, sighandler_t handler);
+int sigpending(sigset_t *set);
+int sigsuspend(const sigset_t *mask);
 int sigaction(int signum, const struct sigaction *action,
               struct sigaction *previous);
 int sigemptyset(sigset_t *set);

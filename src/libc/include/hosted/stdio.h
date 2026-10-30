@@ -16,7 +16,7 @@
 #define EOF (-1)
 #define BUFSIZ 4096
 #define FILENAME_MAX 256
-#define FOPEN_MAX 16
+#define FOPEN_MAX 128
 #define TMP_MAX 10000
 #define L_tmpnam 64
 
@@ -41,6 +41,8 @@ FILE *freopen(const char *filename, const char *mode, FILE *stream);
 FILE *tmpfile(void);
 char *tmpnam(char *s);
 FILE *fdopen(int fd, const char *mode);
+FILE *popen(const char *command, const char *type);
+int pclose(FILE *stream);
 int fclose(FILE *stream);
 int fflush(FILE *stream);
 size_t fread(void *buffer, size_t size, size_t count, FILE *stream);
@@ -65,6 +67,9 @@ void perror(const char *prefix);
 int printf(const char *format, ...);
 int fprintf(FILE *stream, const char *format, ...);
 int snprintf(char *buffer, size_t capacity, const char *format, ...);
+int vsprintf(char *buffer, const char *format, va_list args);
+int vasprintf(char **result, const char *format, va_list args);
+int asprintf(char **result, const char *format, ...);
 int vsnprintf(char *buffer, size_t capacity, const char *format, va_list args);
 int vfprintf(FILE *stream, const char *format, va_list args);
 int sprintf(char *buffer, const char *format, ...);
