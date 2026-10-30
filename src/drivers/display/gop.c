@@ -885,6 +885,19 @@ void gop_console_release(uint32_t owner_pid){
     spin_unlock_irqrestore(&console_lock,flags);
 }
 
+void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy){
+    if(!owner_pid || (!dx && !dy)) return;
+    uint64_t flags=spin_lock_irqsave(&console_lock);
+    struct gop_console *slot=console_find_locked(owner_pid);
+    if(slot){
+        int64_t nx=(int64_t)slot->x+dx;
+        int64_t ny=(int64_t)slot->y+dy;
+        slot->x=nx<0 ? 0 : (uint32_t)nx;
+        slot->y=ny<0 ? 0 : (uint32_t)ny;
+    }
+    spin_unlock_irqrestore(&console_lock,flags);
+}
+
 void gop_console_putc(char character){
     uint32_t chain[GOP_CONSOLE_CHAIN];
     uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);

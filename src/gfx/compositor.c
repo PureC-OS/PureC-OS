@@ -336,6 +336,8 @@ bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
     w->ah = nah;
   }
   bool resized = w->fw != width || w->fh != height;
+  int32_t move_dx = (int32_t)x - w->x;
+  int32_t move_dy = (int32_t)y - w->y;
   w->x = (int32_t)x;
   w->y = (int32_t)y;
   w->fw = width;
@@ -346,6 +348,8 @@ bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
                       (int64_t)w->x + visible_w(w),
                       (int64_t)w->y + visible_h(w));
   comp_leave(&c);
+  if (move_dx || move_dy)
+    gop_console_translate(pid, move_dx, move_dy);
   return true;
 }
 
