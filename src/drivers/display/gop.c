@@ -802,10 +802,16 @@ bool gop_console_configure_owner(uint32_t owner_pid,
         slot->cursor_row=0;
         slot->initialized=true;
     }
+    if(slot->cursor_row>=slot->rows){
+        uint32_t shift=slot->cursor_row-(slot->rows-1);
+        memmove(slot->characters[0],slot->characters[shift],
+                (uint64_t)(GOP_CONSOLE_ROWS-shift)*GOP_CONSOLE_COLUMNS);
+        memset(slot->characters[GOP_CONSOLE_ROWS-shift],' ',
+               (uint64_t)shift*GOP_CONSOLE_COLUMNS);
+        slot->cursor_row=slot->rows-1;
+    }
     if(slot->cursor_column>=slot->columns)
         slot->cursor_column=slot->columns-1;
-    if(slot->cursor_row>=slot->rows)
-        slot->cursor_row=slot->rows-1;
     gop_begin_batch();
     if(slot->owner_pid && compositor_window_exists(slot->owner_pid)){
         compositor_draw_rect(slot->owner_pid,x,y,width,height,background);
