@@ -2,6 +2,7 @@
 #include "../drivers/display/gop.h"
 #include "../drivers/interrupts/timer.h"
 #include "../gfx/compositor.h"
+#include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
 #include "../kernel/process/scheduler.h"
 #include "../kernel/sync/spinlock.h"
@@ -341,9 +342,13 @@ static bool register_locked(uint32_t pid,
     window->previous_focus=focused_pid;
     window->z_order=next_z_order++;
     focused_pid=pid;
-    (void)compositor_window_create(pid,request->x,request->y,
-                                   request->width,request->height);
+    bool surface=compositor_window_create(pid,request->x,request->y,
+                                          request->width,request->height);
     compositor_window_raise(pid);
+    klogf(surface ? KLOG_INFO : KLOG_ERROR,
+          "wm: register pid=%u %ux%u at %u,%u surface=%s",
+          pid,request->width,request->height,request->x,request->y,
+          surface ? "ok" : "FAILED");
     return true;
 }
 
@@ -390,6 +395,7 @@ void window_manager_unregister(uint32_t pid){
     reset_pointer_state(pid);
     memset(window,0,sizeof(*window));
     compositor_window_destroy(pid);
+    klogf(KLOG_INFO,"wm: unregister pid=%u",pid);
     if(focused_pid==pid){
         focused_pid=0;
         uint32_t total=wm_slot_total();

@@ -1,5 +1,6 @@
 #include "userspace/window_manager.h"
 #include "kernel/process/process.h"
+#include "kernel/diagnostics/klog.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,10 @@ static struct {
     int destroys;
 } comp;
 
+void klogf(enum klog_level level, const char *format, ...) {
+    (void)level;
+    (void)format;
+}
 uint32_t gop_get_width(void) { return 1280; }
 uint32_t gop_get_height(void) { return 800; }
 uint64_t timer_ticks(void) { return fake_ticks; }

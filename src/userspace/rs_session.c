@@ -98,6 +98,7 @@ int64_t rs_session_claim(uint32_t pid, uint32_t uid) {
   __atomic_store_n(&session_pid, pid, __ATOMIC_RELEASE);
   last_mouse_valid = false;
   rs_session_request_redraw();
+  klogf(KLOG_INFO, "desktop-rs: session claimed by pid=%u", pid);
   return 0;
 }
 
@@ -117,6 +118,11 @@ int64_t rs_session_blit(uint32_t pid, const struct fb_blit_request *request) {
     w = width - x;
   if (h > height - y)
     h = height - y;
+  static bool first_blit_logged;
+  if (!first_blit_logged) {
+    first_blit_logged = true;
+    klogf(KLOG_INFO, "desktop-rs: first blit %ux%u at %u,%u", w, h, x, y);
+  }
   if (!gop_backbuffer_put(x, y, w, h,
                           (const uint32_t *)(uintptr_t)request->pixels,
                           request->stride))

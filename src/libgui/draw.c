@@ -132,7 +132,16 @@ bool pg_window_blit(struct pg_window *window, int32_t x, int32_t y,
 #define PG_SCALE_BAND_ROWS 16
 #define PG_SCALE_MAX_WIDTH 4096
 
-static uint32_t scale_band[PG_SCALE_BAND_ROWS*PG_SCALE_MAX_WIDTH];
+static uint32_t *scale_band;
+
+static uint32_t *scale_band_buffer(void){
+    if(!scale_band){
+        void *memory=pc_heap_grow(
+            (uint64_t)PG_SCALE_BAND_ROWS*PG_SCALE_MAX_WIDTH*sizeof(uint32_t));
+        scale_band=(uint32_t *)memory;
+    }
+    return scale_band;
+}
 
 static bool scaled_layout(const struct pg_window *window,
                           uint32_t source_width, uint32_t source_height,
@@ -170,6 +179,8 @@ bool pg_window_blit_scaled(struct pg_window *window, const uint32_t *pixels,
     uint32_t dw,dh,ox,oy;
     if(!scaled_layout(window,source_width,source_height,&dw,&dh,&ox,&oy))
         return false;
+    uint32_t *band_memory=scale_band_buffer();
+    if(!band_memory) return false;
     bool ok=true;
     for(uint32_t row=0;row<dh;row+=PG_SCALE_BAND_ROWS){
         uint32_t rows=dh-row;
@@ -177,7 +188,7 @@ bool pg_window_blit_scaled(struct pg_window *window, const uint32_t *pixels,
         for(uint32_t band=0;band<rows;band++){
             uint32_t sy=(uint32_t)((uint64_t)(row+band)*source_height/dh);
             const uint32_t *line=pixels+(uint64_t)sy*stride;
-            uint32_t *out=&scale_band[(uint64_t)band*dw];
+            uint32_t *out=&band_memory[(uint64_t)band*dw];
             uint64_t step=((uint64_t)source_width<<16)/dw;
             uint64_t position=0;
             for(uint32_t x=0;x<dw;x++){
@@ -186,7 +197,7 @@ bool pg_window_blit_scaled(struct pg_window *window, const uint32_t *pixels,
             }
         }
         ok=pg_window_blit(window,(int32_t)ox,(int32_t)(oy+row),dw,rows,
-                          scale_band,dw) && ok;
+                          band_memory,dw) && ok;
     }
     return ok;
 }
