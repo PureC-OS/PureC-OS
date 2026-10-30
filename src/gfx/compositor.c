@@ -5,6 +5,15 @@
 #include "../kernel/process/scheduler.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
+#include "../kernel/sync/spinlock.h"
+
+#ifdef PUREC_HOST_TEST
+#define comp_sti() ((void)0)
+#define comp_cli() ((void)0)
+#else
+#define comp_sti() __asm__ volatile("sti" ::: "memory")
+#define comp_cli() __asm__ volatile("cli" ::: "memory")
+#endif
 
 #define COMP_MAX_WINDOWS 32
 #define COMP_SHADOW 16
@@ -51,6 +60,7 @@ static uint32_t line_buffer[COMP_CHUNK];
 static int32_t cursor_x = -1000;
 static int32_t cursor_y = -1000;
 static bool cursor_visible = true;
+static volatile uint32_t activity_flag;
 
 static const char *const cursor_sprite[CURSOR_SPRITE_H] = {
     "X           ", "XX          ", "XoX         ", "XooX        ",
@@ -63,7 +73,7 @@ static int64_t min64(int64_t a, int64_t b) { return a < b ? a : b; }
 static int64_t max64(int64_t a, int64_t b) { return a > b ? a : b; }
 
 static void comp_enter(struct comp_ctx *c) {
-  __asm__ volatile("pushfq; pop %0; cli" : "=r"(c->flags)::"memory");
+  c->flags = irq_save();
   c->guard = scheduler_preempt_disable();
   struct thread *thread = scheduler_current_thread();
   c->irqs =
@@ -71,17 +81,17 @@ static void comp_enter(struct comp_ctx *c) {
   while (__atomic_test_and_set(&comp_lock, __ATOMIC_ACQUIRE))
     __asm__ volatile("pause");
   if (c->irqs)
-    __asm__ volatile("sti" ::: "memory");
+    comp_sti();
 }
 
 static void comp_leave(struct comp_ctx *c) {
   if (c->irqs)
-    __asm__ volatile("cli" ::: "memory");
+    comp_cli();
   __atomic_clear(&comp_lock, __ATOMIC_RELEASE);
   if (c->guard)
     scheduler_preempt_enable();
   if (c->flags & (1ULL << 9))
-    __asm__ volatile("sti" ::: "memory");
+    comp_sti();
 }
 
 static struct comp_window *find_window(uint32_t pid) {
@@ -206,12 +216,14 @@ static void present_pair_locked(int64_t ax0, int64_t ay0, int64_t ax1,
 }
 
 static void present_window_locked(const struct comp_window *w) {
+  __atomic_store_n(&activity_flag, 1, __ATOMIC_RELEASE);
   present_locked(w->x, w->y, (int64_t)w->x + visible_w(w),
                  (int64_t)w->y + visible_h(w));
 }
 
 static void mark_dirty(struct comp_window *w, int64_t x0, int64_t y0,
                        int64_t x1, int64_t y1) {
+  __atomic_store_n(&activity_flag, 1, __ATOMIC_RELEASE);
   if (!w->dirty) {
     w->dx0 = (int32_t)x0;
     w->dy0 = (int32_t)y0;
@@ -425,6 +437,10 @@ void compositor_window_set_topmost(uint32_t pid, bool topmost) {
 }
 
 bool compositor_window_exists(uint32_t pid) { return find_window(pid) != 0; }
+
+bool compositor_take_activity(void) {
+  return __atomic_exchange_n(&activity_flag, 0, __ATOMIC_ACQ_REL) != 0;
+}
 
 bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy, uint32_t uw,
                           uint32_t uh, uint32_t color) {

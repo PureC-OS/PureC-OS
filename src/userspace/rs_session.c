@@ -11,6 +11,7 @@
 #include "../drivers/storage/block_device.h"
 #include "../fs/vfs.h"
 #include "../gfx/compositor.h"
+#include "../drivers/interrupts/timer.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
 #include "../kernel/process/scheduler.h"
@@ -65,10 +66,31 @@ bool rs_session_start(void) {
   return true;
 }
 
+#define RS_HEARTBEAT_TICKS 100
+#define RS_HEARTBEAT_BAND 64
+
+static void heartbeat_present(void) {
+  uint32_t width = gop_get_width();
+  uint32_t height = gop_get_height();
+  for (uint32_t y = 0; y < height; y += RS_HEARTBEAT_BAND) {
+    uint32_t end = y + RS_HEARTBEAT_BAND;
+    if (end > height)
+      end = height;
+    (void)compositor_present(0, y, width, end);
+  }
+}
+
 void rs_session_input_thread(void *arg) {
   (void)arg;
   klog(KLOG_INFO, "sched: input thread started (desktop-rs session)");
+  uint64_t last_heartbeat = timer_ticks();
   for (;;) {
+    uint64_t now = timer_ticks();
+    if (now - last_heartbeat >= RS_HEARTBEAT_TICKS) {
+      last_heartbeat = now;
+      if (compositor_take_activity())
+        heartbeat_present();
+    }
     idt_check_interrupt_rates();
     ps2_mouse_poll();
     block_device_poll_usb_hotplug();
