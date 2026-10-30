@@ -78,6 +78,7 @@
 /usr/bin/eat /usr/bin/eat - 0 bin/programs/eat
 /usr/bin/tcc /usr/bin/tcc - 0 bin/programs/tcc
 /usr/bin/lua /usr/bin/lua - 0 bin/programs/lua
+/usr/bin/vim /usr/bin/vim - 0 bin/programs/vim
 /usr/bin/micropython /usr/bin/micropython - 0 bin/programs/micropython
 /usr/bin/pl /usr/bin/pl - 0 bin/programs/pl
 /usr/bin/desktop-rs /usr/bin/desktop-rs - 0 bin/programs/desktop-rs
@@ -191,6 +192,7 @@
 /etc/passwd /etc/passwd - 0 rootfs/etc/passwd
 /etc/group /etc/group - 0 rootfs/etc/group
 /etc/shells /etc/shells - 0 rootfs/etc/shells
+/etc/vimrc /etc/vimrc - 0 rootfs/etc/vimrc
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
 

@@ -1,0 +1,9 @@
+set nocompatible
+set backspace=indent,eol,start
+set noswapfile
+set nobackup
+set nowritebackup
+set ttimeout
+set ttimeoutlen=50
+set ruler
+set showcmd

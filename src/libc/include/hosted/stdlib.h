@@ -28,6 +28,8 @@ float strtof(const char *text, char **end);
 long double strtold(const char *text, char **end);
 int abs(int value);
 long labs(long value);
+void *bsearch(const void *key, const void *base, size_t count, size_t size,
+               int (*compare)(const void *, const void *));
 void qsort(void *base, size_t count, size_t size,
            int (*compare)(const void *, const void *));
 int rand(void);

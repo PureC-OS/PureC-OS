@@ -29,6 +29,47 @@ gid_t getegid(void) { return getgid(); }
 
 pid_t vfork(void) { return fork(); }
 
+int chmod(const char *path, unsigned int mode)
+{
+    if (!path)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    if (pc_chmod(path, mode & 07777) < 0)
+    {
+        errno = ENOENT;
+        return -1;
+    }
+    return 0;
+}
+
+int fchmod(int fd, unsigned int mode)
+{
+    (void)mode;
+    if (fd < 0)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    return 0;
+}
+
+int rmdir(const char *path)
+{
+    struct stat info;
+    if (stat(path, &info) < 0)
+        return -1;
+    if (!S_ISDIR(info.st_mode))
+    {
+        errno = ENOTDIR;
+        return -1;
+    }
+    if (unlink(path) < 0)
+        return -1;
+    return 0;
+}
+
 int setpgid(pid_t pid, pid_t group)
 {
     (void)pid;

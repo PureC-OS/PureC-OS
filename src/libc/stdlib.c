@@ -332,6 +332,21 @@ long double strtold(const char *text, char **end) {
 int abs(int value) { return value < 0 ? -value : value; }
 long labs(long value) { return value < 0 ? -value : value; }
 
+void *bsearch(const void *key, const void *base, size_t count, size_t size,
+              int (*compare)(const void *, const void *)) {
+    const uint8_t *items = (const uint8_t *)base;
+    size_t low = 0, high = count;
+    while (low < high) {
+        size_t middle = low + (high - low) / 2;
+        const void *item = items + middle * size;
+        int order = compare(key, item);
+        if (order == 0) return (void *)item;
+        if (order < 0) high = middle;
+        else low = middle + 1;
+    }
+    return 0;
+}
+
 static void qsort_swap(uint8_t *a, uint8_t *b, size_t size) {
     while (size--) { uint8_t t = *a; *a++ = *b; *b++ = t; }
 }

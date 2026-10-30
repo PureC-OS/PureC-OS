@@ -182,6 +182,31 @@ ifneq ($(TCC_PRESENT),)
 TARGETS += $(PROGRAM_DIR)/tcc
 endif
 
+VIM_DIR := $(ROOT_DIR)/vim/src
+VIM_PRESENT := $(wildcard $(VIM_DIR)/vim.h)
+ifneq ($(VIM_PRESENT),)
+VIM_SOURCES := alloc arabic arglist autocmd beval blob blowfish buffer change \
+	charset cindent clientserver clipboard cmdexpand cmdhist crypt crypt_zip \
+	debugger dict diff digraph drawline drawscreen edit eval evalbuffer \
+	evalfunc evalvars evalwindow ex_cmds ex_cmds2 ex_docmd ex_eval ex_getln \
+	fileio filepath findfile float fold fuzzy getchar gc hardcopy \
+	hardcopy_postscript hashtab help highlight if_cscope indent insexpand json \
+	linematch list locale logfile main map mark match mbyte memfile memline \
+	menu message misc1 misc2 mouse move normal ops option optionstr os_unix \
+	popupmenu popupwin profiler pty quickfix regexp register screen scriptfile \
+	search session sha256 sign spell spellfile spellsuggest strings syntax \
+	tabpanel tag term terminal testing textformat textobject textprop time \
+	tuple typval ui undo usercmd userfunc version vim9class vim9cmds \
+	vim9compile vim9execute vim9expr vim9generics vim9instr vim9script \
+	vim9type viminfo window bufwrite
+VIM_OBJECTS := $(VIM_SOURCES:%=$(OBJ_DIR)/vim/%.o) $(OBJ_DIR)/vim/pathdef.o \
+	$(OBJ_DIR)/vim/purec_compat.o
+VIM_CFLAGS := -I$(VIM_DIR) -I$(VIM_DIR)/proto -I$(ROOT_DIR)/mk/vim \
+	-I$(ROOT_DIR)/src/libc/include/hosted -DHAVE_CONFIG_H -w
+TARGETS += $(PROGRAM_DIR)/vim
+-include $(VIM_OBJECTS:.o=.d)
+endif
+
 .NOTPARALLEL:
 .PHONY: all hexedit
 all: $(TARGETS)
@@ -491,3 +516,21 @@ $(PROGRAM_DIR)/proctest: $(OBJ_DIR)/proctest/main.o $(LIB_DIR)/crt0.o $(LIBPUREF
 $(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(LUA_OBJECTS) $(LIBPUREC)
+
+ifneq ($(VIM_PRESENT),)
+$(OBJ_DIR)/vim/pathdef.o: $(ROOT_DIR)/mk/vim/auto/pathdef.c $(ROOT_DIR)/mk/vim/auto/config.h
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(VIM_CFLAGS) $(DEPFLAGS) $(filter-out -g,$(USER_CFLAGS)) -c $< -o $@
+
+$(OBJ_DIR)/vim/purec_compat.o: $(ROOT_DIR)/mk/vim/purec_compat.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/vim/%.o: $(VIM_DIR)/%.c $(ROOT_DIR)/mk/vim/auto/config.h
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(VIM_CFLAGS) $(DEPFLAGS) $(filter-out -g,$(USER_CFLAGS)) -c $< -o $@
+
+$(PROGRAM_DIR)/vim: $(VIM_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(VIM_OBJECTS) $(LIBPUREC)
+endif
