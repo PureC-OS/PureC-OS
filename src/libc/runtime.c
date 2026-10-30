@@ -475,6 +475,11 @@ bool pc_gui_window_set_flags(uint32_t flags){
     return pc_syscall(SYS_GUI_WINDOW_FLAGS,flags,0,0)>=0;
 }
 
+bool pc_gui_window_set_title(const char *title){
+    return title && pc_syscall(SYS_GUI_WINDOW_TITLE,
+        (uint64_t)(uintptr_t)title,0,0)>=0;
+}
+
 bool pc_gui_window_command(uint32_t command){
     return pc_syscall(SYS_GUI_WINDOW_CMD,command,0,0)>=0;
 }

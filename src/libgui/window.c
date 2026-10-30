@@ -101,6 +101,7 @@ bool pg_window_init(struct pg_window *window, const char *title,
         return false;
     }
     window->registered=true;
+    (void)pc_gui_window_set_title(window->title);
     (void)pg_internal_sync_frame(window,pc_gui_window_state());
     return true;
 }

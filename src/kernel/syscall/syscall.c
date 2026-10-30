@@ -302,6 +302,14 @@ int64_t syscall_handler(struct syscall_regs *r) {
                                     (uint32_t)a1)
                ? 0
                : -1;
+  case SYS_GUI_WINDOW_TITLE: {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    return window_manager_set_title((uint32_t)process_current_pid(),
+                                    (const char *)(uintptr_t)a1)
+               ? 0
+               : -1;
+  }
   case SYS_GUI_WINDOW_CMD:
     return window_manager_command((uint32_t)process_current_pid(),
                                   (uint32_t)a1)

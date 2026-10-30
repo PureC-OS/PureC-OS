@@ -43,3 +43,4 @@ bool window_manager_set_flags(uint32_t pid, uint32_t flags);
 bool window_manager_command(uint32_t pid, uint32_t command);
 uint32_t window_manager_tasks(struct gui_task_info *out, uint32_t capacity);
 bool window_manager_activate(uint32_t pid);
+bool window_manager_set_title(uint32_t pid, const char *title);

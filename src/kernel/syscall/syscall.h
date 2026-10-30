@@ -156,6 +156,7 @@
 #define SYS_GUI_WINDOW_INFO 350  /* (struct gui_window_info *) */
 #define SYS_GUI_WINDOW_FLAGS 351 /* (GUI_WINDOW_FLAG_*) */
 #define SYS_GUI_WINDOW_CMD 352   /* (GUI_WINDOW_CMD_*) */
+#define SYS_GUI_WINDOW_TITLE 353 /* (const char *title) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2

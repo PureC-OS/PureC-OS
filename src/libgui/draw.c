@@ -129,6 +129,87 @@ bool pg_window_blit(struct pg_window *window, int32_t x, int32_t y,
                       (uint32_t)(bottom-top),screen_x,screen_y,0)==0;
 }
 
+#define PG_SCALE_BAND_ROWS 16
+#define PG_SCALE_MAX_WIDTH 4096
+
+static uint32_t scale_band[PG_SCALE_BAND_ROWS*PG_SCALE_MAX_WIDTH];
+
+static bool scaled_layout(const struct pg_window *window,
+                          uint32_t source_width, uint32_t source_height,
+                          uint32_t *dest_width, uint32_t *dest_height,
+                          uint32_t *offset_x, uint32_t *offset_y){
+    uint32_t cw=window->client.width;
+    uint32_t ch=window->client.height;
+    if(!source_width || !source_height || !cw || !ch) return false;
+    uint32_t dw;
+    uint32_t dh;
+    if((uint64_t)cw*source_height<=(uint64_t)ch*source_width){
+        dw=cw;
+        dh=(uint32_t)((uint64_t)source_height*cw/source_width);
+    } else {
+        dh=ch;
+        dw=(uint32_t)((uint64_t)source_width*ch/source_height);
+    }
+    if(dw>PG_SCALE_MAX_WIDTH){
+        dh=(uint32_t)((uint64_t)dh*PG_SCALE_MAX_WIDTH/dw);
+        dw=PG_SCALE_MAX_WIDTH;
+    }
+    if(!dw || !dh) return false;
+    *dest_width=dw;
+    *dest_height=dh;
+    *offset_x=(cw-dw)/2;
+    *offset_y=(ch-dh)/2;
+    return true;
+}
+
+bool pg_window_blit_scaled(struct pg_window *window, const uint32_t *pixels,
+                           uint32_t source_width, uint32_t source_height,
+                           uint32_t stride){
+    if(!window || !window->open || window->minimized || !pixels
+       || stride<source_width) return false;
+    uint32_t dw,dh,ox,oy;
+    if(!scaled_layout(window,source_width,source_height,&dw,&dh,&ox,&oy))
+        return false;
+    bool ok=true;
+    for(uint32_t row=0;row<dh;row+=PG_SCALE_BAND_ROWS){
+        uint32_t rows=dh-row;
+        if(rows>PG_SCALE_BAND_ROWS) rows=PG_SCALE_BAND_ROWS;
+        for(uint32_t band=0;band<rows;band++){
+            uint32_t sy=(uint32_t)((uint64_t)(row+band)*source_height/dh);
+            const uint32_t *line=pixels+(uint64_t)sy*stride;
+            uint32_t *out=&scale_band[(uint64_t)band*dw];
+            uint64_t step=((uint64_t)source_width<<16)/dw;
+            uint64_t position=0;
+            for(uint32_t x=0;x<dw;x++){
+                out[x]=line[position>>16];
+                position+=step;
+            }
+        }
+        ok=pg_window_blit(window,(int32_t)ox,(int32_t)(oy+row),dw,rows,
+                          scale_band,dw) && ok;
+    }
+    return ok;
+}
+
+bool pg_window_scaled_point(const struct pg_window *window,
+                            uint32_t source_width, uint32_t source_height,
+                            int32_t window_x, int32_t window_y,
+                            int32_t *source_x, int32_t *source_y){
+    uint32_t dw,dh,ox,oy;
+    if(!window || !source_x || !source_y
+       || !scaled_layout(window,source_width,source_height,&dw,&dh,&ox,&oy))
+        return false;
+    int64_t x=(int64_t)window_x-(int64_t)window->client.x-(int64_t)ox;
+    int64_t y=(int64_t)window_y-(int64_t)window->client.y-(int64_t)oy;
+    if(x<0) x=0;
+    if(y<0) y=0;
+    if(x>=(int64_t)dw) x=(int64_t)dw-1;
+    if(y>=(int64_t)dh) y=(int64_t)dh-1;
+    *source_x=(int32_t)(x*source_width/dw);
+    *source_y=(int32_t)(y*source_height/dh);
+    return true;
+}
+
 void pg_window_text(struct pg_window *window, uint32_t x, uint32_t y,
                     const char *text, uint32_t color){
     if(!window || !window->open || window->minimized) return;

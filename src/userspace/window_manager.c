@@ -29,6 +29,7 @@ struct managed_window {
     uint32_t generation;
     uint32_t sequence;
     uint32_t previous_focus;
+    char title[32];
     bool used;
     bool repaint_pending;
     bool minimized;
@@ -716,7 +717,12 @@ uint32_t window_manager_tasks(struct gui_task_info *out, uint32_t capacity){
             task->flags=(best->minimized ? GUI_TASK_MINIMIZED : 0)
                 | (focused_pid==best->pid ? GUI_TASK_FOCUSED : 0);
             struct process *process=process_lookup_by_pid(best->pid);
-            if(process){
+            if(best->title[0]){
+                uint32_t i=0;
+                for(;best->title[i] && i+1<sizeof(task->name);i++)
+                    task->name[i]=best->title[i];
+                task->name[i]='\0';
+            } else if(process){
                 const char *name=process->name;
                 const char *base=name;
                 for(const char *p=name;*p;p++)
@@ -742,6 +748,19 @@ bool window_manager_activate(uint32_t pid){
         focused_pid=pid;
         window->z_order=next_z_order++;
         compositor_window_raise(pid);
+    }
+    wm_leave(guard);
+    return window!=0;
+}
+
+bool window_manager_set_title(uint32_t pid, const char *title){
+    struct wm_guard guard=wm_enter();
+    struct managed_window *window=find_window(pid);
+    if(window && title){
+        uint32_t i=0;
+        for(;title[i] && i+1<sizeof(window->title);i++)
+            window->title[i]=title[i];
+        window->title[i]='\0';
     }
     wm_leave(guard);
     return window!=0;

@@ -108,6 +108,13 @@ struct pg_rect pg_window_client(const struct pg_window *window);
 void pg_window_clear(struct pg_window *window, uint32_t color);
 void pg_window_rect(struct pg_window *window, struct pg_rect bounds,
                     uint32_t color);
+bool pg_window_blit_scaled(struct pg_window *window, const uint32_t *pixels,
+                           uint32_t source_width, uint32_t source_height,
+                           uint32_t stride);
+bool pg_window_scaled_point(const struct pg_window *window,
+                            uint32_t source_width, uint32_t source_height,
+                            int32_t window_x, int32_t window_y,
+                            int32_t *source_x, int32_t *source_y);
 bool pg_window_blit(struct pg_window *window, int32_t x, int32_t y,
                     uint32_t width, uint32_t height, const uint32_t *pixels,
                     uint32_t stride);
