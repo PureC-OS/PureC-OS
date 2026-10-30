@@ -80,6 +80,10 @@
 /usr/bin/lua /usr/bin/lua - 0 bin/programs/lua
 /usr/bin/micropython /usr/bin/micropython - 0 bin/programs/micropython
 /usr/bin/pl /usr/bin/pl - 0 bin/programs/pl
+/usr/bin/desktop-rs /usr/bin/desktop-rs - 0 bin/programs/desktop-rs
+/usr/bin/init-rs /usr/bin/init-rs - 0 bin/programs/init-rs
+/usr/bin/hello-rs /usr/bin/hello-rs - 0 bin/programs/hello-rs
+/usr/bin/apps-demo-rs /usr/bin/apps-demo-rs - 0 bin/programs/apps-demo-rs
 
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
 /usr/share/applications/files.desktop /usr/share/applications/files.desktop - 0 src/userspace/desktop_entries/files.desktop
@@ -98,6 +102,7 @@
 /usr/share/applications/hexedit.desktop /usr/share/applications/hexedit.desktop - 0 src/userspace/desktop_entries/hexedit.desktop
 /usr/share/applications/notepad.desktop /usr/share/applications/notepad.desktop - 0 src/userspace/desktop_entries/notepad.desktop
 /usr/share/applications/pl.desktop /usr/share/applications/pl.desktop - 0 userspace/desktop_entries/pl.desktop
+/usr/share/applications/desktop-rs.desktop /usr/share/applications/desktop-rs.desktop - 0 userspace/desktop_entries/desktop-rs.desktop
 /usr/share/applications/2048.desktop /usr/share/applications/2048.desktop - 0 src/userspace/desktop_entries/2048.desktop
 
 # --- system libraries ---
