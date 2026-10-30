@@ -335,10 +335,7 @@ static bool service_desktop_redraw(void){
 }
 
 void userspace_redraw_desktop(void){
-    if(rs_session_active()){
-        rs_session_request_redraw();
-        return;
-    }
+    if(rs_session_active()) return;
     while(__atomic_test_and_set(&desktop_redraw_busy, __ATOMIC_ACQUIRE))
         scheduler_sleep(1);
     desktop_redraw_requester = (uint32_t)process_current_pid();

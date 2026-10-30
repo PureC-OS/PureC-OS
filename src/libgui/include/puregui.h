@@ -75,6 +75,10 @@ struct pg_window {
     bool registered;
     bool repainting;
     bool closable;
+    bool server;
+    bool maximized;
+    bool frame_synced;
+    uint32_t frame_generation;
 };
 
 const char *pg_version(void);
@@ -94,6 +98,9 @@ void pg_window_set_closable(struct pg_window *window, bool closable);
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
 void pg_window_minimize(struct pg_window *window);
+void pg_window_maximize(struct pg_window *window);
+void pg_window_unmaximize(struct pg_window *window);
+bool pg_window_is_maximized(const struct pg_window *window);
 void pg_window_restore(struct pg_window *window);
 bool pg_window_is_open(const struct pg_window *window);
 bool pg_window_is_minimized(const struct pg_window *window);

@@ -13,6 +13,19 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
     *event=(struct pg_event){.type=PG_EVENT_NONE};
     uint32_t state=pc_gui_window_state();
     bool focused=(state&GUI_WINDOW_STATE_FOCUSED)!=0;
+    uint32_t sync=pg_internal_sync_frame(window,state);
+    if(window->server && (state&GUI_WINDOW_STATE_CLOSE) && window->closable){
+        event->type=PG_EVENT_CLOSE;
+        pg_window_close(window);
+        return true;
+    }
+    if(window->server && sync && !(state&GUI_WINDOW_STATE_REPAINT)){
+        window->focused=focused;
+        if(sync&PG_SYNC_MINIMIZED) event->type=PG_EVENT_MINIMIZE;
+        else if(sync&PG_SYNC_RESIZED) event->type=PG_EVENT_REPAINT;
+        else event->type=PG_EVENT_MOVE;
+        return true;
+    }
     if(state&GUI_WINDOW_STATE_REPAINT){
         window->focused=focused;
         window->repainting=true;
@@ -63,6 +76,21 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
     window->previous_mouse_y=mouse.y;
     window->previous_mouse_buttons=mouse.buttons;
     if(!focused) return false;
+    if(window->server){
+        if(state&GUI_WINDOW_STATE_DRAGGING){
+            event->type=PG_EVENT_NONE;
+            return false;
+        }
+        if(event->type==PG_EVENT_MOUSE_DOWN && event->button==1
+           && pg_internal_point_in_titlebar(window,mouse.x,mouse.y))
+            window->dragging=true;
+        if(window->dragging){
+            if(!(mouse.buttons&1)) window->dragging=false;
+            event->type=PG_EVENT_NONE;
+            return false;
+        }
+        return event->type!=PG_EVENT_NONE;
+    }
     struct pg_rect close={
         window->frame.x+window->frame.width-24,
         window->frame.y+8,14,14

@@ -16,7 +16,7 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-window-manager test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
@@ -169,6 +169,12 @@ test-vfs-perm:
 	$(HOST_CC) $(HOST_TEST_FLAGS) tests/vfs_perm_test.c src/fs/vfs_perm.c \
 		-o $(BIN_DIR)/tests/vfs_perm_test
 	$(BIN_DIR)/tests/vfs_perm_test
+
+test-window-manager:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
+		tests/window_manager_test.c src/userspace/window_manager.c -o $(BIN_DIR)/tests/window_manager_test
+	$(BIN_DIR)/tests/window_manager_test
 
 test-blit:
 	@mkdir -p $(BIN_DIR)/tests

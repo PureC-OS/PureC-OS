@@ -153,6 +153,9 @@
 #define SYS_DESKTOP_BLIT 347  /* (struct fb_blit_request *) into desktop layer */
 #define SYS_DESKTOP_WAIT 348  /* (timeout_ms) -> RS_WAIT_* bits */
 #define SYS_DESKTOP_WM 349    /* (op, arg1, arg2) */
+#define SYS_GUI_WINDOW_INFO 350  /* (struct gui_window_info *) */
+#define SYS_GUI_WINDOW_FLAGS 351 /* (GUI_WINDOW_FLAG_*) */
+#define SYS_GUI_WINDOW_CMD 352   /* (GUI_WINDOW_CMD_*) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -279,12 +282,35 @@ struct net_if_info {
 
 #define GUI_WINDOW_STATE_FOCUSED 1
 #define GUI_WINDOW_STATE_REPAINT 2
+#define GUI_WINDOW_STATE_CLOSE 4
+#define GUI_WINDOW_STATE_SERVER 8
+#define GUI_WINDOW_STATE_DRAGGING 16
+#define GUI_WINDOW_STATE_GEN_SHIFT 8
+
+#define GUI_WINDOW_INFO_MINIMIZED 1
+#define GUI_WINDOW_INFO_MAXIMIZED 2
+
+#define GUI_WINDOW_FLAG_FIXED 1
+#define GUI_WINDOW_FLAG_NOCLOSE 2
+
+#define GUI_WINDOW_CMD_MINIMIZE 1
+#define GUI_WINDOW_CMD_RESTORE 2
+#define GUI_WINDOW_CMD_MAXIMIZE 3
+#define GUI_WINDOW_CMD_UNMAXIMIZE 4
 
 struct gui_window_request {
   uint32_t x;
   uint32_t y;
   uint32_t width;
   uint32_t height;
+};
+
+struct gui_window_info {
+  uint32_t x;
+  uint32_t y;
+  uint32_t width;
+  uint32_t height;
+  uint32_t flags;
 };
 
 #define PROCESS_ENVIRONMENT_LIMIT 16

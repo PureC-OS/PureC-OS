@@ -33,6 +33,8 @@ void rs_session_request_redraw(void) {
   __atomic_store_n(&redraw_flag, 1, __ATOMIC_RELEASE);
 }
 
+void rs_session_display_changed(void) { rs_session_request_redraw(); }
+
 static bool desktop_installed(void) {
   struct file_stat_info info;
   return vfs_stat(RS_DESKTOP_PATH, &info) == 0;
@@ -52,6 +54,7 @@ bool rs_session_start(void) {
   gop_begin_compose();
   gop_draw_rect(0, 0, width, height, RS_DESKTOP_BG);
   gop_end_compose();
+  window_manager_set_server_mode(true);
   __atomic_store_n(&session_active, true, __ATOMIC_RELEASE);
   int64_t pid = userspace_syscall(SYS_EXEC, (uint64_t)RS_DESKTOP_PATH, 0, 0);
   if (pid < 0) {
@@ -159,10 +162,16 @@ int64_t rs_session_wm(uint32_t pid, uint64_t op, uint64_t arg1,
     bool focus_changed = false;
     int32_t x = (int32_t)(uint32_t)(arg1 & 0xFFFFFFFFu);
     int32_t y = (int32_t)(uint32_t)(arg1 >> 32);
-    bool consumed =
-        window_manager_handle_pointer(x, y, arg2 != 0, &focus_changed);
-    return (consumed ? 1 : 0) | (focus_changed ? 2 : 0);
+    uint32_t consumed =
+        window_manager_pointer(x, y, (uint8_t)arg2, &focus_changed);
+    return (int64_t)(consumed | (focus_changed ? 2u : 0u));
   }
+  case RS_WM_SET_WORK_AREA:
+    window_manager_set_work_area((int32_t)(uint32_t)(arg1 & 0xFFFFFFFFu),
+                                 (int32_t)(uint32_t)(arg1 >> 32),
+                                 (uint32_t)(arg2 & 0xFFFFFFFFu),
+                                 (uint32_t)(arg2 >> 32));
+    return 0;
   case RS_WM_HAS_FOCUS:
     return window_manager_has_focus() ? 1 : 0;
   case RS_WM_REQUEST_REPAINT:

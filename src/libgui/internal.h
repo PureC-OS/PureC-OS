@@ -15,3 +15,11 @@ void pg_internal_draw_text_sized_clipped(uint32_t x, uint32_t y,
                                          uint32_t background, uint32_t size,
                                          const struct pg_rect *clip);
 bool pg_internal_update_registered_frame(struct pg_window *window);
+
+#define PG_SYNC_MOVED 1
+#define PG_SYNC_RESIZED 2
+#define PG_SYNC_MINIMIZED 4
+
+uint32_t pg_internal_sync_frame(struct pg_window *window, uint32_t state);
+bool pg_internal_point_in_titlebar(const struct pg_window *window,
+                                   int32_t x, int32_t y);

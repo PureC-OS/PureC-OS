@@ -288,6 +288,25 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_GUI_WINDOW_UNREGISTER:
     window_manager_unregister((uint32_t)process_current_pid());
     return 0;
+  case SYS_GUI_WINDOW_INFO: {
+    struct gui_window_info info;
+    if (!writable((void *)(uintptr_t)a1, sizeof(info)))
+      return -1;
+    if (!window_manager_info((uint32_t)process_current_pid(), &info))
+      return -1;
+    *(struct gui_window_info *)(uintptr_t)a1 = info;
+    return 0;
+  }
+  case SYS_GUI_WINDOW_FLAGS:
+    return window_manager_set_flags((uint32_t)process_current_pid(),
+                                    (uint32_t)a1)
+               ? 0
+               : -1;
+  case SYS_GUI_WINDOW_CMD:
+    return window_manager_command((uint32_t)process_current_pid(),
+                                  (uint32_t)a1)
+               ? 0
+               : -1;
   case SYS_GUI_WINDOW_STATE:
     return window_manager_state((uint32_t)process_current_pid());
   case SYS_GUI_WINDOW_REPAINT_DONE:

@@ -466,6 +466,19 @@ void pc_gui_window_repaint_done(void){
     (void)pc_syscall(SYS_GUI_WINDOW_REPAINT_DONE,0,0,0);
 }
 
+bool pc_gui_window_info(struct gui_window_info *info){
+    return info && pc_syscall(SYS_GUI_WINDOW_INFO,
+        (uint64_t)(uintptr_t)info,0,0)>=0;
+}
+
+bool pc_gui_window_set_flags(uint32_t flags){
+    return pc_syscall(SYS_GUI_WINDOW_FLAGS,flags,0,0)>=0;
+}
+
+bool pc_gui_window_command(uint32_t command){
+    return pc_syscall(SYS_GUI_WINDOW_CMD,command,0,0)>=0;
+}
+
 bool pc_console_configure(uint32_t x, uint32_t y,
                           uint32_t width, uint32_t height,
                           uint32_t foreground, uint32_t background){

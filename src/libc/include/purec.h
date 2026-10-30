@@ -114,6 +114,9 @@ bool pc_gui_window_update(const struct gui_window_request *request);
 void pc_gui_window_unregister(void);
 uint32_t pc_gui_window_state(void);
 void pc_gui_window_repaint_done(void);
+bool pc_gui_window_info(struct gui_window_info *info);
+bool pc_gui_window_set_flags(uint32_t flags);
+bool pc_gui_window_command(uint32_t command);
 bool pc_console_configure(uint32_t x, uint32_t y,
                           uint32_t width, uint32_t height,
                           uint32_t foreground, uint32_t background);

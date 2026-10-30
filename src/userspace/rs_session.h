@@ -14,10 +14,12 @@ struct fb_blit_request;
 #define RS_WM_HAS_FOCUS 2
 #define RS_WM_REQUEST_REPAINT 3
 #define RS_WM_FOCUSED_PID 4
+#define RS_WM_SET_WORK_AREA 5
 
 bool rs_session_start(void);
 void rs_session_input_thread(void *arg);
 bool rs_session_active(void);
+void rs_session_display_changed(void);
 void rs_session_request_redraw(void);
 int64_t rs_session_claim(uint32_t pid, uint32_t uid);
 int64_t rs_session_blit(uint32_t pid, const struct fb_blit_request *request);

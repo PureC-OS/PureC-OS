@@ -1,6 +1,7 @@
 #include "display_mode.h"
 #include "display.h"
 #include "userspace.h"
+#include "rs_session.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/display/vbe.h"
 #include "../drivers/mouse/ps2_mouse.h"
@@ -153,7 +154,8 @@ static int display_mode_apply_low(uint32_t width, uint32_t height,
 int display_mode_apply(uint32_t width, uint32_t height, uint8_t bpp){
     int rc=display_mode_apply_low(width,height,bpp);
     if(rc!=0) return rc;
-    userspace_redraw_desktop();
+    if(rs_session_active()) rs_session_display_changed();
+    else userspace_redraw_desktop();
     return 0;
 }
 
@@ -174,5 +176,8 @@ void display_mode_poll(void){
     if(!display_mode_current(&cur_w,&cur_h,&cur_b)) return;
     if(w==cur_w && h==cur_h && b==cur_b) return;
     klogf(KLOG_INFO, "display: config changed, applying %ux%ux%u",w,h,b);
-    if(display_mode_apply_low(w,h,b)==0) userspace_redraw_desktop();
+    if(display_mode_apply_low(w,h,b)==0){
+        if(rs_session_active()) rs_session_display_changed();
+        else userspace_redraw_desktop();
+    }
 }
