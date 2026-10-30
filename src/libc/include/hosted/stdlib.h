@@ -19,6 +19,7 @@ long atol(const char *text);
 long long atoll(const char *text);
 double atof(const char *text);
 long strtol(const char *text, char **end, int base);
+long long strtoll(const char *text, char **end, int base);
 unsigned long strtoul(const char *text, char **end, int base);
 unsigned long long strtoull(const char *text, char **end, int base);
 // Available: userspace may use SSE (kernel switches FPU per thread).

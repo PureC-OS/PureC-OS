@@ -30,6 +30,9 @@ int access(const char *path, int mode);
 int isatty(int fd);
 unsigned int sleep(unsigned int seconds);
 char *getcwd(char *buffer, size_t capacity);
+#define _CS_PATH 0
+size_t confstr(int name, char *buffer, size_t length);
+char *getlogin(void);
 pid_t fork(void);
 pid_t vfork(void);
 uid_t getuid(void);
