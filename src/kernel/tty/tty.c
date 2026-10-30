@@ -2,6 +2,7 @@
 #include "../../drivers/display/gop.h"
 #include "../../drivers/input/keyboard.h"
 #include "../../drivers/interrupts/timer.h"
+#include "../diagnostics/klog.h"
 #include "../process/scheduler.h"
 #include "../process/signal.h"
 #include "../sync/spinlock.h"
@@ -36,6 +37,11 @@ static uint32_t input_head;
 static uint32_t input_count;
 static bool application_cursor;
 static uint32_t owner_pid;
+static uint64_t first_feed_tick;
+static uint32_t latency_reports;
+
+#define TTY_LATENCY_REPORT_MS 20
+#define TTY_LATENCY_REPORT_LIMIT 64
 
 static bool raw_locked(void) { return !(current.lflag & TTY_LFLAG_ICANON); }
 
@@ -43,6 +49,8 @@ static void push_locked(uint8_t byte)
 {
   if (input_count >= TTY_BUFFER)
     return;
+  if (!input_count)
+    first_feed_tick = timer_ticks();
   input[(input_head + input_count) % TTY_BUFFER] = byte;
   input_count++;
 }
@@ -272,6 +280,8 @@ int32_t tty_read(void *buffer, uint32_t count)
     uint32_t timeout_ms = (uint32_t)mode.cc[TTY_VTIME] * TTY_DECISECOND_MS;
     uint64_t flags = spin_lock_irqsave(&tty_lock);
     uint8_t byte;
+    uint64_t fed_at = first_feed_tick;
+    bool had_input = input_count != 0;
     while (got < count && pop_locked(&byte))
     {
       if (!translate_input(mode.iflag, &byte))
@@ -280,9 +290,16 @@ int32_t tty_read(void *buffer, uint32_t count)
       last = timer_ticks();
     }
     spin_unlock_irqrestore(&tty_lock, flags);
+    uint64_t now = timer_ticks();
+    if (had_input && now - fed_at >= TTY_LATENCY_REPORT_MS &&
+        latency_reports < TTY_LATENCY_REPORT_LIMIT)
+    {
+      latency_reports++;
+      klogf(KLOG_INFO, "tty: key waited %u ms in queue before read",
+            (uint32_t)(now - fed_at));
+    }
     if (got >= count)
       return (int32_t)got;
-    uint64_t now = timer_ticks();
     if (!minimum && !timeout_ms)
       return (int32_t)got;
     if (minimum && !timeout_ms)

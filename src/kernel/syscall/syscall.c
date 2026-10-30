@@ -192,6 +192,7 @@ static int64_t tty_ioctl_request(uint32_t request, uint64_t argument) {
 }
 
 #define POLL_MAX_DESCRIPTORS 256
+static uint32_t poll_overshoot_reports;
 
 static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,
                                 int64_t timeout_ms) {
@@ -213,8 +214,15 @@ static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,
     }
     if (ready || !timeout_ms)
       return ready;
-    if (timeout_ms > 0 && timer_ticks() - started >= (uint64_t)timeout_ms)
+    if (timeout_ms > 0 && timer_ticks() - started >= (uint64_t)timeout_ms) {
+      uint64_t over = timer_ticks() - started - (uint64_t)timeout_ms;
+      if (over >= 20 && poll_overshoot_reports < 64) {
+        poll_overshoot_reports++;
+        klogf(KLOG_INFO, "poll: timeout %d ms overshot by %u ms",
+              (int32_t)timeout_ms, (uint32_t)over);
+      }
       return 0;
+    }
     if (signal_pending_current())
       return -KERR_INTR;
     scheduler_sleep(1);

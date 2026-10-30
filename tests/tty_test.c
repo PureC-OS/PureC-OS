@@ -37,6 +37,13 @@ bool gop_console_get_size(uint32_t *columns, uint32_t *rows, uint32_t *width,
     return true;
 }
 
+static int latency_logged;
+void klogf(enum klog_level level, const char *format, ...) {
+    (void)level;
+    (void)format;
+    latency_logged++;
+}
+
 static int failures;
 
 #define CHECK(condition)                                                     \
@@ -179,6 +186,7 @@ static void test_blocking_minimum(void) {
     char buffer[4];
     arrive(50, "k");
     CHECK(tty_read(buffer, sizeof(buffer)) == 1);
+    CHECK(latency_logged == 0);
     CHECK(buffer[0] == 'k');
     CHECK(mock_ticks >= 1050);
 
@@ -261,6 +269,17 @@ static void test_reply_injection(void) {
     CHECK(tty_pending() == 6);
 }
 
+static void test_latency_report(void) {
+    reset();
+    make_raw(1, 0, 7);
+    latency_logged = 0;
+    tty_feed_char('a');
+    mock_ticks += 50;
+    char buffer[4];
+    CHECK(tty_read(buffer, sizeof(buffer)) == 1);
+    CHECK(latency_logged == 1);
+}
+
 static void test_winsize(void) {
     struct tty_winsize size;
     tty_get_winsize(&size);
@@ -293,6 +312,7 @@ int main(void) {
     test_buffer_limit();
     test_exit_restores();
     test_reply_injection();
+    test_latency_report();
     test_winsize();
     test_flush_on_flag();
     if (failures) {

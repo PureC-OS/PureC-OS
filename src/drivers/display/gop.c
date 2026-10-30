@@ -9,6 +9,7 @@
 #include "../../kernel/process/process.h"
 #include "../../kernel/sync/spinlock.h"
 #include "../../gfx/compositor.h"
+#include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/tty/tty.h"
 #include "console_vt.h"
 #include <stdint.h>
@@ -802,6 +803,16 @@ static void console_present(struct gop_console *slot, uint32_t x, uint32_t y,
     if(backbuffer){ dirty_expand(x,y,w,h); maybe_present(); }
 }
 
+static bool console_update_begin(struct gop_console *slot){
+    if(!slot->owner_pid || !compositor_window_exists(slot->owner_pid))
+        return false;
+    return compositor_begin_update(slot->owner_pid);
+}
+
+static void console_update_end(struct gop_console *slot, bool began){
+    if(began) (void)compositor_end_update(slot->owner_pid);
+}
+
 static void vt_op_draw_cell(void *ctx, uint32_t row, uint32_t column,
                             char character, uint16_t attr, bool cursor){
     struct gop_console *slot=(struct gop_console*)ctx;
@@ -899,7 +910,9 @@ bool gop_console_configure_owner(uint32_t owner_pid,
     } else {
         gop_draw_rect(x,y,width,height,background);
     }
+    bool began=console_update_begin(slot);
     vt_redraw(&slot->vt);
+    console_update_end(slot,began);
     if(!slot->owner_pid || !compositor_window_exists(slot->owner_pid)){
         if(backbuffer){ dirty_expand(x, y, width, height); }
     }
@@ -954,8 +967,10 @@ void gop_console_clear(void){
     } else {
         gop_draw_rect(slot->x,slot->y,slot->width,slot->height,slot->background);
     }
+    bool began=console_update_begin(slot);
     vt_clear(&slot->vt);
     vt_cursor_show(&slot->vt);
+    console_update_end(slot,began);
     spin_unlock_irqrestore(&console_lock,flags);
 }
 
@@ -987,9 +1002,14 @@ void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy){
     spin_unlock_irqrestore(&console_lock,flags);
 }
 
-#define GOP_CONSOLE_CHUNK 128
+#define GOP_CONSOLE_CHUNK 256
+
+#define GOP_WRITE_REPORT_MS 3
+#define GOP_WRITE_REPORT_LIMIT 64
+static uint32_t write_reports;
 
 void gop_console_write(const char *text, uint32_t count){
+    uint64_t started=timer_ticks();
     uint32_t chain[GOP_CONSOLE_CHAIN];
     uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
     uint32_t flags_vt=0;
@@ -1007,9 +1027,17 @@ void gop_console_write(const char *text, uint32_t count){
             return;
         }
         (void)ensure_backbuffer();
+        bool began=console_update_begin(slot);
         vt_write(&slot->vt,text+done,chunk,flags_vt);
+        console_update_end(slot,began);
         spin_unlock_irqrestore(&console_lock,flags);
         done+=chunk;
+    }
+    uint64_t elapsed=timer_ticks()-started;
+    if(elapsed>=GOP_WRITE_REPORT_MS && write_reports<GOP_WRITE_REPORT_LIMIT){
+        write_reports++;
+        klogf(KLOG_INFO,"console: write of %u bytes took %u ms",
+              count,(uint32_t)elapsed);
     }
 }
 
