@@ -464,9 +464,13 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -KERR_FAULT;
     return process_chdir((const char *)(uintptr_t)a1);
   case SYS_GETCWD:
-    if (a2 > PROCESS_CWD_CAPACITY || !writable((void *)(uintptr_t)a1, a2))
+  {
+    uint32_t cwd_capacity =
+        a2 > PROCESS_CWD_CAPACITY ? PROCESS_CWD_CAPACITY : (uint32_t)a2;
+    if (!writable((void *)(uintptr_t)a1, cwd_capacity))
       return -KERR_FAULT;
-    return process_getcwd((char *)(uintptr_t)a1, (uint32_t)a2);
+    return process_getcwd((char *)(uintptr_t)a1, cwd_capacity);
+  }
   case SYS_KILL:
     if ((int32_t)a1 <= 0)
       return -KERR_SRCH;
