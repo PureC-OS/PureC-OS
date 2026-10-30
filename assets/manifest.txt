@@ -65,7 +65,9 @@
 /usr/bin/hello /usr/bin/hello - 0 bin/programs/hello
 /usr/bin/forktest /usr/bin/forktest - 0 bin/programs/forktest
 /usr/bin/sh /usr/bin/sh - 0 bin/programs/sh
+/bin/sh /bin/sh - 0 bin/programs/sh
 /usr/bin/proctest /usr/bin/proctest - 0 bin/programs/proctest
+/usr/bin/make /usr/bin/make - 0 bin/programs/make
 /bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest

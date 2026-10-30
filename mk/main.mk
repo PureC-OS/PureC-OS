@@ -15,7 +15,7 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom \
+.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
@@ -300,6 +300,7 @@ programs: libraries notepad
 	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
 	$(MAKE) -C src/doom
 	$(MAKE) -C src/chocolate
+	$(MAKE) -C src/make
 	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
 sdl2: libraries
@@ -310,6 +311,9 @@ doomgeneric: libraries
 
 chocolate-doom: sdl2
 	$(MAKE) -C src/chocolate
+
+gnumake: libraries
+	$(MAKE) -C src/make
 
 notepad:
 	@test -f "$(NOTEPAD_DIR)/Makefile" || \
@@ -404,6 +408,7 @@ clean:
 	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true
 	$(MAKE) -C src/doom        clean 2>/dev/null || true
 	$(MAKE) -C src/chocolate   clean 2>/dev/null || true
+	$(MAKE) -C src/make        clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2_mixer clean 2>/dev/null || true
 	$(MAKE) -C src/programs    clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
