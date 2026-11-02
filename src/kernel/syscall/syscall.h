@@ -160,6 +160,10 @@
 #define SYS_TTY_READ 354         /* (buffer, count) -> bytes, console input */
 #define SYS_TTY_IOCTL 355        /* (TTY_* request, argument pointer) */
 #define SYS_POLL 356             /* (struct kernel_pollfd *, count, timeout_ms) */
+#define SYS_MMAP 357             /* (struct kernel_mmap_args *) -> address */
+#define SYS_MUNMAP 358           /* (address, length) */
+#define SYS_MPROTECT 359         /* (address, length, KMAP_PROT_*) */
+#define SYS_MREMAP 360           /* (old, old_len, new_len, KMAP_REMAP_*) -> address */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -193,6 +197,19 @@ struct kernel_pollfd {
   int32_t fd;
   int16_t events;
   int16_t revents;
+};
+
+#define KMAP_PROT_READ 1
+#define KMAP_PROT_WRITE 2
+#define KMAP_PROT_EXEC 4
+#define KMAP_FIXED 1
+#define KMAP_REMAP_MAYMOVE 1
+
+struct kernel_mmap_args {
+  uint64_t address;
+  uint64_t length;
+  uint64_t prot;
+  uint64_t flags;
 };
 
 #define KERR_PERM 1

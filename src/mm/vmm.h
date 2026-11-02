@@ -31,3 +31,9 @@ bool vmm_handle_cow_fault(uint64_t address_space, uint64_t virtual_address,
 bool vmm_user_address(uint64_t virtual_address);
 bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
                             uint64_t page_count, uint64_t flags);
+uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
+                         uint64_t page_count);
+uint64_t vmm_present_count(uint64_t address_space, uint64_t virtual_address,
+                           uint64_t page_count);
+bool vmm_protect_range(uint64_t address_space, uint64_t virtual_address,
+                       uint64_t page_count, uint64_t flags, bool populate);
