@@ -36,4 +36,4 @@ uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
 uint64_t vmm_present_count(uint64_t address_space, uint64_t virtual_address,
                            uint64_t page_count);
 bool vmm_protect_range(uint64_t address_space, uint64_t virtual_address,
-                       uint64_t page_count, uint64_t flags, bool populate);
+                       uint64_t page_count, uint64_t flags, bool populate);uint64_t vmm_page_flags(uint64_t address_space, uint64_t virtual_address);

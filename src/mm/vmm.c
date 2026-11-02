@@ -585,20 +585,24 @@ bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
 
 static uint64_t *user_slot_skip_locked(uint64_t address_space,
                                        uint64_t virtual_address,
-                                       uint64_t *next) {
+                                       uint64_t *next)
+{
   uint64_t *pml4 = (uint64_t *)pmm_physical_to_virtual(address_space);
   uint64_t *pdpt = next_table(pml4, (virtual_address >> 39) & 0x1FF, false, 0);
-  if (!pdpt) {
+  if (!pdpt)
+  {
     *next = (virtual_address | ((1ULL << 39) - 1)) + 1;
     return 0;
   }
   uint64_t *pd = next_table(pdpt, (virtual_address >> 30) & 0x1FF, false, 0);
-  if (!pd) {
+  if (!pd)
+  {
     *next = (virtual_address | ((1ULL << 30) - 1)) + 1;
     return 0;
   }
   uint64_t *pt = next_table(pd, (virtual_address >> 21) & 0x1FF, false, 0);
-  if (!pt) {
+  if (!pt)
+  {
     *next = (virtual_address | ((1ULL << 21) - 1)) + 1;
     return 0;
   }
@@ -606,7 +610,8 @@ static uint64_t *user_slot_skip_locked(uint64_t address_space,
   return &pt[(virtual_address >> 12) & 0x1FF];
 }
 
-static void vmm_page_prot_locked(uint64_t *slot, uint64_t flags) {
+static void vmm_page_prot_locked(uint64_t *slot, uint64_t flags)
+{
   uint64_t entry = *slot;
   uint64_t base = entry & ~(VMM_PAGE_WRITABLE | VMM_PAGE_USER | VMM_PAGE_NX);
   if (flags & VMM_PAGE_USER)
@@ -619,7 +624,8 @@ static void vmm_page_prot_locked(uint64_t *slot, uint64_t flags) {
 }
 
 static bool range_valid(uint64_t address_space, uint64_t virtual_address,
-                        uint64_t page_count) {
+                        uint64_t page_count)
+{
   return address_space && address_space != kernel_address_space &&
          !(virtual_address & (PMM_PAGE_SIZE - 1)) &&
          virtual_address < USER_TOP &&
@@ -627,7 +633,8 @@ static bool range_valid(uint64_t address_space, uint64_t virtual_address,
 }
 
 uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
-                         uint64_t page_count) {
+                         uint64_t page_count)
+{
   if (!range_valid(address_space, virtual_address, page_count))
     return 0;
   uint64_t end = virtual_address + page_count * PMM_PAGE_SIZE;
@@ -636,17 +643,20 @@ uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
   uint64_t held = 0;
   uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
   uint64_t address = virtual_address;
-  while (address < end) {
+  while (address < end)
+  {
     uint64_t next;
     uint64_t *slot = user_slot_skip_locked(address_space, address, &next);
-    if (slot && (*slot & VMM_PAGE_PRESENT)) {
+    if (slot && (*slot & VMM_PAGE_PRESENT))
+    {
       frames[held++] = *slot & PAGE_ADDRESS_MASK;
       *slot = 0;
       invalidate_local_page(address);
       freed++;
     }
     address = next;
-    if (held == 64 || (address >= end && held)) {
+    if (held == 64 || (address >= end && held))
+    {
       smp_tlb_shootdown();
       for (uint64_t i = 0; i < held; i++)
         pmm_free_page(frames[i]);
@@ -658,14 +668,16 @@ uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
 }
 
 uint64_t vmm_present_count(uint64_t address_space, uint64_t virtual_address,
-                           uint64_t page_count) {
+                           uint64_t page_count)
+{
   if (!range_valid(address_space, virtual_address, page_count))
     return 0;
   uint64_t end = virtual_address + page_count * PMM_PAGE_SIZE;
   uint64_t present = 0;
   uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
   uint64_t address = virtual_address;
-  while (address < end) {
+  while (address < end)
+  {
     uint64_t next;
     uint64_t *slot = user_slot_skip_locked(address_space, address, &next);
     if (slot && (*slot & VMM_PAGE_PRESENT))
@@ -677,20 +689,25 @@ uint64_t vmm_present_count(uint64_t address_space, uint64_t virtual_address,
 }
 
 bool vmm_protect_range(uint64_t address_space, uint64_t virtual_address,
-                       uint64_t page_count, uint64_t flags, bool populate) {
+                       uint64_t page_count, uint64_t flags, bool populate)
+{
   if (!range_valid(address_space, virtual_address, page_count))
     return false;
   uint64_t end = virtual_address + page_count * PMM_PAGE_SIZE;
   bool ok = true;
   uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
   uint64_t address = virtual_address;
-  while (address < end && ok) {
+  while (address < end && ok)
+  {
     uint64_t next;
     uint64_t *slot = user_slot_skip_locked(address_space, address, &next);
-    if (slot && (*slot & VMM_PAGE_PRESENT)) {
+    if (slot && (*slot & VMM_PAGE_PRESENT))
+    {
       vmm_page_prot_locked(slot, flags);
       invalidate_local_page(address);
-    } else if (populate) {
+    }
+    else if (populate)
+    {
       ok = vmm_map_new_pages_locked(address_space, address, 1, flags);
       next = address + PMM_PAGE_SIZE;
     }
@@ -699,4 +716,23 @@ bool vmm_protect_range(uint64_t address_space, uint64_t virtual_address,
   smp_tlb_shootdown();
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return ok;
+}
+
+uint64_t vmm_page_flags(uint64_t address_space, uint64_t virtual_address)
+{
+  if (!range_valid(address_space, virtual_address & ~(PMM_PAGE_SIZE - 1), 1))
+    return 0;
+  uint64_t result = 0;
+  uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
+  uint64_t *slot = user_slot_locked(address_space,
+                                    virtual_address & ~(PMM_PAGE_SIZE - 1));
+  if (slot && (*slot & VMM_PAGE_PRESENT))
+  {
+    uint64_t entry = *slot;
+    result = VMM_PAGE_PRESENT | (entry & (VMM_PAGE_USER | VMM_PAGE_NX));
+    if (entry & (VMM_PAGE_WRITABLE | VMM_PAGE_COW))
+      result |= VMM_PAGE_WRITABLE;
+  }
+  spin_unlock_irqrestore(&vmm_lock, irq_flags);
+  return result;
 }

@@ -33,6 +33,10 @@ static mutex_t process_mutex;
 #define USER_STACK_PAGES 16
 #define USER_STACK_MAX_PAGES 2048
 #define USER_HEAP_GUARD_PAGES 1
+#define MMAP_BASE 0x0000680000000000ULL
+#define MMAP_END 0x00007F0000000000ULL
+#define MMAP_MIN_FIXED 0x10000ULL
+#define MMAP_PROT_MASK 7ULL
 #define USER_PROCESS_PRIORITY 1
 #define SPAWN_MAX_OBJECTS (ELF_MAX_NEEDED + 1)
 #define SPAWN_PATH_CAP 128
@@ -631,6 +635,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   process->heap_break = heap_base;
   process->heap_mapped_end = heap_base;
   process->heap_limit = heap_limit;
+  process->mmap_cursor = MMAP_BASE;
   process->stack_limit = built.stack_limit;
   process->stack_low = built.stack_low;
   environment_initialize(process, parent);
@@ -711,6 +716,7 @@ int32_t process_fork(const struct syscall_regs *regs)
   child->heap_break = parent->heap_break;
   child->heap_mapped_end = parent->heap_mapped_end;
   child->heap_limit = parent->heap_limit;
+  child->mmap_cursor = parent->mmap_cursor;
   child->capabilities = parent->capabilities;
   child->uid = parent->uid;
   child->gid = parent->gid;
@@ -1038,6 +1044,265 @@ uint64_t process_heap_grow(uint64_t size)
   }
   process->heap_break = requested_break;
   return previous_break;
+}
+
+static uint64_t mmap_prot_flags(uint64_t prot)
+{
+  if (!(prot & MMAP_PROT_MASK))
+    return 0;
+  uint64_t flags = VMM_PAGE_USER;
+  if (prot & KMAP_PROT_WRITE)
+    flags |= VMM_PAGE_WRITABLE;
+  if (!(prot & KMAP_PROT_EXEC))
+    flags |= VMM_PAGE_NX;
+  return flags;
+}
+
+static bool mmap_range_ok(const struct process *process, uint64_t address,
+                          uint64_t pages)
+{
+  if ((address & (PMM_PAGE_SIZE - 1)) || address < MMAP_MIN_FIXED || !pages)
+    return false;
+  if (pages > USER_STACK_TOP / PMM_PAGE_SIZE)
+    return false;
+  uint64_t end = address + pages * PMM_PAGE_SIZE;
+  if (end < address)
+    return false;
+  uint64_t stack_floor = process->stack_limit
+                             ? process->stack_limit
+                             : USER_STACK_TOP - USER_STACK_MAX_PAGES * PMM_PAGE_SIZE;
+  if (end > stack_floor)
+    return false;
+  if (address < process->heap_mapped_end && end > process->heap_base)
+    return false;
+  return true;
+}
+
+static uint64_t mmap_cursor_get(struct process *process)
+{
+  if (process->mmap_cursor < MMAP_BASE || process->mmap_cursor > MMAP_END)
+    process->mmap_cursor = MMAP_BASE;
+  return process->mmap_cursor;
+}
+
+static bool mmap_length_pages(uint64_t length, uint64_t *pages)
+{
+  if (!length || length > MMAP_END - MMAP_BASE)
+    return false;
+  *pages = (length + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
+  return true;
+}
+
+int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
+                     uint64_t flags)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return -KERR_PERM;
+  uint64_t pages;
+  if ((prot & ~MMAP_PROT_MASK) || !mmap_length_pages(length, &pages))
+    return -KERR_INVAL;
+  uint64_t cursor = mmap_cursor_get(process);
+  uint64_t base;
+  bool fixed = (flags & KMAP_FIXED) != 0;
+  if (fixed)
+  {
+    if (!mmap_range_ok(process, address, pages))
+      return -KERR_INVAL;
+    base = address;
+    uint64_t freed = vmm_unmap_range(process->address_space, base, pages);
+    if (freed)
+      oom_gate_release_user(process->pid, freed);
+    uint64_t end = base + pages * PMM_PAGE_SIZE;
+    if (base >= MMAP_BASE && end > cursor && end <= MMAP_END)
+      process->mmap_cursor = end;
+  }
+  else
+  {
+    if (pages > (MMAP_END - cursor) / PMM_PAGE_SIZE)
+      return -KERR_NOMEM;
+    base = cursor;
+    process->mmap_cursor = cursor + pages * PMM_PAGE_SIZE;
+  }
+  uint64_t page_flags = mmap_prot_flags(prot);
+  if (!page_flags)
+    return (int64_t)base;
+  if (!oom_gate_try_charge_user(process->pid, pages))
+  {
+    if (!fixed)
+      process->mmap_cursor = cursor;
+    return -KERR_NOMEM;
+  }
+  if (!vmm_map_new_pages(process->address_space, base, pages, page_flags))
+  {
+    vmm_unmap_range(process->address_space, base, pages);
+    oom_gate_release_user(process->pid, pages);
+    if (!fixed)
+      process->mmap_cursor = cursor;
+    return -KERR_NOMEM;
+  }
+  return (int64_t)base;
+}
+
+int64_t process_munmap(uint64_t address, uint64_t length)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return -KERR_PERM;
+  uint64_t pages;
+  if (!mmap_length_pages(length, &pages) ||
+      !mmap_range_ok(process, address, pages))
+    return -KERR_INVAL;
+  uint64_t freed = vmm_unmap_range(process->address_space, address, pages);
+  if (freed)
+    oom_gate_release_user(process->pid, freed);
+  uint64_t end = address + pages * PMM_PAGE_SIZE;
+  if (address >= MMAP_BASE && end == process->mmap_cursor)
+    process->mmap_cursor = address;
+  return 0;
+}
+
+int64_t process_mprotect(uint64_t address, uint64_t length, uint64_t prot)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return -KERR_PERM;
+  uint64_t pages;
+  if ((prot & ~MMAP_PROT_MASK) || !mmap_length_pages(length, &pages) ||
+      !mmap_range_ok(process, address, pages))
+    return -KERR_INVAL;
+  uint64_t flags = mmap_prot_flags(prot);
+  uint64_t present = vmm_present_count(process->address_space, address, pages);
+  uint64_t missing = pages - present;
+  bool populate = false;
+  if (missing)
+  {
+    uint64_t end = address + pages * PMM_PAGE_SIZE;
+    if (address < MMAP_BASE || end > mmap_cursor_get(process))
+      return -KERR_NOMEM;
+    populate = flags != 0;
+  }
+  if (populate && !oom_gate_try_charge_user(process->pid, missing))
+    return -KERR_NOMEM;
+  if (!vmm_protect_range(process->address_space, address, pages, flags,
+                         populate))
+  {
+    if (populate)
+    {
+      uint64_t now = vmm_present_count(process->address_space, address, pages);
+      uint64_t added = now > present ? now - present : 0;
+      oom_gate_release_user(process->pid, missing - added);
+    }
+    return -KERR_NOMEM;
+  }
+  return 0;
+}
+
+int64_t process_mremap(uint64_t address, uint64_t old_length,
+                       uint64_t new_length, uint64_t flags)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return -KERR_PERM;
+  uint64_t old_pages, new_pages;
+  if (!mmap_length_pages(old_length, &old_pages) ||
+      !mmap_length_pages(new_length, &new_pages) ||
+      !mmap_range_ok(process, address, old_pages))
+    return -KERR_INVAL;
+  uint64_t old_end = address + old_pages * PMM_PAGE_SIZE;
+  if (new_pages == old_pages)
+    return (int64_t)address;
+  if (new_pages < old_pages)
+  {
+    uint64_t freed = vmm_unmap_range(
+        process->address_space, address + new_pages * PMM_PAGE_SIZE,
+        old_pages - new_pages);
+    if (freed)
+      oom_gate_release_user(process->pid, freed);
+    if (old_end == process->mmap_cursor && address >= MMAP_BASE)
+      process->mmap_cursor = address + new_pages * PMM_PAGE_SIZE;
+    return (int64_t)address;
+  }
+  uint64_t extra = new_pages - old_pages;
+  uint64_t cursor = mmap_cursor_get(process);
+  uint64_t first_flags = vmm_page_flags(process->address_space, address);
+  uint64_t page_flags = first_flags & (VMM_PAGE_USER | VMM_PAGE_WRITABLE |
+                                       VMM_PAGE_NX);
+  bool in_place = false;
+  if (address >= MMAP_BASE && old_end == cursor &&
+      extra <= (MMAP_END - cursor) / PMM_PAGE_SIZE)
+    in_place = true;
+  else if (address >= MMAP_BASE && old_end < cursor &&
+           mmap_range_ok(process, old_end, extra) &&
+           old_end + extra * PMM_PAGE_SIZE <= cursor &&
+           vmm_present_count(process->address_space, old_end, extra) == 0)
+    in_place = true;
+  if (in_place)
+  {
+    if (page_flags && !oom_gate_try_charge_user(process->pid, extra))
+      return -KERR_NOMEM;
+    if (page_flags && !vmm_map_new_pages(process->address_space, old_end,
+                                         extra, page_flags))
+    {
+      vmm_unmap_range(process->address_space, old_end, extra);
+      oom_gate_release_user(process->pid, extra);
+      return -KERR_NOMEM;
+    }
+    if (old_end == cursor)
+      process->mmap_cursor = old_end + extra * PMM_PAGE_SIZE;
+    return (int64_t)address;
+  }
+  if (!(flags & KMAP_REMAP_MAYMOVE))
+    return -KERR_NOMEM;
+  if (new_pages > (MMAP_END - cursor) / PMM_PAGE_SIZE)
+    return -KERR_NOMEM;
+  uint64_t target = cursor;
+  process->mmap_cursor = cursor + new_pages * PMM_PAGE_SIZE;
+  for (uint64_t page = 0; page < old_pages; page++)
+  {
+    uint64_t source = address + page * PMM_PAGE_SIZE;
+    uint64_t source_flags = vmm_page_flags(process->address_space, source);
+    uint64_t map_flags = source_flags & (VMM_PAGE_USER | VMM_PAGE_WRITABLE |
+                                         VMM_PAGE_NX);
+    if (!(map_flags & VMM_PAGE_USER))
+      continue;
+    uint64_t destination = target + page * PMM_PAGE_SIZE;
+    if (!vmm_map_new_pages(process->address_space, destination, 1, map_flags))
+    {
+      vmm_unmap_range(process->address_space, target, new_pages);
+      process->mmap_cursor = cursor;
+      return -KERR_NOMEM;
+    }
+    memcpy(pmm_physical_to_virtual(
+               vmm_translate(process->address_space, destination)),
+           pmm_physical_to_virtual(
+               vmm_translate(process->address_space, source)),
+           PMM_PAGE_SIZE);
+  }
+  if (page_flags &&
+      !vmm_map_new_pages(process->address_space,
+                         target + old_pages * PMM_PAGE_SIZE, extra,
+                         page_flags))
+  {
+    vmm_unmap_range(process->address_space, target, new_pages);
+    process->mmap_cursor = cursor;
+    return -KERR_NOMEM;
+  }
+  uint64_t got = vmm_present_count(process->address_space, target, new_pages);
+  if (got && !oom_gate_try_charge_user(process->pid, got))
+  {
+    vmm_unmap_range(process->address_space, target, new_pages);
+    process->mmap_cursor = cursor;
+    return -KERR_NOMEM;
+  }
+  uint64_t freed = vmm_unmap_range(process->address_space, address, old_pages);
+  if (freed)
+    oom_gate_release_user(process->pid, freed);
+  return (int64_t)target;
 }
 
 static void process_terminate(int32_t status, int32_t signal)
@@ -1528,6 +1793,7 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   process->heap_break = built.heap_base;
   process->heap_mapped_end = built.heap_base;
   process->heap_limit = built.heap_limit;
+  process->mmap_cursor = MMAP_BASE;
   process->stack_limit = built.stack_limit;
   process->stack_low = built.stack_low;
   if (strcmp(process->name, "installer") == 0 ||
