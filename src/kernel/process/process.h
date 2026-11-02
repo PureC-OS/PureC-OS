@@ -14,7 +14,8 @@
 #define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
 #define PROCESS_CAP_NET_ADMIN (1U << 1)
 
-struct process_environment_entry {
+struct process_environment_entry
+{
   bool used;
   char name[PROCESS_ENVIRONMENT_NAME_CAPACITY];
   char value[PROCESS_ENVIRONMENT_VALUE_CAPACITY];
@@ -23,7 +24,8 @@ struct process_environment_entry {
 struct ipc_mbox;
 struct process_signals;
 
-enum process_state {
+enum process_state
+{
   PROCESS_FREE = 0,
   PROCESS_READY,
   PROCESS_RUNNING,
@@ -31,7 +33,8 @@ enum process_state {
   PROCESS_LOADING
 };
 
-struct process {
+struct process
+{
   uint32_t pid;
   uint32_t parent_pid;
   enum process_state state;

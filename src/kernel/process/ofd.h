@@ -5,7 +5,8 @@
 
 struct file_stat_info;
 
-enum ofd_kind {
+enum ofd_kind
+{
   OFD_FREE = 0,
   OFD_CONSOLE_IN,
   OFD_CONSOLE_OUT,

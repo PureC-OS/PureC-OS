@@ -17,14 +17,16 @@ struct process;
 #define IPC_ERR_TOO_BIG -4
 #define IPC_ERR_TOO_SMALL -3
 
-struct ipc_msg {
+struct ipc_msg
+{
   struct ipc_msg *next;
   uint32_t from;
   uint32_t size;
   uint8_t data[];
 };
 
-struct ipc_mbox {
+struct ipc_mbox
+{
   struct ipc_msg *head;
   struct ipc_msg *tail;
   uint32_t count;

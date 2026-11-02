@@ -14,7 +14,8 @@
 
 static volatile bool panic_active = false;
 
-static const char *exception_name(uint64_t vec) {
+static const char *exception_name(uint64_t vec)
+{
   static const char *const names[32] = {
       "Divide Error",
       "Debug",
@@ -52,20 +53,23 @@ static const char *exception_name(uint64_t vec) {
   return vec < 32 ? names[vec] : "Unknown Interrupt";
 }
 
-static __attribute__((noreturn)) void panic_halt(void) {
+static __attribute__((noreturn)) void panic_halt(void)
+{
   gop_present_forced();
   for (;;)
     __asm__ volatile("cli; hlt");
 }
 
-static void panic_origin(const char *file, int line, const char *func) {
+static void panic_origin(const char *file, int line, const char *func)
+{
   klogf(KLOG_ERROR, "at %s:%d %s()", file ? file : "?", line,
         func ? func : "?");
   klogf(KLOG_ERROR, "Build %s %s", kernel_build_uuid, kernel_build_time);
 }
 
 static void panic_header(const char *title, const char *file, int line,
-                         const char *func) {
+                         const char *func)
+{
   __asm__ volatile("cli");
   if (panic_active)
     panic_halt();
@@ -93,9 +97,11 @@ static void panic_header(const char *title, const char *file, int line,
     klog(KLOG_ERROR, "ksyms: MISSING — backtrace will show raw addresses");
 }
 
-static void panic_thread_info(void) {
+static void panic_thread_info(void)
+{
   struct thread *t = scheduler_current_thread();
-  if (!t) {
+  if (!t)
+  {
     klog(KLOG_ERROR, "CPU:  <none>  (scheduler not running)");
     return;
   }
@@ -105,7 +111,8 @@ static void panic_thread_info(void) {
         t->entry);
 }
 
-static void panic_ctrl_regs(void) {
+static void panic_ctrl_regs(void)
+{
   uint64_t cr0, cr2, cr3, cr4;
   __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
   __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
@@ -117,7 +124,8 @@ static void panic_ctrl_regs(void) {
         (unsigned long long)cr4);
 }
 
-static void __attribute__((unused)) panic_addr_sym(uint64_t addr) {
+static void __attribute__((unused)) panic_addr_sym(uint64_t addr)
+{
   const char *name = 0;
   uint64_t off = 0;
   if (ksym_resolve(addr, &name, &off))
@@ -127,7 +135,8 @@ static void __attribute__((unused)) panic_addr_sym(uint64_t addr) {
     klogf(KLOG_ERROR, "  [<%016llx>] ??", (unsigned long long)addr);
 }
 
-static void panic_rip_sym(uint64_t rip) {
+static void panic_rip_sym(uint64_t rip)
+{
   const char *name = 0;
   uint64_t off = 0;
   if (ksym_resolve(rip, &name, &off))
@@ -137,7 +146,8 @@ static void panic_rip_sym(uint64_t rip) {
 }
 
 static void panic_gp_regs(const struct panic_registers *r, uint64_t rip,
-                          uint64_t rsp, uint64_t rflags) {
+                          uint64_t rsp, uint64_t rflags)
+{
   klog(KLOG_ERROR, "");
   klogf(KLOG_ERROR, "RIP: %016llx  RSP: %016llx", (unsigned long long)rip,
         (unsigned long long)rsp);
@@ -161,19 +171,23 @@ static void panic_gp_regs(const struct panic_registers *r, uint64_t rip,
         (unsigned long long)r->r15);
 }
 
-static bool panic_is_kernel_addr(uint64_t a) {
+static bool panic_is_kernel_addr(uint64_t a)
+{
   return a >= 0xffff800000000000ULL;
 }
 
-static void panic_stack_dump(uint64_t rsp) {
+static void panic_stack_dump(uint64_t rsp)
+{
   klog(KLOG_ERROR, "");
   klog(KLOG_ERROR, "Stack dump (32 qwords from RSP):");
-  if (!panic_is_kernel_addr(rsp)) {
+  if (!panic_is_kernel_addr(rsp))
+  {
     klog(KLOG_ERROR, "  (RSP not in kernel half — skip)");
     return;
   }
   volatile uint64_t *sp = (volatile uint64_t *)(uintptr_t)rsp;
-  for (int i = 0; i < 32; i += 4) {
+  for (int i = 0; i < 32; i += 4)
+  {
     klogf(KLOG_ERROR, "  rsp+%u: %016llx %016llx %016llx %016llx",
           (unsigned int)(i * 8), (unsigned long long)sp[i],
           (unsigned long long)sp[i + 1], (unsigned long long)sp[i + 2],
@@ -181,7 +195,8 @@ static void panic_stack_dump(uint64_t rsp) {
   }
 }
 
-static void panic_call_trace(uint64_t rbp, uint64_t rsp) {
+static void panic_call_trace(uint64_t rbp, uint64_t rsp)
+{
   klog(KLOG_ERROR, "");
   klog(KLOG_ERROR, "Call Trace (kernel.map via .ksyms):");
 
@@ -189,12 +204,14 @@ static void panic_call_trace(uint64_t rbp, uint64_t rsp) {
   const int max_depth = 24;
   int printed = 0;
 
-  while (depth < max_depth && panic_is_kernel_addr(rbp)) {
+  while (depth < max_depth && panic_is_kernel_addr(rbp))
+  {
     volatile uint64_t *frame = (volatile uint64_t *)(uintptr_t)rbp;
     uint64_t next_rbp = frame[0];
     uint64_t ret_addr = frame[1];
 
-    if (ret_addr >= 0xffffffff80000000ULL) {
+    if (ret_addr >= 0xffffffff80000000ULL)
+    {
       const char *name = 0;
       uint64_t off = 0;
       if (ksym_resolve(ret_addr, &name, &off))
@@ -214,7 +231,8 @@ static void panic_call_trace(uint64_t rbp, uint64_t rsp) {
     depth++;
   }
 
-  if (printed == 0) {
+  if (printed == 0)
+  {
     klog(KLOG_ERROR, "  (empty — no kernel return addresses found)");
     klog(KLOG_ERROR, "  (no frame pointers — check -fno-omit-frame-pointer?)");
   }
@@ -222,7 +240,8 @@ static void panic_call_trace(uint64_t rbp, uint64_t rsp) {
   panic_stack_dump(rsp);
 }
 
-static void panic_footer(void) {
+static void panic_footer(void)
+{
   klog(KLOG_ERROR, "");
   klog(KLOG_ERROR, "========================CPU HALTED=======================");
   klog(KLOG_ERROR, "Attach kernel.map line for RIP + top of Call Trace.");
@@ -230,7 +249,8 @@ static void panic_footer(void) {
 }
 
 void kernel_panic_at(const char *file, int line, const char *func,
-                     const char *reason) {
+                     const char *reason)
+{
   panic_header(reason, file, line, func);
   panic_ctrl_regs();
   panic_thread_info();
@@ -249,7 +269,8 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
                                uint64_t vector, uint64_t error_code,
                                uint64_t rip, uint64_t cs, uint64_t rflags,
                                uint64_t cr2,
-                               const struct panic_registers *regs) {
+                               const struct panic_registers *regs)
+{
   char title[64];
   const char *name = exception_name(vector);
   {
@@ -257,7 +278,8 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
     const char *prefix = "exception: #";
     while (*prefix)
       *p++ = *prefix++;
-    if (vector >= 10) {
+    if (vector >= 10)
+    {
       *p++ = (char)('0' + vector / 10);
     }
     *p++ = (char)('0' + vector % 10);
@@ -272,7 +294,8 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
   klogf(KLOG_ERROR, "error_code: 0x%016llx  CS: 0x%04llx",
         (unsigned long long)error_code, (unsigned long long)cs);
 
-  if (vector == 14) {
+  if (vector == 14)
+  {
     klogf(KLOG_ERROR, "PF addr: 0x%016llx  [%s|%s|%s%s%s]",
           (unsigned long long)cr2, (error_code & 4) ? "user" : "kernel",
           (error_code & 2) ? "write" : "read",
@@ -287,12 +310,15 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
 
   uint64_t rsp = 0;
   uint64_t rbp = 0;
-  if (regs) {
+  if (regs)
+  {
     struct thread *t = scheduler_current_thread();
     rsp = t ? t->rsp : 0;
     rbp = regs->rbp;
     panic_gp_regs(regs, rip, rsp, rflags);
-  } else {
+  }
+  else
+  {
     panic_rip_sym(rip);
   }
 
@@ -304,7 +330,8 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
 
 void kernel_panic_manual_at(const char *file, int line, const char *func,
                             const char *reason, uint64_t rip, uint64_t rsp,
-                            uint64_t rbp, const struct panic_registers *regs) {
+                            uint64_t rbp, const struct panic_registers *regs)
+{
   panic_header(reason, file, line, func);
   klog(KLOG_ERROR, "[manual panic — triggered by kernel code]");
   klog(KLOG_ERROR, "");

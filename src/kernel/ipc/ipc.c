@@ -9,10 +9,12 @@
 
 static spinlock_t ipc_lock = SPINLOCK_INIT;
 
-static struct ipc_mbox *mbox_get(struct process *process, bool create) {
+static struct ipc_mbox *mbox_get(struct process *process, bool create)
+{
   if (!process)
     return NULL;
-  if (!process->ipc_mailbox && create) {
+  if (!process->ipc_mailbox && create)
+  {
     struct ipc_mbox *box =
         (struct ipc_mbox *)oom_slab_alloc(sizeof(struct ipc_mbox));
     if (!box)
@@ -24,7 +26,8 @@ static struct ipc_mbox *mbox_get(struct process *process, bool create) {
 }
 
 static int32_t recv_locked(struct process *self, uint32_t *from,
-                           void *buffer, uint32_t capacity) {
+                           void *buffer, uint32_t capacity)
+{
   struct ipc_mbox *box = self->ipc_mailbox;
   if (!box || !box->head)
     return IPC_ERR_EMPTY;
@@ -43,7 +46,8 @@ static int32_t recv_locked(struct process *self, uint32_t *from,
   return got;
 }
 
-int32_t ipc_send(uint32_t dest_pid, const void *data, uint32_t size) {
+int32_t ipc_send(uint32_t dest_pid, const void *data, uint32_t size)
+{
   if (!dest_pid || !data || !size || size > IPC_MAX_PAYLOAD)
     return size > IPC_MAX_PAYLOAD ? IPC_ERR_TOO_BIG : IPC_ERR_INVALID;
   if (!process_has_capability(PROCESS_CAP_NET_ADMIN))
@@ -52,25 +56,29 @@ int32_t ipc_send(uint32_t dest_pid, const void *data, uint32_t size) {
   process_table_lock();
   struct process *target = process_lookup_by_pid(dest_pid);
   if (!target || target->state == PROCESS_EXITED ||
-      target->state == PROCESS_FREE) {
+      target->state == PROCESS_FREE)
+  {
     process_table_unlock();
     return IPC_ERR_NO_PROCESS;
   }
   uint64_t flags = spin_lock_irqsave(&ipc_lock);
   struct ipc_mbox *box = mbox_get(target, true);
-  if (!box) {
+  if (!box)
+  {
     spin_unlock_irqrestore(&ipc_lock, flags);
     process_table_unlock();
     return IPC_ERR_NO_PROCESS;
   }
-  if (box->count >= IPC_MAX_DEPTH) {
+  if (box->count >= IPC_MAX_DEPTH)
+  {
     spin_unlock_irqrestore(&ipc_lock, flags);
     process_table_unlock();
     return IPC_ERR_FULL;
   }
   struct ipc_msg *msg =
       (struct ipc_msg *)oom_slab_alloc(sizeof(struct ipc_msg) + size);
-  if (!msg) {
+  if (!msg)
+  {
     spin_unlock_irqrestore(&ipc_lock, flags);
     process_table_unlock();
     return IPC_ERR_FULL;
@@ -92,7 +100,8 @@ int32_t ipc_send(uint32_t dest_pid, const void *data, uint32_t size) {
 }
 
 static int32_t ipc_recv_any(uint32_t *from, void *buffer, uint32_t capacity,
-                            uint32_t wait_ms) {
+                            uint32_t wait_ms)
+{
   if (!buffer || !capacity)
     return IPC_ERR_INVALID;
   if (!process_has_capability(PROCESS_CAP_NET_ADMIN))
@@ -103,7 +112,8 @@ static int32_t ipc_recv_any(uint32_t *from, void *buffer, uint32_t capacity,
   if (wait_ms > IPC_WAIT_MAX_MS)
     wait_ms = IPC_WAIT_MAX_MS;
   uint64_t deadline = timer_ticks() + wait_ms;
-  for (;;) {
+  for (;;)
+  {
     uint64_t flags = spin_lock_irqsave(&ipc_lock);
     int32_t rc = recv_locked(self, from, buffer, capacity);
     spin_unlock_irqrestore(&ipc_lock, flags);
@@ -116,16 +126,19 @@ static int32_t ipc_recv_any(uint32_t *from, void *buffer, uint32_t capacity,
   }
 }
 
-int32_t ipc_recv(void *buffer, uint32_t capacity, uint32_t wait_ms) {
+int32_t ipc_recv(void *buffer, uint32_t capacity, uint32_t wait_ms)
+{
   return ipc_recv_any(NULL, buffer, capacity, wait_ms);
 }
 
 int32_t ipc_recv_from(uint32_t *from_pid, void *buffer, uint32_t capacity,
-                      uint32_t wait_ms) {
+                      uint32_t wait_ms)
+{
   return ipc_recv_any(from_pid, buffer, capacity, wait_ms);
 }
 
-void ipc_cleanup(struct process *process) {
+void ipc_cleanup(struct process *process)
+{
   if (!process || !process->ipc_mailbox)
     return;
   uint64_t flags = spin_lock_irqsave(&ipc_lock);
@@ -136,7 +149,8 @@ void ipc_cleanup(struct process *process) {
   box->tail = NULL;
   box->count = 0;
   spin_unlock_irqrestore(&ipc_lock, flags);
-  while (msg) {
+  while (msg)
+  {
     struct ipc_msg *next = msg->next;
     oom_slab_free(msg, sizeof(struct ipc_msg) + msg->size);
     msg = next;
