@@ -1,3 +1,4 @@
+#include "../../drivers/mouse/vbox_mouse.h"
 #include "kernel.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../arch/x86_64/mmio.h"
@@ -114,6 +115,7 @@ void kernel_main(struct limine_framebuffer *fb)
       klog(KLOG_INFO, "video: GOP forced by cmdline (video=gop)");
     }
   }
+  (void)vbox_mouse_init();
   smp_start_all(smp_response_ptr);
   syscall_init();
   klog(KLOG_OK, "Syscall int 0x80 ready");
