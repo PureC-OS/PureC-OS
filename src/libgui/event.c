@@ -27,6 +27,7 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
         return true;
     }
     if(state&GUI_WINDOW_STATE_REPAINT){
+        pg_window_fit_display(window);
         window->focused=focused;
         window->repainting=true;
         event->type=PG_EVENT_REPAINT;

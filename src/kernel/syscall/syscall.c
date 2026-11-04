@@ -385,7 +385,20 @@ int64_t syscall_handler(struct syscall_regs *r)
     mouse_end_framebuffer_update();
     return 0;
   case SYS_DISPLAY_SET_MODE:
-    return display_mode_apply((uint32_t)a1, (uint32_t)a2, (uint8_t)a3);
+    return display_mode_apply((uint32_t)a1, (uint32_t)a2, (uint8_t)a3,
+                              (uint32_t)r->rsi);
+  case SYS_DISPLAY_SCALE_INFO:
+  {
+    struct display_scale_info *info =
+        (struct display_scale_info *)(uintptr_t)a1;
+    if (!writable(info, sizeof(*info)))
+      return -1;
+    info->physical_width = gop_get_physical_width();
+    info->physical_height = gop_get_physical_height();
+    info->scale_percent = gop_get_scale_percent();
+    info->reserved = 0;
+    return 0;
+  }
   case SYS_CONSOLE_CONFIGURE:
   {
     const struct framebuffer_console_request *request =

@@ -14,7 +14,12 @@ struct display_settings {
     uint32_t width;
     uint32_t height;
     uint32_t bpp;
+    uint32_t scale;
 };
+
+uint32_t display_scale_count(void);
+uint32_t display_scale_at(uint32_t index);
+uint32_t display_scale_index_of(uint32_t percent);
 
 void display_defaults(struct display_settings *s);
 bool display_load(struct display_settings *s);

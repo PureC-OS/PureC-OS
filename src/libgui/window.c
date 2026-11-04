@@ -208,6 +208,22 @@ bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y){
     return true;
 }
 
+void pg_window_fit_display(struct pg_window *window){
+    if(!window || !window->open || window->maximized) return;
+    struct pc_display_info display;
+    if(!pc_display_get_info(&display) || !display.available) return;
+    uint32_t x=window->frame.x, y=window->frame.y;
+    if(x+window->frame.width>display.width)
+        x=display.width>window->frame.width ? display.width-window->frame.width : 0;
+    if(y+window->frame.height>display.height)
+        y=display.height>window->frame.height ? display.height-window->frame.height : 0;
+    if(x==window->frame.x && y==window->frame.y) return;
+    window->frame.x=x;
+    window->frame.y=y;
+    update_client_rect(window);
+    (void)pg_internal_update_registered_frame(window);
+}
+
 void pg_window_minimize(struct pg_window *window){
     if(!window || !window->open) return;
     if(window->server){

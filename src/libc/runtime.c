@@ -435,8 +435,25 @@ void pc_display_clear(uint32_t color){
     (void)pc_syscall(SYS_CLEAR,color,0,0);
 }
 
+int32_t pc_display_set_mode_scale(uint32_t width, uint32_t height,
+                                  uint32_t bpp, uint32_t scale_percent){
+    return (int32_t)syscall5(SYS_DISPLAY_SET_MODE,width,height,bpp,
+                             scale_percent,0);
+}
+
 int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp){
-    return (int32_t)pc_syscall(SYS_DISPLAY_SET_MODE,width,height,bpp);
+    return pc_display_set_mode_scale(width,height,bpp,0);
+}
+
+bool pc_display_scale_info(struct pc_display_scale *out){
+    if(!out) return false;
+    struct display_scale_info value;
+    if(pc_syscall(SYS_DISPLAY_SCALE_INFO,(uint64_t)(uintptr_t)&value,0,0)<0)
+        return false;
+    out->physical_width=value.physical_width;
+    out->physical_height=value.physical_height;
+    out->scale_percent=value.scale_percent;
+    return true;
 }
 
 void pc_desktop_redraw(void){

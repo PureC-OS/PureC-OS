@@ -46,11 +46,32 @@ static char *append_u32(char *out, uint32_t value){
     return out;
 }
 
+static const uint32_t scales[]={100,125,150,200,250,300};
+
+uint32_t display_scale_count(void){
+    return sizeof(scales)/sizeof(scales[0]);
+}
+
+uint32_t display_scale_at(uint32_t index){
+    return index<display_scale_count() ? scales[index] : 100;
+}
+
+uint32_t display_scale_index_of(uint32_t percent){
+    uint32_t best=0;
+    uint32_t best_score=UINT32_MAX;
+    for(uint32_t i=0;i<display_scale_count();i++){
+        uint32_t d=scales[i]>percent ? scales[i]-percent : percent-scales[i];
+        if(d<best_score){ best_score=d; best=i; }
+    }
+    return best;
+}
+
 void display_defaults(struct display_settings *s){
     if(!s) return;
     s->width=1280;
     s->height=800;
     s->bpp=32;
+    s->scale=100;
 }
 
 uint32_t display_mode_count(void){
@@ -87,7 +108,7 @@ bool display_load(struct display_settings *s){
     (void)pf_close(descriptor);
     if(amount<=0) return false;
     buffer[amount]='\0';
-    uint32_t width=0,height=0,bpp=0;
+    uint32_t width=0,height=0,bpp=0,scale=0;
     for(char *line=buffer;*line;){
         char *end=line;
         while(*end && *end!='\n' && *end!='\r') end++;
@@ -96,6 +117,7 @@ bool display_load(struct display_settings *s){
         if(starts_with(line,"width=")) width=parse_u32(line+6);
         else if(starts_with(line,"height=")) height=parse_u32(line+7);
         else if(starts_with(line,"bpp=")) bpp=parse_u32(line+4);
+        else if(starts_with(line,"scale=")) scale=parse_u32(line+6);
         if(!saved) break;
         line=end+1;
         while(*line=='\n' || *line=='\r') line++;
@@ -103,12 +125,13 @@ bool display_load(struct display_settings *s){
     if(width>=640 && width<=7680) s->width=width;
     if(height>=400 && height<=4320) s->height=height;
     if(bpp==16 || bpp==24 || bpp==32) s->bpp=bpp;
+    if(scale>=100 && scale<=400) s->scale=scale;
     return true;
 }
 
 int32_t display_save(const struct display_settings *s){
     if(!s) return -3;
-    char buffer[64];
+    char buffer[80];
     char *out=buffer;
     out=append_text(out,"width=");
     out=append_u32(out,s->width);
@@ -116,6 +139,8 @@ int32_t display_save(const struct display_settings *s){
     out=append_u32(out,s->height);
     out=append_text(out,"\nbpp=");
     out=append_u32(out,s->bpp);
+    out=append_text(out,"\nscale=");
+    out=append_u32(out,s->scale ? s->scale : 100);
     out=append_text(out,"\n");
     (void)pf_create_dir(DISPLAY_INI_DIR);
     return pf_write_file(DISPLAY_INI_PATH,buffer,(uint32_t)(out-buffer));
@@ -123,5 +148,6 @@ int32_t display_save(const struct display_settings *s){
 
 int32_t display_apply_live(const struct display_settings *s){
     if(!s) return -3;
-    return pc_display_set_mode(s->width,s->height,s->bpp);
+    return pc_display_set_mode_scale(s->width,s->height,s->bpp,
+                                     s->scale ? s->scale : 100);
 }

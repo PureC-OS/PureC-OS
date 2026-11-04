@@ -203,9 +203,8 @@ static void present_locked(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
       gop_front_write_row((uint32_t)cx, (uint32_t)y, line_buffer, n);
     }
   }
-  if (svga_is_available())
-    svga_update((uint32_t)x0, (uint32_t)y0, (uint32_t)(x1 - x0),
-                (uint32_t)(y1 - y0));
+  gop_front_notify((uint32_t)x0, (uint32_t)y0, (uint32_t)(x1 - x0),
+                   (uint32_t)(y1 - y0));
 }
 
 static void present_pair_locked(int64_t ax0, int64_t ay0, int64_t ax1,

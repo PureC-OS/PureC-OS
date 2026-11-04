@@ -32,9 +32,13 @@ void gop_console_translate(uint32_t pid, int32_t dx, int32_t dy) {
     (void)pid; (void)dx; (void)dy;
 }
 bool svga_is_available(void) { return true; }
+void gop_front_notify(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 void svga_update(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     (void)x; (void)y; (void)w; (void)h;
     svga_updates++;
+}
+void gop_front_notify(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    svga_update(x, y, w, h);
 }
 bool scheduler_preempt_disable(void) { return true; }
 void scheduler_preempt_enable(void) {}

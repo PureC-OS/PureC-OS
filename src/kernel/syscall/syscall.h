@@ -165,6 +165,7 @@
 #define SYS_MUNMAP 358           /* (address, length) */
 #define SYS_MPROTECT 359         /* (address, length, KMAP_PROT_*) */
 #define SYS_MREMAP 360           /* (old, old_len, new_len, KMAP_REMAP_*) -> address */
+#define SYS_DISPLAY_SCALE_INFO 361 /* (struct display_scale_info *) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -468,6 +469,13 @@ struct framebuffer_info {
   uint8_t bpp;
   uint8_t available;
   char protocol_name[16];
+};
+
+struct display_scale_info {
+  uint32_t physical_width;
+  uint32_t physical_height;
+  uint32_t scale_percent;
+  uint32_t reserved;
 };
 
 struct framebuffer_scroll_request {

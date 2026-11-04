@@ -17,6 +17,47 @@
 
 static struct gop_state gop = {0};
 
+#define GOP_MAX_PHYS_W 8192
+static uint32_t scale_num = 1, scale_den = 1;
+static uint32_t phys_w, phys_h;
+static uint32_t xmap_tab[GOP_MAX_PHYS_W];
+static uint32_t line_tab[GOP_MAX_PHYS_W];
+
+static bool scale_active(void){ return scale_num != scale_den; }
+
+static void scale_rebuild(void){
+    uint32_t n = phys_w < GOP_MAX_PHYS_W ? phys_w : GOP_MAX_PHYS_W;
+    for(uint32_t p=0;p<n;p++) xmap_tab[p]=(uint32_t)((uint64_t)p*scale_den/scale_num);
+}
+
+static uint32_t scale_up(uint32_t v){
+    return (uint32_t)(((uint64_t)v*scale_num+scale_den-1)/scale_den);
+}
+
+static void write_scaled_span(uint32_t ly, uint32_t lx0, const uint32_t *src,
+                              uint32_t count){
+    if(!gop.addr || !count || phys_w>GOP_MAX_PHYS_W) return;
+    uint32_t py0=scale_up(ly), py1=scale_up(ly+1);
+    uint32_t px0=scale_up(lx0), px1=scale_up(lx0+count);
+    if(py1>phys_h) py1=phys_h;
+    if(px1>phys_w) px1=phys_w;
+    if(py0>=py1 || px0>=px1) return;
+    for(uint32_t px=px0;px<px1;px++) line_tab[px]=src[xmap_tab[px]-lx0];
+    for(uint32_t py=py0;py<py1;py++)
+        memcpy(&gop.addr[(uint64_t)py*gop.pitch+px0], &line_tab[px0],
+               (uint64_t)(px1-px0)*sizeof(uint32_t));
+}
+
+void gop_front_notify(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    if(!svga_is_available() || !w || !h) return;
+    if(!scale_active()){ svga_update(x,y,w,h); return; }
+    uint32_t px0=scale_up(x), py0=scale_up(y);
+    uint32_t px1=scale_up(x+w), py1=scale_up(y+h);
+    if(px1>phys_w) px1=phys_w;
+    if(py1>phys_h) py1=phys_h;
+    if(px0<px1 && py0<py1) svga_update(px0,py0,px1-px0,py1-py0);
+}
+
 static uint32_t *backbuffer = 0;
 static uint64_t backbuffer_phys = 0;
 static uint64_t backbuffer_pages = 0;
@@ -133,6 +174,9 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
     gop.addr = (uint32_t*)fb->address;
     gop.width = fb->width;
     gop.height = fb->height;
+    phys_w = fb->width;
+    phys_h = fb->height;
+    scale_num = scale_den = 1;
     if(fb->bpp==24) gop.pitch = fb->pitch / 3;
     else if(fb->bpp==16) gop.pitch = fb->pitch / 2;
     else gop.pitch = fb->pitch / 4;
@@ -184,6 +228,7 @@ void gop_init_from_multiboot(void *mbi){
             if(w && h && addr && pitch){
                 gop.addr = (uint32_t*)(uintptr_t)addr;
                 gop.width = w; gop.height = h; gop.pitch = pitch/4; gop.bpp=bpp;
+                phys_w = w; phys_h = h; scale_num = scale_den = 1;
                 gop.framebuffer_bytes=(uint64_t)pitch*h;
                 gop.protocol_name="Multiboot2 framebuffer";
                 gop.available = true;
@@ -201,32 +246,7 @@ void gop_init_from_multiboot(void *mbi){
 
 static void front_write_32(uint32_t x, uint32_t y, uint32_t c);
 
-bool gop_apply_live(void *address, uint32_t width, uint32_t height,
-                    uint32_t pitch_pixels, uint8_t bpp){
-    if(!address || !width || !height || !pitch_pixels) return false;
-    if(bpp!=16 && bpp!=24 && bpp!=32) return false;
-    uint64_t pixels=(uint64_t)width*(uint64_t)height;
-    if(!pixels || pixels>(64ULL*1024ULL*1024ULL)) return false;
-    gop.addr=(uint32_t*)address;
-    gop.width=width;
-    gop.height=height;
-    gop.pitch=pitch_pixels;
-    gop.bpp=bpp;
-    gop.framebuffer_bytes=(uint64_t)pitch_pixels
-        *((uint64_t)(bpp==24 ? 3 : (bpp==16 ? 2 : 4)))*height;
-    gop.protocol_name="VBE live mode";
-    gop.available=true;
-    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
-    if(bpp==32){
-        for(uint32_t y=0;y<height;y++){
-            volatile uint32_t *line=&gop.addr[(uint64_t)y*pitch_pixels];
-            for(uint32_t x=0;x<width;x++) line[x]=bg;
-        }
-    }else{
-        for(uint32_t y=0;y<height;y++)
-            for(uint32_t x=0;x<width;x++) front_write_32(x,y,bg);
-    }
-    if(svga_is_available()) svga_update(0,0,width,height);
+static void surface_reset(void){
     if(backbuffer){
         pmm_free_contiguous(backbuffer_phys, backbuffer_pages);
         backbuffer=0;
@@ -245,8 +265,83 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
         user_consoles[i].owner_pid=0;
         user_consoles[i].initialized=false;
     }
+}
+
+static void front_clear_physical(void){
+    if(gop.bpp==32){
+        for(uint32_t y=0;y<phys_h;y++){
+            volatile uint32_t *line=&gop.addr[(uint64_t)y*gop.pitch];
+            for(uint32_t x=0;x<phys_w;x++) line[x]=bg;
+        }
+    }else{
+        for(uint32_t y=0;y<phys_h;y++)
+            for(uint32_t x=0;x<phys_w;x++) front_write_32(x,y,bg);
+    }
+    if(svga_is_available()) svga_update(0,0,phys_w,phys_h);
+}
+
+static bool scale_fits(uint32_t num, uint32_t den){
+    if(num==den) return true;
+    if(gop.bpp!=32 || phys_w>GOP_MAX_PHYS_W) return false;
+    uint64_t lw=(uint64_t)phys_w*den/num, lh=(uint64_t)phys_h*den/num;
+    return lw>=640 && lh>=400;
+}
+
+static void apply_logical_size(void){
+    gop.width=(uint32_t)((uint64_t)phys_w*scale_den/scale_num);
+    gop.height=(uint32_t)((uint64_t)phys_h*scale_den/scale_num);
+    scale_rebuild();
+}
+
+bool gop_apply_live(void *address, uint32_t width, uint32_t height,
+                    uint32_t pitch_pixels, uint8_t bpp){
+    if(!address || !width || !height || !pitch_pixels) return false;
+    if(bpp!=16 && bpp!=24 && bpp!=32) return false;
+    uint64_t pixels=(uint64_t)width*(uint64_t)height;
+    if(!pixels || pixels>(64ULL*1024ULL*1024ULL)) return false;
+    gop.addr=(uint32_t*)address;
+    phys_w=width;
+    phys_h=height;
+    gop.pitch=pitch_pixels;
+    gop.bpp=bpp;
+    gop.framebuffer_bytes=(uint64_t)pitch_pixels
+        *((uint64_t)(bpp==24 ? 3 : (bpp==16 ? 2 : 4)))*height;
+    gop.protocol_name="VBE live mode";
+    gop.available=true;
+    if(!scale_fits(scale_num,scale_den)) scale_num=scale_den=1;
+    apply_logical_size();
+    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    front_clear_physical();
+    surface_reset();
     return true;
 }
+
+static uint32_t gcd32(uint32_t a, uint32_t b){
+    while(b){ uint32_t t=a%b; a=b; b=t; }
+    return a;
+}
+
+bool gop_set_scale_percent(uint32_t percent){
+    if(!gop.available || !gop.addr || percent<100 || percent>400) return false;
+    uint32_t g=gcd32(percent,100);
+    uint32_t num=percent/g, den=100/g;
+    if(num==den) num=den=1;
+    if(!scale_fits(num,den)) return false;
+    if(num==scale_num && den==scale_den) return true;
+    scale_num=num;
+    scale_den=den;
+    apply_logical_size();
+    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    front_clear_physical();
+    surface_reset();
+    return true;
+}
+
+uint32_t gop_get_scale_percent(void){
+    return (uint32_t)((uint64_t)scale_num*100/scale_den);
+}
+uint32_t gop_get_physical_width(void){ return phys_w; }
+uint32_t gop_get_physical_height(void){ return phys_h; }
 
 bool gop_is_available(void){
     return gop.available;
@@ -337,9 +432,13 @@ static bool ensure_backbuffer(void){
     uint64_t phys = pmm_allocate_contiguous(pages);
     if(!phys) return false;
     uint32_t *virt = (uint32_t*)pmm_physical_to_virtual(phys);
-    for(uint32_t y=0; y<gop.height; y++){
-        for(uint32_t x=0; x<gop.width; x++){
-            virt[(uint64_t)y * gop.width + x] = front_read_32(x, y);
+    if(scale_active()){
+        for(uint64_t i=0; i<pixels; i++) virt[i] = bg;
+    }else{
+        for(uint32_t y=0; y<gop.height; y++){
+            for(uint32_t x=0; x<gop.width; x++){
+                virt[(uint64_t)y * gop.width + x] = front_read_32(x, y);
+            }
         }
     }
     backbuffer = virt;
@@ -486,6 +585,12 @@ static void gop_present_nolock(void){
     dirty_valid=false;
     if(compositor_present(x0, y0, x1, y1)) return;
     uint32_t span = x1 - x0;
+    if(scale_active()){
+        for(uint32_t y=y0; y<y1; y++)
+            write_scaled_span(y, x0, &backbuffer[(uint64_t)y * backbuffer_width + x0], span);
+        gop_front_notify(x0, y0, x1 - x0, y1 - y0);
+        return;
+    }
     if(gop.bpp==24){
         uint8_t *base = (uint8_t*)gop.addr;
         uint32_t pitch_bytes = gop.pitch * 3;
@@ -519,7 +624,7 @@ static void gop_present_nolock(void){
                &backbuffer[(uint64_t)y * backbuffer_width + x0],
                (uint64_t)span * sizeof(uint32_t));
     }
-    if(svga_is_available()) svga_update(x0, y0, x1 - x0, y1 - y0);
+    gop_front_notify(x0, y0, x1 - x0, y1 - y0);
 }
 
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
@@ -529,6 +634,12 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
     if(y+h>gop.height) h=gop.height-y;
     if(!w || !h) return;
     if(compositor_present(x, y, x+w, y+h)) return;
+    if(scale_active()){
+        for(uint32_t row=0;row<h;row++)
+            write_scaled_span(y+row, x, &backbuffer[(uint64_t)(y+row)*backbuffer_width+x], w);
+        gop_front_notify(x, y, w, h);
+        return;
+    }
     if(gop.bpp==24){
         uint8_t *base=(uint8_t*)gop.addr;
         uint32_t pitch_bytes=gop.pitch*3;
@@ -562,7 +673,7 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
                &backbuffer[(uint64_t)(y+row)*backbuffer_width+x],
                (uint64_t)w*sizeof(uint32_t));
     }
-    if(svga_is_available()) svga_update(x, y, w, h);
+    gop_front_notify(x, y, w, h);
 }
 
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
@@ -590,6 +701,10 @@ bool gop_backbuffer_put(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
 void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count){
     if(!gop.available || !gop.addr || !pixels || x>=gop.width || y>=gop.height) return;
     if(count>gop.width-x) count=gop.width-x;
+    if(scale_active()){
+        write_scaled_span(y, x, pixels, count);
+        return;
+    }
     if(gop.bpp==24){
         uint8_t *dst=(uint8_t*)gop.addr + (uint64_t)y*gop.pitch*3 + (uint64_t)x*3;
         for(uint32_t i=0;i<count;i++){

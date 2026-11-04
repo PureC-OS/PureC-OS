@@ -108,6 +108,14 @@ void pc_display_begin_update(void);
 void pc_display_end_update(void);
 void pc_display_clear(uint32_t color);
 int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp);
+int32_t pc_display_set_mode_scale(uint32_t width, uint32_t height,
+                                  uint32_t bpp, uint32_t scale_percent);
+struct pc_display_scale {
+    uint32_t physical_width;
+    uint32_t physical_height;
+    uint32_t scale_percent;
+};
+bool pc_display_scale_info(struct pc_display_scale *out);
 void pc_desktop_redraw(void);
 bool pc_gui_window_register(const struct gui_window_request *request);
 bool pc_gui_window_update(const struct gui_window_request *request);
