@@ -64,6 +64,12 @@ struct gop_console {
 static struct gop_console user_consoles[GOP_CONSOLE_SLOTS];
 static spinlock_t console_lock = SPINLOCK_INIT;
 
+#define CONSOLE_UNLOCK(flags_var, guard_var) \
+    do{ \
+        spin_unlock_irqrestore(&console_lock,(flags_var)); \
+        if(guard_var) scheduler_preempt_enable(); \
+    }while(0)
+
 static struct gop_console *console_find_locked(uint32_t owner_pid){
     for(uint32_t i=0;i<GOP_CONSOLE_SLOTS;i++){
         if(user_consoles[i].owner_pid==owner_pid
@@ -893,9 +899,10 @@ bool gop_console_configure_owner(uint32_t owner_pid,
         return false;
     if(width>gop.width-x) width=gop.width-x;
     if(height>gop.height-y) height=gop.height-y;
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_alloc_locked(owner_pid);
-    if(!slot){ spin_unlock_irqrestore(&console_lock,flags); return false; }
+    if(!slot){ CONSOLE_UNLOCK(flags,pg_guard); return false; }
     slot->owner_pid=owner_pid;
     slot->x=x;
     slot->y=y;
@@ -909,7 +916,7 @@ bool gop_console_configure_owner(uint32_t owner_pid,
         slot->columns=GOP_CONSOLE_COLUMNS;
     if(slot->rows>GOP_CONSOLE_ROWS)
         slot->rows=GOP_CONSOLE_ROWS;
-    if(!slot->columns || !slot->rows){ spin_unlock_irqrestore(&console_lock,flags); return false; }
+    if(!slot->columns || !slot->rows){ CONSOLE_UNLOCK(flags,pg_guard); return false; }
     slot->active=true;
     if(!slot->initialized){
         vt_init(&slot->vt,&console_vt_ops,slot);
@@ -929,7 +936,7 @@ bool gop_console_configure_owner(uint32_t owner_pid,
         if(backbuffer){ dirty_expand(x, y, width, height); }
     }
     gop_end_batch();
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
     return true;
 }
 
@@ -942,10 +949,11 @@ bool gop_console_configure(uint32_t x, uint32_t y,
 bool gop_console_is_active(void){
     uint32_t chain[GOP_CONSOLE_CHAIN];
     uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_pick_locked(chain,depth);
     bool active=slot!=NULL;
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
     return active;
 }
 
@@ -953,6 +961,7 @@ bool gop_console_get_size(uint32_t *columns, uint32_t *rows,
                           uint32_t *width, uint32_t *height){
     uint32_t chain[GOP_CONSOLE_CHAIN];
     uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_pick_locked(chain,depth);
     if(slot){
@@ -961,16 +970,17 @@ bool gop_console_get_size(uint32_t *columns, uint32_t *rows,
         *width=slot->columns*8;
         *height=slot->rows*10;
     }
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
     return slot!=NULL;
 }
 
 void gop_console_clear(void){
     uint32_t chain[GOP_CONSOLE_CHAIN];
     uint32_t depth=console_chain((uint32_t)process_current_pid(),chain,GOP_CONSOLE_CHAIN);
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_pick_locked(chain,depth);
-    if(!slot){ spin_unlock_irqrestore(&console_lock,flags); return; }
+    if(!slot){ CONSOLE_UNLOCK(flags,pg_guard); return; }
     if(slot->owner_pid && compositor_window_exists(slot->owner_pid)){
         compositor_draw_rect(slot->owner_pid,
                              slot->x,slot->y,
@@ -983,26 +993,29 @@ void gop_console_clear(void){
     vt_clear(&slot->vt);
     vt_cursor_show(&slot->vt);
     console_update_end(slot,began);
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
 }
 
 void gop_console_disable(void){
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_find_locked((uint32_t)process_current_pid());
     if(slot) slot->active=false;
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
 }
 
 void gop_console_release(uint32_t owner_pid){
     if(!owner_pid) return;
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_find_locked(owner_pid);
     if(slot){ slot->active=false; slot->owner_pid=0; slot->initialized=false; }
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
 }
 
 void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy){
     if(!owner_pid || (!dx && !dy)) return;
+    bool pg_guard=scheduler_preempt_disable();
     uint64_t flags=spin_lock_irqsave(&console_lock);
     struct gop_console *slot=console_find_locked(owner_pid);
     if(slot){
@@ -1011,7 +1024,7 @@ void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy){
         slot->x=nx<0 ? 0 : (uint32_t)nx;
         slot->y=ny<0 ? 0 : (uint32_t)ny;
     }
-    spin_unlock_irqrestore(&console_lock,flags);
+    CONSOLE_UNLOCK(flags,pg_guard);
 }
 
 #define GOP_CONSOLE_CHUNK 256
@@ -1031,10 +1044,11 @@ void gop_console_write(const char *text, uint32_t count){
     while(done<count){
         uint32_t chunk=count-done;
         if(chunk>GOP_CONSOLE_CHUNK) chunk=GOP_CONSOLE_CHUNK;
-        uint64_t flags=spin_lock_irqsave(&console_lock);
+        bool pg_guard=scheduler_preempt_disable();
+    uint64_t flags=spin_lock_irqsave(&console_lock);
         struct gop_console *slot=console_pick_locked(chain,depth);
         if(!slot){
-            spin_unlock_irqrestore(&console_lock,flags);
+            CONSOLE_UNLOCK(flags,pg_guard);
             for(;done<count;done++) gop_putc(text[done]);
             return;
         }
@@ -1042,7 +1056,7 @@ void gop_console_write(const char *text, uint32_t count){
         bool began=console_update_begin(slot);
         vt_write(&slot->vt,text+done,chunk,flags_vt);
         console_update_end(slot,began);
-        spin_unlock_irqrestore(&console_lock,flags);
+        CONSOLE_UNLOCK(flags,pg_guard);
         done+=chunk;
     }
     uint64_t elapsed=timer_ticks()-started;
