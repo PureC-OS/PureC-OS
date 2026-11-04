@@ -227,7 +227,7 @@ int display_mode_apply(uint32_t width, uint32_t height, uint8_t bpp,
 void display_mode_boot_apply(void){
     uint32_t w=0,h=0,sc=100;
     uint8_t b=0;
-    if(!display_mode_load_ex(&w,&h,&b,&sc)){ apply_scale(150); return; } /*TESTHACK*/
+    if(!display_mode_load_ex(&w,&h,&b,&sc)) return;
     (void)display_mode_apply_low(w,h,b,sc);
 }
 
