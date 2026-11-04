@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "../storage/storage_types.h"
+#include "../../io/storage/storage_types.h"
 
 struct ehci_probe_stats
 {

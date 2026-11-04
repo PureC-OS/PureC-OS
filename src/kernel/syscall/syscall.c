@@ -1,3 +1,4 @@
+#include "../../io/io_sched.h"
 #include "syscall.h"
 #include "../../drivers/audio/audio.h"
 #include "../../drivers/display/gop.h"
@@ -72,8 +73,14 @@ static bool readable_string(const char *text)
 
 void filesystem_syscall_lock(void)
 {
+  uint32_t spins = 0;
   while (__atomic_test_and_set(&filesystem_syscall_busy, __ATOMIC_ACQUIRE))
-    scheduler_yield();
+  {
+    if (++spins < 8)
+      scheduler_yield();
+    else
+      scheduler_sleep(1);
+  }
 }
 
 void filesystem_syscall_unlock(void)
@@ -112,8 +119,10 @@ static void install_worker(void *argument)
   (void)argument;
   filesystem_syscall_lock();
   block_device_begin_exclusive_io();
+  io_bulk_begin();
   int32_t result = installer_install_device(install_device, install_serial,
                                             install_progress);
+  io_bulk_end();
   block_device_end_exclusive_io();
   filesystem_syscall_unlock();
   install_job.result = result;

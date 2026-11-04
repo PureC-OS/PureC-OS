@@ -1,3 +1,4 @@
+#include "../../io/swap.h"
 #include "init.h"
 #include "../../drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.h"
 #include "../../drivers/mouse/ps2_mouse.h"
@@ -71,6 +72,7 @@ void init_process_start(void)
     else
       scheduler_set_qos(t, SCHED_QOS_BACKGROUND);
   }
+  swap_daemon_start();
   klog(KLOG_OK, "sched: init threads created, starting scheduler");
   serial_write_string("[SCHED] start\n");
   scheduler_start();

@@ -1277,11 +1277,13 @@ int64_t process_mremap(uint64_t address, uint64_t old_length,
       process->mmap_cursor = cursor;
       return -KERR_NOMEM;
     }
+    vmm_swap_pause();
     memcpy(pmm_physical_to_virtual(
                vmm_translate(process->address_space, destination)),
            pmm_physical_to_virtual(
                vmm_translate(process->address_space, source)),
            PMM_PAGE_SIZE);
+    vmm_swap_resume();
   }
   if (page_flags &&
       !vmm_map_new_pages(process->address_space,
@@ -1580,13 +1582,18 @@ static bool write_user_bytes(uint64_t address_space, uint64_t address,
   const uint8_t *bytes = (const uint8_t *)source;
   while (size)
   {
+    vmm_swap_pause();
     uint64_t physical = vmm_translate(address_space, address);
     if (!physical)
+    {
+      vmm_swap_resume();
       return false;
+    }
     uint64_t chunk = PMM_PAGE_SIZE - (address & (PMM_PAGE_SIZE - 1));
     if (chunk > size)
       chunk = size;
     memcpy(pmm_physical_to_virtual(physical), bytes, (size_t)chunk);
+    vmm_swap_resume();
     address += chunk;
     bytes += chunk;
     size -= chunk;

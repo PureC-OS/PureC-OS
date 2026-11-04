@@ -13,6 +13,7 @@
 #include "../boot/install_source.h"
 #include "vfs_path.h"
 #include "../io/storage/block_device.h"
+#include "../io/swap.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"
 #include <stddef.h>
@@ -38,6 +39,30 @@ static const uint8_t gpt_basic_data_type_guid[16] = {
 static uint8_t sector_buffer[BLOCK_SECTOR_SIZE] __attribute__((aligned(2)));
 /* ESP partition size in sectors; set from the prebuilt image before use. */
 static uint32_t esp_sectors;
+static uint32_t swap_start_lba;
+static uint32_t swap_sector_count;
+
+#define INSTALL_SWAP_ALIGN 2048U
+#define INSTALL_SWAP_MAX_SECTORS (4U * 1024U * 1024U)
+#define INSTALL_SWAP_MIN_DATA_SECTORS (2U * 1024U * 1024U)
+
+static void plan_swap_partition(uint32_t total_sectors, uint32_t data_start)
+{
+    swap_start_lba = 0;
+    swap_sector_count = 0;
+    uint32_t last_usable = total_sectors - GPT_ENTRY_SECTORS - 2;
+    uint32_t want = total_sectors / 8;
+    if (want > INSTALL_SWAP_MAX_SECTORS)
+        want = INSTALL_SWAP_MAX_SECTORS;
+    want &= ~(INSTALL_SWAP_ALIGN - 1);
+    if (want < SWAP_MIN_PARTITION_SECTORS)
+        return;
+    uint32_t start = (last_usable + 1 - want) & ~(INSTALL_SWAP_ALIGN - 1);
+    if (start <= data_start || start - data_start < INSTALL_SWAP_MIN_DATA_SECTORS)
+        return;
+    swap_start_lba = start;
+    swap_sector_count = last_usable + 1 - start;
+}
 
 static void write_u16(uint8_t *data, uint16_t value)
 {
@@ -138,6 +163,8 @@ static bool write_gpt_layout(uint32_t total_sectors, const char *serial)
     uint8_t disk_guid[16];
     uint8_t esp_guid[16];
     uint8_t data_guid[16];
+    uint8_t swap_guid[16];
+    generate_guid(swap_guid, serial, 0x53574150U ^ total_sectors);
     generate_guid(disk_guid, serial, 0x47505444U ^ total_sectors);
     generate_guid(esp_guid, serial, 0x45535031U ^ total_sectors);
     generate_guid(data_guid, serial, 0x44415441U ^ total_sectors);
@@ -173,8 +200,19 @@ static bool write_gpt_layout(uint32_t total_sectors, const char *serial)
             memcpy(&sector_buffer[GPT_ENTRY_SIZE], gpt_basic_data_type_guid, 16);
             memcpy(&sector_buffer[GPT_ENTRY_SIZE + 16], data_guid, 16);
             write_u64(&sector_buffer[GPT_ENTRY_SIZE + 32], data_start);
-            write_u64(&sector_buffer[GPT_ENTRY_SIZE + 40], last_usable_lba);
+            write_u64(&sector_buffer[GPT_ENTRY_SIZE + 40],
+                      swap_sector_count ? swap_start_lba - 1 : last_usable_lba);
             write_gpt_name(&sector_buffer[GPT_ENTRY_SIZE], "PureC System");
+
+            if (swap_sector_count)
+            {
+                uint8_t *swap_entry = &sector_buffer[2 * GPT_ENTRY_SIZE];
+                memcpy(swap_entry, swap_gpt_type_guid, 16);
+                memcpy(swap_entry + 16, swap_guid, 16);
+                write_u64(swap_entry + 32, swap_start_lba);
+                write_u64(swap_entry + 40, swap_start_lba + swap_sector_count - 1);
+                write_gpt_name(swap_entry, "PureC Swap");
+            }
         }
         entries_crc = crc32_update(entries_crc, sector_buffer, BLOCK_SECTOR_SIZE);
         if (!block_device_write(2 + sector, sector_buffer) || !block_device_write(backup_entries_lba + sector, sector_buffer))
@@ -193,8 +231,10 @@ static bool write_gpt_layout(uint32_t total_sectors, const char *serial)
     if (!block_device_write(backup_header_lba, sector_buffer))
         return false;
 
-    klogf(KLOG_OK, "write_gpt: ESP %u..%u data %u..%u",
-          INSTALL_ESP_START_LBA, data_start - 1, data_start, last_usable_lba);
+    klogf(KLOG_OK, "write_gpt: ESP %u..%u data %u..%u swap %u sectors at %u",
+          INSTALL_ESP_START_LBA, data_start - 1, data_start,
+          swap_sector_count ? swap_start_lba - 1 : last_usable_lba,
+          swap_sector_count, swap_start_lba);
     return true;
 }
 
@@ -779,7 +819,13 @@ int32_t installer_install_device(const char *device_name,
     uint32_t data_start = INSTALL_ESP_START_LBA + esp_sectors;
     if (total_sectors <= data_start + GPT_ENTRY_SECTORS + 65535)
         return FS_ERROR_TOO_SMALL;
-    uint32_t data_sectors = total_sectors - data_start - GPT_ENTRY_SECTORS - 1;
+    swap_start_lba = 0;
+    swap_sector_count = 0;
+    if (info.transport == STORAGE_TRANSPORT_ATA_PIO || info.transport == STORAGE_TRANSPORT_AHCI)
+        plan_swap_partition(total_sectors, data_start);
+    uint32_t data_sectors = swap_sector_count
+                                ? swap_start_lba - data_start
+                                : total_sectors - data_start - GPT_ENTRY_SECTORS - 1;
     if (!block_device_select((uint32_t)idx))
         return FS_ERROR_INVALID;
     if (callback)
@@ -791,6 +837,9 @@ int32_t installer_install_device(const char *device_name,
         klog(KLOG_ERROR, "install: GPT write failed");
         return FS_ERROR_IO;
     }
+    if (swap_sector_count &&
+        !swap_format((uint32_t)idx, swap_start_lba, swap_sector_count))
+        klog(KLOG_WARN, "install: swap partition header write failed (swap disabled)");
     if (callback)
         callback(20, "Writing EFI system partition image");
     int32_t esp_status = install_write_esp_image(esp_image, esp_image_size, callback);
