@@ -1,3 +1,4 @@
+.DEFAULT_GOAL := all
 ROOT_DIR ?= $(abspath ../..)
 include $(ROOT_DIR)/mk/toolchain.mk
 

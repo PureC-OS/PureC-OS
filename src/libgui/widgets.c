@@ -14,10 +14,10 @@ void pg_panel(struct pg_window *window, struct pg_rect bounds){
 
 bool pg_button(struct pg_window *window, struct pg_rect bounds,
                const char *label, const struct pg_event *event){
-    if(!window || !event) return false;
+    if(!window) return false;
     if(!label) label="";
     struct pg_rect screen=pg_internal_to_screen(window,bounds);
-    bool inside=pg_internal_point_inside(event->x,event->y,&screen);
+    bool inside=event && pg_internal_point_inside(event->x,event->y,&screen);
     enum pg_widget_state state=PG_WIDGET_NORMAL;
     if(inside && event->type==PG_EVENT_MOUSE_DOWN) state=PG_WIDGET_PRESSED;
     else if(inside) state=PG_WIDGET_HOVER;
