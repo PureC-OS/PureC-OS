@@ -87,15 +87,7 @@ bool ext2_read_block(uint32_t block, void *out)
     }
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
     uint32_t lba = g_vol.partition_lba + block * spb;
-    uint8_t *dst = (uint8_t *)out;
-    for (uint32_t i = 0; i < spb; i++)
-    {
-        if (!block_device_read(lba + i, dst + i * BLOCK_SECTOR_SIZE))
-        {
-            return false;
-        }
-    }
-    return true;
+    return block_device_read_sectors(lba, out, spb);
 }
 
 bool ext2_write_block(uint32_t block, const void *in)
@@ -109,15 +101,23 @@ bool ext2_write_block(uint32_t block, const void *in)
     }
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
     uint32_t lba = g_vol.partition_lba + block * spb;
-    const uint8_t *src = (const uint8_t *)in;
-    for (uint32_t i = 0; i < spb; i++)
+    return block_device_write_sectors(lba, in, spb);
+}
+
+bool ext2_write_blocks(uint32_t block, const void *in, uint32_t count)
+{
+    if (!count)
+        return true;
+    if (!block_number_valid(block) || !block_number_valid(block + count - 1))
     {
-        if (!block_device_write(lba + i, src + i * BLOCK_SECTOR_SIZE))
-        {
-            return false;
-        }
+        klogf(KLOG_ERROR,
+              "ext2: reject wild run write block=%u count=%u total=%u", block,
+              count, g_vol.total_blocks);
+        return false;
     }
-    return true;
+    uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
+    uint32_t lba = g_vol.partition_lba + block * spb;
+    return block_device_write_sectors(lba, in, count * spb);
 }
 
 bool ext2_group_write(uint32_t group, const uint8_t *gd)
@@ -178,15 +178,33 @@ static uint32_t ext2_group_reserved_blocks(uint32_t group)
     return 2 + gd_blocks + meta + 1;
 }
 
-uint32_t ext2_alloc_block(void)
+static uint32_t ext2_group_end(uint32_t g, uint32_t groups)
+{
+    uint32_t end = g_vol.blocks_per_group;
+    if (g == groups - 1)
+    {
+        uint32_t rem = g_vol.total_blocks % g_vol.blocks_per_group;
+        if (rem)
+            end = rem;
+    }
+    if (end > g_vol.block_size * 8)
+        end = g_vol.block_size * 8;
+    return end;
+}
+
+static uint32_t ext2_alloc_run_internal(uint32_t want, uint32_t *count, bool zero)
 {
     uint32_t groups = g_vol.groups_count;
     if (groups == 0)
         groups = 1;
+    if (want == 0)
+        want = 1;
     for (uint32_t g = 0; g < groups; g++)
     {
         uint8_t gd[32];
         if (!ext2_group_desc_read(g, gd))
+            continue;
+        if (ext2_read_u16(gd + 12) == 0)
             continue;
         uint32_t bmb = ext2_read_u32(gd);
         if (!bmb)
@@ -195,37 +213,47 @@ uint32_t ext2_alloc_block(void)
         if (!ext2_read_block(bmb, bmp))
             continue;
         uint32_t start = ext2_group_reserved_blocks(g);
-        uint32_t end = g_vol.blocks_per_group;
-        if (g == groups - 1)
-        {
-            uint32_t rem = g_vol.total_blocks % g_vol.blocks_per_group;
-            if (rem)
-                end = rem;
-        }
+        uint32_t end = ext2_group_end(g, groups);
         for (uint32_t b = start; b < end; b++)
         {
-            uint32_t byte = b / 8;
-            uint32_t bit = b % 8;
-            if (byte >= g_vol.block_size)
-                break;
-            if ((bmp[byte] & (1u << bit)) == 0)
+            if (bmp[b / 8] & (1u << (b % 8)))
+                continue;
+            uint32_t n = 0;
+            while (b + n < end && n < want &&
+                   (bmp[(b + n) / 8] & (1u << ((b + n) % 8))) == 0)
             {
-                bmp[byte] |= (1u << bit);
-                if (!ext2_write_block(bmb, bmp))
-                    return 0;
-                uint16_t free = ext2_read_u16(gd + 12);
-                if (free)
-                    ext2_write_u16(gd + 12, free - 1);
-                ext2_group_write(g, gd);
-                uint32_t abs = g * g_vol.blocks_per_group + b;
-                uint8_t zero[4096] = {0};
-                ext2_write_block(abs, zero);
-                return abs;
+                bmp[(b + n) / 8] |= (uint8_t)(1u << ((b + n) % 8));
+                n++;
             }
+            if (!ext2_write_block(bmb, bmp))
+                return 0;
+            uint16_t free = ext2_read_u16(gd + 12);
+            ext2_write_u16(gd + 12, free > n ? (uint16_t)(free - n) : 0);
+            ext2_group_write(g, gd);
+            uint32_t abs = g * g_vol.blocks_per_group + b;
+            if (zero)
+            {
+                uint8_t zero_block[4096] = {0};
+                for (uint32_t i = 0; i < n; i++)
+                    ext2_write_block(abs + i, zero_block);
+            }
+            if (count)
+                *count = n;
+            return abs;
         }
     }
     klogf(KLOG_ERROR, "ext2_alloc_block: no free block groups=%u total=%u", g_vol.groups_count, g_vol.total_blocks);
     return 0;
+}
+
+uint32_t ext2_alloc_block(void)
+{
+    return ext2_alloc_run_internal(1, 0, true);
+}
+
+uint32_t ext2_alloc_block_run(uint32_t want, uint32_t *count)
+{
+    return ext2_alloc_run_internal(want, count, false);
 }
 
 bool ext2_free_block(uint32_t block)

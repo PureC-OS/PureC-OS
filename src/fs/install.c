@@ -318,6 +318,25 @@ struct header_module
     bool required;
 };
 
+static uint64_t payload_total_bytes;
+static uint64_t payload_done_bytes;
+static uint32_t payload_last_percent;
+
+#define PAYLOAD_PROGRESS_START 72U
+#define PAYLOAD_PROGRESS_SPAN 16U
+
+static void payload_report(install_progress_callback callback)
+{
+    if (!callback || !payload_total_bytes)
+        return;
+    uint64_t done = payload_done_bytes > payload_total_bytes ? payload_total_bytes : payload_done_bytes;
+    uint32_t percent = PAYLOAD_PROGRESS_START + (uint32_t)(done * PAYLOAD_PROGRESS_SPAN / payload_total_bytes);
+    if (percent == payload_last_percent)
+        return;
+    payload_last_percent = percent;
+    callback(percent, "Copying programs and libraries");
+}
+
 static int32_t install_header_module(const struct header_module *entry)
 {
     const void *data;
@@ -385,7 +404,7 @@ static void manifest_mkdir_parents(const char *dest)
     }
 }
 
-static int32_t install_manifest_pass(bool dry_run)
+static int32_t install_manifest_pass(bool dry_run, install_progress_callback callback)
 {
     const void *blob;
     uint64_t blob_size;
@@ -532,17 +551,17 @@ static int32_t install_manifest_pass(bool dry_run)
         }
         if (dry_run)
         {
-            if (required)
+            const void *probe;
+            uint64_t probe_size;
+            bool present = boot_get_module(module, &probe, &probe_size) && probe && probe_size && probe_size <= UINT32_MAX;
+            if (required && !present)
             {
-                const void *probe;
-                uint64_t probe_size;
-                if (!boot_get_module(module, &probe, &probe_size) || !probe || !probe_size || probe_size > UINT32_MAX)
-                {
-                    klogf(KLOG_ERROR, "install: manifest preflight missing %s",
-                          module);
-                    return FS_ERROR_NOT_FOUND;
-                }
+                klogf(KLOG_ERROR, "install: manifest preflight missing %s",
+                      module);
+                return FS_ERROR_NOT_FOUND;
             }
+            if (present)
+                payload_total_bytes += probe_size;
             installed++;
             continue;
         }
@@ -557,6 +576,11 @@ static int32_t install_manifest_pass(bool dry_run)
         int32_t status = install_header_module(&entry);
         if (status < 0)
             return status;
+        const void *done_data;
+        uint64_t done_size;
+        if (boot_get_module(module, &done_data, &done_size) && done_data)
+            payload_done_bytes += done_size;
+        payload_report(callback);
         installed++;
     }
     if (dry_run)
@@ -655,17 +679,22 @@ static int32_t install_write_accounts(void)
     return 0;
 }
 
-static int32_t install_program_payload(void)
+static int32_t install_program_payload(install_progress_callback callback)
 {
+    payload_total_bytes = 0;
+    payload_done_bytes = 0;
+    payload_last_percent = 0;
     int32_t status = install_standard_directories();
     if (status < 0)
         return status;
-    status = install_manifest_pass(true);
+    status = install_manifest_pass(true, callback);
     if (status < 0)
         return status;
-    status = install_manifest_pass(false);
+    status = install_manifest_pass(false, callback);
     if (status < 0)
         return status;
+    if (callback)
+        callback(88, "Installing firmware");
     int32_t fw_st = install_firmware_payload();
     if (fw_st < 0)
         klogf(KLOG_WARN, "install: firmware payload failed %d (non-fatal, will continue)", fw_st);
@@ -784,8 +813,8 @@ int32_t installer_install_device(const char *device_name,
     }
     vfs_set_active_fs(VFS_FS_EXT2);
     if (callback)
-        callback(88, "Copying programs and libraries");
-    int32_t status = install_program_payload();
+        callback(PAYLOAD_PROGRESS_START, "Copying programs and libraries");
+    int32_t status = install_program_payload(callback);
     if (status < 0)
     {
         klogf(KLOG_ERROR, "install: system payload failed %d", status);
