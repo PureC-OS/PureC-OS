@@ -87,7 +87,11 @@ static gfx_font_face_t console_gfx_face(void){
 #define GOP_CONSOLE_ROWS VT_MAX_ROWS
 #define GOP_CONSOLE_SLOTS 8
 
+static uint32_t console_font_px = 8;
+
 struct gop_console {
+    uint32_t cell_w;
+    uint32_t cell_h;
     uint32_t x;
     uint32_t y;
     uint32_t width;
@@ -951,15 +955,17 @@ static void vt_op_draw_cell(void *ctx, uint32_t row, uint32_t column,
     struct gop_console *slot=(struct gop_console*)ctx;
     uint32_t cell_fg,cell_bg;
     console_colors(slot,attr,cursor,&cell_fg,&cell_bg);
-    uint32_t x=slot->x+column*8;
-    uint32_t y=slot->y+row*10;
-    gop_gfx_rect(x,y,8,10,cell_bg,slot);
+    uint32_t cw=slot->cell_w ? slot->cell_w : 8;
+    uint32_t chh=slot->cell_h ? slot->cell_h : 10;
+    uint32_t x=slot->x+column*cw;
+    uint32_t y=slot->y+row*chh;
+    gop_gfx_rect(x,y,cw,chh,cell_bg,slot);
     if(character!=' '){
         char text[2]={character,'\0'};
-        gfx_draw_text(text,x,y,cell_fg,8,console_gfx_face(),gop_gfx_rect,slot);
+        gfx_draw_text(text,x,y+(chh-cw)/2,cell_fg,cw,console_gfx_face(),gop_gfx_rect,slot);
     }
-    if(attr&VT_ATTR_UNDERLINE) gop_gfx_rect(x,y+9,8,1,cell_fg,slot);
-    console_present(slot,x,y,8,10);
+    if(attr&VT_ATTR_UNDERLINE) gop_gfx_rect(x,y+chh-1,cw,1,cell_fg,slot);
+    console_present(slot,x,y,cw,chh);
 }
 
 static void vt_op_fill(void *ctx, uint32_t row, uint32_t column,
@@ -967,23 +973,26 @@ static void vt_op_fill(void *ctx, uint32_t row, uint32_t column,
     struct gop_console *slot=(struct gop_console*)ctx;
     uint32_t cell_fg,cell_bg;
     console_colors(slot,attr,false,&cell_fg,&cell_bg);
-    uint32_t x=slot->x+column*8;
-    uint32_t y=slot->y+row*10;
-    gop_gfx_rect(x,y,count*8,10,cell_bg,slot);
-    console_present(slot,x,y,count*8,10);
+    uint32_t cw=slot->cell_w ? slot->cell_w : 8;
+    uint32_t chh=slot->cell_h ? slot->cell_h : 10;
+    uint32_t x=slot->x+column*cw;
+    uint32_t y=slot->y+row*chh;
+    gop_gfx_rect(x,y,count*cw,chh,cell_bg,slot);
+    console_present(slot,x,y,count*cw,chh);
 }
 
 static bool vt_op_scroll(void *ctx, uint32_t top, uint32_t bottom,
                          uint32_t count, bool up){
     struct gop_console *slot=(struct gop_console*)ctx;
     if(!up || top!=0 || bottom+1!=slot->vt.rows) return false;
+    uint32_t chh=slot->cell_h ? slot->cell_h : 10;
     if(slot->owner_pid && compositor_window_exists(slot->owner_pid)){
         compositor_scroll_rect_up(slot->owner_pid,slot->x,slot->y,
-                                  slot->width,slot->height,count*10,
+                                  slot->width,slot->height,count*chh,
                                   slot->background);
     } else {
         gop_scroll_rect_up(slot->x,slot->y,slot->width,slot->height,
-                           count*10,slot->background);
+                           count*chh,slot->background);
     }
     return true;
 }
@@ -1025,8 +1034,10 @@ bool gop_console_configure_owner(uint32_t owner_pid,
     slot->height=height;
     slot->foreground=foreground;
     slot->background=background;
-    slot->columns=width/8;
-    slot->rows=height/10;
+    slot->cell_w=console_font_px;
+    slot->cell_h=console_font_px*10/8;
+    slot->columns=width/slot->cell_w;
+    slot->rows=height/slot->cell_h;
     if(slot->columns>GOP_CONSOLE_COLUMNS)
         slot->columns=GOP_CONSOLE_COLUMNS;
     if(slot->rows>GOP_CONSOLE_ROWS)
@@ -1082,8 +1093,8 @@ bool gop_console_get_size(uint32_t *columns, uint32_t *rows,
     if(slot){
         *columns=slot->columns;
         *rows=slot->rows;
-        *width=slot->columns*8;
-        *height=slot->rows*10;
+        *width=slot->columns*(slot->cell_w ? slot->cell_w : 8);
+        *height=slot->rows*(slot->cell_h ? slot->cell_h : 10);
     }
     CONSOLE_UNLOCK(flags,pg_guard);
     return slot!=NULL;
@@ -1126,6 +1137,16 @@ void gop_console_release(uint32_t owner_pid){
     struct gop_console *slot=console_find_locked(owner_pid);
     if(slot){ slot->active=false; slot->owner_pid=0; slot->initialized=false; }
     CONSOLE_UNLOCK(flags,pg_guard);
+}
+
+void gop_set_console_font_size(uint32_t px){
+    if(px<8) px=8;
+    if(px>32) px=32;
+    console_font_px=px;
+}
+
+uint32_t gop_get_console_font_size(void){
+    return console_font_px;
 }
 
 void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy){

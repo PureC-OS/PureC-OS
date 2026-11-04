@@ -50,6 +50,8 @@ bool gop_console_get_size(uint32_t *columns, uint32_t *rows, uint32_t *width, ui
 void gop_console_clear(void);
 void gop_console_disable(void);
 void gop_console_release(uint32_t owner_pid);
+void gop_set_console_font_size(uint32_t px);
+uint32_t gop_get_console_font_size(void);
 void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy);
 
 uint32_t gop_get_pixel(uint32_t x, uint32_t y);
