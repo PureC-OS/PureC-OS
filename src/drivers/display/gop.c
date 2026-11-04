@@ -193,6 +193,8 @@ void gop_init_from_multiboot(void *mbi){
     gop.available=false;
 }
 
+static void front_write_32(uint32_t x, uint32_t y, uint32_t c);
+
 bool gop_apply_live(void *address, uint32_t width, uint32_t height,
                     uint32_t pitch_pixels, uint8_t bpp){
     if(!address || !width || !height || !pitch_pixels) return false;
@@ -208,7 +210,17 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
         *((uint64_t)(bpp==24 ? 3 : (bpp==16 ? 2 : 4)))*height;
     gop.protocol_name="VBE live mode";
     gop.available=true;
-    cur_x=12; cur_y=12;
+    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    if(bpp==32){
+        for(uint32_t y=0;y<height;y++){
+            volatile uint32_t *line=&gop.addr[(uint64_t)y*pitch_pixels];
+            for(uint32_t x=0;x<width;x++) line[x]=bg;
+        }
+    }else{
+        for(uint32_t y=0;y<height;y++)
+            for(uint32_t x=0;x<width;x++) front_write_32(x,y,bg);
+    }
+    if(svga_is_available()) svga_update(0,0,width,height);
     if(backbuffer){
         pmm_free_contiguous(backbuffer_phys, backbuffer_pages);
         backbuffer=0;

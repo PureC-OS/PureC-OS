@@ -4,6 +4,7 @@
 #include "rs_session.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/display/vbe.h"
+#include "../drivers/display/svga.h"
 #include "../drivers/mouse/ps2_mouse.h"
 #include "../drivers/interrupts/timer.h"
 #include "../fs/vfs.h"
@@ -110,8 +111,32 @@ static int display_mode_apply_low(uint32_t width, uint32_t height,
                                   uint8_t bpp){
     uint32_t cur_w=0,cur_h=0;
     uint8_t cur_b=0;
+    if(svga_is_available() && bpp!=32){
+        bpp=32;
+        write_back_ini(width,height,bpp);
+    }
     if(display_mode_current(&cur_w,&cur_h,&cur_b)
        && cur_w==width && cur_h==height && cur_b==bpp) return 0;
+    if(svga_is_available()){
+        uint32_t sw=0,sh=0;
+        if(!svga_set_mode(width,height,&sw,&sh)){
+            klogf(KLOG_ERROR,"display: SVGA rejected mode %ux%u",width,height);
+            return -1;
+        }
+        if(!gop_apply_live(svga_fb_virt(),sw,sh,svga_pitch_pixels(),32)){
+            klog(KLOG_ERROR,"display: gop_apply_live failed (svga)");
+            return -1;
+        }
+        if(sw!=width || sh!=height){
+            klogf(KLOG_WARN,"display: card clamped %ux%u -> %ux%u",
+                  width,height,sw,sh);
+            write_back_ini(sw,sh,32);
+        }
+        mouse_set_bounds((int32_t)sw,(int32_t)sh);
+        display_invalidate_cache();
+        klogf(KLOG_OK,"display: svga mode %ux%u",sw,sh);
+        return 0;
+    }
     if(!vbe_is_available()){
         klog(KLOG_WARN, "display: live mode switch unsupported (no VBE)");
         return -2;
