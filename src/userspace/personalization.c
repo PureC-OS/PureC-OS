@@ -96,7 +96,7 @@ bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
     if(!vfs_is_root_mounted()) return true;
-    filesystem_syscall_lock();
+    if(!filesystem_syscall_acquire()) return true;
     int32_t fd=vfs_open(PERSONALIZATION_PATH);
     char buffer[512];
     int32_t total=0;

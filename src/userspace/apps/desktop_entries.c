@@ -158,7 +158,7 @@ static uint8_t g_file_buf[ENTRY_FILE_MAX];
 static int32_t read_whole_file(const char *path, uint32_t *out_size) {
     if (out_size) *out_size = 0;
     if (!vfs_is_root_mounted()) return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire()) return -1;
     int32_t fd = vfs_open(path);
     uint32_t total = 0;
     if (fd >= 0) {
@@ -190,7 +190,7 @@ void desktop_entries_rescan(void) {
     static struct fs_directory_entry_long dir[DIR_CAP];
     memset(dir, 0, sizeof(dir));
     if (!vfs_is_root_mounted()) return;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire()) return;
     int32_t n = vfs_list_long(DESKTOP_ENTRY_SCAN_DIR, dir, DIR_CAP);
     filesystem_syscall_unlock();
     if (n <= 0) return;

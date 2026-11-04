@@ -740,4 +740,6 @@ void syscall_init(void);
 int64_t syscall_handler(struct syscall_regs *regs);
 void install_report_ui_crash(int32_t status);
 void filesystem_syscall_lock(void);
+bool filesystem_syscall_acquire(void);
+bool install_job_running(void);
 void filesystem_syscall_unlock(void);

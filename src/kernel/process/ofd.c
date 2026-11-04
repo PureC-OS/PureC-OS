@@ -187,7 +187,8 @@ int32_t ofd_read(int32_t index, void *buffer, uint32_t count)
   {
     if ((o.flags & OFD_O_ACCMODE) == OFD_O_WRONLY)
       return -KERR_BADF;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -KERR_AGAIN;
     int32_t result = vfs_read(o.object, buffer, count);
     filesystem_syscall_unlock();
     return result < 0 ? kerr_from_vfs(result) : result;
@@ -215,7 +216,8 @@ int32_t ofd_write(int32_t index, const void *buffer, uint32_t count)
   {
     if ((o.flags & OFD_O_ACCMODE) == OFD_O_RDONLY)
       return -KERR_BADF;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -KERR_AGAIN;
     int32_t result = vfs_write(o.object, buffer, count);
     filesystem_syscall_unlock();
     return result < 0 ? kerr_from_vfs(result) : result;
@@ -232,7 +234,8 @@ int64_t ofd_seek(int32_t index, int64_t offset, uint32_t whence)
     return -KERR_BADF;
   if (o.kind != OFD_FILE)
     return -KERR_SPIPE;
-  filesystem_syscall_lock();
+  if (!filesystem_syscall_acquire())
+    return -KERR_AGAIN;
   int64_t result = vfs_seek(o.object, offset, whence);
   filesystem_syscall_unlock();
   return result < 0 ? kerr_from_vfs((int32_t)result) : result;
@@ -245,7 +248,8 @@ int32_t ofd_truncate(int32_t index, uint64_t length)
     return -KERR_BADF;
   if ((o.flags & OFD_O_ACCMODE) == OFD_O_RDONLY)
     return -KERR_INVAL;
-  filesystem_syscall_lock();
+  if (!filesystem_syscall_acquire())
+    return -KERR_AGAIN;
   int32_t result = vfs_handle_truncate(o.object, length);
   filesystem_syscall_unlock();
   return result < 0 ? kerr_from_vfs(result) : 0;
@@ -261,7 +265,8 @@ int32_t ofd_stat(int32_t index, struct file_stat_info *out)
     memset(out, 0, sizeof(*out));
     return 0;
   }
-  filesystem_syscall_lock();
+  if (!filesystem_syscall_acquire())
+    return -KERR_AGAIN;
   int32_t result = vfs_handle_stat(o.object, out);
   filesystem_syscall_unlock();
   return result < 0 ? kerr_from_vfs(result) : 0;

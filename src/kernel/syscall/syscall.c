@@ -88,6 +88,22 @@ void filesystem_syscall_unlock(void)
   __atomic_clear(&filesystem_syscall_busy, __ATOMIC_RELEASE);
 }
 
+static volatile int install_worker_tid = -1;
+
+bool install_job_running(void)
+{
+  return install_job.state == 1;
+}
+
+bool filesystem_syscall_acquire(void)
+{
+  if (install_job.state == 1 &&
+      scheduler_current_tid() != __atomic_load_n(&install_worker_tid, __ATOMIC_ACQUIRE))
+    return false;
+  filesystem_syscall_lock();
+  return true;
+}
+
 static void install_progress(uint32_t progress, const char *stage)
 {
   uint64_t flags;
@@ -117,6 +133,7 @@ static void install_progress(uint32_t progress, const char *stage)
 static void install_worker(void *argument)
 {
   (void)argument;
+  __atomic_store_n(&install_worker_tid, scheduler_current_tid(), __ATOMIC_RELEASE);
   filesystem_syscall_lock();
   block_device_begin_exclusive_io();
   io_bulk_begin();
@@ -125,6 +142,7 @@ static void install_worker(void *argument)
   io_bulk_end();
   block_device_end_exclusive_io();
   filesystem_syscall_unlock();
+  __atomic_store_n(&install_worker_tid, -1, __ATOMIC_RELEASE);
   install_job.result = result;
   if (result < 0)
   {
@@ -542,7 +560,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_ex)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_stat_ex((const char *)(uintptr_t)a1,
                                  (struct file_stat_ex *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -562,7 +581,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_chmod((const char *)(uintptr_t)a1, (uint16_t)a2);
     filesystem_syscall_unlock();
     return result;
@@ -571,7 +591,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_chown((const char *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
@@ -582,7 +603,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2, sizeof(struct file_perm_info)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_get_perm((const char *)(uintptr_t)a1,
                                   (struct file_perm_info *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -593,7 +615,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if ((a1 && !readable_string((const char *)(uintptr_t)a1)) ||
         !writable((void *)(uintptr_t)a3, sizeof(struct user_info)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_user_lookup((const char *)(uintptr_t)a1, (uint32_t)a2,
                                      (struct user_info *)(uintptr_t)a3);
     filesystem_syscall_unlock();
@@ -816,7 +839,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_open((const char *)(uintptr_t)a1);
     if (result >= 0)
     {
@@ -835,7 +859,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     int32_t descriptor = process_fd_resolve((int32_t)a1);
     if (descriptor < 0)
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_read(descriptor, (void *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
@@ -845,7 +870,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     int32_t descriptor = process_fd_resolve((int32_t)a1);
     if (descriptor < 0)
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int64_t result = vfs_seek(descriptor, (int64_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
@@ -855,7 +881,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_info)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_stat((const char *)(uintptr_t)a1,
                               (struct file_stat_info *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -863,7 +890,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FILE_CLOSE:
   {
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = process_fd_close((int32_t)a1);
     filesystem_syscall_unlock();
     return result;
@@ -872,7 +900,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_delete((const char *)(uintptr_t)a1);
     filesystem_syscall_unlock();
     return result;
@@ -882,7 +911,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_rename((const char *)(uintptr_t)a1, (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -893,7 +923,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_move((const char *)(uintptr_t)a1, (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -905,7 +936,8 @@ int64_t syscall_handler(struct syscall_regs *r)
         !writable((void *)(uintptr_t)a2,
                   (uint64_t)(uint32_t)a3 * sizeof(struct fs_directory_entry)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_list((const char *)(uintptr_t)a1,
                  (struct fs_directory_entry *)(uintptr_t)a2, (uint32_t)a3);
@@ -919,7 +951,8 @@ int64_t syscall_handler(struct syscall_regs *r)
                   (uint64_t)(uint32_t)a3 *
                       sizeof(struct fs_directory_entry_long)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_list_long(
         (const char *)(uintptr_t)a1,
         (struct fs_directory_entry_long *)(uintptr_t)a2, (uint32_t)a3);
@@ -945,7 +978,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_create_file((const char *)(uintptr_t)a1);
     filesystem_syscall_unlock();
     return result;
@@ -954,7 +988,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_create_directory((const char *)(uintptr_t)a1);
     filesystem_syscall_unlock();
     return result;
@@ -980,7 +1015,8 @@ int64_t syscall_handler(struct syscall_regs *r)
         !readable_string((const char *)(uintptr_t)a2) ||
         (a3 && !readable_string((const char *)(uintptr_t)a3)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_format_device((const char *)(uintptr_t)a1,
                                        (const char *)(uintptr_t)a2,
                                        (const char *)(uintptr_t)a3);
@@ -994,7 +1030,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_format_device_force((const char *)(uintptr_t)a1,
                                              (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -1007,7 +1044,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_install_device((const char *)(uintptr_t)a1,
                                         (const char *)(uintptr_t)a2, 0);
     filesystem_syscall_unlock();
@@ -1018,7 +1056,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable((const void *)(uintptr_t)a2, (uint32_t)a3))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_write_file((const char *)(uintptr_t)a1,
                                     (const void *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
@@ -1029,7 +1068,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable((const void *)(uintptr_t)a2, (uint32_t)a3))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_append_file((const char *)(uintptr_t)a1,
                                      (const void *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
@@ -1090,7 +1130,8 @@ int64_t syscall_handler(struct syscall_regs *r)
           ehci_stats.last_stage);
     if (count)
     {
-      filesystem_syscall_lock();
+      if (!filesystem_syscall_acquire())
+      return -1;
       if (!vfs_is_root_mounted())
         (void)vfs_mount_root();
       filesystem_syscall_unlock();
@@ -1541,7 +1582,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     req.device[sizeof(req.device) - 1] = '\0';
     if (req.partition_count == 0 || req.partition_count > 4)
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = installer_format_custom_device(
         req.device, req.partition_count, req.sizes_gb);
     filesystem_syscall_unlock();
@@ -1559,7 +1601,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     r.device[sizeof(r.device) - 1] = '\0';
     r.serial[sizeof(r.serial) - 1] = '\0';
     r.erase[sizeof(r.erase) - 1] = '\0';
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t res = vfs_format_device_ex(
         r.device, r.serial, r.erase,
         VFS_FS_EXT2);
@@ -1572,7 +1615,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     struct ext2_stat_info *out = (struct ext2_stat_info *)(uintptr_t)a2;
     if (!readable_string(path) || !writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_stat(path, out);
     filesystem_syscall_unlock();
     return r;
@@ -1583,7 +1627,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     struct ext2_stat_info *out = (struct ext2_stat_info *)(uintptr_t)a2;
     if (!writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_inode(ino, out);
     filesystem_syscall_unlock();
     return r;
@@ -1593,7 +1638,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     struct ext2_super_info *out = (struct ext2_super_info *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_super(out);
     filesystem_syscall_unlock();
     return r;
@@ -1604,7 +1650,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     struct ext2_blocks_info *out = (struct ext2_blocks_info *)(uintptr_t)a2;
     if (!readable_string(path) || !writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_blocks(path, out);
     filesystem_syscall_unlock();
     return r;

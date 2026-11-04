@@ -73,6 +73,7 @@ static bool wp_load_file(const char *path, struct wp_buf *out,
     if(out_size) *out_size=0;
     if(!path || !path[0] || !out || !out_size) return false;
     if(!vfs_is_root_mounted()) return false;
+    if(install_job_running()) return false;
     if(!wp_alloc(out,WP_MAX_FILE_BYTES)) return false;
     filesystem_syscall_lock();
     int32_t fd=vfs_open(path);

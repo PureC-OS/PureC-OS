@@ -39,7 +39,7 @@ bool display_mode_current(uint32_t *width, uint32_t *height, uint8_t *bpp){
 
 bool display_mode_load(uint32_t *width, uint32_t *height, uint8_t *bpp){
     if(!vfs_is_root_mounted()) return false;
-    filesystem_syscall_lock();
+    if(!filesystem_syscall_acquire()) return false;
     int32_t fd=vfs_open(DISPLAY_INI_PATH);
     char buffer[128];
     int32_t total=0;
@@ -100,7 +100,7 @@ static void write_back_ini(uint32_t width, uint32_t height, uint8_t bpp){
     *out++='\n';
     *out='\0';
     if(!vfs_is_root_mounted()) return;
-    filesystem_syscall_lock();
+    if(!filesystem_syscall_acquire()) return;
     (void)vfs_write_file(DISPLAY_INI_PATH,buffer,
                          (uint32_t)(out-buffer));
     filesystem_syscall_unlock();

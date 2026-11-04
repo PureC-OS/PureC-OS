@@ -67,7 +67,8 @@ int32_t fd_open(const char *path, uint32_t flags)
   struct process *process = process_current();
   if (!process)
     return -KERR_BADF;
-  filesystem_syscall_lock();
+  if (!filesystem_syscall_acquire())
+    return -KERR_AGAIN;
   int32_t handle = vfs_open_flags(path, flags);
   filesystem_syscall_unlock();
   if (handle < 0)
