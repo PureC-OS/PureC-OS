@@ -18,6 +18,7 @@
 #define COMP_MAX_WINDOWS 32
 #define COMP_SHADOW 16
 #define COMP_CHUNK 1024
+#define COMP_BAND_ROWS 32
 #define COMP_MAX_PIXELS (16u * 1024u * 1024u)
 #define CURSOR_SPRITE_W 12
 #define CURSOR_SPRITE_H 17
@@ -39,6 +40,7 @@ struct comp_window {
   uint32_t depth;
   bool topmost;
   bool dirty;
+  bool margin_dirty;
   int32_t dx0;
   int32_t dy0;
   int32_t dx1;
@@ -215,6 +217,31 @@ static void present_pair_locked(int64_t ax0, int64_t ay0, int64_t ax1,
   present_locked(bx0, by0, bx1, by1);
 }
 
+static void present_banded(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
+  if (x0 >= x1 || y0 >= y1)
+    return;
+  for (int64_t y = y0; y < y1; y += COMP_BAND_ROWS) {
+    int64_t ye = min64(y + COMP_BAND_ROWS, y1);
+    struct comp_ctx c;
+    comp_enter(&c);
+    present_locked(x0, y, x1, ye);
+    comp_leave(&c);
+  }
+}
+
+static void present_pair_banded(int64_t ax0, int64_t ay0, int64_t ax1,
+                                int64_t ay1, int64_t bx0, int64_t by0,
+                                int64_t bx1, int64_t by1) {
+  bool overlap = ax0 < bx1 && bx0 < ax1 && ay0 < by1 && by0 < ay1;
+  if (overlap) {
+    present_banded(min64(ax0, bx0), min64(ay0, by0), max64(ax1, bx1),
+                   max64(ay1, by1));
+    return;
+  }
+  present_banded(ax0, ay0, ax1, ay1);
+  present_banded(bx0, by0, bx1, by1);
+}
+
 static void present_window_locked(const struct comp_window *w) {
   __atomic_store_n(&activity_flag, 1, __ATOMIC_RELEASE);
   present_locked(w->x, w->y, (int64_t)w->x + visible_w(w),
@@ -301,6 +328,7 @@ bool compositor_window_create(uint32_t pid, uint32_t x, uint32_t y,
   w->fh = height;
   w->depth = 0;
   w->dirty = false;
+  w->margin_dirty = false;
   zorder[zcount++] = w;
   comp_leave(&c);
   return true;
@@ -353,16 +381,20 @@ bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
   bool resized = w->fw != width || w->fh != height;
   int32_t move_dx = (int32_t)x - w->x;
   int32_t move_dy = (int32_t)y - w->y;
+  if (resized || move_dx || move_dy)
+    w->margin_dirty = true;
   w->x = (int32_t)x;
   w->y = (int32_t)y;
   w->fw = width;
   w->fh = height;
   if (resized)
     clear_outside_frame(w);
-  present_pair_locked(ox0, oy0, ox1, oy1, w->x, w->y,
-                      (int64_t)w->x + visible_w(w),
-                      (int64_t)w->y + visible_h(w));
+  int64_t nx0 = w->x;
+  int64_t ny0 = w->y;
+  int64_t nx1 = nx0 + visible_w(w);
+  int64_t ny1 = ny0 + visible_h(w);
   comp_leave(&c);
+  present_pair_banded(ox0, oy0, ox1, oy1, nx0, ny0, nx1, ny1);
   if (move_dx || move_dy)
     gop_console_translate(pid, move_dx, move_dy);
   return true;
@@ -604,6 +636,12 @@ bool compositor_begin_update(uint32_t pid) {
     comp_leave(&c);
     return false;
   }
+  if (w->depth == 0 && w->margin_dirty && w->pixels) {
+    w->margin_dirty = false;
+    clear_outside_frame(w);
+    mark_dirty(w, w->x, w->y, (int64_t)w->x + visible_w(w),
+               (int64_t)w->y + visible_h(w));
+  }
   w->depth++;
   comp_leave(&c);
   return true;
@@ -618,7 +656,13 @@ bool compositor_end_update(uint32_t pid) {
     return false;
   }
   w->depth--;
-  flush_if_idle(w);
+  if (w->depth == 0 && w->dirty) {
+    int64_t fx0 = w->dx0, fy0 = w->dy0, fx1 = w->dx1, fy1 = w->dy1;
+    w->dirty = false;
+    comp_leave(&c);
+    present_banded(fx0, fy0, fx1, fy1);
+    return true;
+  }
   comp_leave(&c);
   return true;
 }
@@ -659,10 +703,7 @@ bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
     return false;
   if (!gop_has_backbuffer())
     return false;
-  struct comp_ctx c;
-  comp_enter(&c);
-  present_locked(x0, y0, x1, y1);
-  comp_leave(&c);
+  present_banded((int64_t)x0, (int64_t)y0, (int64_t)x1, (int64_t)y1);
   return true;
 }
 

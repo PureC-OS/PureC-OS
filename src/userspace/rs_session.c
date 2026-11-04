@@ -66,7 +66,7 @@ bool rs_session_start(void) {
   return true;
 }
 
-#define RS_HEARTBEAT_TICKS 100
+#define RS_HEARTBEAT_TICKS 250
 #define RS_HEARTBEAT_BAND 64
 
 static void heartbeat_present(void) {
@@ -77,6 +77,9 @@ static void heartbeat_present(void) {
     if (end > height)
       end = height;
     (void)compositor_present(0, y, width, end);
+    ps2_mouse_poll();
+    usb_mouse_poll();
+    mouse_flush_pending();
   }
 }
 
