@@ -1,14 +1,14 @@
 # Блочный слой хранения (`block_device`)
 
-`src/drivers/storage/block_device.c` объединяет все накопители системы в одну таблицу и даёт остальному ядру один интерфейс чтения и записи 512-байтных секторов. Под ним работают четыре транспорта: ATA PIO, AHCI, xHCI (USB Mass Storage) и EHCI (USB Mass Storage). Блочный слой выбирает активный накопитель, перенаправляет операции на нужный драйвер, следит за USB-накопителями при подключении и отключении.
+`src/io/storage/block_device.c` объединяет все накопители системы в одну таблицу и даёт остальному ядру один интерфейс чтения и записи 512-байтных секторов. Под ним работают четыре транспорта: ATA PIO, AHCI, xHCI (USB Mass Storage) и EHCI (USB Mass Storage). Блочный слой выбирает активный накопитель, перенаправляет операции на нужный драйвер, следит за USB-накопителями при подключении и отключении.
 
 ## Расположение
 
 | Файл | Назначение |
 |------|------------|
-| `src/drivers/storage/block_device.h` | Публичный API |
-| `src/drivers/storage/block_device.c` | Таблица устройств, выбор активного, перенаправление, hotplug |
-| `src/drivers/storage/storage_types.h` | Структуры `storage_device_info`, `storage_controller_info`, коды транспортов |
+| `src/io/storage/block_device.h` | Публичный API |
+| `src/io/storage/block_device.c` | Таблица устройств, выбор активного, перенаправление, hotplug |
+| `src/io/storage/storage_types.h` | Структуры `storage_device_info`, `storage_controller_info`, коды транспортов |
 
 ## Таблица устройств
 
@@ -61,7 +61,7 @@
 - `src/fs/vfs.c`, `src/fs/devfs.c`, `src/fs/procfs.c`, `src/fs/sysfs.c` — выбор и информация о накопителях.
 - `src/fs/install.c` — запись на накопитель при установке системы.
 - `src/kernel/syscall/syscall.c` — системные вызовы информации о накопителях и выбора.
-- `src/drivers/storage/storage_probe.c` блочный слой не вызывает: он только перечисляет контроллеры.
+- `src/io/storage/storage_probe.c` блочный слой не вызывает: он только перечисляет контроллеры.
 
 ## Ограничения
 

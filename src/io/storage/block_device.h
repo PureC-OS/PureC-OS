@@ -24,5 +24,7 @@ bool block_device_write(uint32_t lba, const void *buffer);
 bool block_device_read_sectors(uint32_t lba, void *buffer, uint32_t count);
 bool block_device_write_sectors(uint32_t lba, const void *buffer,
                                 uint32_t count);
+bool block_device_raw_run(uint32_t device_index, bool write, uint32_t lba,
+                          void *buffer, uint32_t count);
 bool block_device_flush(void);
 const char *block_device_name(void);

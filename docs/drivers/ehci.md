@@ -28,9 +28,9 @@ API полностью повторяет интерфейс xHCI, поэтом�
 
 ## Где используется
 
-- `src/drivers/storage/block_device.c:64` — блочный слой вызывает `ehci_read_sectors` и `ehci_write_sectors`, если текущий накопитель на EHCI.
-- `src/drivers/storage/block_device.c:115` — `ehci_init` вызывается после ATA и AHCI, с номером первой буквы, учитывающим уже найденные диски.
-- `src/drivers/storage/block_device.c:182` — `ehci_rescan` при повторном сканировании.
+- `src/io/storage/block_device.c:64` — блочный слой вызывает `ehci_read_sectors` и `ehci_write_sectors`, если текущий накопитель на EHCI.
+- `src/io/storage/block_device.c:115` — `ehci_init` вызывается после ATA и AHCI, с номером первой буквы, учитывающим уже найденные диски.
+- `src/io/storage/block_device.c:182` — `ehci_rescan` при повторном сканировании.
 
 ## Инициализация (`initialize_controller`)
 

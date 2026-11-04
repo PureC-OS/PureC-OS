@@ -1,6 +1,6 @@
 #include "../kernel/sync/mutex.h"
 static mutex_t vfs_mutex;
-#include "../drivers/storage/block_device.h"
+#include "../io/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
 #include "../kernel/syscall/syscall.h"

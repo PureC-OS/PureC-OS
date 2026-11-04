@@ -6,7 +6,7 @@
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/input/key_event.h"
 #include "../../drivers/input/keyboard.h"
-#include "../../drivers/storage/storage_types.h"
+#include "../../io/storage/storage_types.h"
 #include "../../kernel/syscall/syscall.h"
 
 struct pc_display_info {

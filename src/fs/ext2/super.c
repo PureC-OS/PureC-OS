@@ -2,7 +2,7 @@
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_file.h"
-#include "../../drivers/storage/block_device.h"
+#include "../../io/storage/block_device.h"
 #include "../../lib/string.h"
 
 bool ext2_super_read(uint32_t partition_lba)

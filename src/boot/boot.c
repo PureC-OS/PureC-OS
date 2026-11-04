@@ -8,7 +8,7 @@
 #include "../drivers/interrupts/pic.h"
 #include "../drivers/interrupts/timer.h"
 #include "../drivers/mouse/ps2_mouse.h"
-#include "../drivers/storage/ahci.h"
+#include "../io/storage/ahci.h"
 #include "../drivers/audio/audio_hda.h"
 #include "../drivers/usb/xhci.h"
 #include "../drivers/usb/ehci.h"

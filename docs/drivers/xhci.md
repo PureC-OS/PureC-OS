@@ -14,7 +14,7 @@
 | `src/drivers/usb/xhci.h` | Публичный API, `struct xhci_probe_stats`, коды ошибок `XHCI_PROBE_*` |
 | `src/drivers/usb/xhci.c` | Реализация (около 1840 строк) |
 
-Контроллер ищется через `storage_controller_list` (`src/drivers/storage/storage_probe.c`), который перечисляет PCI-устройства. Драйвер использует только первый xHCI, который удалось запустить.
+Контроллер ищется через `storage_controller_list` (`src/io/storage/storage_probe.c`), который перечисляет PCI-устройства. Драйвер использует только первый xHCI, который удалось запустить.
 
 ## Публичный API
 
@@ -77,8 +77,8 @@
 
 ## Где используется
 
-- `src/drivers/storage/block_device.c` — блочный слой вызывает `xhci_read_sector(s)` и `xhci_write_sector(s)` для накопителей USB.
-- `src/drivers/storage/storage_probe.c` — `storage_controller_list` находит контроллер и вызывает `xhci_init`.
+- `src/io/storage/block_device.c` — блочный слой вызывает `xhci_read_sector(s)` и `xhci_write_sector(s)` для накопителей USB.
+- `src/io/storage/storage_probe.c` — `storage_controller_list` находит контроллер и вызывает `xhci_init`.
 - `src/kernel/devices/device_manager.c`, `src/fs/` — информация о накопителях и повторное сканирование.
 - `src/userspace/userspace.c`, `src/kernel/syscall/syscall.c` — `xhci_poll_mouse` через `usb_mouse_poll`.
 

@@ -8,7 +8,7 @@
 #include "../drivers/input/keyboard.h"
 #include "../drivers/mouse/ps2_mouse.h"
 #include "../drivers/mouse/usb_mouse.h"
-#include "../drivers/storage/block_device.h"
+#include "../io/storage/block_device.h"
 #include "../fs/vfs.h"
 #include "../gfx/compositor.h"
 #include "../drivers/interrupts/timer.h"

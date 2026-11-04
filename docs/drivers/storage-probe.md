@@ -1,14 +1,14 @@
 # Перечисление контроллеров хранения (`storage_probe`)
 
-`src/drivers/storage/storage_probe.c` один раз проходит по PCI и составляет список контроллеров хранения и USB. Остальные драйверы хранения (AHCI, xHCI, EHCI) берут из этого списка свои контроллеры. Сам файл ничего не инициализирует и не работает с устройствами, он только классифицирует функции PCI.
+`src/io/storage/storage_probe.c` один раз проходит по PCI и составляет список контроллеров хранения и USB. Остальные драйверы хранения (AHCI, xHCI, EHCI) берут из этого списка свои контроллеры. Сам файл ничего не инициализирует и не работает с устройствами, он только классифицирует функции PCI.
 
 ## Расположение
 
 | Файл | Назначение |
 |------|------------|
-| `src/drivers/storage/storage_probe.h` | Публичный API |
-| `src/drivers/storage/storage_probe.c` | Классификация PCI-функций |
-| `src/drivers/storage/storage_types.h` | Общие структуры и константы для всех драйверов хранения |
+| `src/io/storage/storage_probe.h` | Публичный API |
+| `src/io/storage/storage_probe.c` | Классификация PCI-функций |
+| `src/io/storage/storage_types.h` | Общие структуры и константы для всех драйверов хранения |
 
 ## Публичный API
 
@@ -57,9 +57,9 @@
 
 ## Где используется
 
-- `src/drivers/storage/ahci.c`, `src/drivers/usb/xhci.c`, `src/drivers/usb/ehci.c` — берут контроллеры своего типа через `storage_controller_list`.
-- `src/drivers/storage/ata_pio.c` — не использует список, ATA PIO находит устройства по фиксированным портам `0x1F0` и `0x170`.
-- `src/drivers/storage/block_device.c` — блочный слой использует `storage_types.h`.
+- `src/io/storage/ahci.c`, `src/drivers/usb/xhci.c`, `src/drivers/usb/ehci.c` — берут контроллеры своего типа через `storage_controller_list`.
+- `src/io/storage/ata_pio.c` — не использует список, ATA PIO находит устройства по фиксированным портам `0x1F0` и `0x170`.
+- `src/io/storage/block_device.c` — блочный слой использует `storage_types.h`.
 
 ## Ограничения
 

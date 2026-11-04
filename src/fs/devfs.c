@@ -1,6 +1,6 @@
 #include "vfs_backends.h"
-#include "../drivers/storage/block_device.h"
-#include "../drivers/storage/storage_types.h"
+#include "../io/storage/block_device.h"
+#include "../io/storage/storage_types.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/random/krandom.h"
 #include "../lib/string.h"

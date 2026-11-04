@@ -15,7 +15,7 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
@@ -359,11 +359,15 @@ wolf: $(WOLFSSL_DIR)/wolfcrypt/src/aes.c
 	$(MAKE) -C $(WOLFSSL_DIR) lib
 
 
+io:
+	$(MAKE) -C src/io
+
 kernel:
 	@test -f "$(CRYPT_DIR)/src/sha512.c" || \
 	  { echo "ERROR: libxcrypt/ not found. Run: ./purec.py setup"; exit 1; }
 	@test -f "$(ACPI_DIR)/src/acpi.c" || \
 	  { echo "ERROR: acpi/ not found. Run: ./purec.py setup"; exit 1; }
+	$(MAKE) -C src/io
 	$(MAKE) -C src/kernel
 	$(MAKE) -C src/fs/ext2
 	$(MAKE) -C src/drivers/net/e1000    module
@@ -440,6 +444,7 @@ clean:
 	$(MAKE) -C src/make        clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2_mixer clean 2>/dev/null || true
 	$(MAKE) -C src/programs    clean 2>/dev/null || true
+	$(MAKE) -C src/io          clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
 	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true
 	rm -rf $(BIN_DIR)/iso_root $(BIN_DIR)/staged

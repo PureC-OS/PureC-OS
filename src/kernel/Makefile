@@ -121,10 +121,6 @@ C_SOURCES := \
 	net/api/ping.c \
 	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
-	drivers/storage/ata_pio.c \
-	drivers/storage/ahci.c \
-	drivers/storage/block_device.c \
-	drivers/storage/storage_probe.c \
 	drivers/usb/xhci.c \
 	drivers/usb/ehci.c \
 	fs/install.c \
@@ -185,7 +181,8 @@ ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
 GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
+IO_OBJECT := $(BIN_DIR)/io/io.o
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ) $(IO_OBJECT)
 
 BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -212,6 +209,9 @@ $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@echo "kernel.map: $$(wc -l < $(KERNEL_MAP)) symbols -> $(KERNEL_MAP)"
 	@echo "ld map: $(KERNEL_LD_MAP)"
 	@if [ ! -f $(FALLBACK) ]; then cp $@ $(FALLBACK); fi
+
+$(IO_OBJECT): force
+	@$(MAKE) -C $(ROOT_DIR)/src/io
 
 $(GEN_STAMP): force
 	@mkdir -p $(@D)

@@ -2,7 +2,7 @@
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_format.h"
-#include "../../drivers/storage/block_device.h"
+#include "../../io/storage/block_device.h"
 #include "../../lib/string.h"
 
 int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors);

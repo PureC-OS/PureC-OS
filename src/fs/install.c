@@ -12,7 +12,7 @@
 
 #include "../boot/install_source.h"
 #include "vfs_path.h"
-#include "../drivers/storage/block_device.h"
+#include "../io/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../lib/string.h"
 #include <stddef.h>

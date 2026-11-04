@@ -1,7 +1,7 @@
 #include "include/ext2_types.h"
 #include "include/ext2_block.h"
 #include "include/ext2_inode.h"
-#include "../../drivers/storage/block_device.h"
+#include "../../io/storage/block_device.h"
 #include "../../kernel/diagnostics/klog.h"
 
 static struct ext2_volume g_vol;

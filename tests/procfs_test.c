@@ -1,4 +1,4 @@
-#include "../src/drivers/storage/storage_types.h"
+#include "../src/io/storage/storage_types.h"
 #include "../src/fs/vfs.h"
 #include "../src/fs/vfs_backends.h"
 #include "../src/kernel/process/process.h"

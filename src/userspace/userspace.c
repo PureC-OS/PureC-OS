@@ -17,7 +17,7 @@
 #include "../drivers/mouse/usb_mouse.h"
 #include "../drivers/interrupts/timer.h"
 #include "../arch/x86_64/idt/include/idt.h"
-#include "../drivers/storage/block_device.h"
+#include "../io/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/diagnostics/boot_diag.h"
 #include "../kernel/diagnostics/panic.h"
