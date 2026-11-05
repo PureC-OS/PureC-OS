@@ -204,3 +204,23 @@
 /lib/modules/ext2.so /lib/modules/ext2.so - 0 bin/modules/ext2.so
 /lib/modules/wolf.so /lib/modules/wolf.so - 0 bin/modules/wolf.so
 /lib/modules/random.so /lib/modules/random.so - 0 bin/modules/random.so
+
+# --- desktop icons (Material Symbols, see assets/icons/NOTICE) ---
+/usr/share/icons/2048.icn /usr/share/icons/2048.icn - 0 assets/icons/2048.icn
+/usr/share/icons/calc.icn /usr/share/icons/calc.icn - 0 assets/icons/calc.icn
+/usr/share/icons/calendar.icn /usr/share/icons/calendar.icn - 0 assets/icons/calendar.icn
+/usr/share/icons/clock.icn /usr/share/icons/clock.icn - 0 assets/icons/clock.icn
+/usr/share/icons/desktop-rs.icn /usr/share/icons/desktop-rs.icn - 0 assets/icons/desktop-rs.icn
+/usr/share/icons/devmgr.icn /usr/share/icons/devmgr.icn - 0 assets/icons/devmgr.icn
+/usr/share/icons/disks.icn /usr/share/icons/disks.icn - 0 assets/icons/disks.icn
+/usr/share/icons/files.icn /usr/share/icons/files.icn - 0 assets/icons/files.icn
+/usr/share/icons/hexedit.icn /usr/share/icons/hexedit.icn - 0 assets/icons/hexedit.icn
+/usr/share/icons/install.icn /usr/share/icons/install.icn - 0 assets/icons/install.icn
+/usr/share/icons/logview.icn /usr/share/icons/logview.icn - 0 assets/icons/logview.icn
+/usr/share/icons/monitor.icn /usr/share/icons/monitor.icn - 0 assets/icons/monitor.icn
+/usr/share/icons/notepad.icn /usr/share/icons/notepad.icn - 0 assets/icons/notepad.icn
+/usr/share/icons/pl.icn /usr/share/icons/pl.icn - 0 assets/icons/pl.icn
+/usr/share/icons/puzzle15.icn /usr/share/icons/puzzle15.icn - 0 assets/icons/puzzle15.icn
+/usr/share/icons/settings.icn /usr/share/icons/settings.icn - 0 assets/icons/settings.icn
+/usr/share/icons/terminal.icn /usr/share/icons/terminal.icn - 0 assets/icons/terminal.icn
+/usr/share/icons/tetris.icn /usr/share/icons/tetris.icn - 0 assets/icons/tetris.icn
