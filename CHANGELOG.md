@@ -2,6 +2,12 @@
 
 ## V1.2.28 — Права доступа и аккаунты, новый установщик, драйвер RNG, ext2 без заглушек, VFS на таблице монтирования, драйверы железа
 
+### Паника «unbalanced preempt enable» при работе Vim: счётчик вытеснения привязан к потоку (`src/kernel/process/scheduler.c`, `src/kernel/process/scheduler.h`)
+- Ядро падало с `sched: unbalanced preempt enable` в `scheduler_preempt_enable()` (трассировка: `userspace_input_thread` → `window_manager_has_focus` → `wm_leave`) во время набора C-программы во Vim. Причина: `preempt_depth` лежал в `struct scheduler_cpu`, то есть принадлежал ядру, а не потоку. Поток, который засыпал с выключенным вытеснением (`scheduler_sleep`, а также `mutex_lock` при занятом мьютексе, он спит через `scheduler_sleep(1)`), просыпался на другом ядре, и его `scheduler_preempt_enable()` уменьшал чужой счётчик.
+- Подтверждено дампом памяти VM: на `cpu0` `preempt_depth=1` при свободных `wm_lock` и `comp_lock` (утечка), на паникующем `cpu2` `preempt_depth=0`.
+- Теперь у потока есть поле `preempt_saved`: `schedule_locked()` сохраняет счётчик уходящего потока и загружает счётчик входящего. Новые потоки (в том числе потомки `fork`) стартуют с нулём и не наследуют значение от предыдущего потока на ядре.
+- В `scheduler_sleep()` и `scheduler_block()` добавлено предупреждение `sched: blocking with preemption disabled` с тремя адресами вызова (имена через `ksym`; не более 16 раз за запуск, повторный вход защищён), чтобы найти код, который блокируется внутри секции с выключенным вытеснением. После пересборки на прежнем сценарии паники нет, предупреждение в логе не появилось. Сам источник сна под `wm_lock` и `comp_lock` ещё не найден, при блокировке под спинлоком остаётся риск зависания.
+
 ### Иконки приложений на столе (`assets/icons/`, `mk/gen_icons.py`, `src/userspace/apps/desktop_icons.c`)
 - Для 18 приложений добавлены иконки Material Symbols (Rounded, заливка, Apache 2.0): один набор и один вес, поэтому стиль цельный. Исходники `.svg` и соответствие «приложение → иконка» лежат в `assets/icons/` (файл `NOTICE`).
 - `mk/gen_icons.py` растеризует SVG в маски прозрачности `.icn` (`PCIC`, 96×96, 8 бит); `.icn` ставятся в `/usr/share/icons/` через `assets/manifest.txt`. Каждый `.desktop` получил строку `Icon=/usr/share/icons/<имя>.icn`.
