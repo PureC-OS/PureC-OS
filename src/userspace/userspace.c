@@ -4,6 +4,7 @@
 #include "wallpaper.h"
 #include "apps/desktop_apps.h"
 #include "apps/desktop_entries.h"
+#include "apps/desktop_icons.h"
 #include "apps/audio_panel.h"
 #include "apps/bottom_panel.h"
 #include "window_manager.h"
@@ -134,9 +135,9 @@ static bool point_inside(int32_t x, int32_t y, uint32_t left, uint32_t top,
 }
 
 
-static void draw_app_icon(uint32_t ix, uint32_t iy,
+static void draw_app_icon(uint32_t index, uint32_t ix, uint32_t iy,
                           const char *symbol, const char *label,
-                          uint32_t color){
+                          const char *icon_path, uint32_t color){
     struct personalization_colors th;
     desktop_theme(&th);
     uint32_t px = desktop_label_size();
@@ -149,8 +150,12 @@ static void draw_app_icon(uint32_t ix, uint32_t iy,
     uint32_t sym_w = (uint32_t)strlen(symbol) * sym_px;
     uint32_t box_w = 42u * px / 8u;
     uint32_t sym_x = ix + px + (box_w > sym_w ? (box_w - sym_w) / 2u : 0u);
-    display_draw_text_sized_at(sym_x, iy + 17u * px / 8u, symbol, 0x1E1E2E,
-                               color, sym_px);
+    bool drawn = icon_path[0] &&
+        desktop_icon_draw(index, icon_path, ix + px, iy + 7u * px / 8u,
+                          box_w, 34u * px / 8u, color);
+    if(!drawn)
+        display_draw_text_sized_at(sym_x, iy + 17u * px / 8u, symbol,
+                                   0x1E1E2E, color, sym_px);
     uint32_t cell = desktop_entries_cell_w();
     uint32_t fit = cell / px;
     char shown[40];
@@ -187,7 +192,8 @@ static void draw_desktop_icons(void){
     for(uint32_t i = 0; i < count; i++){
         const struct desktop_entry *e = desktop_entries_get(i);
         if(e->hidden) continue;
-        draw_app_icon(e->x, e->y, e->icon_text, e->name, e->icon_color);
+        draw_app_icon(i, e->x, e->y, e->icon_text, e->name, e->icon_path,
+                      e->icon_color);
     }
 }
 
