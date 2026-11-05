@@ -39,8 +39,6 @@
 #define MOUSE_DEBUG_Y        38
 #define MOUSE_DEBUG_W        380
 #define MOUSE_DEBUG_H        84
-#define ICON_W               58
-#define ICON_H               72
 #define PERSISTENT_LOG_CHUNK (64 * 1024)
 #define PERSISTENT_LOG_MAX_BYTES 0xFFFFFFFFULL
 #define PERSISTENT_LOG_PATH  "/kernel.log"
@@ -52,11 +50,18 @@ static void desktop_theme(struct personalization_colors *out){
 static uint32_t desktop_label_size(void){
     const struct personalization *p = personalization_current();
     uint32_t size = personalization_font_size_clamped(p ? p->font_size : 12);
-    return size > 12 ? 12 : size;
+    return size > 20 ? 20 : size;
 }
+
 
 static uint32_t desktop_width;
 static uint32_t desktop_height;
+
+static void configure_icon_layout(void){
+    desktop_entries_configure(desktop_label_size(), desktop_width,
+                              desktop_height, TOPBAR_HEIGHT,
+                              BOTTOM_PANEL_HEIGHT);
+}
 static uint32_t desktop_redraw_requested;
 static uint32_t desktop_redraw_completed;
 static uint32_t desktop_redraw_requester;
@@ -134,15 +139,51 @@ static void draw_app_icon(uint32_t ix, uint32_t iy,
                           uint32_t color){
     struct personalization_colors th;
     desktop_theme(&th);
-    display_draw_rect(ix, iy, ICON_W, 50, th.titlebar);
-    display_draw_rect(ix + 8, iy + 7, 42, 34, color);
-    display_draw_text_sized_at(ix + 17, iy + 17, symbol, 0x1E1E2E, color, 12);
-    display_draw_text_sized_at(ix + 4,  iy + 55, label,  th.text, th.desktop,
-                               desktop_label_size());
+    uint32_t px = desktop_label_size();
+    uint32_t w = desktop_entries_icon_w();
+    uint32_t tile_h = 50u * px / 8u;
+    display_draw_rect(ix, iy, w, tile_h, th.titlebar);
+    display_draw_rect(ix + 8u * px / 8u, iy + 7u * px / 8u, 42u * px / 8u,
+                      34u * px / 8u, color);
+    uint32_t sym_px = 12u * px / 8u;
+    uint32_t sym_w = (uint32_t)strlen(symbol) * sym_px;
+    uint32_t box_w = 42u * px / 8u;
+    uint32_t sym_x = ix + px + (box_w > sym_w ? (box_w - sym_w) / 2u : 0u);
+    display_draw_text_sized_at(sym_x, iy + 17u * px / 8u, symbol, 0x1E1E2E,
+                               color, sym_px);
+    uint32_t cell = desktop_entries_cell_w();
+    uint32_t fit = cell / px;
+    char shown[40];
+    uint32_t len = (uint32_t)strlen(label);
+    if(fit < 3) fit = 3;
+    if(len > fit){
+        len = fit - 2;
+        memcpy(shown, label, len);
+        shown[len++] = '.';
+        shown[len++] = '.';
+    } else {
+        memcpy(shown, label, len);
+    }
+    shown[len] = '\0';
+    uint32_t text_w = len * px;
+    int32_t tx = (int32_t)ix + (int32_t)w / 2 - (int32_t)text_w / 2;
+    if(tx < 0) tx = 0;
+    display_draw_text_sized_at((uint32_t)tx, iy + 55u * px / 8u, shown,
+                               th.text, th.desktop, px);
 }
 
 static void draw_desktop_icons(void){
+    configure_icon_layout();
     uint32_t count = desktop_entries_count();
+    if(dragged_icon >= 0 && icon_drag_moved){
+        struct personalization_colors th;
+        desktop_theme(&th);
+        uint32_t gx = 0, gy = 0;
+        desktop_entries_target_cell((uint32_t)dragged_icon, &gx, &gy);
+        uint32_t gw = desktop_entries_icon_w(), gh = desktop_entries_icon_h();
+        display_draw_rect(gx, gy, gw, gh, th.border);
+        display_draw_rect(gx + 2, gy + 2, gw - 4, gh - 4, th.desktop);
+    }
     for(uint32_t i = 0; i < count; i++){
         const struct desktop_entry *e = desktop_entries_get(i);
         if(e->hidden) continue;
@@ -457,7 +498,9 @@ static void handle_desktop_mouse(void){
         for(uint32_t i = 0; i < count; i++){
             const struct desktop_entry *e = desktop_entries_get(i);
             if(e->hidden) continue;
-            if(point_inside(mouse.x, mouse.y, e->x, e->y, ICON_W, ICON_H)){
+            if(point_inside(mouse.x, mouse.y, e->x, e->y,
+                            desktop_entries_icon_w(),
+                            desktop_entries_icon_h())){
                 dragged_icon      = (int32_t)i;
                 icon_drag_offset_x = mouse.x - (int32_t)e->x;
                 icon_drag_offset_y = mouse.y - (int32_t)e->y;
@@ -472,10 +515,13 @@ static void handle_desktop_mouse(void){
         if(e){
             int32_t next_x = mouse.x - icon_drag_offset_x;
             int32_t next_y = mouse.y - icon_drag_offset_y;
-            int32_t max_y = (int32_t)desktop_height - (int32_t)ICON_H
+            int32_t icon_w = (int32_t)desktop_entries_icon_w();
+            int32_t max_y = (int32_t)desktop_height
+                - (int32_t)desktop_entries_icon_h()
                 - (int32_t)BOTTOM_PANEL_HEIGHT;
             if(next_x < 0) next_x = 0;
-            if(next_x > (int32_t)desktop_width  - ICON_W) next_x = (int32_t)desktop_width  - ICON_W;
+            if(next_x > (int32_t)desktop_width - icon_w)
+                next_x = (int32_t)desktop_width - icon_w;
             if(next_y < (int32_t)TOPBAR_HEIGHT)          next_y = (int32_t)TOPBAR_HEIGHT;
             if(next_y > max_y)                           next_y = max_y;
             if((uint32_t)next_x != e->x || (uint32_t)next_y != e->y){
@@ -491,6 +537,8 @@ static void handle_desktop_mouse(void){
         dragged_icon  = -1;
         if(!icon_drag_moved)
             launch_entry(desktop_entries_get((uint32_t)icon));
+        else
+            desktop_entries_snap((uint32_t)icon);
         redraw = true;
     }
 
