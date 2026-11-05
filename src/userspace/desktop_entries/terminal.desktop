@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Terminal
 Exec=/bin/program/terminal
+Icon=/usr/share/icons/terminal.icn
 IconColor=0x1E1E2E
 IconText=>_
 Type=Application

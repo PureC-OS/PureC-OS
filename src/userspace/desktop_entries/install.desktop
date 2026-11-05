@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Install
 Exec=/bin/installer
+Icon=/usr/share/icons/install.icn
 IconColor=0xCBA6F7
 IconText=OS
 Type=Application

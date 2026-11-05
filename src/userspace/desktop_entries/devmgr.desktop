@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Devices
 Exec=/bin/program/devmgr
+Icon=/usr/share/icons/devmgr.icn
 IconColor=0x89DCEB
 IconText=DV
 Type=Application

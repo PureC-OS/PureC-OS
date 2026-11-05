@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=2048
 Exec=/bin/program/2048
+Icon=/usr/share/icons/2048.icn
 IconColor=0x89B4FA
 IconText=15
 Type=Application

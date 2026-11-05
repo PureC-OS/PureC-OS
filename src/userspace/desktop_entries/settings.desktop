@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Settings
 Exec=/bin/program/settings
+Icon=/usr/share/icons/settings.icn
 IconColor=0x94E2D5
 IconText={}
 Type=Application
