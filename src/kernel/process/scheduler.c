@@ -8,6 +8,7 @@
 #include "../../mm/pmm.h"
 #include "../../mm/vmm.h"
 #include "../diagnostics/klog.h"
+#include "../diagnostics/ksym.h"
 #include "../diagnostics/panic.h"
 #include "../smp/cpu.h"
 #include "../smp/lapic.h"
@@ -875,6 +876,27 @@ static void account_current(struct scheduler_cpu *cpu, uint64_t now)
     current->ticks_remaining -= (uint32_t)elapsed;
 }
 
+static void warn_sleep_with_preempt_off(void *ra0, void *ra1, void *ra2)
+{
+  static volatile bool busy;
+  static uint32_t reported;
+  if (reported >= 16 || __atomic_exchange_n(&busy, true, __ATOMIC_ACQUIRE))
+    return;
+  reported++;
+  void *ra[3] = {ra0, ra1, ra2};
+  klog(KLOG_WARN, "sched: blocking with preemption disabled");
+  for (int i = 0; i < 3; i++)
+  {
+    const char *name = 0;
+    uint64_t off = 0;
+    uint64_t addr = (uint64_t)(uintptr_t)ra[i];
+    if (addr >= 0xffffffff80000000ULL && ksym_resolve(addr, &name, &off))
+      klogf(KLOG_WARN, "  caller #%d [<%016llx>] %s+0x%llx", i,
+            (unsigned long long)addr, name, (unsigned long long)off);
+  }
+  __atomic_store_n(&busy, false, __ATOMIC_RELEASE);
+}
+
 static void schedule_locked(void)
 {
   struct scheduler_cpu *cpu = local_scheduler();
@@ -896,6 +918,8 @@ static void schedule_locked(void)
   next->running_cpu = (int16_t)id;
   cpu->previous = prev;
   cpu->current = next;
+  prev->preempt_saved = cpu->preempt_depth;
+  cpu->preempt_depth = next->preempt_saved;
   validate_switch_target(prev, next);
   fpu_save(prev->fpu_state);
   gdt_set_kernel_stack(
@@ -963,6 +987,10 @@ void scheduler_sleep(uint32_t milliseconds)
   }
   if (!local_scheduler()->initialized)
     return;
+  if (local_scheduler()->preempt_depth)
+    warn_sleep_with_preempt_off(__builtin_return_address(0),
+                                __builtin_return_address(1),
+                                __builtin_return_address(2));
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   struct thread *t = local_scheduler()->current;
   if (t->idle)
@@ -984,6 +1012,10 @@ void scheduler_block(void)
 {
   if (!local_scheduler()->initialized)
     return;
+  if (local_scheduler()->preempt_depth)
+    warn_sleep_with_preempt_off(__builtin_return_address(0),
+                                __builtin_return_address(1),
+                                __builtin_return_address(2));
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   struct thread *t = local_scheduler()->current;
   if (t->idle || t->wake_pending)
