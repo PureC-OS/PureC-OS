@@ -165,12 +165,12 @@ static void test_selection(void){
     executing_cpu=0;
     assert(pick_next()==t);
     assert(t->affinity==1);
-    t->state=THREAD_BLOCKED;
-    t->wake_tick=101;
+    scheduler_host_sleep_thread(t,101);
     assert(pick_next()==scheduler_host_idle(0));
     t->wake_tick=100;
     assert(pick_next()==t);
     assert(t->wake_tick==0);
+    scheduler_host_dequeue(t);
     t->state=THREAD_TERMINATED;
     t->running_cpu=1;
     scheduler_free_thread_by_id(id);
@@ -259,6 +259,7 @@ static void test_preemption_guard(void){
     cpu->initialized=true;
     cpu->started=true;
     cpu->last_tick=100;
+    scheduler_host_dequeue(t);
     cpu->current=t;
     t->state=THREAD_RUNNING;
     t->ticks_remaining=1;

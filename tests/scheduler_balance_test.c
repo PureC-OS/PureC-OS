@@ -84,6 +84,12 @@ static void reset4(void){
     }
     executing_cpu = 0;
 }
+static void make_current(unsigned cpu, struct thread *t){
+    scheduler_host_dequeue(t);
+    cpu_schedulers[cpu].current = t;
+    t->state = THREAD_RUNNING;
+    t->running_cpu = (int16_t)cpu;
+}
 static int make_user(void){
     int id = scheduler_create_user_thread(dummy_entry, NULL, "u", 1, -1, 0x1000, (struct process *)&dummy_proc);
     assert(id >= 0);
@@ -96,9 +102,7 @@ static void test_spill_to_idle_ap(void){
     assert(t != NULL);
     assert(t->kernel_only);
     struct scheduler_cpu *c0 = &cpu_schedulers[0];
-    c0->current = t;
-    t->state = THREAD_RUNNING;
-    t->running_cpu = 0;
+    make_current(0, t);
     c0->preempt_depth = 1;
     scheduler_leave_kernel();
     assert(!t->kernel_only);
@@ -107,7 +111,7 @@ static void test_spill_to_idle_ap(void){
     assert(c0->reschedule_pending);
     c0->preempt_depth = 0;
     c0->reschedule_pending = false;
-    t->state = THREAD_READY;
+    scheduler_host_requeue(t, 0);
     t->running_cpu = -1;
     executing_cpu = 1;
     assert(pick_next() == t);
@@ -121,9 +125,7 @@ static void test_explicit_pin_kept(void){
     assert(t->affinity == 2);
     assert(!t->affinity_auto);
     struct scheduler_cpu *c0 = &cpu_schedulers[0];
-    c0->current = t;
-    t->state = THREAD_RUNNING;
-    t->running_cpu = 0;
+    make_current(0, t);
     c0->preempt_depth = 1;
     scheduler_leave_kernel();
     assert(t->affinity == 2);
@@ -139,16 +141,12 @@ static void test_no_idle_stays(void){
         struct thread *w = scheduler_host_lookup(ids[i]);
         w->affinity = (int16_t)(i + 1);
         w->affinity_auto = false;
-        w->state = THREAD_RUNNING;
-        w->running_cpu = (int16_t)(i + 1);
-        cpu_schedulers[i + 1].current = w;
+        make_current((unsigned)(i + 1), w);
     }
     int id = make_user();
     struct thread *t = scheduler_host_lookup(id);
     struct scheduler_cpu *c0 = &cpu_schedulers[0];
-    c0->current = t;
-    t->state = THREAD_RUNNING;
-    t->running_cpu = 0;
+    make_current(0, t);
     c0->preempt_depth = 1;
     scheduler_leave_kernel();
     assert(t->affinity == -1);
@@ -161,9 +159,7 @@ static void test_enter_pins_bsp(void){
     int id = make_user();
     struct thread *t = scheduler_host_lookup(id);
     t->affinity = -1;
-    cpu_schedulers[1].current = t;
-    t->state = THREAD_RUNNING;
-    t->running_cpu = 1;
+    make_current(1, t);
     executing_cpu = 1;
     cpu_schedulers[1].preempt_depth = 1;
     scheduler_enter_kernel();

@@ -53,6 +53,12 @@ struct thread {
   uint64_t migrations;
   struct thread *next;
   struct thread *hnext;
+  struct thread *rq_next;
+  struct thread *rq_prev;
+  struct thread *sleep_next;
+  int16_t rq_cpu;
+  int16_t last_cpu;
+  uint64_t last_ran;
   uint64_t node_phys;
   uint64_t kstack_phys;
   uint8_t *kstack;
