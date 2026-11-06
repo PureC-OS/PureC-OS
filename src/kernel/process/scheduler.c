@@ -603,8 +603,11 @@ int scheduler_create_service_thread(void (*entry)(void *), void *arg,
 
 struct thread *scheduler_current_thread(void)
 {
+  uint64_t flags = irq_save();
   uint32_t id = gdt_current_cpu_id();
-  return id < CPU_MAX_COUNT ? cpu_schedulers[id].current : NULL;
+  struct thread *t = id < CPU_MAX_COUNT ? cpu_schedulers[id].current : NULL;
+  irq_restore(flags);
+  return t;
 }
 int scheduler_current_tid(void)
 {
