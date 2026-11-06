@@ -1,6 +1,7 @@
 #include "smp.h"
 #include "cpu.h"
 #include "lapic.h"
+#include "percpu.h"
 #include "cpufreq.h"
 #include "../sync/spinlock.h"
 #include "../diagnostics/klog.h"
@@ -91,6 +92,9 @@ void smp_ap_main(struct ap_boot_context *context,
     }
 
     uint32_t id = context->logical_id;
+    if(!percpu_install(id)){
+        for(;;) __asm__ volatile("cli; hlt");
+    }
     if(!vmm_init_cpu()
        || !gdt_init_cpu(id, context->stack_top)){
         cpu_fail(id);

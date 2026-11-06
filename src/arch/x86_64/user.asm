@@ -6,6 +6,7 @@ global arch_enter_user_frame
 ; void arch_enter_user(uint64_t rip, uint64_t rsp)
 arch_enter_user:
     cli
+    swapgs
     mov ax,0x23
     mov ds,ax
     mov es,ax
@@ -24,6 +25,7 @@ arch_enter_user:
 ; void arch_enter_user_frame(const uint64_t *frame)
 arch_enter_user_frame:
     cli
+    swapgs
     mov ax,0x23
     mov ds,ax
     mov es,ax

@@ -12,6 +12,7 @@
 #include "../diagnostics/panic.h"
 #include "../smp/cpu.h"
 #include "../smp/lapic.h"
+#include "../smp/percpu.h"
 #include "../smp/smp.h"
 #include "../sync/spinlock.h"
 
@@ -73,6 +74,16 @@ static struct thread *thash_find(uint32_t tid)
     if (t->id == tid && t->state != THREAD_FREE)
       return t;
   return NULL;
+}
+
+static inline void sched_publish_current(uint32_t id, struct thread *thread)
+{
+#ifndef PUREC_HOST_TEST
+  percpu_set_current(id, thread);
+#else
+  (void)id;
+  (void)thread;
+#endif
 }
 
 static struct scheduler_cpu *local_scheduler(void)
@@ -322,6 +333,7 @@ void scheduler_init_cpu(void)
   fpu_thread_init(idle->fpu_state);
   cpu->idle = idle;
   cpu->current = idle;
+  sched_publish_current(id, idle);
   cpu->last_tick = timer_ticks();
   cpu->initialized = true;
 }
@@ -603,11 +615,15 @@ int scheduler_create_service_thread(void (*entry)(void *), void *arg,
 
 struct thread *scheduler_current_thread(void)
 {
+#ifndef PUREC_HOST_TEST
+  return percpu_current();
+#else
   uint64_t flags = irq_save();
   uint32_t id = gdt_current_cpu_id();
   struct thread *t = id < CPU_MAX_COUNT ? cpu_schedulers[id].current : NULL;
   irq_restore(flags);
   return t;
+#endif
 }
 int scheduler_current_tid(void)
 {
@@ -929,6 +945,7 @@ static void schedule_locked(void)
   next->running_cpu = (int16_t)id;
   cpu->previous = prev;
   cpu->current = next;
+  sched_publish_current(id, next);
   prev->preempt_saved = cpu->preempt_depth;
   cpu->preempt_depth = next->preempt_saved;
   validate_switch_target(prev, next);

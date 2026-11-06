@@ -39,6 +39,7 @@ C_SOURCES := \
 	kernel/core/init.c \
 	kernel/core/system_info.c \
 	kernel/smp/cpu.c \
+	kernel/smp/percpu.c \
 	kernel/smp/smp.c \
 	kernel/smp/lapic.c \
 	kernel/smp/cpufreq.c \
