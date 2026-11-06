@@ -932,38 +932,52 @@ static void schedule_locked(void)
 
 void scheduler_yield(void)
 {
-  if (!local_scheduler()->initialized)
-    return;
+  uint64_t flags = irq_save();
   struct scheduler_cpu *cpu = local_scheduler();
+  if (!cpu->initialized)
+  {
+    irq_restore(flags);
+    return;
+  }
   if (cpu->preempt_depth)
   {
     cpu->reschedule_pending = true;
+    irq_restore(flags);
     return;
   }
-  uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  spin_lock(&runqueue_lock);
   account_current(cpu, timer_ticks());
   schedule_locked();
   irq_restore(flags);
 }
 bool scheduler_preempt_disable(void)
 {
+  uint64_t flags = irq_save();
   uint32_t id = gdt_current_cpu_id();
   if (id >= CPU_MAX_COUNT)
+  {
+    irq_restore(flags);
     return false;
+  }
   struct scheduler_cpu *cpu = &cpu_schedulers[id];
   if (!cpu->initialized || !cpu->started)
+  {
+    irq_restore(flags);
     return false;
-  uint64_t flags = irq_save();
+  }
   cpu->preempt_depth++;
   irq_restore(flags);
   return true;
 }
 void scheduler_preempt_enable(void)
 {
+  uint64_t flags = irq_save();
   struct scheduler_cpu *cpu = local_scheduler();
   if (!cpu->initialized)
+  {
+    irq_restore(flags);
     return;
-  uint64_t flags = irq_save();
+  }
   if (!cpu->preempt_depth)
   {
     irq_restore(flags);
