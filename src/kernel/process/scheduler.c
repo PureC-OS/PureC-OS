@@ -879,25 +879,33 @@ static void account_current(struct scheduler_cpu *cpu, uint64_t now)
     current->ticks_remaining -= (uint32_t)elapsed;
 }
 
-static void warn_sleep_with_preempt_off(void *ra0, void *ra1, void *ra2)
+static void warn_sleep_with_preempt_off(void)
 {
+#ifndef PUREC_HOST_TEST
   static volatile bool busy;
   static uint32_t reported;
   if (reported >= 16 || __atomic_exchange_n(&busy, true, __ATOMIC_ACQUIRE))
     return;
   reported++;
-  void *ra[3] = {ra0, ra1, ra2};
   klog(KLOG_WARN, "sched: blocking with preemption disabled");
-  for (int i = 0; i < 3; i++)
+  uintptr_t *frame = (uintptr_t *)__builtin_frame_address(0);
+  for (int i = 0; i < 4; i++)
   {
+    if ((uintptr_t)frame < 0xffff800000000000ULL || ((uintptr_t)frame & 7))
+      break;
+    uintptr_t next = frame[0];
+    uint64_t addr = frame[1];
     const char *name = 0;
     uint64_t off = 0;
-    uint64_t addr = (uint64_t)(uintptr_t)ra[i];
     if (addr >= 0xffffffff80000000ULL && ksym_resolve(addr, &name, &off))
       klogf(KLOG_WARN, "  caller #%d [<%016llx>] %s+0x%llx", i,
             (unsigned long long)addr, name, (unsigned long long)off);
+    if (next <= (uintptr_t)frame)
+      break;
+    frame = (uintptr_t *)next;
   }
   __atomic_store_n(&busy, false, __ATOMIC_RELEASE);
+#endif
 }
 
 static void schedule_locked(void)
@@ -1005,9 +1013,7 @@ void scheduler_sleep(uint32_t milliseconds)
   if (!local_scheduler()->initialized)
     return;
   if (local_scheduler()->preempt_depth)
-    warn_sleep_with_preempt_off(__builtin_return_address(0),
-                                __builtin_return_address(1),
-                                __builtin_return_address(2));
+    warn_sleep_with_preempt_off();
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   struct thread *t = local_scheduler()->current;
   if (t->idle)
@@ -1030,9 +1036,7 @@ void scheduler_block(void)
   if (!local_scheduler()->initialized)
     return;
   if (local_scheduler()->preempt_depth)
-    warn_sleep_with_preempt_off(__builtin_return_address(0),
-                                __builtin_return_address(1),
-                                __builtin_return_address(2));
+    warn_sleep_with_preempt_off();
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   struct thread *t = local_scheduler()->current;
   if (t->idle || t->wake_pending)
