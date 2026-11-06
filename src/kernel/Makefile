@@ -56,6 +56,7 @@ C_SOURCES := \
 	kernel/process/signal.c \
 	kernel/process/fdtable.c \
 	kernel/process/ofd.c \
+	kernel/tty/tty.c \
 	mm/pmm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \
@@ -77,12 +78,14 @@ C_SOURCES := \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	drivers/display/console_vt.c \
 	gfx/compositor.c \
 	gfx/blit.c \
 	drivers/display/vbe.c \
 	drivers/display/svga.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
+	drivers/mouse/vbox_mouse.c \
 	drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
@@ -119,10 +122,6 @@ C_SOURCES := \
 	net/api/ping.c \
 	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
-	drivers/storage/ata_pio.c \
-	drivers/storage/ahci.c \
-	drivers/storage/block_device.c \
-	drivers/storage/storage_probe.c \
 	drivers/usb/xhci.c \
 	drivers/usb/ehci.c \
 	fs/install.c \
@@ -156,9 +155,11 @@ C_SOURCES := \
 	userspace/audio.c \
 	userspace/audio_overlay.c \
 	userspace/userspace.c \
+	userspace/rs_session.c \
 	userspace/window_manager.c \
 	userspace/apps/datetime_service.c \
 	userspace/apps/desktop_entries.c \
+	userspace/apps/desktop_icons.c \
 	userspace/apps/clock_app.c \
 	userspace/apps/calendar_app.c \
 	userspace/apps/calculator_app.c \
@@ -182,7 +183,8 @@ ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
 GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ)
+IO_OBJECT := $(BIN_DIR)/io/io.o
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ) $(IO_OBJECT)
 
 BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -209,6 +211,9 @@ $(TARGET): $(OBJECTS) $(LINKER_SCRIPT)
 	@echo "kernel.map: $$(wc -l < $(KERNEL_MAP)) symbols -> $(KERNEL_MAP)"
 	@echo "ld map: $(KERNEL_LD_MAP)"
 	@if [ ! -f $(FALLBACK) ]; then cp $@ $(FALLBACK); fi
+
+$(IO_OBJECT): force
+	@$(MAKE) -C $(ROOT_DIR)/src/io
 
 $(GEN_STAMP): force
 	@mkdir -p $(@D)

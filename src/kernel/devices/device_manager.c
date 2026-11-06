@@ -25,24 +25,29 @@ static bool g_enumerated = false;
 static struct device_driver *g_drivers = NULL;
 static bool g_builtin_registered = false;
 
-static void device_zero(struct device_info *dev) {
+static void device_zero(struct device_info *dev)
+{
   memset(dev, 0, sizeof(*dev));
   dev->id = 0xFFFFFFFF;
   dev->type = DEVICE_TYPE_UNKNOWN;
 }
 
-static void device_set_name(struct device_info *dev, const char *name) {
+static void device_set_name(struct device_info *dev, const char *name)
+{
   memset(dev->name, 0, sizeof(dev->name));
-  if (name) {
+  if (name)
+  {
     size_t i = 0;
-    while (name[i] && i < DEVICE_NAME_MAX_LEN - 1) {
+    while (name[i] && i < DEVICE_NAME_MAX_LEN - 1)
+    {
       dev->name[i] = name[i];
       i++;
     }
   }
 }
 
-static struct device_info *device_add(enum device_type type) {
+static struct device_info *device_add(enum device_type type)
+{
   if (g_device_count >= DEVICE_MANAGER_MAX_DEVICES)
     return NULL;
   struct device_info *dev = &g_devices[g_device_count];
@@ -55,7 +60,8 @@ static struct device_info *device_add(enum device_type type) {
   return dev;
 }
 
-static void pci_inspect_device(const struct pci_device_info *pci, void *ctx) {
+static void pci_inspect_device(const struct pci_device_info *pci, void *ctx)
+{
   (void)ctx;
   if (g_device_count >= DEVICE_MANAGER_MAX_DEVICES)
     return;
@@ -88,7 +94,8 @@ static void pci_inspect_device(const struct pci_device_info *pci, void *ctx) {
   dev->irq_count = 0;
   dev->mmio_base = dev->pci.base_addresses[0];
   dev->mmio_size = 0;
-  switch (pci->class_code) {
+  switch (pci->class_code)
+  {
   case 0x01:
     dev->device_class = CLASS_MASS_STORAGE;
     break;
@@ -114,19 +121,22 @@ static void pci_inspect_device(const struct pci_device_info *pci, void *ctx) {
   device_set_name(dev, "pci-device");
 }
 
-static void acpi_copy(char *dst, uint32_t cap, const char *src) {
+static void acpi_copy(char *dst, uint32_t cap, const char *src)
+{
   uint32_t i = 0;
   if (!dst || !cap)
     return;
   if (src)
-    while (src[i] && i + 1 < cap) {
+    while (src[i] && i + 1 < cap)
+    {
       dst[i] = src[i];
       i++;
     }
   dst[i] = '\0';
 }
 
-static enum device_class acpi_class(const struct acpi_namespace_device *src) {
+static enum device_class acpi_class(const struct acpi_namespace_device *src)
+{
   if (src->has_i2c && strcmp(src->hid, "PNP0C50") == 0)
     return CLASS_INPUT;
   if (src->type == ACPI_NAMESPACE_THERMAL_ZONE ||
@@ -142,7 +152,8 @@ static enum device_class acpi_class(const struct acpi_namespace_device *src) {
 }
 
 static bool acpi_namespace_add(const struct acpi_namespace_device *src,
-                               void *ctx) {
+                               void *ctx)
+{
   (void)ctx;
   bool is_i2c_hid = src->has_i2c && strcmp(src->hid, "PNP0C50") == 0;
   struct device_info *dev =
@@ -156,7 +167,8 @@ static bool acpi_namespace_add(const struct acpi_namespace_device *src,
   dev->acpi.has_ec = strcmp(src->hid, "PNP0C09") == 0;
   acpi_copy(dev->acpi.hid, sizeof(dev->acpi.hid), src->hid);
   acpi_copy(dev->acpi.uid, sizeof(dev->acpi.uid), src->uid);
-  if (src->has_i2c) {
+  if (src->has_i2c)
+  {
     dev->i2c.address = src->i2c_address;
     dev->i2c.speed_hz = src->i2c_speed_hz;
     acpi_copy(dev->i2c.controller, sizeof(dev->i2c.controller),
@@ -178,28 +190,32 @@ static bool acpi_namespace_add(const struct acpi_namespace_device *src,
 }
 
 static void acpi_visitor_noop(const char *sig, void *table, uint32_t len,
-                              void *ctx) {
+                              void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 static void acpi_visitor_pci_bridge(const char *sig, void *table, uint32_t len,
-                                    void *ctx) {
+                                    void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 static void acpi_visitor_sensor(const char *sig, void *table, uint32_t len,
-                                void *ctx) {
+                                void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 static void acpi_visitor_network(const char *sig, void *table, uint32_t len,
-                                 void *ctx) {
+                                 void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
@@ -207,35 +223,40 @@ static void acpi_visitor_network(const char *sig, void *table, uint32_t len,
 }
 
 static void acpi_visitor_storage(const char *sig, void *table, uint32_t len,
-                                 void *ctx) {
+                                 void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 static void acpi_visitor_usb(const char *sig, void *table, uint32_t len,
-                             void *ctx) {
+                             void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 static void acpi_visitor_display(const char *sig, void *table, uint32_t len,
-                                 void *ctx) {
+                                 void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 static void acpi_visitor_audio(const char *sig, void *table, uint32_t len,
-                               void *ctx) {
+                               void *ctx)
+{
   (void)sig;
   (void)table;
   (void)len;
   (void)ctx;
 }
 
-static void acpi_isa_enumerate(void) {
+static void acpi_isa_enumerate(void)
+{
   if (!acpi_is_ready())
     return;
   struct acpi_madt_info madt_info;
@@ -244,7 +265,8 @@ static void acpi_isa_enumerate(void) {
   if (madt_info.ioapic_count == 0)
     return;
   for (uint32_t i = 0; i < 16 && g_device_count < DEVICE_MANAGER_MAX_DEVICES;
-       i++) {
+       i++)
+  {
     struct device_info *dev = device_add(DEVICE_TYPE_IRQ);
     if (!dev)
       break;
@@ -254,7 +276,8 @@ static void acpi_isa_enumerate(void) {
   }
 }
 
-static void acpi_madt_devices(void) {
+static void acpi_madt_devices(void)
+{
   if (!acpi_is_ready())
     return;
   struct acpi_madt_info madt_info;
@@ -264,7 +287,8 @@ static void acpi_madt_devices(void) {
     return;
   for (uint32_t i = 0;
        i < madt_info.total_cpus && g_device_count < DEVICE_MANAGER_MAX_DEVICES;
-       i++) {
+       i++)
+  {
     struct device_info *dev = device_add(DEVICE_TYPE_IRQ);
     if (!dev)
       break;
@@ -275,7 +299,8 @@ static void acpi_madt_devices(void) {
   }
 }
 
-static void acpi_ec_devices(void) {
+static void acpi_ec_devices(void)
+{
   if (!acpi_is_ready() || !acpi_has_ec())
     return;
   struct device_info *dev = device_add(DEVICE_TYPE_ACPI);
@@ -283,7 +308,8 @@ static void acpi_ec_devices(void) {
     return;
   const char *hid = "PNP0C09";
   size_t i = 0;
-  while (hid[i] && i < ACPI_HID_MAX_LEN - 1) {
+  while (hid[i] && i < ACPI_HID_MAX_LEN - 1)
+  {
     dev->acpi.hid[i] = hid[i];
     i++;
   }
@@ -293,21 +319,26 @@ static void acpi_ec_devices(void) {
   g_acpi_count++;
 }
 
-static void acpi_battery_device(void) {
+static void acpi_battery_device(void)
+{
   if (!acpi_is_ready() || !acpi_has_battery())
     return;
   struct device_info *dev = device_add(DEVICE_TYPE_ACPI);
   if (!dev)
     return;
   const char *name = acpi_battery_name();
-  if (name && name[0]) {
+  if (name && name[0])
+  {
     size_t i = 0;
-    while (name[i] && i < ACPI_HID_MAX_LEN - 1) {
+    while (name[i] && i < ACPI_HID_MAX_LEN - 1)
+    {
       dev->acpi.hid[i] = name[i];
       i++;
     }
     dev->acpi.hid[i] = '\0';
-  } else {
+  }
+  else
+  {
     strncpy(dev->acpi.hid, "BAT0", ACPI_HID_MAX_LEN);
   }
   dev->irq_count = 0;
@@ -315,11 +346,13 @@ static void acpi_battery_device(void) {
   g_acpi_count++;
 }
 
-static void acpi_gpe_devices(void) {
+static void acpi_gpe_devices(void)
+{
   if (!acpi_is_ready())
     return;
   for (uint8_t i = 0; i < 2 && g_device_count < DEVICE_MANAGER_MAX_DEVICES;
-       i++) {
+       i++)
+  {
     struct device_info *dev = device_add(DEVICE_TYPE_IRQ);
     if (!dev)
       break;
@@ -330,19 +363,23 @@ static void acpi_gpe_devices(void) {
   }
 }
 
-static void acpi_uart_devices(void) {
+static void acpi_uart_devices(void)
+{
   if (!acpi_is_ready())
     return;
   const char *signatures[] = {"HWS3", "HWS4", "HWS5"};
   for (size_t s = 0; s < 3 && g_device_count < DEVICE_MANAGER_MAX_DEVICES;
-       s++) {
+       s++)
+  {
     void *tbl = acpi_find_table(signatures[s]);
-    if (tbl) {
+    if (tbl)
+    {
       struct device_info *dev = device_add(DEVICE_TYPE_UART);
       if (!dev)
         break;
       size_t i = 0;
-      while (signatures[s][i] && i < ACPI_HID_MAX_LEN - 1) {
+      while (signatures[s][i] && i < ACPI_HID_MAX_LEN - 1)
+      {
         dev->acpi.hid[i] = signatures[s][i];
         i++;
       }
@@ -352,14 +389,16 @@ static void acpi_uart_devices(void) {
   }
 }
 
-static void acpi_pci_bridge_devices(void) {
+static void acpi_pci_bridge_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("PNP0A03", acpi_visitor_pci_bridge, NULL);
   acpi_for_each_table("PNP0A05", acpi_visitor_pci_bridge, NULL);
 }
 
-static void acpi_power_devices(void) {
+static void acpi_power_devices(void)
+{
   if (!acpi_is_ready())
     return;
   struct device_info *dev = device_add(DEVICE_TYPE_ACPI);
@@ -370,27 +409,31 @@ static void acpi_power_devices(void) {
   g_acpi_count++;
 }
 
-static void acpi_sensor_devices(void) {
+static void acpi_sensor_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("THDM", acpi_visitor_sensor, NULL);
   acpi_for_each_table("THDT", acpi_visitor_sensor, NULL);
 }
 
-static void acpi_network_devices(void) {
+static void acpi_network_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("IBM", acpi_visitor_network, NULL);
 }
 
-static void acpi_storage_devices(void) {
+static void acpi_storage_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("ATA6", acpi_visitor_storage, NULL);
   acpi_for_each_table("ATAP", acpi_visitor_storage, NULL);
 }
 
-static void acpi_usb_devices(void) {
+static void acpi_usb_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("USB", acpi_visitor_usb, NULL);
@@ -398,26 +441,30 @@ static void acpi_usb_devices(void) {
   acpi_for_each_table("XHCI", acpi_visitor_usb, NULL);
 }
 
-static void acpi_display_devices(void) {
+static void acpi_display_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("PCIC", acpi_visitor_display, NULL);
   acpi_for_each_table("GFX0", acpi_visitor_display, NULL);
 }
 
-static void acpi_audio_devices(void) {
+static void acpi_audio_devices(void)
+{
   if (!acpi_is_ready())
     return;
   acpi_for_each_table("HDAS", acpi_visitor_audio, NULL);
   acpi_for_each_table("AZAL", acpi_visitor_audio, NULL);
 }
 
-static void devman_enumerate_devices(void) {
+static void devman_enumerate_devices(void)
+{
   klog(KLOG_INFO, "devman: enumerating PCI devices...");
   pci_enumerate(pci_inspect_device, NULL);
   klogf(KLOG_OK, "devman: found %u PCI devices", g_pci_count);
 
-  if (acpi_is_ready()) {
+  if (acpi_is_ready())
+  {
     klog(KLOG_INFO, "devman: enumerating ACPI devices...");
     if (!acpi_for_each_namespace_device(acpi_namespace_add, NULL))
       klog(KLOG_WARN, "devman: ACPI AML namespace unavailable");
@@ -429,7 +476,8 @@ static void devman_enumerate_devices(void) {
   g_enumerated = true;
 }
 
-void devman_init(void) {
+void devman_init(void)
+{
   memset(g_devices, 0, sizeof(g_devices));
   g_device_count = 0;
   g_pci_count = 0;
@@ -442,19 +490,23 @@ void devman_init(void) {
   klog(KLOG_INFO, "devman: initialized");
 }
 
-void devman_enumerate(void) {
-  if (!g_enumerated) {
+void devman_enumerate(void)
+{
+  if (!g_enumerated)
+  {
     devman_enumerate_devices();
   }
 }
 
-uint32_t devman_get_device_count(void) {
+uint32_t devman_get_device_count(void)
+{
   if (!g_enumerated)
     devman_enumerate();
   return g_device_count;
 }
 
-const struct device_info *devman_get_device(uint32_t index) {
+const struct device_info *devman_get_device(uint32_t index)
+{
   if (!g_enumerated)
     devman_enumerate();
   if (index >= g_device_count)
@@ -462,13 +514,15 @@ const struct device_info *devman_get_device(uint32_t index) {
   return &g_devices[index];
 }
 
-bool devman_for_each(device_visitor_t visitor, void *ctx) {
+bool devman_for_each(device_visitor_t visitor, void *ctx)
+{
   if (!g_enumerated)
     devman_enumerate();
   if (!visitor)
     return false;
   bool found = false;
-  for (uint32_t i = 0; i < g_device_count; i++) {
+  for (uint32_t i = 0; i < g_device_count; i++)
+  {
     if (visitor(&g_devices[i], ctx))
       found = true;
   }
@@ -476,10 +530,12 @@ bool devman_for_each(device_visitor_t visitor, void *ctx) {
 }
 
 const struct device_info *devman_find_pci(uint16_t vendor_id,
-                                          uint16_t device_id) {
+                                          uint16_t device_id)
+{
   if (!g_enumerated)
     devman_enumerate();
-  for (uint32_t i = 0; i < g_device_count; i++) {
+  for (uint32_t i = 0; i < g_device_count; i++)
+  {
     if (g_devices[i].type == DEVICE_TYPE_PCI &&
         g_devices[i].pci.vendor_id == vendor_id &&
         g_devices[i].pci.device_id == device_id)
@@ -489,10 +545,12 @@ const struct device_info *devman_find_pci(uint16_t vendor_id,
 }
 
 const struct device_info *devman_find_by_class(enum device_class cls,
-                                               uint8_t subclass) {
+                                               uint8_t subclass)
+{
   if (!g_enumerated)
     devman_enumerate();
-  for (uint32_t i = 0; i < g_device_count; i++) {
+  for (uint32_t i = 0; i < g_device_count; i++)
+  {
     if (g_devices[i].device_class == cls &&
         g_devices[i].pci.subclass == subclass)
       return &g_devices[i];
@@ -500,10 +558,12 @@ const struct device_info *devman_find_by_class(enum device_class cls,
   return NULL;
 }
 
-const struct device_info *devman_find_by_acpi_hid(const char *hid) {
+const struct device_info *devman_find_by_acpi_hid(const char *hid)
+{
   if (!g_enumerated || !hid)
     return NULL;
-  for (uint32_t i = 0; i < g_device_count; i++) {
+  for (uint32_t i = 0; i < g_device_count; i++)
+  {
     if (g_devices[i].type == DEVICE_TYPE_ACPI &&
         strcmp(g_devices[i].acpi.hid, hid) == 0)
       return &g_devices[i];
@@ -511,7 +571,8 @@ const struct device_info *devman_find_by_acpi_hid(const char *hid) {
   return NULL;
 }
 
-int devman_register_driver(struct device_driver *driver) {
+int devman_register_driver(struct device_driver *driver)
+{
   if (!driver)
     return -1;
   driver->next = g_drivers;
@@ -521,7 +582,8 @@ int devman_register_driver(struct device_driver *driver) {
 }
 
 static bool driver_match_device(struct device_driver *driver,
-                                const struct device_info *dev) {
+                                const struct device_info *dev)
+{
   if (!driver || !dev)
     return false;
   if (driver->type != DEVICE_TYPE_UNKNOWN && driver->type != dev->type)
@@ -534,19 +596,25 @@ static bool driver_match_device(struct device_driver *driver,
   return driver->type == dev->type && driver->type != DEVICE_TYPE_UNKNOWN;
 }
 
-void devman_driver_probe_all(void) {
+void devman_driver_probe_all(void)
+{
   if (!g_enumerated)
     devman_enumerate();
   struct device_driver *drv = g_drivers;
-  while (drv) {
+  while (drv)
+  {
     int probed = 0;
-    for (uint32_t i = 0; i < g_device_count; i++) {
+    for (uint32_t i = 0; i < g_device_count; i++)
+    {
       if (g_devices[i].driver_bound)
         continue;
-      if (driver_match_device(drv, &g_devices[i])) {
-        if (drv->probe) {
+      if (driver_match_device(drv, &g_devices[i]))
+      {
+        if (drv->probe)
+        {
           int rc = drv->probe(&g_devices[i]);
-          if (rc == 0) {
+          if (rc == 0)
+          {
             g_devices[i].driver_bound = true;
             probed++;
             klogf(KLOG_DEBUG, "devman: driver '%s' bound to device %u",
@@ -563,7 +631,8 @@ void devman_driver_probe_all(void) {
 }
 
 static bool match_pci_table(const struct device_info *dev,
-                            const struct devman_pci_id *ids, uint32_t count) {
+                            const struct devman_pci_id *ids, uint32_t count)
+{
   if (!dev || dev->type != DEVICE_TYPE_PCI)
     return false;
   return devman_pci_match_any(dev->pci.vendor_id, dev->pci.device_id,
@@ -571,70 +640,81 @@ static bool match_pci_table(const struct device_info *dev,
                               dev->pci.programming_interface, ids, count);
 }
 
-static bool match_e1000(const struct device_info *dev, void *ctx) {
+static bool match_e1000(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_E1000_82540EM,
                          sizeof(DEVMAN_ID_E1000_82540EM) /
                              sizeof(DEVMAN_ID_E1000_82540EM[0]));
 }
 
-static bool match_e1000_gc(const struct device_info *dev, void *ctx) {
+static bool match_e1000_gc(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_E1000_82543GC,
                          sizeof(DEVMAN_ID_E1000_82543GC) /
                              sizeof(DEVMAN_ID_E1000_82543GC[0]));
 }
 
-static bool match_pcnet(const struct device_info *dev, void *ctx) {
+static bool match_pcnet(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_PCNET,
                          sizeof(DEVMAN_ID_PCNET) / sizeof(DEVMAN_ID_PCNET[0]));
 }
 
-static bool match_ar9285(const struct device_info *dev, void *ctx) {
+static bool match_ar9285(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_AR9285,
                          sizeof(DEVMAN_ID_AR9285) /
                              sizeof(DEVMAN_ID_AR9285[0]));
 }
 
-static bool match_ahci(const struct device_info *dev, void *ctx) {
+static bool match_ahci(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_AHCI,
                          sizeof(DEVMAN_ID_AHCI) / sizeof(DEVMAN_ID_AHCI[0]));
 }
 
-static bool match_nvme(const struct device_info *dev, void *ctx) {
+static bool match_nvme(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_NVME,
                          sizeof(DEVMAN_ID_NVME) / sizeof(DEVMAN_ID_NVME[0]));
 }
 
-static bool match_xhci(const struct device_info *dev, void *ctx) {
+static bool match_xhci(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_XHCI,
                          sizeof(DEVMAN_ID_XHCI) / sizeof(DEVMAN_ID_XHCI[0]));
 }
 
-static bool match_ehci(const struct device_info *dev, void *ctx) {
+static bool match_ehci(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_EHCI,
                          sizeof(DEVMAN_ID_EHCI) / sizeof(DEVMAN_ID_EHCI[0]));
 }
 
-static bool match_hda(const struct device_info *dev, void *ctx) {
+static bool match_hda(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_HDA,
                          sizeof(DEVMAN_ID_HDA) / sizeof(DEVMAN_ID_HDA[0]));
 }
 
-static bool match_svga(const struct device_info *dev, void *ctx) {
+static bool match_svga(const struct device_info *dev, void *ctx)
+{
   (void)ctx;
   return match_pci_table(dev, DEVMAN_ID_VMWARE_SVGA,
                          sizeof(DEVMAN_ID_VMWARE_SVGA) / sizeof(DEVMAN_ID_VMWARE_SVGA[0]));
 }
 
-static int devman_claim_probe(const struct device_info *dev) {
+static int devman_claim_probe(const struct device_info *dev)
+{
   (void)dev;
   return 0;
 }
@@ -769,7 +849,8 @@ static struct device_driver g_drv_svga = {
     NULL,
 };
 
-void devman_register_builtin_drivers(void) {
+void devman_register_builtin_drivers(void)
+{
   if (g_builtin_registered)
     return;
   g_builtin_registered = true;
@@ -786,7 +867,8 @@ void devman_register_builtin_drivers(void) {
   klog(KLOG_INFO, "devman: builtin drivers registered");
 }
 
-uint32_t devman_bound_count(void) {
+uint32_t devman_bound_count(void)
+{
   uint32_t bound = 0;
   for (uint32_t i = 0; i < g_device_count; i++)
     if (g_devices[i].driver_bound)
@@ -794,12 +876,14 @@ uint32_t devman_bound_count(void) {
   return bound;
 }
 
-uint32_t devman_unbound_count(void) {
+uint32_t devman_unbound_count(void)
+{
   uint32_t bound = devman_bound_count();
   return g_device_count >= bound ? g_device_count - bound : 0;
 }
 
-static bool devman_load_so(struct device_driver *drv, const char *path) {
+static bool devman_load_so(struct device_driver *drv, const char *path)
+{
   const void *data = 0;
   uint64_t size = 0;
   uint64_t phys = 0;
@@ -807,10 +891,13 @@ static bool devman_load_so(struct device_driver *drv, const char *path) {
   bool owned = false;
   const void *ram = 0;
   uint32_t ram_size = 0;
-  if (initramfs_find(path, &ram, &ram_size)) {
+  if (initramfs_find(path, &ram, &ram_size))
+  {
     data = ram;
     size = ram_size;
-  } else {
+  }
+  else
+  {
     int32_t fd = vfs_open(path);
     if (fd < 0)
       return false;
@@ -818,32 +905,37 @@ static bool devman_load_so(struct device_driver *drv, const char *path) {
     uint64_t blob = 0;
     if (vfs_stat(path, &st) >= 0)
       blob = st.size;
-    if (!blob) {
+    if (!blob)
+    {
       vfs_close(fd);
       return false;
     }
     pages = (blob + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE;
     phys = pmm_allocate_contiguous(pages);
-    if (!phys) {
+    if (!phys)
+    {
       vfs_close(fd);
       return false;
     }
     uint8_t *buf = (uint8_t *)pmm_physical_to_virtual(phys);
     uint64_t done = 0;
     bool bad = false;
-    while (done < blob) {
+    while (done < blob)
+    {
       uint64_t left = blob - done;
       uint32_t want =
           left > DEVMAN_SO_CHUNK ? DEVMAN_SO_CHUNK : (uint32_t)left;
       int32_t got = vfs_read(fd, buf + done, want);
-      if (got <= 0) {
+      if (got <= 0)
+      {
         bad = true;
         break;
       }
       done += (uint64_t)got;
     }
     vfs_close(fd);
-    if (bad || done != blob) {
+    if (bad || done != blob)
+    {
       pmm_free_contiguous(phys, pages);
       return false;
     }
@@ -852,11 +944,14 @@ static bool devman_load_so(struct device_driver *drv, const char *path) {
     owned = true;
   }
   bool ok = false;
-  if (kmod_syms_ready()) {
+  if (kmod_syms_ready())
+  {
     ok = kmod_load_so(drv->name, data, size) != 0;
     if (!ok)
       klogf(KLOG_WARN, "devman: .so probe failed for '%s'", path);
-  } else {
+  }
+  else
+  {
     klogf(KLOG_DEBUG, "devman: ksyms not ready, skip '%s'", path);
   }
   if (owned)
@@ -865,7 +960,8 @@ static bool devman_load_so(struct device_driver *drv, const char *path) {
 }
 
 static char *devman_so_path(const char *elf, const char *directory,
-                            uint64_t *phys_out, uint64_t *pages) {
+                            uint64_t *phys_out, uint64_t *pages)
+{
   size_t len = strlen(elf);
   if (len < 5 || strcmp(elf + len - 4, ".elf") != 0)
     return 0;
@@ -890,11 +986,13 @@ static char *devman_so_path(const char *elf, const char *directory,
   return out;
 }
 
-static bool devman_probe_so(struct device_driver *drv) {
+static bool devman_probe_so(struct device_driver *drv)
+{
   if (!drv->module_path)
     return false;
   for (uint32_t d = 0;
-       d < sizeof(devman_module_dirs) / sizeof(devman_module_dirs[0]); d++) {
+       d < sizeof(devman_module_dirs) / sizeof(devman_module_dirs[0]); d++)
+  {
     uint64_t path_phys = 0, path_pages = 0;
     char *path = devman_so_path(drv->module_path, devman_module_dirs[d],
                                 &path_phys, &path_pages);
@@ -908,7 +1006,8 @@ static bool devman_probe_so(struct device_driver *drv) {
   return false;
 }
 
-bool devman_load_module(const char *name, const char *elf_path) {
+bool devman_load_module(const char *name, const char *elf_path)
+{
   struct device_driver driver;
   memset(&driver, 0, sizeof(driver));
   driver.name = name;
@@ -916,14 +1015,17 @@ bool devman_load_module(const char *name, const char *elf_path) {
   return devman_probe_so(&driver);
 }
 
-void devman_autoload(void) {
+void devman_autoload(void)
+{
   if (!g_enumerated)
     devman_enumerate();
   devman_register_builtin_drivers();
   devman_driver_probe_all();
   struct device_driver *drv = g_drivers;
-  while (drv) {
-    if (drv->module_path) {
+  while (drv)
+  {
+    if (drv->module_path)
+    {
       const void *addr = 0;
       uint64_t size = 0;
       if (boot_get_module(drv->module_path, &addr, &size))
@@ -943,17 +1045,20 @@ void devman_autoload(void) {
 
 bool devman_is_ready(void) { return g_enumerated || g_device_count > 0; }
 
-void devman_dump(void) {
+void devman_dump(void)
+{
   if (!g_enumerated)
     devman_enumerate();
   klogf(KLOG_INFO, "devman: device registry dump (%u devices)", g_device_count);
-  for (uint32_t i = 0; i < g_device_count; i++) {
+  for (uint32_t i = 0; i < g_device_count; i++)
+  {
     const struct device_info *d = &g_devices[i];
     const char *tname = devman_device_type_name(d->type);
     klogf(KLOG_INFO,
           "devman: [%u] type=%s class=%d name='%s' enabled=%d bound=%d", i,
           tname, d->device_class, d->name, d->enabled, d->driver_bound);
-    if (d->type == DEVICE_TYPE_PCI) {
+    if (d->type == DEVICE_TYPE_PCI)
+    {
       klogf(KLOG_DEBUG,
             "  PCI: %04x:%04x bus=%u slot=%u func=%u class=%02x:%02x:%02x "
             "rev=%02x",
@@ -962,24 +1067,30 @@ void devman_dump(void) {
             d->pci.programming_interface, d->pci.revision);
     }
     if ((d->type == DEVICE_TYPE_ACPI || d->type == DEVICE_TYPE_I2C) &&
-        d->acpi.hid[0]) {
+        d->acpi.hid[0])
+    {
       klogf(KLOG_DEBUG, "  ACPI: HID='%s'", d->acpi.hid);
     }
-    if (d->type == DEVICE_TYPE_I2C) {
+    if (d->type == DEVICE_TYPE_I2C)
+    {
       klogf(KLOG_DEBUG, "  I2C: addr=0x%x speed=%u controller='%s'",
             d->i2c.address, d->i2c.speed_hz, d->i2c.controller);
     }
-    if (d->irq_count > 0) {
+    if (d->irq_count > 0)
+    {
       klogf(KLOG_DEBUG, "  IRQ: count=%u lines=", d->irq_count);
-      for (uint32_t j = 0; j < d->irq_count && j < 4; j++) {
+      for (uint32_t j = 0; j < d->irq_count && j < 4; j++)
+      {
         klogf(KLOG_DEBUG, " %u", d->irq_lines[j]);
       }
     }
   }
 }
 
-const char *devman_device_type_name(enum device_type type) {
-  switch (type) {
+const char *devman_device_type_name(enum device_type type)
+{
+  switch (type)
+  {
   case DEVICE_TYPE_PCI:
     return "PCI";
   case DEVICE_TYPE_ACPI:
@@ -999,8 +1110,10 @@ const char *devman_device_type_name(enum device_type type) {
   }
 }
 
-const char *devman_device_class_name(enum device_class cls) {
-  switch (cls) {
+const char *devman_device_class_name(enum device_class cls)
+{
+  switch (cls)
+  {
   case CLASS_MASS_STORAGE:
     return "mass_storage";
   case CLASS_NETWORK:
@@ -1028,13 +1141,15 @@ const char *devman_device_class_name(enum device_class cls) {
   }
 }
 
-uint32_t devman_get_pci_device_count(void) {
+uint32_t devman_get_pci_device_count(void)
+{
   if (!g_enumerated)
     devman_enumerate();
   return g_pci_count;
 }
 
-uint32_t devman_get_acpi_device_count(void) {
+uint32_t devman_get_acpi_device_count(void)
+{
   if (!g_enumerated)
     devman_enumerate();
   return g_acpi_count;

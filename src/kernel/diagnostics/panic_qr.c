@@ -18,30 +18,36 @@ static char pqr_body[PQR_BODY_MAX];
 static uint8_t pqr_cells[QR_MAX_DIM * QR_MAX_DIM];
 static int pqr_pos;
 
-static void pqr_reset(void) {
+static void pqr_reset(void)
+{
   pqr_pos = 0;
 }
 
-static void pqr_c(char *dst, int cap, char c) {
-  if (pqr_pos + 1 < cap) {
+static void pqr_c(char *dst, int cap, char c)
+{
+  if (pqr_pos + 1 < cap)
+  {
     dst[pqr_pos++] = c;
     dst[pqr_pos] = 0;
   }
 }
 
-static void pqr_s(char *dst, int cap, const char *s) {
+static void pqr_s(char *dst, int cap, const char *s)
+{
   if (!s)
     s = "?";
   while (*s)
     pqr_c(dst, cap, *s++);
 }
 
-static void pqr_u(char *dst, int cap, unsigned int v) {
+static void pqr_u(char *dst, int cap, unsigned int v)
+{
   char tmp[12];
   int n = 0;
   if (!v)
     tmp[n++] = '0';
-  while (v > 0) {
+  while (v > 0)
+  {
     tmp[n++] = (char)('0' + v % 10);
     v /= 10;
   }
@@ -49,12 +55,14 @@ static void pqr_u(char *dst, int cap, unsigned int v) {
     pqr_c(dst, cap, tmp[--n]);
 }
 
-static void pqr_hex(char *dst, int cap, uint64_t v, int width) {
+static void pqr_hex(char *dst, int cap, uint64_t v, int width)
+{
   char tmp[16];
   int n = 0;
   if (!v)
     tmp[n++] = '0';
-  while (v > 0) {
+  while (v > 0)
+  {
     unsigned int d = (unsigned int)(v & 0xF);
     tmp[n++] = (char)(d < 10 ? '0' + d : 'a' + d - 10);
     v >>= 4;
@@ -65,7 +73,8 @@ static void pqr_hex(char *dst, int cap, uint64_t v, int width) {
     pqr_c(dst, cap, tmp[--n]);
 }
 
-static int pqr_unreserved(char c) {
+static int pqr_unreserved(char c)
+{
   if (c >= 'A' && c <= 'Z')
     return 1;
   if (c >= 'a' && c <= 'z')
@@ -75,16 +84,19 @@ static int pqr_unreserved(char c) {
   return c == '-' || c == '_' || c == '.' || c == '~';
 }
 
-static void pqr_hexbyte(char *dst, int cap, unsigned int v) {
+static void pqr_hexbyte(char *dst, int cap, unsigned int v)
+{
   const char *h = "0123456789ABCDEF";
   pqr_c(dst, cap, h[(v >> 4) & 0xF]);
   pqr_c(dst, cap, h[v & 0xF]);
 }
 
-static void pqr_enc(char *dst, int cap, const char *s) {
+static void pqr_enc(char *dst, int cap, const char *s)
+{
   if (!s)
     s = "?";
-  while (*s) {
+  while (*s)
+  {
     char c = *s++;
     if (pqr_unreserved(c))
       pqr_c(dst, cap, c);
@@ -92,22 +104,26 @@ static void pqr_enc(char *dst, int cap, const char *s) {
       pqr_s(dst, cap, "%20");
     else if (c == '\n')
       pqr_s(dst, cap, "%0A");
-    else {
+    else
+    {
       pqr_c(dst, cap, '%');
       pqr_hexbyte(dst, cap, (unsigned int)(uint8_t)c);
     }
   }
 }
 
-static int pqr_kernel_addr(uint64_t a) {
+static int pqr_kernel_addr(uint64_t a)
+{
   return a >= 0xffff800000000000ULL;
 }
 
-static void pqr_sym(char *dst, int cap, uint64_t addr) {
+static void pqr_sym(char *dst, int cap, uint64_t addr)
+{
   const char *name = 0;
   uint64_t off = 0;
   pqr_hex(dst, cap, addr, 16);
-  if (ksym_resolve(addr, &name, &off)) {
+  if (ksym_resolve(addr, &name, &off))
+  {
     pqr_c(dst, cap, ' ');
     pqr_s(dst, cap, name);
     pqr_c(dst, cap, '+');
@@ -118,7 +134,8 @@ static void pqr_sym(char *dst, int cap, uint64_t addr) {
 
 static void pqr_build_body(const char *reason, const char *file, int line,
                            const char *func, uint64_t rip, uint64_t rbp,
-                           int frames) {
+                           int frames)
+{
   pqr_pos = 0;
   pqr_body[0] = 0;
   pqr_s(pqr_body, PQR_BODY_MAX, "Build ");
@@ -143,11 +160,13 @@ static void pqr_build_body(const char *reason, const char *file, int line,
   pqr_c(pqr_body, PQR_BODY_MAX, '\n');
   int depth = 0;
   int printed = 0;
-  while (printed < frames && depth < 24 && pqr_kernel_addr(rbp)) {
+  while (printed < frames && depth < 24 && pqr_kernel_addr(rbp))
+  {
     volatile uint64_t *frame = (volatile uint64_t *)(uintptr_t)rbp;
     uint64_t next_rbp = frame[0];
     uint64_t ret_addr = frame[1];
-    if (ret_addr >= 0xffffffff80000000ULL) {
+    if (ret_addr >= 0xffffffff80000000ULL)
+    {
       pqr_c(pqr_body, PQR_BODY_MAX, '#');
       pqr_u(pqr_body, PQR_BODY_MAX, (unsigned int)printed);
       pqr_c(pqr_body, PQR_BODY_MAX, ' ');
@@ -170,9 +189,11 @@ static void pqr_build_body(const char *reason, const char *file, int line,
 }
 
 static int pqr_build_url(const char *reason, const char *file, int line,
-                         const char *func, uint64_t rip, uint64_t rbp) {
+                         const char *func, uint64_t rip, uint64_t rbp)
+{
   int frames = PQR_FRAMES_MAX;
-  while (frames >= 0) {
+  while (frames >= 0)
+  {
     pqr_build_body(reason, file, line, func, rip, rbp, frames);
     pqr_reset();
     pqr_url[0] = 0;
@@ -191,7 +212,8 @@ static int pqr_build_url(const char *reason, const char *file, int line,
   return 0;
 }
 
-static void pqr_draw(int size) {
+static void pqr_draw(int size)
+{
   uint32_t w = gop_get_width();
   uint32_t h = gop_get_height();
   int need = size + 8;
@@ -208,8 +230,10 @@ static void pqr_draw(int size) {
   if (y0 < 0)
     y0 = 0;
   gop_draw_rect((uint32_t)x0, (uint32_t)y0, (uint32_t)dim, (uint32_t)dim, 0xFFFFFF);
-  for (int y = 0; y < size; y++) {
-    for (int x = 0; x < size; x++) {
+  for (int y = 0; y < size; y++)
+  {
+    for (int x = 0; x < size; x++)
+    {
       if (!pqr_cells[y * QR_MAX_DIM + x])
         continue;
       gop_draw_rect((uint32_t)(x0 + (x + 4) * scale),
@@ -220,16 +244,19 @@ static void pqr_draw(int size) {
 }
 
 void panic_qr_show(const char *reason, const char *file, int line,
-                   const char *func, uint64_t rip, uint64_t rbp) {
+                   const char *func, uint64_t rip, uint64_t rbp)
+{
   if (!gop_is_available())
     return;
   int len = pqr_build_url(reason, file, line, func, rip, rbp);
-  if (len <= 0) {
+  if (len <= 0)
+  {
     klog(KLOG_ERROR, "QR: issue URL does not fit, skipped");
     return;
   }
   int size = 0;
-  if (!qr_encode((const uint8_t *)pqr_url, (unsigned int)len, pqr_cells, &size)) {
+  if (!qr_encode((const uint8_t *)pqr_url, (unsigned int)len, pqr_cells, &size))
+  {
     klog(KLOG_ERROR, "QR: encode failed, skipped");
     return;
   }

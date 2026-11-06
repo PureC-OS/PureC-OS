@@ -50,11 +50,11 @@
 
 | Драйвер | Описание | Исходники |
 |---------|----------|-----------|
-| Блочный слой | [block-device.md](block-device.md) | `src/drivers/storage/block_device.c` |
-| Перечисление контроллеров | [storage-probe.md](storage-probe.md) | `src/drivers/storage/storage_probe.c` |
-| AHCI (SATA) | [ahci.md](ahci.md) | `src/drivers/storage/ahci.c` |
-| ATA PIO (legacy IDE) | [ata-pio.md](ata-pio.md) | `src/drivers/storage/ata_pio.c` |
-| Загрузочные образы Limine | [limine-blobs.md](limine-blobs.md) | `src/drivers/storage/limine_*.h` |
+| Блочный слой | [block-device.md](block-device.md) | `src/io/storage/block_device.c` |
+| Перечисление контроллеров | [storage-probe.md](storage-probe.md) | `src/io/storage/storage_probe.c` |
+| AHCI (SATA) | [ahci.md](ahci.md) | `src/io/storage/ahci.c` |
+| ATA PIO (legacy IDE) | [ata-pio.md](ata-pio.md) | `src/io/storage/ata_pio.c` |
+| Загрузочные образы Limine | [limine-blobs.md](limine-blobs.md) | `src/io/storage/limine_*.h` |
 
 ## USB
 

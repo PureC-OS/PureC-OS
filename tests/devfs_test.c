@@ -1,5 +1,5 @@
-#include "../src/drivers/storage/block_device.h"
-#include "../src/drivers/storage/storage_types.h"
+#include "../src/io/storage/block_device.h"
+#include "../src/io/storage/storage_types.h"
 #include "../src/fs/vfs_backends.h"
 #include "../src/kernel/diagnostics/klog.h"
 #include <stdio.h>

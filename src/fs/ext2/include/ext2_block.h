@@ -5,6 +5,7 @@
 
 bool ext2_read_block(uint32_t block, void *out);
 bool ext2_write_block(uint32_t block, const void *in);
+bool ext2_write_blocks(uint32_t block, const void *in, uint32_t count);
 uint8_t *ext2_scratch_block(void);
 uint8_t *ext2_scratch_block2(void);
 uint8_t *ext2_scratch_block3(void);
@@ -16,6 +17,7 @@ void ext2_write_u16(uint8_t *p, uint16_t v);
 void ext2_write_u32(uint8_t *p, uint32_t v);
 struct ext2_volume *ext2_volume(void);
 uint32_t ext2_alloc_block(void);
+uint32_t ext2_alloc_block_run(uint32_t want, uint32_t *count);
 bool ext2_free_block(uint32_t block);
 uint32_t ext2_alloc_inode(void);
 bool ext2_free_inode(uint32_t ino);

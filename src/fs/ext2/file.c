@@ -139,6 +139,8 @@ int64_t ext2_file_seek(int32_t descriptor, int64_t offset, uint32_t whence)
     return (int64_t)h->position;
 }
 
+#define EXT2_WRITE_RUN_MAX 256U
+
 static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
 {
     struct ext2_volume *vol = ext2_volume();
@@ -166,22 +168,40 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
     uint32_t dind_used = 0;
     uint32_t cur_ind_blk = 0;
     bool fail = false;
+    uint32_t run_next = 0, run_left = 0;
     for (uint32_t i = 0; i < bcnt; i++)
     {
-        uint32_t nb = ext2_alloc_block();
-        if (!nb)
+        if (!run_left)
+        {
+            uint32_t want = bcnt - i;
+            if (want > EXT2_WRITE_RUN_MAX)
+                want = EXT2_WRITE_RUN_MAX;
+            run_next = ext2_alloc_block_run(want, &run_left);
+            if (!run_next)
+                run_left = 0;
+        }
+        if (!run_left)
         {
             klogf(KLOG_ERROR, "ext2: alloc block failed i=%u bcnt=%u size=%u", i, bcnt, size);
             fail = true;
             break;
         }
-        uint8_t *tmp = ext2_scratch_block();
-        memset(tmp, 0, bsz);
         uint32_t off = i * bsz;
         uint32_t left = size - off;
         uint32_t cur = left > bsz ? bsz : left;
-        memcpy(tmp, data + off, cur);
-        if (!ext2_write_block(nb, tmp))
+        uint32_t nb = run_next++;
+        run_left--;
+        bool wrote;
+        if (cur == bsz)
+            wrote = ext2_write_block(nb, data + off);
+        else
+        {
+            uint8_t *tmp = ext2_scratch_block();
+            memset(tmp, 0, bsz);
+            memcpy(tmp, data + off, cur);
+            wrote = ext2_write_block(nb, tmp);
+        }
+        if (!wrote)
         {
             ext2_free_block(nb);
             fail = true;
@@ -349,6 +369,11 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
                 break;
             }
         }
+    }
+    while (run_left)
+    {
+        ext2_free_block(run_next++);
+        run_left--;
     }
     if (fail)
     {

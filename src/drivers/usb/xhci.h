@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "../storage/storage_types.h"
+#include "../../io/storage/storage_types.h"
 
 enum xhci_probe_error
 {

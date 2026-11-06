@@ -14,7 +14,8 @@
 #define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
 #define PROCESS_CAP_NET_ADMIN (1U << 1)
 
-struct process_environment_entry {
+struct process_environment_entry
+{
   bool used;
   char name[PROCESS_ENVIRONMENT_NAME_CAPACITY];
   char value[PROCESS_ENVIRONMENT_VALUE_CAPACITY];
@@ -23,7 +24,8 @@ struct process_environment_entry {
 struct ipc_mbox;
 struct process_signals;
 
-enum process_state {
+enum process_state
+{
   PROCESS_FREE = 0,
   PROCESS_READY,
   PROCESS_RUNNING,
@@ -31,7 +33,8 @@ enum process_state {
   PROCESS_LOADING
 };
 
-struct process {
+struct process
+{
   uint32_t pid;
   uint32_t parent_pid;
   enum process_state state;
@@ -68,6 +71,7 @@ struct process {
   uint64_t sig_pending;
   uint64_t sig_blocked;
   struct process_signals *signals;
+  uint64_t mmap_cursor;
 };
 
 void process_init(void);
@@ -102,6 +106,12 @@ int32_t process_set_gid(uint32_t gid);
 bool process_has_capability(uint32_t capability);
 uint64_t process_current_address_space(void);
 uint64_t process_heap_grow(uint64_t size);
+int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
+                     uint64_t flags);
+int64_t process_munmap(uint64_t address, uint64_t length);
+int64_t process_mprotect(uint64_t address, uint64_t length, uint64_t prot);
+int64_t process_mremap(uint64_t address, uint64_t old_length,
+                       uint64_t new_length, uint64_t flags);
 void process_exit_current(int32_t status) __attribute__((noreturn));
 int32_t process_fd_install(int32_t kernel_descriptor);
 int32_t process_fd_resolve(int32_t descriptor);

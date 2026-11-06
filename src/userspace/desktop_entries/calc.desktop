@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Calc
 Builtin=calc
+Icon=/usr/share/icons/calc.icn
 IconColor=0xA6E3A1
 IconText=+
 Type=Application

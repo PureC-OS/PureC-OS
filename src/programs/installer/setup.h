@@ -1,7 +1,6 @@
 #pragma once
 
-#include "../../libc/include/purec.h"
-#include "../terminal/window.h"
+#include "../../kernel/syscall/syscall.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -15,9 +14,6 @@ struct install_settings {
     char user_password[SETUP_PASSWORD_MAX];
 };
 
-bool setup_collect(struct terminal_window *window,
-                   struct install_settings *settings);
-void setup_summary(const struct install_settings *settings);
 bool setup_build_request(const struct install_settings *settings,
                          struct install_account_request *request);
 void setup_wipe(struct install_settings *settings);

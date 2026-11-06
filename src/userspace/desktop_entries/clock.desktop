@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Clock
 Builtin=clock
+Icon=/usr/share/icons/clock.icn
 IconColor=0x89DCEB
 IconText=12
 Type=Application

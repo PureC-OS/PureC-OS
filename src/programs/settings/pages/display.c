@@ -33,12 +33,15 @@ static void commit(struct display_settings *display){
     g_last_apply_rc=display_apply_live(display);
     g_have_apply_rc=true;
     if(g_last_apply_rc==0){
+        struct pc_display_scale phys;
         struct pc_display_info info;
-        if(pc_display_get_info(&info) && info.available){
-            display->width=info.width;
-            display->height=info.height;
-            display->bpp=info.bpp;
+        if(pc_display_scale_info(&phys)){
+            display->width=phys.physical_width;
+            display->height=phys.physical_height;
+            display->scale=phys.scale_percent;
         }
+        if(pc_display_get_info(&info) && info.available)
+            display->bpp=info.bpp;
         int32_t saved=display_save(display);
         if(saved<0) g_last_apply_rc=saved;
     } else {
@@ -60,11 +63,13 @@ void display_page_draw(struct pg_window *window,
     char current[48];
     char *out=current;
     struct pc_display_info info;
-    if(pc_display_get_info(&info) && info.available){
+    struct pc_display_scale phys;
+    if(pc_display_get_info(&info) && info.available
+       && pc_display_scale_info(&phys)){
         out=append_text(out,"Current: ");
-        out=append_u32(out,info.width);
+        out=append_u32(out,phys.physical_width);
         out=append_text(out,"x");
-        out=append_u32(out,info.height);
+        out=append_u32(out,phys.physical_height);
         out=append_text(out,"x");
         out=append_u32(out,info.bpp);
     } else {
@@ -110,6 +115,42 @@ void display_page_draw(struct pg_window *window,
         commit(display);
     }
 
+    uint32_t scale_y=card_y+CARD_H+CARD_GAP;
+    pg_window_rect(window,(struct pg_rect){PAGE_LEFT,scale_y,width,CARD_H-30},
+                   0x2B2D40);
+    pg_window_text(window,PAGE_LEFT+18,scale_y+14,"Interface scale",
+                   window->theme.text);
+    char scale_line[64];
+    out=scale_line;
+    out=append_u32(out,display->scale ? display->scale : 100);
+    out=append_text(out,"%  (apps see ");
+    {
+        uint32_t sc=display->scale ? display->scale : 100;
+        out=append_u32(out,display->width*100U/sc);
+        out=append_text(out,"x");
+        out=append_u32(out,display->height*100U/sc);
+    }
+    out=append_text(out,")");
+    pg_window_text(window,PAGE_LEFT+18,scale_y+36,scale_line,
+                   window->theme.accent);
+    pg_window_text(window,PAGE_LEFT+18,scale_y+58,
+                   "Makes everything bigger: icons, text, windows",
+                   window->theme.muted_text);
+    bool smaller=pg_button(window,
+        (struct pg_rect){PAGE_LEFT+width-206,scale_y+CARD_H-30-38,92,28},
+        "Smaller",event);
+    bool bigger=pg_button(window,
+        (struct pg_rect){PAGE_LEFT+width-106,scale_y+CARD_H-30-38,92,28},
+        "Bigger",event);
+    if(smaller || bigger){
+        uint32_t count=display_scale_count();
+        uint32_t index=display_scale_index_of(display->scale);
+        if(bigger && index+1<count) index++;
+        if(smaller && index>0) index--;
+        display->scale=display_scale_at(index);
+        commit(display);
+    }
+
     char status[112];
     uint32_t status_color=window->theme.muted_text;
     if(!g_have_apply_rc){
@@ -139,5 +180,5 @@ void display_page_draw(struct pg_window *window,
         *out='\0';
         status_color=window->theme.danger;
     }
-    pg_window_text(window,PAGE_LEFT,card_y+CARD_H+10,status,status_color);
+    pg_window_text(window,PAGE_LEFT,scale_y+CARD_H-30+10,status,status_color);
 }

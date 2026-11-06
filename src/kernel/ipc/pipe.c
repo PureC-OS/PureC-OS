@@ -11,7 +11,8 @@
 #define PIPE_CAPACITY (PIPE_PAGES * 4096U)
 #define PIPE_WAITERS 8
 
-struct pipe {
+struct pipe
+{
   bool used;
   uint8_t *buffer;
   uint64_t phys;
@@ -26,19 +27,24 @@ struct pipe {
 static mutex_t pipe_mutex;
 static struct pipe pipes[PIPE_MAX];
 
-static void waiters_clear(int32_t *list, int32_t tid) {
+static void waiters_clear(int32_t *list, int32_t tid)
+{
   for (uint32_t i = 0; i < PIPE_WAITERS; i++)
     if (list[i] == tid)
       list[i] = 0;
 }
 
-static bool waiters_add(int32_t *list, int32_t tid) {
-  for (uint32_t i = 0; i < PIPE_WAITERS; i++) {
+static bool waiters_add(int32_t *list, int32_t tid)
+{
+  for (uint32_t i = 0; i < PIPE_WAITERS; i++)
+  {
     if (list[i] == tid)
       return true;
   }
-  for (uint32_t i = 0; i < PIPE_WAITERS; i++) {
-    if (!list[i]) {
+  for (uint32_t i = 0; i < PIPE_WAITERS; i++)
+  {
+    if (!list[i])
+    {
       list[i] = tid;
       return true;
     }
@@ -46,10 +52,13 @@ static bool waiters_add(int32_t *list, int32_t tid) {
   return false;
 }
 
-static uint32_t waiters_take(int32_t *list, int32_t *out) {
+static uint32_t waiters_take(int32_t *list, int32_t *out)
+{
   uint32_t n = 0;
-  for (uint32_t i = 0; i < PIPE_WAITERS; i++) {
-    if (list[i]) {
+  for (uint32_t i = 0; i < PIPE_WAITERS; i++)
+  {
+    if (list[i])
+    {
       out[n++] = list[i];
       list[i] = 0;
     }
@@ -57,24 +66,29 @@ static uint32_t waiters_take(int32_t *list, int32_t *out) {
   return n;
 }
 
-static void wake_all(const int32_t *tids, uint32_t count) {
+static void wake_all(const int32_t *tids, uint32_t count)
+{
   for (uint32_t i = 0; i < count; i++)
     scheduler_unblock(tids[i]);
 }
 
-static struct pipe *pipe_get(int32_t id) {
+static struct pipe *pipe_get(int32_t id)
+{
   if (id < 0 || id >= PIPE_MAX || !pipes[id].used)
     return 0;
   return &pipes[id];
 }
 
-int32_t pipe_create(int32_t *id) {
+int32_t pipe_create(int32_t *id)
+{
   mutex_lock(&pipe_mutex);
-  for (int32_t i = 0; i < PIPE_MAX; i++) {
+  for (int32_t i = 0; i < PIPE_MAX; i++)
+  {
     if (pipes[i].used)
       continue;
     uint64_t phys = pmm_allocate_contiguous(PIPE_PAGES);
-    if (!phys) {
+    if (!phys)
+    {
       mutex_unlock(&pipe_mutex);
       return -KERR_NOMEM;
     }
@@ -92,10 +106,12 @@ int32_t pipe_create(int32_t *id) {
   return -KERR_NFILE;
 }
 
-void pipe_ref(int32_t id, bool write_end) {
+void pipe_ref(int32_t id, bool write_end)
+{
   mutex_lock(&pipe_mutex);
   struct pipe *pipe = pipe_get(id);
-  if (pipe) {
+  if (pipe)
+  {
     if (write_end)
       pipe->writers++;
     else
@@ -104,20 +120,25 @@ void pipe_ref(int32_t id, bool write_end) {
   mutex_unlock(&pipe_mutex);
 }
 
-void pipe_release(int32_t id, bool write_end) {
+void pipe_release(int32_t id, bool write_end)
+{
   int32_t wake[PIPE_WAITERS * 2];
   uint32_t wake_count = 0;
   mutex_lock(&pipe_mutex);
   struct pipe *pipe = pipe_get(id);
-  if (pipe) {
+  if (pipe)
+  {
     if (write_end && pipe->writers)
       pipe->writers--;
     else if (!write_end && pipe->readers)
       pipe->readers--;
-    if (!pipe->readers && !pipe->writers) {
+    if (!pipe->readers && !pipe->writers)
+    {
       pmm_free_contiguous(pipe->phys, PIPE_PAGES);
       memset(pipe, 0, sizeof(*pipe));
-    } else {
+    }
+    else
+    {
       wake_count += waiters_take(pipe->read_waiters, wake + wake_count);
       wake_count += waiters_take(pipe->write_waiters, wake + wake_count);
     }
@@ -126,21 +147,25 @@ void pipe_release(int32_t id, bool write_end) {
   wake_all(wake, wake_count);
 }
 
-int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock) {
+int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock)
+{
   if (!count)
     return 0;
   int32_t self = scheduler_current_tid();
-  for (;;) {
+  for (;;)
+  {
     int32_t wake[PIPE_WAITERS];
     uint32_t wake_count = 0;
     mutex_lock(&pipe_mutex);
     struct pipe *pipe = pipe_get(id);
-    if (!pipe) {
+    if (!pipe)
+    {
       mutex_unlock(&pipe_mutex);
       return -KERR_BADF;
     }
     waiters_clear(pipe->read_waiters, self);
-    if (pipe->count) {
+    if (pipe->count)
+    {
       uint32_t amount = count < pipe->count ? count : pipe->count;
       uint8_t *out = (uint8_t *)buffer;
       for (uint32_t i = 0; i < amount; i++)
@@ -152,15 +177,18 @@ int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock) {
       wake_all(wake, wake_count);
       return (int32_t)amount;
     }
-    if (!pipe->writers) {
+    if (!pipe->writers)
+    {
       mutex_unlock(&pipe_mutex);
       return 0;
     }
-    if (nonblock) {
+    if (nonblock)
+    {
       mutex_unlock(&pipe_mutex);
       return -KERR_AGAIN;
     }
-    if (signal_pending_current()) {
+    if (signal_pending_current())
+    {
       mutex_unlock(&pipe_mutex);
       return -KERR_INTR;
     }
@@ -174,27 +202,32 @@ int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock) {
 }
 
 int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
-                   bool nonblock) {
+                   bool nonblock)
+{
   int32_t self = scheduler_current_tid();
   const uint8_t *in = (const uint8_t *)buffer;
   uint32_t written = 0;
-  while (written < count) {
+  while (written < count)
+  {
     int32_t wake[PIPE_WAITERS];
     uint32_t wake_count = 0;
     mutex_lock(&pipe_mutex);
     struct pipe *pipe = pipe_get(id);
-    if (!pipe) {
+    if (!pipe)
+    {
       mutex_unlock(&pipe_mutex);
       return written ? (int32_t)written : -KERR_BADF;
     }
     waiters_clear(pipe->write_waiters, self);
-    if (!pipe->readers) {
+    if (!pipe->readers)
+    {
       mutex_unlock(&pipe_mutex);
       signal_raise_current(SIGPIPE);
       return written ? (int32_t)written : -KERR_PIPE;
     }
     uint32_t space = PIPE_CAPACITY - pipe->count;
-    if (space) {
+    if (space)
+    {
       uint32_t amount = (count - written) < space ? (count - written) : space;
       for (uint32_t i = 0; i < amount; i++)
         pipe->buffer[(pipe->head + pipe->count + i) % PIPE_CAPACITY] =
@@ -206,11 +239,13 @@ int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
       wake_all(wake, wake_count);
       continue;
     }
-    if (nonblock) {
+    if (nonblock)
+    {
       mutex_unlock(&pipe_mutex);
       return written ? (int32_t)written : -KERR_AGAIN;
     }
-    if (signal_pending_current()) {
+    if (signal_pending_current())
+    {
       mutex_unlock(&pipe_mutex);
       return written ? (int32_t)written : -KERR_INTR;
     }
@@ -222,4 +257,31 @@ int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
       scheduler_sleep(1);
   }
   return (int32_t)written;
+}
+
+int32_t pipe_poll(int32_t id, bool write_end)
+{
+  int32_t revents = 0;
+  mutex_lock(&pipe_mutex);
+  struct pipe *pipe = pipe_get(id);
+  if (!pipe)
+  {
+    revents = KPOLLNVAL;
+  }
+  else if (write_end)
+  {
+    if (pipe->count < PIPE_CAPACITY)
+      revents |= KPOLLOUT;
+    if (!pipe->readers)
+      revents |= KPOLLERR;
+  }
+  else
+  {
+    if (pipe->count)
+      revents |= KPOLLIN;
+    if (!pipe->writers)
+      revents |= KPOLLHUP;
+  }
+  mutex_unlock(&pipe_mutex);
+  return revents;
 }

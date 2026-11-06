@@ -8,7 +8,8 @@
 #define DEVMAN_ANY_SUBCLASS 0xFFu
 #define DEVMAN_ANY_PROGIF 0xFFu
 
-struct devman_pci_id {
+struct devman_pci_id
+{
   uint16_t vendor_id;
   uint16_t device_id;
   uint8_t class_code;
@@ -19,7 +20,8 @@ struct devman_pci_id {
 static inline bool devman_pci_id_matches(uint16_t vendor_id, uint16_t device_id,
                                          uint8_t class_code, uint8_t subclass,
                                          uint8_t prog_if,
-                                         const struct devman_pci_id *id) {
+                                         const struct devman_pci_id *id)
+{
   if (!id)
     return false;
   if (id->vendor_id != DEVMAN_ANY_VENDOR && id->vendor_id != vendor_id)
@@ -39,10 +41,12 @@ static inline bool devman_pci_match_any(uint16_t vendor_id, uint16_t device_id,
                                         uint8_t class_code, uint8_t subclass,
                                         uint8_t prog_if,
                                         const struct devman_pci_id *ids,
-                                        uint32_t count) {
+                                        uint32_t count)
+{
   if (!ids)
     return false;
-  for (uint32_t i = 0; i < count; i++) {
+  for (uint32_t i = 0; i < count; i++)
+  {
     if (devman_pci_id_matches(vendor_id, device_id, class_code, subclass,
                               prog_if, &ids[i]))
       return true;

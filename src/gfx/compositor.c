@@ -5,10 +5,20 @@
 #include "../kernel/process/scheduler.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
+#include "../kernel/sync/spinlock.h"
+
+#ifdef PUREC_HOST_TEST
+#define comp_sti() ((void)0)
+#define comp_cli() ((void)0)
+#else
+#define comp_sti() __asm__ volatile("sti" ::: "memory")
+#define comp_cli() __asm__ volatile("cli" ::: "memory")
+#endif
 
 #define COMP_MAX_WINDOWS 32
 #define COMP_SHADOW 16
 #define COMP_CHUNK 1024
+#define COMP_BAND_ROWS 32
 #define COMP_MAX_PIXELS (16u * 1024u * 1024u)
 #define CURSOR_SPRITE_W 12
 #define CURSOR_SPRITE_H 17
@@ -27,8 +37,14 @@ struct comp_window {
   uint32_t *pixels;
   uint64_t phys;
   uint64_t pages;
+  uint32_t *back;
+  uint64_t back_phys;
+  uint64_t back_pages;
+  bool back_synced;
   uint32_t depth;
+  bool topmost;
   bool dirty;
+  bool margin_dirty;
   int32_t dx0;
   int32_t dy0;
   int32_t dx1;
@@ -50,6 +66,7 @@ static uint32_t line_buffer[COMP_CHUNK];
 static int32_t cursor_x = -1000;
 static int32_t cursor_y = -1000;
 static bool cursor_visible = true;
+static volatile uint32_t activity_flag;
 
 static const char *const cursor_sprite[CURSOR_SPRITE_H] = {
     "X           ", "XX          ", "XoX         ", "XooX        ",
@@ -62,7 +79,7 @@ static int64_t min64(int64_t a, int64_t b) { return a < b ? a : b; }
 static int64_t max64(int64_t a, int64_t b) { return a > b ? a : b; }
 
 static void comp_enter(struct comp_ctx *c) {
-  __asm__ volatile("pushfq; pop %0; cli" : "=r"(c->flags)::"memory");
+  c->flags = irq_save();
   c->guard = scheduler_preempt_disable();
   struct thread *thread = scheduler_current_thread();
   c->irqs =
@@ -70,17 +87,17 @@ static void comp_enter(struct comp_ctx *c) {
   while (__atomic_test_and_set(&comp_lock, __ATOMIC_ACQUIRE))
     __asm__ volatile("pause");
   if (c->irqs)
-    __asm__ volatile("sti" ::: "memory");
+    comp_sti();
 }
 
 static void comp_leave(struct comp_ctx *c) {
   if (c->irqs)
-    __asm__ volatile("cli" ::: "memory");
+    comp_cli();
   __atomic_clear(&comp_lock, __ATOMIC_RELEASE);
   if (c->guard)
     scheduler_preempt_enable();
   if (c->flags & (1ULL << 9))
-    __asm__ volatile("sti" ::: "memory");
+    comp_sti();
 }
 
 static struct comp_window *find_window(uint32_t pid) {
@@ -186,6 +203,8 @@ static void present_locked(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
       gop_front_write_row((uint32_t)cx, (uint32_t)y, line_buffer, n);
     }
   }
+  gop_front_notify((uint32_t)x0, (uint32_t)y0, (uint32_t)(x1 - x0),
+                   (uint32_t)(y1 - y0));
 }
 
 static void present_pair_locked(int64_t ax0, int64_t ay0, int64_t ax1,
@@ -201,13 +220,40 @@ static void present_pair_locked(int64_t ax0, int64_t ay0, int64_t ax1,
   present_locked(bx0, by0, bx1, by1);
 }
 
+static void present_banded(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
+  if (x0 >= x1 || y0 >= y1)
+    return;
+  for (int64_t y = y0; y < y1; y += COMP_BAND_ROWS) {
+    int64_t ye = min64(y + COMP_BAND_ROWS, y1);
+    struct comp_ctx c;
+    comp_enter(&c);
+    present_locked(x0, y, x1, ye);
+    comp_leave(&c);
+  }
+}
+
+static void present_pair_banded(int64_t ax0, int64_t ay0, int64_t ax1,
+                                int64_t ay1, int64_t bx0, int64_t by0,
+                                int64_t bx1, int64_t by1) {
+  bool overlap = ax0 < bx1 && bx0 < ax1 && ay0 < by1 && by0 < ay1;
+  if (overlap) {
+    present_banded(min64(ax0, bx0), min64(ay0, by0), max64(ax1, bx1),
+                   max64(ay1, by1));
+    return;
+  }
+  present_banded(ax0, ay0, ax1, ay1);
+  present_banded(bx0, by0, bx1, by1);
+}
+
 static void present_window_locked(const struct comp_window *w) {
+  __atomic_store_n(&activity_flag, 1, __ATOMIC_RELEASE);
   present_locked(w->x, w->y, (int64_t)w->x + visible_w(w),
                  (int64_t)w->y + visible_h(w));
 }
 
 static void mark_dirty(struct comp_window *w, int64_t x0, int64_t y0,
                        int64_t x1, int64_t y1) {
+  __atomic_store_n(&activity_flag, 1, __ATOMIC_RELEASE);
   if (!w->dirty) {
     w->dx0 = (int32_t)x0;
     w->dy0 = (int32_t)y0;
@@ -259,6 +305,37 @@ static void release_surface(struct comp_window *w) {
   w->pages = 0;
 }
 
+static void release_back(struct comp_window *w) {
+  if (w->back)
+    pmm_free_contiguous(w->back_phys, w->back_pages);
+  w->back = 0;
+  w->back_phys = 0;
+  w->back_pages = 0;
+  w->back_synced = false;
+}
+
+static bool alloc_back(struct comp_window *w) {
+  uint64_t count = (uint64_t)w->aw * w->ah;
+  if (!count || count > COMP_MAX_PIXELS)
+    return false;
+  uint64_t pages = (count * sizeof(uint32_t) + 4095ULL) / 4096ULL;
+  uint64_t phys = pmm_allocate_contiguous(pages);
+  if (!phys)
+    return false;
+  w->back = (uint32_t *)pmm_physical_to_virtual(phys);
+  w->back_phys = phys;
+  w->back_pages = pages;
+  w->back_synced = false;
+  return true;
+}
+
+static uint32_t *draw_buf(struct comp_window *w) {
+  if (w->depth && w->back)
+    return w->back;
+  w->back_synced = false;
+  return w->pixels;
+}
+
 bool compositor_window_create(uint32_t pid, uint32_t x, uint32_t y,
                               uint32_t width, uint32_t height) {
   if (!pid || !width || !height || !gop_has_backbuffer())
@@ -285,9 +362,26 @@ bool compositor_window_create(uint32_t pid, uint32_t x, uint32_t y,
   w->fh = height;
   w->depth = 0;
   w->dirty = false;
+  w->margin_dirty = false;
   zorder[zcount++] = w;
   comp_leave(&c);
   return true;
+}
+
+static void clear_outside_buf(const struct comp_window *w, uint32_t *buf) {
+  for (uint32_t row = 0; row < w->ah; row++) {
+    uint32_t *line = &buf[(uint64_t)row * w->aw];
+    if (row >= w->fh)
+      memset(line, 0, (uint64_t)w->aw * sizeof(uint32_t));
+    else if (w->fw < w->aw)
+      memset(line + w->fw, 0, (uint64_t)(w->aw - w->fw) * sizeof(uint32_t));
+  }
+}
+
+static void clear_outside_frame(struct comp_window *w) {
+  clear_outside_buf(w, w->pixels);
+  if (w->back)
+    clear_outside_buf(w, w->back);
 }
 
 bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
@@ -318,20 +412,32 @@ bool compositor_window_update(uint32_t pid, uint32_t x, uint32_t y,
              &w->pixels[(uint64_t)row * w->aw],
              (uint64_t)cols * sizeof(uint32_t));
     release_surface(w);
+    release_back(w);
     w->pixels = grown.pixels;
     w->phys = grown.phys;
     w->pages = grown.pages;
     w->aw = naw;
     w->ah = nah;
   }
+  bool resized = w->fw != width || w->fh != height;
+  int32_t move_dx = (int32_t)x - w->x;
+  int32_t move_dy = (int32_t)y - w->y;
+  if (resized || move_dx || move_dy)
+    w->margin_dirty = true;
   w->x = (int32_t)x;
   w->y = (int32_t)y;
   w->fw = width;
   w->fh = height;
-  present_pair_locked(ox0, oy0, ox1, oy1, w->x, w->y,
-                      (int64_t)w->x + visible_w(w),
-                      (int64_t)w->y + visible_h(w));
+  if (resized)
+    clear_outside_frame(w);
+  int64_t nx0 = w->x;
+  int64_t ny0 = w->y;
+  int64_t nx1 = nx0 + visible_w(w);
+  int64_t ny1 = ny0 + visible_h(w);
   comp_leave(&c);
+  present_pair_banded(ox0, oy0, ox1, oy1, nx0, ny0, nx1, ny1);
+  if (move_dx || move_dy)
+    gop_console_translate(pid, move_dx, move_dy);
   return true;
 }
 
@@ -353,30 +459,62 @@ void compositor_window_destroy(uint32_t pid) {
       zorder[out++] = zorder[i];
   zcount = out;
   release_surface(w);
+  release_back(w);
   memset(w, 0, sizeof(*w));
   present_locked(x0, y0, x1, y1);
   comp_leave(&c);
+}
+
+static void restack_locked(struct comp_window *w) {
+  uint32_t out = 0;
+  for (uint32_t i = 0; i < zcount; i++)
+    if (zorder[i] != w)
+      zorder[out++] = zorder[i];
+  uint32_t at = out;
+  if (!w->topmost) {
+    for (uint32_t i = 0; i < out; i++) {
+      if (zorder[i]->topmost) {
+        at = i;
+        break;
+      }
+    }
+  }
+  for (uint32_t i = out; i > at; i--)
+    zorder[i] = zorder[i - 1];
+  zorder[at] = w;
+  zcount = out + 1;
 }
 
 void compositor_window_raise(uint32_t pid) {
   struct comp_ctx c;
   comp_enter(&c);
   struct comp_window *w = find_window(pid);
-  if (!w || zcount == 0 || zorder[zcount - 1] == w) {
+  if (!w || zcount == 0) {
     comp_leave(&c);
     return;
   }
-  uint32_t out = 0;
-  for (uint32_t i = 0; i < zcount; i++)
-    if (zorder[i] != w)
-      zorder[out++] = zorder[i];
-  zorder[out++] = w;
-  zcount = out;
+  restack_locked(w);
   present_window_locked(w);
   comp_leave(&c);
 }
 
+void compositor_window_set_topmost(uint32_t pid, bool topmost) {
+  struct comp_ctx c;
+  comp_enter(&c);
+  struct comp_window *w = find_window(pid);
+  if (w && w->topmost != topmost) {
+    w->topmost = topmost;
+    restack_locked(w);
+    present_window_locked(w);
+  }
+  comp_leave(&c);
+}
+
 bool compositor_window_exists(uint32_t pid) { return find_window(pid) != 0; }
+
+bool compositor_take_activity(void) {
+  return __atomic_exchange_n(&activity_flag, 0, __ATOMIC_ACQ_REL) != 0;
+}
 
 bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy, uint32_t uw,
                           uint32_t uh, uint32_t color) {
@@ -405,9 +543,10 @@ bool compositor_draw_rect(uint32_t pid, uint32_t ux, uint32_t uy, uint32_t uw,
   int64_t iy1 = min64(y1, sy1);
   if (ix0 < ix1 && iy0 < iy1) {
     uint32_t value = 0xFF000000u | (color & 0x00FFFFFFu);
+    uint32_t *buf = draw_buf(w);
     for (int64_t row = iy0; row < iy1; row++) {
       uint32_t *line =
-          &w->pixels[(uint64_t)(row - sy0) * w->aw + (uint64_t)(ix0 - sx0)];
+          &buf[(uint64_t)(row - sy0) * w->aw + (uint64_t)(ix0 - sx0)];
       for (int64_t k = 0; k < ix1 - ix0; k++)
         line[k] = value;
     }
@@ -430,7 +569,7 @@ bool compositor_blit(uint32_t pid, int32_t x, int32_t y, uint32_t width,
   }
   struct blit_span span;
   if (blit_clip(x, y, width, height, w->x, w->y, w->aw, w->ah, &span)) {
-    blit_copy(&w->pixels[(uint64_t)span.dst_y * w->aw + span.dst_x], w->aw,
+    blit_copy(&draw_buf(w)[(uint64_t)span.dst_y * w->aw + span.dst_x], w->aw,
               &pixels[(uint64_t)span.src_y * stride + span.src_x], stride,
               span.width, span.height, (flags & BLIT_KEEP_ALPHA) != 0);
     int64_t x0 = (int64_t)w->x + span.dst_x;
@@ -469,9 +608,10 @@ bool compositor_draw_line(uint32_t pid, uint32_t ux0, uint32_t uy0,
   int64_t stepy = y0 < y1 ? 1 : -1;
   int64_t err = dx + dy;
   uint32_t value = 0xFF000000u | (color & 0x00FFFFFFu);
+  uint32_t *buf = draw_buf(w);
   for (;;) {
     if (x0 >= sx0 && x0 < sx1 && y0 >= sy0 && y0 < sy1)
-      w->pixels[(uint64_t)(y0 - sy0) * w->aw + (uint64_t)(x0 - sx0)] = value;
+      buf[(uint64_t)(y0 - sy0) * w->aw + (uint64_t)(x0 - sx0)] = value;
     if (x0 == x1 && y0 == y1)
       break;
     int64_t e2 = 2 * err;
@@ -516,12 +656,13 @@ bool compositor_scroll_rect_up(uint32_t pid, uint32_t ux, uint32_t uy,
     if (amount > ch)
       amount = ch;
     uint32_t value = 0xFF000000u | (fill_color & 0x00FFFFFFu);
+    uint32_t *buf = draw_buf(w);
     for (uint32_t row = 0; row + amount < ch; row++)
-      memmove(&w->pixels[(uint64_t)(row0 + row) * w->aw + col],
-              &w->pixels[(uint64_t)(row0 + row + amount) * w->aw + col],
+      memmove(&buf[(uint64_t)(row0 + row) * w->aw + col],
+              &buf[(uint64_t)(row0 + row + amount) * w->aw + col],
               (uint64_t)cw * sizeof(uint32_t));
     for (uint32_t row = ch - amount; row < ch; row++) {
-      uint32_t *line = &w->pixels[(uint64_t)(row0 + row) * w->aw + col];
+      uint32_t *line = &buf[(uint64_t)(row0 + row) * w->aw + col];
       for (uint32_t k = 0; k < cw; k++)
         line[k] = value;
     }
@@ -540,6 +681,21 @@ bool compositor_begin_update(uint32_t pid) {
     comp_leave(&c);
     return false;
   }
+  if (w->depth == 0 && w->pixels) {
+    if (!w->back)
+      (void)alloc_back(w);
+    if (w->back && !w->back_synced) {
+      memcpy(w->back, w->pixels,
+             (uint64_t)w->aw * w->ah * sizeof(uint32_t));
+      w->back_synced = true;
+    }
+  }
+  if (w->depth == 0 && w->margin_dirty && w->pixels) {
+    w->margin_dirty = false;
+    clear_outside_frame(w);
+    mark_dirty(w, w->x, w->y, (int64_t)w->x + visible_w(w),
+               (int64_t)w->y + visible_h(w));
+  }
   w->depth++;
   comp_leave(&c);
   return true;
@@ -554,7 +710,23 @@ bool compositor_end_update(uint32_t pid) {
     return false;
   }
   w->depth--;
-  flush_if_idle(w);
+  if (w->depth == 0 && w->dirty) {
+    int64_t fx0 = w->dx0, fy0 = w->dy0, fx1 = w->dx1, fy1 = w->dy1;
+    if (w->back) {
+      int64_t cx0 = max64(fx0 - w->x, 0);
+      int64_t cy0 = max64(fy0 - w->y, 0);
+      int64_t cx1 = min64(fx1 - w->x, (int64_t)w->aw);
+      int64_t cy1 = min64(fy1 - w->y, (int64_t)w->ah);
+      for (int64_t row = cy0; row < cy1 && cx0 < cx1; row++)
+        memcpy(&w->pixels[(uint64_t)row * w->aw + (uint64_t)cx0],
+               &w->back[(uint64_t)row * w->aw + (uint64_t)cx0],
+               (uint64_t)(cx1 - cx0) * sizeof(uint32_t));
+    }
+    w->dirty = false;
+    comp_leave(&c);
+    present_banded(fx0, fy0, fx1, fy1);
+    return true;
+  }
   comp_leave(&c);
   return true;
 }
@@ -595,12 +767,7 @@ bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
     return false;
   if (!gop_has_backbuffer())
     return false;
-  struct comp_ctx c;
-  comp_enter(&c);
-  present_locked(x0, y0, x1, y1);
-  comp_leave(&c);
-  if (x1 > x0 && y1 > y0 && svga_is_available())
-    svga_update(x0, y0, x1 - x0, y1 - y0);
+  present_banded((int64_t)x0, (int64_t)y0, (int64_t)x1, (int64_t)y1);
   return true;
 }
 

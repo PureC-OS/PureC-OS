@@ -48,4 +48,6 @@ int stat(const char *path, struct stat *info);
 int fstat(int fd, struct stat *info);
 int lstat(const char *path, struct stat *info);
 int mkdir(const char *path, unsigned int mode);
+int chmod(const char *path, unsigned int mode);
+int fchmod(int fd, unsigned int mode);
 mode_t umask(mode_t mask);

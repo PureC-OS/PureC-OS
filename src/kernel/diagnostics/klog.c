@@ -11,25 +11,29 @@
 
 static spinlock_t log_lock = SPINLOCK_INIT;
 static bool panic_output;
-struct log_guard {
+struct log_guard
+{
   uint64_t flags;
   bool locked;
 };
-static struct log_guard log_enter(void) {
+static struct log_guard log_enter(void)
+{
   struct log_guard guard = {irq_save(),
                             !__atomic_load_n(&panic_output, __ATOMIC_ACQUIRE)};
   if (guard.locked)
     spin_lock(&log_lock);
   return guard;
 }
-static void log_leave(struct log_guard *guard) {
+static void log_leave(struct log_guard *guard)
+{
   if (guard->locked)
     spin_unlock(&log_lock);
   irq_restore(guard->flags);
 }
-#define LOG_SCOPE                                                              \
+#define LOG_SCOPE \
   struct log_guard guard __attribute__((cleanup(log_leave))) = log_enter()
-void klog_panic_mode(void) {
+void klog_panic_mode(void)
+{
   __atomic_store_n(&panic_output, true, __ATOMIC_RELEASE);
 }
 
@@ -43,15 +47,18 @@ static bool klog_screen_enabled = true;
 static bool klog_inited = false;
 static uint64_t klog_boot_tsc = 0;
 
-static inline uint64_t rdtsc(void) {
+static inline uint64_t rdtsc(void)
+{
   uint32_t lo, hi;
   __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
   return ((uint64_t)hi << 32) | lo;
 }
 
-static void klog_putc_raw(char c) {
+static void klog_putc_raw(char c)
+{
   serial_putc(c);
-  if (klog_screen_enabled) {
+  if (klog_screen_enabled)
+  {
     if (gop_is_available())
       gop_putc(c);
     else
@@ -63,19 +70,23 @@ static void klog_putc_raw(char c) {
     klog_ring_wrapped = true;
 }
 
-static void klog_puts_raw(const char *s) {
+static void klog_puts_raw(const char *s)
+{
   while (*s)
     klog_putc_raw(*s++);
 }
 
-static void klog_put_dec_unsigned(uint64_t v) {
+static void klog_put_dec_unsigned(uint64_t v)
+{
   char buf[32];
   int i = 0;
-  if (v == 0) {
+  if (v == 0)
+  {
     klog_putc_raw('0');
     return;
   }
-  while (v > 0) {
+  while (v > 0)
+  {
     buf[i++] = '0' + (v % 10);
     v /= 10;
   }
@@ -83,23 +94,28 @@ static void klog_put_dec_unsigned(uint64_t v) {
     klog_putc_raw(buf[i]);
 }
 
-static void klog_put_dec_signed(int64_t v) {
-  if (v < 0) {
+static void klog_put_dec_signed(int64_t v)
+{
+  if (v < 0)
+  {
     klog_putc_raw('-');
     v = -v;
   }
   klog_put_dec_unsigned((uint64_t)v);
 }
 
-static void klog_put_hex(uint64_t v, bool upper) {
+static void klog_put_hex(uint64_t v, bool upper)
+{
   const char *h = upper ? "0123456789ABCDEF" : "0123456789abcdef";
   char buf[16];
   int i = 0;
-  if (v == 0) {
+  if (v == 0)
+  {
     klog_putc_raw('0');
     return;
   }
-  while (v > 0) {
+  while (v > 0)
+  {
     buf[i++] = h[v & 0xF];
     v >>= 4;
   }
@@ -107,7 +123,8 @@ static void klog_put_hex(uint64_t v, bool upper) {
     klog_putc_raw(buf[i]);
 }
 
-static void klog_put_hex_padded(uint64_t v, int width, char pad, bool upper) {
+static void klog_put_hex_padded(uint64_t v, int width, char pad, bool upper)
+{
   const char *h = upper ? "0123456789ABCDEF" : "0123456789abcdef";
   char buf[16];
   int len = 0;
@@ -115,7 +132,8 @@ static void klog_put_hex_padded(uint64_t v, int width, char pad, bool upper) {
   if (tmp == 0)
     buf[len++] = '0';
   else
-    while (tmp > 0) {
+    while (tmp > 0)
+    {
       buf[len++] = h[tmp & 0xF];
       tmp >>= 4;
     }
@@ -126,14 +144,16 @@ static void klog_put_hex_padded(uint64_t v, int width, char pad, bool upper) {
     klog_putc_raw(buf[i]);
 }
 
-static void klog_put_dec_padded(uint64_t v, int width, char pad) {
+static void klog_put_dec_padded(uint64_t v, int width, char pad)
+{
   char buf[20];
   int len = 0;
   uint64_t tmp = v;
   if (tmp == 0)
     buf[len++] = '0';
   else
-    while (tmp > 0) {
+    while (tmp > 0)
+    {
       buf[len++] = '0' + (tmp % 10);
       tmp /= 10;
     }
@@ -144,8 +164,10 @@ static void klog_put_dec_padded(uint64_t v, int width, char pad) {
     klog_putc_raw(buf[i]);
 }
 
-static const char *klog_level_str(enum klog_level lvl) {
-  switch (lvl) {
+static const char *klog_level_str(enum klog_level lvl)
+{
+  switch (lvl)
+  {
   case KLOG_OK:
     return "  OK  ";
   case KLOG_WARN:
@@ -160,8 +182,10 @@ static const char *klog_level_str(enum klog_level lvl) {
   }
 }
 
-static uint32_t klog_level_color(enum klog_level lvl) {
-  switch (lvl) {
+static uint32_t klog_level_color(enum klog_level lvl)
+{
+  switch (lvl)
+  {
   case KLOG_OK:
     return KLOG_OK_FG;
   case KLOG_WARN:
@@ -176,7 +200,8 @@ static uint32_t klog_level_color(enum klog_level lvl) {
   }
 }
 
-static void klog_print_timestamp(void) {
+static void klog_print_timestamp(void)
+{
   uint64_t now = rdtsc();
   uint64_t delta = klog_inited ? (now - klog_boot_tsc) : 0;
   uint64_t us = delta / 3000;
@@ -195,7 +220,8 @@ static void klog_print_timestamp(void) {
     gop_set_color(KLOG_FG, KLOG_BG);
 }
 
-static void klog_print_level(enum klog_level lvl) {
+static void klog_print_level(enum klog_level lvl)
+{
   if (gop_is_available())
     gop_set_color(KLOG_FG, KLOG_BG);
   klog_putc_raw('[');
@@ -210,7 +236,8 @@ static void klog_print_level(enum klog_level lvl) {
     gop_set_color(KLOG_FG, KLOG_BG);
 }
 
-static void klog_emit_prefix(enum klog_level lvl) {
+static void klog_emit_prefix(enum klog_level lvl)
+{
   klog_print_timestamp();
   klog_print_level(lvl);
   klog_puts_raw("[cpu");
@@ -222,22 +249,27 @@ static void klog_emit_prefix(enum klog_level lvl) {
   klog_puts_raw("] ");
 }
 
-void klog_init(void) {
+void klog_init(void)
+{
   klog_boot_tsc = rdtsc();
   klog_inited = true;
   klog_verbose = true;
   klog_ring_pos = 0;
   klog_ring_wrapped = false;
 
-  if (gop_is_available()) {
+  if (gop_is_available())
+  {
     gop_clear(KLOG_BG);
     gop_set_color(KLOG_FG, KLOG_BG);
-  } else {
+  }
+  else
+  {
     vga_clear();
   }
 
   klog(KLOG_INFO, "PureC OS 64-bit kernel v0.1.0 [Limine+GOP] booting...");
-  if (gop_is_available()) {
+  if (gop_is_available())
+  {
     uint32_t w = gop_get_width();
     uint32_t h = gop_get_height();
     klog_emit_prefix(KLOG_INFO);
@@ -247,7 +279,9 @@ void klog_init(void) {
     klog_put_dec_unsigned(h);
     klog_puts_raw(" bpp=32");
     klog_putc_raw('\n');
-  } else {
+  }
+  else
+  {
     klog(KLOG_INFO, "Framebuffer: VGA text 80x25");
   }
 }
@@ -257,16 +291,21 @@ bool klog_is_verbose(void) { return klog_verbose; }
 void klog_set_screen_enabled(bool e) { klog_screen_enabled = e; }
 bool klog_is_screen_enabled(void) { return klog_screen_enabled; }
 
-void klog_clear(void) {
-  if (gop_is_available()) {
+void klog_clear(void)
+{
+  if (gop_is_available())
+  {
     gop_clear(KLOG_BG);
     gop_set_color(KLOG_FG, KLOG_BG);
-  } else {
+  }
+  else
+  {
     vga_clear();
   }
 }
 
-void klog_raw(const char *s) {
+void klog_raw(const char *s)
+{
   LOG_SCOPE;
   if (!s)
     return;
@@ -276,7 +315,8 @@ void klog_raw(const char *s) {
     klog_putc_raw(*s++);
 }
 
-void klog(enum klog_level lvl, const char *msg) {
+void klog(enum klog_level lvl, const char *msg)
+{
   LOG_SCOPE;
   if (!msg)
     return;
@@ -293,11 +333,14 @@ void klog(enum klog_level lvl, const char *msg) {
     klog_putc_raw('\n');
 }
 
-static void klog_vprintf_internal(const char *fmt, va_list ap) {
+static void klog_vprintf_internal(const char *fmt, va_list ap)
+{
   if (gop_is_available())
     gop_set_color(KLOG_FG, KLOG_BG);
-  for (const char *p = fmt; *p; p++) {
-    if (*p != '%') {
+  for (const char *p = fmt; *p; p++)
+  {
+    if (*p != '%')
+    {
       klog_putc_raw(*p);
       continue;
     }
@@ -306,25 +349,31 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
       break;
     char pad = ' ';
     int width = 0;
-    if (*p == '0') {
+    if (*p == '0')
+    {
       pad = '0';
       p++;
     }
-    while (*p >= '0' && *p <= '9') {
+    while (*p >= '0' && *p <= '9')
+    {
       width = width * 10 + (*p - '0');
       p++;
     }
     int long_cnt = 0;
-    while (*p == 'l') {
+    while (*p == 'l')
+    {
       long_cnt++;
       p++;
     }
     char spec = *p;
     if (spec == '\0')
       break;
-    if (spec == '%') {
+    if (spec == '%')
+    {
       klog_putc_raw('%');
-    } else if (spec == 's') {
+    }
+    else if (spec == 's')
+    {
       const char *s = va_arg(ap, const char *);
       if (!s)
         s = "(null)";
@@ -335,13 +384,17 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
           klog_putc_raw(' ');
       while (*s)
         klog_putc_raw(*s++);
-    } else if (spec == 'c') {
+    }
+    else if (spec == 'c')
+    {
       int ch = va_arg(ap, int);
       if (width > 1)
         for (int i = 1; i < width; i++)
           klog_putc_raw(' ');
       klog_putc_raw((char)ch);
-    } else if (spec == 'd' || spec == 'i') {
+    }
+    else if (spec == 'd' || spec == 'i')
+    {
       int64_t v;
       if (long_cnt >= 2)
         v = va_arg(ap, int64_t);
@@ -352,16 +405,19 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
       char buf[32];
       bool neg = false;
       uint64_t uv;
-      if (v < 0) {
+      if (v < 0)
+      {
         neg = true;
         uv = (uint64_t)(-v);
-      } else
+      }
+      else
         uv = (uint64_t)v;
       int len = 0;
       if (uv == 0)
         buf[len++] = '0';
       else
-        while (uv > 0) {
+        while (uv > 0)
+        {
           buf[len++] = '0' + (uv % 10);
           uv /= 10;
         }
@@ -369,13 +425,16 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
         buf[len++] = '-';
       int total = len;
       int pad_len = width - total;
-      if (pad_len > 0 && pad == '0' && neg) {
+      if (pad_len > 0 && pad == '0' && neg)
+      {
         klog_putc_raw('-');
         for (int i = 0; i < pad_len; i++)
           klog_putc_raw('0');
         for (int i = len - 2; i >= 0; i--)
           klog_putc_raw(buf[i]);
-      } else {
+      }
+      else
+      {
         if (pad_len > 0)
           for (int i = 0; i < pad_len; i++)
             klog_putc_raw(pad);
@@ -383,7 +442,9 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
           for (int i = len - 1; i >= 0; i--)
             klog_putc_raw(buf[i]);
       }
-    } else if (spec == 'u') {
+    }
+    else if (spec == 'u')
+    {
       uint64_t v;
       if (long_cnt >= 2)
         v = va_arg(ap, uint64_t);
@@ -396,7 +457,8 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
       if (v == 0)
         buf[len++] = '0';
       else
-        while (v > 0) {
+        while (v > 0)
+        {
           buf[len++] = '0' + (v % 10);
           v /= 10;
         }
@@ -406,7 +468,9 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
           klog_putc_raw(pad);
       for (int i = len - 1; i >= 0; i--)
         klog_putc_raw(buf[i]);
-    } else if (spec == 'x' || spec == 'X') {
+    }
+    else if (spec == 'x' || spec == 'X')
+    {
       uint64_t v;
       if (long_cnt >= 2)
         v = va_arg(ap, uint64_t);
@@ -421,7 +485,8 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
       if (v == 0)
         buf[len++] = '0';
       else
-        while (v > 0) {
+        while (v > 0)
+        {
           buf[len++] = h[v & 0xF];
           v >>= 4;
         }
@@ -431,24 +496,33 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
           klog_putc_raw(pad);
       for (int i = len - 1; i >= 0; i--)
         klog_putc_raw(buf[i]);
-    } else if (spec == 'p') {
+    }
+    else if (spec == 'p')
+    {
       void *ptr = va_arg(ap, void *);
       uint64_t v = (uint64_t)(uintptr_t)ptr;
       klog_puts_raw("0x");
       klog_put_hex(v, false);
-    } else {
+    }
+    else
+    {
       klog_putc_raw('%');
       if (pad != ' ')
         klog_putc_raw('0');
-      if (width) {
+      if (width)
+      {
         char tmp[12];
         int l = 0;
         int w = width;
-        if (w == 0) {
-        } else {
+        if (w == 0)
+        {
+        }
+        else
+        {
           char b[12];
           int bl = 0;
-          while (w > 0) {
+          while (w > 0)
+          {
             b[bl++] = '0' + w % 10;
             w /= 10;
           }
@@ -465,7 +539,8 @@ static void klog_vprintf_internal(const char *fmt, va_list ap) {
   }
 }
 
-void klogf(enum klog_level lvl, const char *fmt, ...) {
+void klogf(enum klog_level lvl, const char *fmt, ...)
+{
   LOG_SCOPE;
   if (lvl == KLOG_DEBUG && !klog_verbose)
     return;
@@ -474,31 +549,39 @@ void klogf(enum klog_level lvl, const char *fmt, ...) {
   va_start(ap, fmt);
   klog_vprintf_internal(fmt, ap);
   va_end(ap);
-  if (fmt && fmt[0]) {
+  if (fmt && fmt[0])
+  {
     size_t l = strlen(fmt);
     if (l > 0 && fmt[l - 1] != '\n')
       klog_putc_raw('\n');
-  } else {
+  }
+  else
+  {
     klog_putc_raw('\n');
   }
 }
 
-void klog_vf(enum klog_level lvl, const char *fmt, va_list ap) {
+void klog_vf(enum klog_level lvl, const char *fmt, va_list ap)
+{
   LOG_SCOPE;
   if (lvl == KLOG_DEBUG && !klog_verbose)
     return;
   klog_emit_prefix(lvl);
   klog_vprintf_internal(fmt, ap);
-  if (fmt && fmt[0]) {
+  if (fmt && fmt[0])
+  {
     size_t l = strlen(fmt);
     if (l > 0 && fmt[l - 1] != '\n')
       klog_putc_raw('\n');
-  } else {
+  }
+  else
+  {
     klog_putc_raw('\n');
   }
 }
 
-void kprintf(const char *fmt, ...) {
+void kprintf(const char *fmt, ...)
+{
   LOG_SCOPE;
   va_list ap;
   va_start(ap, fmt);
@@ -506,19 +589,25 @@ void kprintf(const char *fmt, ...) {
   va_end(ap);
 }
 
-void kvprintf(const char *fmt, va_list ap) {
+void kvprintf(const char *fmt, va_list ap)
+{
   LOG_SCOPE;
   klog_vprintf_internal(fmt, ap);
 }
 
-void klog_dump(void) {
+void klog_dump(void)
+{
   serial_write_string("\n--- klog dump ---\n");
-  if (!klog_ring_wrapped) {
+  if (!klog_ring_wrapped)
+  {
     for (uint32_t i = 0; i < klog_ring_pos; i++)
       serial_putc(klog_ring[i % KLOG_RING_SIZE]);
-  } else {
+  }
+  else
+  {
     uint32_t start = klog_ring_pos % KLOG_RING_SIZE;
-    for (uint32_t i = 0; i < KLOG_RING_SIZE; i++) {
+    for (uint32_t i = 0; i < KLOG_RING_SIZE; i++)
+    {
       char c = klog_ring[(start + i) % KLOG_RING_SIZE];
       serial_putc(c);
     }
@@ -526,23 +615,30 @@ void klog_dump(void) {
   serial_write_string("\n--- end dump ---\n");
 }
 
-void klog_dump_to_screen(void) {
+void klog_dump_to_screen(void)
+{
   bool prev = klog_screen_enabled;
   klog_screen_enabled = true;
-  if (gop_is_available()) {
+  if (gop_is_available())
+  {
     gop_set_color(KLOG_FG, KLOG_BG);
   }
-  if (!klog_ring_wrapped) {
-    for (uint32_t i = 0; i < klog_ring_pos; i++) {
+  if (!klog_ring_wrapped)
+  {
+    for (uint32_t i = 0; i < klog_ring_pos; i++)
+    {
       char c = klog_ring[i % KLOG_RING_SIZE];
       if (gop_is_available())
         gop_putc(c);
       else
         vga_putc(c);
     }
-  } else {
+  }
+  else
+  {
     uint32_t start = klog_ring_pos % KLOG_RING_SIZE;
-    for (uint32_t i = 0; i < KLOG_RING_SIZE; i++) {
+    for (uint32_t i = 0; i < KLOG_RING_SIZE; i++)
+    {
       char c = klog_ring[(start + i) % KLOG_RING_SIZE];
       if (gop_is_available())
         gop_putc(c);
@@ -553,15 +649,19 @@ void klog_dump_to_screen(void) {
   klog_screen_enabled = prev;
 }
 
-void klog_foreach(void (*cb)(char c)) {
+void klog_foreach(void (*cb)(char c))
+{
   if (!cb)
     return;
   uint64_t snapshot_pos = klog_ring_pos;
   bool snapshot_wrapped = klog_ring_wrapped;
-  if (!snapshot_wrapped) {
+  if (!snapshot_wrapped)
+  {
     for (uint64_t i = 0; i < snapshot_pos; i++)
       cb(klog_ring[i % KLOG_RING_SIZE]);
-  } else {
+  }
+  else
+  {
     uint32_t start = (uint32_t)(snapshot_pos % KLOG_RING_SIZE);
     for (uint32_t i = 0; i < KLOG_RING_SIZE; i++)
       cb(klog_ring[(start + i) % KLOG_RING_SIZE]);
@@ -571,7 +671,8 @@ void klog_foreach(void (*cb)(char c)) {
 void klog_dump_with(void (*cb)(char c)) { klog_foreach(cb); }
 
 uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
-                         bool *data_lost) {
+                         bool *data_lost)
+{
   LOG_SCOPE;
   if (data_lost)
     *data_lost = false;
@@ -580,7 +681,8 @@ uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
   uint64_t snapshot_pos = klog_ring_pos;
   uint64_t earliest =
       snapshot_pos > KLOG_RING_SIZE ? snapshot_pos - KLOG_RING_SIZE : 0;
-  if (*cursor < earliest) {
+  if (*cursor < earliest)
+  {
     *cursor = earliest;
     if (data_lost)
       *data_lost = true;
@@ -589,14 +691,16 @@ uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
     *cursor = snapshot_pos;
   uint64_t available = snapshot_pos - *cursor;
   uint32_t amount = available < capacity ? (uint32_t)available : capacity;
-  for (uint32_t index = 0; index < amount; index++) {
+  for (uint32_t index = 0; index < amount; index++)
+  {
     buffer[index] = klog_ring[(*cursor + index) % KLOG_RING_SIZE];
   }
   *cursor += amount;
   return amount;
 }
 
-uint64_t klog_total_bytes(void) {
+uint64_t klog_total_bytes(void)
+{
   LOG_SCOPE;
   return klog_ring_pos;
 }

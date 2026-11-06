@@ -26,6 +26,7 @@ ssize_t write(int fd, const void *buffer, size_t count);
 int close(int fd);
 off_t lseek(int fd, off_t offset, int origin);
 int unlink(const char *path);
+int rmdir(const char *path);
 int access(const char *path, int mode);
 int isatty(int fd);
 unsigned int sleep(unsigned int seconds);

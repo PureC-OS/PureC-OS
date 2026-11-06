@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=HTOP
 Exec=/bin/program/monitor
+Icon=/usr/share/icons/monitor.icn
 IconColor=0x89B4FA
 IconText=HTOP
 Type=Application

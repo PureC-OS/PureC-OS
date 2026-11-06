@@ -21,6 +21,11 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
 void gop_init_from_multiboot(void *mbi);
 bool gop_apply_live(void *address, uint32_t width, uint32_t height,
                     uint32_t pitch_pixels, uint8_t bpp);
+bool gop_set_scale_percent(uint32_t percent);
+uint32_t gop_get_scale_percent(void);
+uint32_t gop_get_physical_width(void);
+uint32_t gop_get_physical_height(void);
+void gop_front_notify(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 bool gop_is_available(void);
 void *gop_get_address(void);
 uint32_t gop_get_width(void);
@@ -40,9 +45,14 @@ bool gop_console_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t heig
 bool gop_console_configure_owner(uint32_t owner_pid, uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t foreground, uint32_t background);
 bool gop_console_is_active(void);
 void gop_console_putc(char character);
+void gop_console_write(const char *text, uint32_t count);
+bool gop_console_get_size(uint32_t *columns, uint32_t *rows, uint32_t *width, uint32_t *height);
 void gop_console_clear(void);
 void gop_console_disable(void);
 void gop_console_release(uint32_t owner_pid);
+void gop_set_console_font_size(uint32_t px);
+uint32_t gop_get_console_font_size(void);
+void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy);
 
 uint32_t gop_get_pixel(uint32_t x, uint32_t y);
 void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color);
@@ -67,4 +77,8 @@ bool gop_has_backbuffer(void);
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color);
 const uint32_t *gop_backbuffer_row(uint32_t y);
+bool gop_draw_pixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                     const uint32_t *pixels, uint32_t stride);
+bool gop_backbuffer_put(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                        const uint32_t *pixels, uint32_t stride);
 void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count);

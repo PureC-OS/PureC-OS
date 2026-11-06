@@ -6,7 +6,7 @@
 #include "../../drivers/mouse/ps2_mouse.h"
 #include "../../drivers/input/key_event.h"
 #include "../../drivers/input/keyboard.h"
-#include "../../drivers/storage/storage_types.h"
+#include "../../io/storage/storage_types.h"
 #include "../../kernel/syscall/syscall.h"
 
 struct pc_display_info {
@@ -108,12 +108,24 @@ void pc_display_begin_update(void);
 void pc_display_end_update(void);
 void pc_display_clear(uint32_t color);
 int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp);
+int32_t pc_display_set_mode_scale(uint32_t width, uint32_t height,
+                                  uint32_t bpp, uint32_t scale_percent);
+struct pc_display_scale {
+    uint32_t physical_width;
+    uint32_t physical_height;
+    uint32_t scale_percent;
+};
+bool pc_display_scale_info(struct pc_display_scale *out);
 void pc_desktop_redraw(void);
 bool pc_gui_window_register(const struct gui_window_request *request);
 bool pc_gui_window_update(const struct gui_window_request *request);
 void pc_gui_window_unregister(void);
 uint32_t pc_gui_window_state(void);
 void pc_gui_window_repaint_done(void);
+bool pc_gui_window_info(struct gui_window_info *info);
+bool pc_gui_window_set_flags(uint32_t flags);
+bool pc_gui_window_command(uint32_t command);
+bool pc_gui_window_set_title(const char *title);
 bool pc_console_configure(uint32_t x, uint32_t y,
                           uint32_t width, uint32_t height,
                           uint32_t foreground, uint32_t background);

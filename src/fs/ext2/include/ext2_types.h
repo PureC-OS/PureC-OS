@@ -2,7 +2,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "../../../drivers/storage/block_device.h"
+#include "../../../io/storage/block_device.h"
 
 #define EXT2_MAGIC 0xEF53
 #define EXT2_ROOT_INO 2

@@ -5,7 +5,6 @@
 #include "include/hosted/stdlib.h"
 #include "include/hosted/string.h"
 #include "include/hosted/sys/resource.h"
-#include "include/hosted/sys/select.h"
 #include "include/hosted/sys/stat.h"
 #include "include/hosted/sys/utsname.h"
 #include "include/hosted/unistd.h"
@@ -29,6 +28,47 @@ gid_t getgid(void) { return (gid_t)pc_syscall(SYS_GETGID, 0, 0, 0); }
 gid_t getegid(void) { return getgid(); }
 
 pid_t vfork(void) { return fork(); }
+
+int chmod(const char *path, unsigned int mode)
+{
+    if (!path)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    if (pc_chmod(path, mode & 07777) < 0)
+    {
+        errno = ENOENT;
+        return -1;
+    }
+    return 0;
+}
+
+int fchmod(int fd, unsigned int mode)
+{
+    (void)mode;
+    if (fd < 0)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    return 0;
+}
+
+int rmdir(const char *path)
+{
+    struct stat info;
+    if (stat(path, &info) < 0)
+        return -1;
+    if (!S_ISDIR(info.st_mode))
+    {
+        errno = ENOTDIR;
+        return -1;
+    }
+    if (unlink(path) < 0)
+        return -1;
+    return 0;
+}
 
 int setpgid(pid_t pid, pid_t group)
 {
@@ -92,31 +132,6 @@ int uname(struct utsname *name)
         strncpy(name->nodename, host, sizeof(name->nodename) - 1);
     }
     return 0;
-}
-
-int select(int count, fd_set *read_set, fd_set *write_set, fd_set *error_set,
-           struct timeval *timeout)
-{
-    (void)count;
-    (void)read_set;
-    (void)write_set;
-    (void)error_set;
-    (void)timeout;
-    errno = ENOSYS;
-    return -1;
-}
-
-int pselect(int count, fd_set *read_set, fd_set *write_set, fd_set *error_set,
-            const struct timespec *timeout, const void *mask)
-{
-    (void)count;
-    (void)read_set;
-    (void)write_set;
-    (void)error_set;
-    (void)timeout;
-    (void)mask;
-    errno = ENOSYS;
-    return -1;
 }
 
 static char passwd_name[64];

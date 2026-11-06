@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Tetris
 Exec=/bin/program/tetris
+Icon=/usr/share/icons/tetris.icn
 IconColor=0xF38BA8
 IconText=[]
 Type=Application

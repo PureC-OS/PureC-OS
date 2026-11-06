@@ -7,7 +7,7 @@
 #include "include/ext2_meta.h"
 #include "include/ext2_file.h"
 #include "include/ext2_format.h"
-#include "../../drivers/storage/block_device.h"
+#include "../../io/storage/block_device.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
 

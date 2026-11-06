@@ -80,6 +80,9 @@ ssize_t read(int fd, void *buffer, size_t count)
     int64_t result = pc_syscall(SYS_FD_READ, (uint64_t)fd, (uint64_t)(uintptr_t)buffer, count);
     if (result == -KERR_CONSOLE)
     {
+        if (pc_syscall(SYS_TTY_IOCTL, TTY_RAW_ACTIVE, 0, 0) == 1)
+            return (ssize_t)syscall_result(pc_syscall(
+                SYS_TTY_READ, (uint64_t)(uintptr_t)buffer, count, 0));
         uint8_t *out = (uint8_t *)buffer;
         size_t done = 0;
         while (done < count)

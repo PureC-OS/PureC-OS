@@ -583,6 +583,10 @@ int shell_run(struct terminal_window *terminal, const char *initial_command){
     if(pc_getenv("PATH",path_env,sizeof(path_env))<0){
         pc_setenv("PATH","/usr/bin:/bin:/usr/games:/sbin");
     }
+    char term_env[PROCESS_ENVIRONMENT_VALUE_LIMIT];
+    if(pc_getenv("TERM",term_env,sizeof(term_env))<0){
+        pc_setenv("TERM","xterm");
+    }
     pc_write("PureC Terminal\n");
     pc_write("Minimal shell: type help. Programs resolve via PATH.\n\n");
     if(initial_command && initial_command[0]){

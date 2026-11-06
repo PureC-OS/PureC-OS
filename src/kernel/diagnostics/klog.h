@@ -3,7 +3,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-enum klog_level { KLOG_INFO, KLOG_OK, KLOG_WARN, KLOG_ERROR, KLOG_DEBUG };
+enum klog_level
+{
+    KLOG_INFO,
+    KLOG_OK,
+    KLOG_WARN,
+    KLOG_ERROR,
+    KLOG_DEBUG
+};
 
 void klog_init(void);
 void klog_raw(const char *s);

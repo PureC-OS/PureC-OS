@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "path.h"
 #include "../../libfs/include/purefs.h"
-#include "../../drivers/storage/storage_types.h"
+#include "../../io/storage/storage_types.h"
 
 #define FILES_ENTRY_CAPACITY 96
 #define FILES_DISK_CAPACITY 16

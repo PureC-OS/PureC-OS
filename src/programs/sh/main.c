@@ -2877,6 +2877,7 @@ int main(int argc, char **argv) {
     shell_pid = getpid();
     import_environment();
     if (!var_get("PATH")) var_set("PATH", "/usr/bin:/bin:/usr/games:/sbin", true);
+    if (!var_get("TERM")) var_set("TERM", "xterm", true);
     char cwd[512];
     if (getcwd(cwd, sizeof(cwd))) var_set("PWD", cwd, true);
     shell_name = argc > 0 ? argv[0] : (char *)"sh";

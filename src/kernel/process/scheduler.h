@@ -49,6 +49,7 @@ struct thread {
   bool wake_pending;
   int16_t running_cpu;
   uint32_t cpu_mask;
+  uint32_t preempt_saved;
   uint64_t migrations;
   struct thread *next;
   struct thread *hnext;

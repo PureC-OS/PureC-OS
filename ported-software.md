@@ -23,6 +23,7 @@ the build system.
 | Software | Upstream version | Upstream license | In-tree location | Kernel / Userspace | Ships in rootfs | Status |
 |---|---|---|---|---|---|---|
 | Lua | 5.4.8 | MIT | `src/programs/lua/` | Userspace | `/usr/bin/lua` (optional) | Working (REPL); `math` lib planned |
+| Vim | 9.2 (patch 1252) | Vim license | `vim/` (external checkout), `mk/vim/` | Userspace | `/usr/bin/vim`, `/etc/vimrc` (optional) | Builds and links (tiny features); **not run on PureC OS yet** |
 | MicroPython | ~1.30-preview | MIT | `src/programs/micropython/` | Userspace | `/usr/bin/micropython` (optional) | Working (REPL); no floats |
 | TinyCC (PureC-TCC) | 0.9.28rc | LGPL-2.1 | `tcc/` | Userspace | `/usr/bin/tcc`, `/lib/tcc/*` (optional) | Working (compile & run) |
 | SDL2 | 2.33.0 | zlib | `SDL/` | Userspace (lib) | `/usr/bin/sdltest` (optional) | Working; software rendering only |
@@ -64,6 +65,29 @@ the build system.
 - **Ships as**: optional `/usr/bin/lua`.
 - **Verification**: REPL exercised live on the PureC Terminal, including
   `os.exit()`.
+
+## Vim
+
+- **Location**: sources are an external checkout in `vim/` (not patched);
+  everything PureC-specific lives in `mk/vim/`: `auto/config.h` (hand-written
+  replacement for `configure`), `auto/osdef.h` (empty), `auto/pathdef.c`,
+  `purec_compat.c`, plus `rootfs/etc/vimrc` (system vimrc).
+- **Scope**: `FEAT_TINY` with the builtin `xterm` termcap (no terminfo or
+  curses library: `HAVE_TGETENT` is not defined). `TERM=xterm` is set by
+  `terminal` and `sh`.
+- **Build**: `src/programs/Makefile` (`VIM_SOURCES`), enabled when
+  `vim/src/vim.h` exists; compiled without `-g` (~1.8 MB ELF) → `bin/programs/vim`.
+- **Needs from the OS**: ANSI/VT console parser (`src/drivers/display/console_vt.c`),
+  kernel tty (`src/kernel/tty/`, `SYS_TTY_READ/IOCTL`, `SYS_POLL`), libc
+  `termios`/`ioctl`/`poll`/`select` (`src/libc/tty.c`), `bsearch`, `chmod`, `rmdir`.
+- **Verification**: the same sources and `config.h` build and run on a Linux
+  host; the output Vim produces in a pty was fed through `console_vt` and
+  matched against the `pyte` terminal emulator on 8 editing scenarios
+  (scrolling, paging, line insert/delete, search, visual mode, undo). The binary
+  has **not** been run on PureC OS yet.
+- **Known gaps**: no alternate screen (`?1049`), no `SIGWINCH`, no Ctrl-C
+  signal in raw mode, no `:!` / shell integration verified, no syntax
+  highlighting or `:help` (tiny build, no runtime files).
 
 ## MicroPython
 

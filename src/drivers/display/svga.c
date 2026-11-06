@@ -309,6 +309,23 @@ void svga_collect_io_ranges(struct svga_io_used *out, int *n, int cap) {
     pci_enumerate(svga_collect_visitor, &c);
 }
 
+static bool svga_fifo_reset(uint64_t fifo_sz) {
+    uint32_t nregs = svga_reg_read(g.io_base, 30);
+    if (nregs < SVGA_FIFO_NUM_REGS_MIN || nregs > 1024)
+        nregs = 293 * 1;
+    if (nregs > 293)
+        nregs = 293;
+    uint32_t min = nregs * 4;
+    if (min + 10 * 1024 > fifo_sz)
+        return false;
+    g.fifo[SVGA_FIFO_MIN] = min;
+    g.fifo[SVGA_FIFO_MAX] = (uint32_t)fifo_sz;
+    g.fifo[SVGA_FIFO_NEXT_CMD] = min;
+    g.fifo[SVGA_FIFO_STOP] = min;
+    svga_reg_write(g.io_base, SVGA_REG_CONFIG_DONE, 1);
+    return true;
+}
+
 bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     memset(&g, 0, sizeof(g));
     struct svga_probe_ctx c = {0};
@@ -484,22 +501,11 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     g.fb = (volatile uint32_t *)((uintptr_t)fb + fboff);
     g.fifo = (volatile uint32_t *)fifo;
 
-    uint32_t nregs = svga_reg_read(g.io_base, 30);
-    if (nregs < SVGA_FIFO_NUM_REGS_MIN || nregs > 1024)
-        nregs = 293 * 1;
-    if (nregs > 293)
-        nregs = 293;
-    uint32_t min = nregs * 4;
-    if (min + 10 * 1024 > fifo_sz) {
+    if (!svga_fifo_reset(fifo_sz)) {
         st_set("svga: no-fifo");
         klog(KLOG_WARN, "svga: FIFO too small, GOP fallback");
         return false;
     }
-    g.fifo[SVGA_FIFO_MIN] = min;
-    g.fifo[SVGA_FIFO_MAX] = (uint32_t)fifo_sz;
-    g.fifo[SVGA_FIFO_NEXT_CMD] = min;
-    g.fifo[SVGA_FIFO_STOP] = min;
-    svga_reg_write(g.io_base, SVGA_REG_CONFIG_DONE, 1);
     g.ready = true;
     klogf(KLOG_OK, "svga: %ux%ux%u io=0x%x fb=0x%llx (%lluK) fifo=0x%llx (%lluK) caps=0x%x id=0x%x",
           g.width, g.height, g.bpp, g.io_base,
@@ -518,3 +524,82 @@ uint32_t svga_pitch_pixels(void) { return g.pitch_px; }
 uint8_t svga_bpp(void) { return g.bpp; }
 uint64_t svga_fb_size(void) { return g.fb_size; }
 uint32_t svga_caps(void) { return g.caps; }
+
+bool svga_set_mode(uint32_t want_w, uint32_t want_h,
+                   uint32_t *actual_w, uint32_t *actual_h) {
+    if (actual_w)
+        *actual_w = 0;
+    if (actual_h)
+        *actual_h = 0;
+    if (!g.ready || !mmio_is_ready())
+        return false;
+    if (want_w < 640 || want_w > 7680 || want_h < 400 || want_h > 4320)
+        return false;
+    uint32_t max_w = svga_reg_read(g.io_base, SVGA_REG_MAX_WIDTH);
+    uint32_t max_h = svga_reg_read(g.io_base, SVGA_REG_MAX_HEIGHT);
+    if (max_w && want_w > max_w)
+        want_w = max_w;
+    if (max_h && want_h > max_h)
+        want_h = max_h;
+    uint64_t vram = svga_reg_read(g.io_base, SVGA_REG_VRAM_SIZE);
+    if (!vram)
+        vram = g.fb_size;
+    if ((uint64_t)want_w * want_h * 4ULL > vram)
+        return false;
+
+    g.ready = false;
+    svga_reg_write(g.io_base, SVGA_REG_CONFIG_DONE, 0);
+    svga_reg_write(g.io_base, SVGA_REG_ENABLE, 0);
+    svga_reg_write(g.io_base, SVGA_REG_WIDTH, want_w);
+    svga_reg_write(g.io_base, SVGA_REG_HEIGHT, want_h);
+    svga_reg_write(g.io_base, SVGA_REG_BPP, 32);
+    svga_reg_write(g.io_base, SVGA_REG_ENABLE, 1);
+    uint32_t act_w = svga_reg_read(g.io_base, SVGA_REG_WIDTH);
+    uint32_t act_h = svga_reg_read(g.io_base, SVGA_REG_HEIGHT);
+    uint32_t act_bpp = svga_reg_read(g.io_base, SVGA_REG_BPP);
+    uint32_t bpl = svga_reg_read(g.io_base, SVGA_REG_BYTES_PER_LINE);
+    uint32_t fboff = svga_reg_read(g.io_base, SVGA_REG_FB_OFFSET);
+    bool ok = act_w >= 64 && act_w <= 7680 && act_h >= 64 && act_h <= 4320 &&
+              act_bpp == 32 && bpl >= act_w * 4u;
+    uint64_t need = (uint64_t)act_h * bpl + fboff;
+    if (ok && need > vram)
+        ok = false;
+    volatile void *fb = 0;
+    if (ok) {
+        uint64_t span = need;
+        uint64_t reserve = vram < (16ULL << 20) ? vram : (16ULL << 20);
+        if (span < reserve)
+            span = reserve;
+        fb = mmio_map(g.fb_phys, span);
+        ok = fb != 0;
+    }
+    if (!ok) {
+        klogf(KLOG_WARN, "svga: mode %ux%u rejected (card %ux%ux%u bpl=%u), restoring %ux%u",
+              want_w, want_h, act_w, act_h, act_bpp, bpl, g.width, g.height);
+        svga_reg_write(g.io_base, SVGA_REG_ENABLE, 0);
+        svga_reg_write(g.io_base, SVGA_REG_WIDTH, g.width);
+        svga_reg_write(g.io_base, SVGA_REG_HEIGHT, g.height);
+        svga_reg_write(g.io_base, SVGA_REG_BPP, 32);
+        svga_reg_write(g.io_base, SVGA_REG_ENABLE, 1);
+        (void)svga_fifo_reset(g.fifo_size);
+        g.ready = true;
+        return false;
+    }
+    g.fb = (volatile uint32_t *)((uintptr_t)fb + fboff);
+    g.width = act_w;
+    g.height = act_h;
+    g.pitch_px = bpl / 4;
+    if (!svga_fifo_reset(g.fifo_size)) {
+        g.ready = true;
+        return false;
+    }
+    g.ready = true;
+    if (actual_w)
+        *actual_w = act_w;
+    if (actual_h)
+        *actual_h = act_h;
+    st_ok();
+    klogf(KLOG_OK, "svga: mode %ux%u pitch=%u fboff=0x%x", act_w, act_h,
+          g.pitch_px, fboff);
+    return true;
+}

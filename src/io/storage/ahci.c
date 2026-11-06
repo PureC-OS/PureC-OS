@@ -1,7 +1,7 @@
 #include "ahci.h"
 
 #include "storage_probe.h"
-#include "../pci/pci.h"
+#include "../../drivers/pci/pci.h"
 #include "../../arch/x86_64/mmio.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"

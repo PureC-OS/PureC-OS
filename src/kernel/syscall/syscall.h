@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
 
 #define SYS_WRITE 1
@@ -149,6 +150,22 @@
 #define SYS_FD_PATH 343
 #define SYS_FD_SEEK 344
 #define SYS_FD_TRUNCATE 345
+#define SYS_DESKTOP_CLAIM 346 /* () -> 0, root only, desktop=rs session */
+#define SYS_DESKTOP_BLIT 347  /* (struct fb_blit_request *) into desktop layer */
+#define SYS_DESKTOP_WAIT 348  /* (timeout_ms) -> RS_WAIT_* bits */
+#define SYS_DESKTOP_WM 349    /* (op, arg1, arg2) */
+#define SYS_GUI_WINDOW_INFO 350  /* (struct gui_window_info *) */
+#define SYS_GUI_WINDOW_FLAGS 351 /* (GUI_WINDOW_FLAG_*) */
+#define SYS_GUI_WINDOW_CMD 352   /* (GUI_WINDOW_CMD_*) */
+#define SYS_GUI_WINDOW_TITLE 353 /* (const char *title) */
+#define SYS_TTY_READ 354         /* (buffer, count) -> bytes, console input */
+#define SYS_TTY_IOCTL 355        /* (TTY_* request, argument pointer) */
+#define SYS_POLL 356             /* (struct kernel_pollfd *, count, timeout_ms) */
+#define SYS_MMAP 357             /* (struct kernel_mmap_args *) -> address */
+#define SYS_MUNMAP 358           /* (address, length) */
+#define SYS_MPROTECT 359         /* (address, length, KMAP_PROT_*) */
+#define SYS_MREMAP 360           /* (old, old_len, new_len, KMAP_REMAP_*) -> address */
+#define SYS_DISPLAY_SCALE_INFO 361 /* (struct display_scale_info *) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -161,6 +178,41 @@
 #define FD_KIND_CONSOLE 0
 #define FD_KIND_FILE 1
 #define FD_KIND_PIPE 2
+
+#define TTY_TCGETS 0x5401u
+#define TTY_TCSETS 0x5402u
+#define TTY_TCSETSW 0x5403u
+#define TTY_TCSETSF 0x5404u
+#define TTY_TCFLSH 0x540Bu
+#define TTY_TIOCGWINSZ 0x5413u
+#define TTY_TIOCSWINSZ 0x5414u
+#define TTY_FIONREAD 0x541Bu
+#define TTY_RAW_ACTIVE 0x7F01u
+
+#define KPOLLIN 0x001
+#define KPOLLOUT 0x004
+#define KPOLLERR 0x008
+#define KPOLLHUP 0x010
+#define KPOLLNVAL 0x020
+
+struct kernel_pollfd {
+  int32_t fd;
+  int16_t events;
+  int16_t revents;
+};
+
+#define KMAP_PROT_READ 1
+#define KMAP_PROT_WRITE 2
+#define KMAP_PROT_EXEC 4
+#define KMAP_FIXED 1
+#define KMAP_REMAP_MAYMOVE 1
+
+struct kernel_mmap_args {
+  uint64_t address;
+  uint64_t length;
+  uint64_t prot;
+  uint64_t flags;
+};
 
 #define KERR_PERM 1
 #define KERR_NOENT 2
@@ -179,6 +231,7 @@
 #define KERR_NOTDIR 20
 #define KERR_INVAL 22
 #define KERR_NFILE 23
+#define KERR_NOTTY 25
 #define KERR_MFILE 24
 #define KERR_SPIPE 29
 #define KERR_PIPE 32
@@ -275,12 +328,45 @@ struct net_if_info {
 
 #define GUI_WINDOW_STATE_FOCUSED 1
 #define GUI_WINDOW_STATE_REPAINT 2
+#define GUI_WINDOW_STATE_CLOSE 4
+#define GUI_WINDOW_STATE_SERVER 8
+#define GUI_WINDOW_STATE_DRAGGING 16
+#define GUI_WINDOW_STATE_GEN_SHIFT 8
+
+#define GUI_WINDOW_INFO_MINIMIZED 1
+#define GUI_WINDOW_INFO_MAXIMIZED 2
+
+#define GUI_WINDOW_FLAG_FIXED 1
+#define GUI_WINDOW_FLAG_NOCLOSE 2
+#define GUI_WINDOW_FLAG_POPUP 4
+
+#define GUI_WINDOW_CMD_MINIMIZE 1
+#define GUI_WINDOW_CMD_RESTORE 2
+#define GUI_WINDOW_CMD_MAXIMIZE 3
+#define GUI_WINDOW_CMD_UNMAXIMIZE 4
 
 struct gui_window_request {
   uint32_t x;
   uint32_t y;
   uint32_t width;
   uint32_t height;
+};
+
+struct gui_task_info {
+  uint32_t pid;
+  uint32_t flags;
+  char name[32];
+};
+
+#define GUI_TASK_MINIMIZED 1
+#define GUI_TASK_FOCUSED 2
+
+struct gui_window_info {
+  uint32_t x;
+  uint32_t y;
+  uint32_t width;
+  uint32_t height;
+  uint32_t flags;
 };
 
 #define PROCESS_ENVIRONMENT_LIMIT 16
@@ -383,6 +469,13 @@ struct framebuffer_info {
   uint8_t bpp;
   uint8_t available;
   char protocol_name[16];
+};
+
+struct display_scale_info {
+  uint32_t physical_width;
+  uint32_t physical_height;
+  uint32_t scale_percent;
+  uint32_t reserved;
 };
 
 struct framebuffer_scroll_request {
@@ -656,4 +749,6 @@ void syscall_init(void);
 int64_t syscall_handler(struct syscall_regs *regs);
 void install_report_ui_crash(int32_t status);
 void filesystem_syscall_lock(void);
+bool filesystem_syscall_acquire(void);
+bool install_job_running(void);
 void filesystem_syscall_unlock(void);

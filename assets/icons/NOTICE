@@ -1,0 +1,22 @@
+Desktop icons
+=============
+
+The .svg files in this directory are Material Symbols (Rounded, filled,
+48px) by Google, https://fonts.google.com/icons, licensed under the
+Apache License 2.0 (https://www.apache.org/licenses/LICENSE-2.0).
+
+The .icn files are generated from them by mk/gen_icons.py (alpha masks,
+96x96, tinted by the desktop at draw time). Regenerate with:
+
+    python3 mk/gen_icons.py
+
+Mapping (desktop entry -> Material Symbol):
+  terminal    terminal            calc        calculate
+  calendar    calendar_month      clock       schedule
+  files       folder              disks       hard_drive
+  devmgr      developer_board     hexedit     data_object
+  install     install_desktop     logview     receipt_long
+  monitor     speed               notepad     edit_note
+  puzzle15    extension           2048        grid_view
+  settings    settings            tetris      sports_esports
+  pl          code                desktop-rs  desktop_windows

@@ -1,3 +1,4 @@
+#include "../../io/io_sched.h"
 #include "syscall.h"
 #include "../../drivers/audio/audio.h"
 #include "../../drivers/display/gop.h"
@@ -8,9 +9,9 @@
 #include "../../drivers/mouse/usb_mouse.h"
 #include "../../drivers/power/power.h"
 #include "../../drivers/serial/serial.h"
-#include "../../drivers/storage/ahci.h"
-#include "../../drivers/storage/block_device.h"
-#include "../../drivers/storage/storage_probe.h"
+#include "../../io/storage/ahci.h"
+#include "../../io/storage/block_device.h"
+#include "../../io/storage/storage_probe.h"
 #include "../../drivers/usb/ehci.h"
 #include "../../drivers/usb/xhci.h"
 #include "../../fs/install.h"
@@ -30,6 +31,7 @@
 #include "../../net/transport/tcp.h"
 #include "../../net/wifi/wifi.h"
 #include "../../userspace/display_mode.h"
+#include "../../userspace/rs_session.h"
 #include "../../userspace/userspace.h"
 #include "../../userspace/window_manager.h"
 #include "../core/system_info.h"
@@ -42,6 +44,7 @@
 #include "../process/fdtable.h"
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
+#include "../tty/tty.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -53,36 +56,66 @@ static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
 
-static bool readable(const void *buffer, uint64_t size) {
+static bool readable(const void *buffer, uint64_t size)
+{
   return process_user_buffer(buffer, size, false);
 }
 
-static bool writable(void *buffer, uint64_t size) {
+static bool writable(void *buffer, uint64_t size)
+{
   return process_user_buffer(buffer, size, true);
 }
 
-static bool readable_string(const char *text) {
+static bool readable_string(const char *text)
+{
   return process_user_string(text, 4096);
 }
 
-void filesystem_syscall_lock(void) {
+void filesystem_syscall_lock(void)
+{
+  uint32_t spins = 0;
   while (__atomic_test_and_set(&filesystem_syscall_busy, __ATOMIC_ACQUIRE))
-    scheduler_yield();
+  {
+    if (++spins < 8)
+      scheduler_yield();
+    else
+      scheduler_sleep(1);
+  }
 }
 
-void filesystem_syscall_unlock(void) {
+void filesystem_syscall_unlock(void)
+{
   __atomic_clear(&filesystem_syscall_busy, __ATOMIC_RELEASE);
 }
 
-static void install_progress(uint32_t progress, const char *stage) {
+static volatile int install_worker_tid = -1;
+
+bool install_job_running(void)
+{
+  return install_job.state == 1;
+}
+
+bool filesystem_syscall_acquire(void)
+{
+  if (install_job.state == 1 &&
+      scheduler_current_tid() != __atomic_load_n(&install_worker_tid, __ATOMIC_ACQUIRE))
+    return false;
+  filesystem_syscall_lock();
+  return true;
+}
+
+static void install_progress(uint32_t progress, const char *stage)
+{
   uint64_t flags;
   __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
   install_job.progress = progress;
   if (stage)
     strncpy(install_job.stage, stage, sizeof(install_job.stage) - 1);
   install_job.stage[sizeof(install_job.stage) - 1] = '\0';
-  if (stage) {
-    if (install_history.count == INSTALL_LOG_CAPACITY) {
+  if (stage)
+  {
+    if (install_history.count == INSTALL_LOG_CAPACITY)
+    {
       for (uint32_t index = 1; index < INSTALL_LOG_CAPACITY; index++)
         install_history.entries[index - 1] = install_history.entries[index];
       install_history.count--;
@@ -97,21 +130,28 @@ static void install_progress(uint32_t progress, const char *stage) {
     __asm__ volatile("sti" ::: "memory");
 }
 
-static void install_worker(void *argument) {
+static void install_worker(void *argument)
+{
   (void)argument;
+  __atomic_store_n(&install_worker_tid, scheduler_current_tid(), __ATOMIC_RELEASE);
   filesystem_syscall_lock();
   block_device_begin_exclusive_io();
+  io_bulk_begin();
   int32_t result = installer_install_device(install_device, install_serial,
                                             install_progress);
+  io_bulk_end();
   block_device_end_exclusive_io();
   filesystem_syscall_unlock();
+  __atomic_store_n(&install_worker_tid, -1, __ATOMIC_RELEASE);
   install_job.result = result;
-  if (result < 0) {
+  if (result < 0)
+  {
     install_job.state = 3;
     char failed_stage[INSTALL_STAGE_CAPACITY];
     const char *prefix = "Failed: ";
     uint32_t length = 0;
-    while (prefix[length] && length + 1 < sizeof(failed_stage)) {
+    while (prefix[length] && length + 1 < sizeof(failed_stage))
+    {
       failed_stage[length] = prefix[length];
       length++;
     }
@@ -120,13 +160,16 @@ static void install_worker(void *argument) {
       failed_stage[length++] = install_job.stage[index];
     failed_stage[length] = '\0';
     install_progress(install_job.progress, failed_stage);
-  } else {
+  }
+  else
+  {
     install_job.state = 2;
     install_progress(92, "Disk layout complete");
   }
 }
 
-void install_report_ui_crash(int32_t status) {
+void install_report_ui_crash(int32_t status)
+{
   if (install_job.state != 0)
     return;
   memset(&install_job, 0, sizeof(install_job));
@@ -136,11 +179,13 @@ void install_report_ui_crash(int32_t status) {
   install_progress(0, "Installer UI crashed");
 }
 
-static void print_hex(uint64_t v) {
+static void print_hex(uint64_t v)
+{
   const char *h = "0123456789ABCDEF";
   char buf[17];
   buf[16] = 0;
-  for (int i = 15; i >= 0; i--) {
+  for (int i = 15; i >= 0; i--)
+  {
     buf[i] = h[v & 0xF];
     v >>= 4;
   }
@@ -148,41 +193,136 @@ static void print_hex(uint64_t v) {
   serial_write_string(buf);
 }
 
-int64_t syscall_handler(struct syscall_regs *r) {
+static int64_t tty_ioctl_request(uint32_t request, uint64_t argument)
+{
+  void *pointer = (void *)(uintptr_t)argument;
+  switch (request)
+  {
+  case TTY_TCGETS:
+    if (!writable(pointer, sizeof(struct tty_termios)))
+      return -KERR_FAULT;
+    tty_get_termios((struct tty_termios *)pointer);
+    return 0;
+  case TTY_TCSETS:
+  case TTY_TCSETSW:
+  case TTY_TCSETSF:
+  {
+    if (!readable(pointer, sizeof(struct tty_termios)))
+      return -KERR_FAULT;
+    struct tty_termios mode = *(const struct tty_termios *)pointer;
+    tty_set_termios(&mode, request == TTY_TCSETSF,
+                    (uint32_t)process_current_pid());
+    return 0;
+  }
+  case TTY_TIOCGWINSZ:
+    if (!writable(pointer, sizeof(struct tty_winsize)))
+      return -KERR_FAULT;
+    tty_get_winsize((struct tty_winsize *)pointer);
+    return 0;
+  case TTY_TIOCSWINSZ:
+    return 0;
+  case TTY_FIONREAD:
+    if (!writable(pointer, sizeof(int32_t)))
+      return -KERR_FAULT;
+    *(int32_t *)pointer = (int32_t)tty_pending();
+    return 0;
+  case TTY_TCFLSH:
+    if (argument == 0 || argument == 2)
+      tty_flush_input();
+    return 0;
+  case TTY_RAW_ACTIVE:
+    return tty_raw_mode() ? 1 : 0;
+  default:
+    return -KERR_NOTTY;
+  }
+}
+
+#define POLL_MAX_DESCRIPTORS 256
+static uint32_t poll_overshoot_reports;
+
+static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,
+                                int64_t timeout_ms)
+{
+  if (count > POLL_MAX_DESCRIPTORS ||
+      (count && !writable(fds, count * sizeof(*fds))))
+    return -KERR_FAULT;
+  uint64_t started = timer_ticks();
+  for (;;)
+  {
+    int64_t ready = 0;
+    for (uint64_t i = 0; i < count; i++)
+    {
+      int32_t revents = 0;
+      if (fds[i].fd >= 0)
+      {
+        revents = fd_poll(fds[i].fd);
+        revents &= (uint16_t)fds[i].events | KPOLLERR | KPOLLHUP | KPOLLNVAL;
+      }
+      fds[i].revents = (int16_t)revents;
+      if (revents)
+        ready++;
+    }
+    if (ready || !timeout_ms)
+      return ready;
+    if (timeout_ms > 0 && timer_ticks() - started >= (uint64_t)timeout_ms)
+    {
+      uint64_t over = timer_ticks() - started - (uint64_t)timeout_ms;
+      if (over >= 20 && poll_overshoot_reports < 64)
+      {
+        poll_overshoot_reports++;
+        klogf(KLOG_INFO, "poll: timeout %d ms overshot by %u ms",
+              (int32_t)timeout_ms, (uint32_t)over);
+      }
+      return 0;
+    }
+    if (signal_pending_current())
+      return -KERR_INTR;
+    scheduler_sleep(1);
+  }
+}
+
+int64_t syscall_handler(struct syscall_regs *r)
+{
   uint64_t n = r->rax;
   uint64_t a1 = r->rbx;
   uint64_t a2 = r->rcx;
   uint64_t a3 = r->rdx;
-  switch (n) {
-  case SYS_WRITE: {
+  switch (n)
+  {
+  case SYS_WRITE:
+  {
     const char *s = (const char *)(uintptr_t)a1;
     uint64_t len = a2;
     if (!readable(s, len))
       return -1;
     struct process *writer = process_current();
-    if (writer && writer->descriptors[1] != VFS_FD_STDOUT) {
+    if (writer && writer->descriptors[1] != VFS_FD_STDOUT)
+    {
       if (len > 0x7FFFFFFFULL)
         return -1;
       int32_t sent = fd_write(1, s, (uint32_t)len);
       return sent < 0 ? -1 : (int64_t)sent;
     }
-    for (uint64_t i = 0; i < len; i++) {
+    for (uint64_t i = 0; i < len; i++)
+    {
       serial_putc(s[i]);
       if (gop_console_is_active())
         gop_console_putc(s[i]);
-      else
+      else if (!rs_session_active())
         gop_putc(s[i]);
     }
     return (int64_t)len;
   }
-  case SYS_CLEAR: {
+  case SYS_CLEAR:
+  {
     uint32_t color = (uint32_t)a1;
     gop_clear(color);
     if (!gop_is_available())
       vga_clear();
     return 0;
   }
-  case SYS_DRAW_RECT: {
+  case SYS_DRAW_RECT:
+  {
     uint32_t x = (uint32_t)a1, y = (uint32_t)a2, w = (uint32_t)a3,
              h = (uint32_t)r->rsi;
     uint32_t c = (uint32_t)r->rdi;
@@ -191,7 +331,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     gop_draw_rect(x, y, w, h, c);
     return 0;
   }
-  case SYS_DRAW_LINE: {
+  case SYS_DRAW_LINE:
+  {
     uint32_t x0 = (uint32_t)a1, y0 = (uint32_t)a2, x1 = (uint32_t)a3,
              y1 = (uint32_t)r->rsi;
     uint32_t c = (uint32_t)r->rdi;
@@ -201,7 +342,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     gop_draw_line(x0, y0, x1, y1, c);
     return 0;
   }
-  case SYS_FB_INFO: {
+  case SYS_FB_INFO:
+  {
     struct framebuffer_info *info = (struct framebuffer_info *)(uintptr_t)a1;
     if (!writable(info, sizeof(*info)))
       return -1;
@@ -216,7 +358,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
             sizeof(info->protocol_name) - 1);
     return 0;
   }
-  case SYS_SCROLL_RECT_UP: {
+  case SYS_SCROLL_RECT_UP:
+  {
     struct framebuffer_scroll_request *request =
         (struct framebuffer_scroll_request *)(uintptr_t)a1;
     if (!readable(request, sizeof(*request)))
@@ -242,8 +385,22 @@ int64_t syscall_handler(struct syscall_regs *r) {
     mouse_end_framebuffer_update();
     return 0;
   case SYS_DISPLAY_SET_MODE:
-    return display_mode_apply((uint32_t)a1, (uint32_t)a2, (uint8_t)a3);
-  case SYS_CONSOLE_CONFIGURE: {
+    return display_mode_apply((uint32_t)a1, (uint32_t)a2, (uint8_t)a3,
+                              (uint32_t)r->rsi);
+  case SYS_DISPLAY_SCALE_INFO:
+  {
+    struct display_scale_info *info =
+        (struct display_scale_info *)(uintptr_t)a1;
+    if (!writable(info, sizeof(*info)))
+      return -1;
+    info->physical_width = gop_get_physical_width();
+    info->physical_height = gop_get_physical_height();
+    info->scale_percent = gop_get_scale_percent();
+    info->reserved = 0;
+    return 0;
+  }
+  case SYS_CONSOLE_CONFIGURE:
+  {
     const struct framebuffer_console_request *request =
         (const struct framebuffer_console_request *)(uintptr_t)a1;
     if (!readable(request, sizeof(*request)))
@@ -266,7 +423,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_DESKTOP_REDRAW:
     userspace_redraw_desktop();
     return 0;
-  case SYS_GUI_WINDOW_REGISTER: {
+  case SYS_GUI_WINDOW_REGISTER:
+  {
     const struct gui_window_request *request =
         (const struct gui_window_request *)(uintptr_t)a1;
     if (!readable(request, sizeof(*request)))
@@ -276,7 +434,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     scheduler_set_affinity(scheduler_current_tid(), 0);
     return 0;
   }
-  case SYS_GUI_WINDOW_UPDATE: {
+  case SYS_GUI_WINDOW_UPDATE:
+  {
     const struct gui_window_request *request =
         (const struct gui_window_request *)(uintptr_t)a1;
     if (!readable(request, sizeof(*request)))
@@ -287,6 +446,58 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_GUI_WINDOW_UNREGISTER:
     window_manager_unregister((uint32_t)process_current_pid());
     return 0;
+  case SYS_GUI_WINDOW_INFO:
+  {
+    struct gui_window_info info;
+    if (!writable((void *)(uintptr_t)a1, sizeof(info)))
+      return -1;
+    if (!window_manager_info((uint32_t)process_current_pid(), &info))
+      return -1;
+    *(struct gui_window_info *)(uintptr_t)a1 = info;
+    return 0;
+  }
+  case SYS_GUI_WINDOW_FLAGS:
+    return window_manager_set_flags((uint32_t)process_current_pid(),
+                                    (uint32_t)a1)
+               ? 0
+               : -1;
+  case SYS_TTY_READ:
+    if (a2 > 0x7FFFFFFFULL || !writable((void *)(uintptr_t)a1, a2))
+      return -KERR_FAULT;
+    return tty_read((void *)(uintptr_t)a1, (uint32_t)a2);
+  case SYS_TTY_IOCTL:
+    return tty_ioctl_request((uint32_t)a1, a2);
+  case SYS_MMAP:
+  {
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct kernel_mmap_args)))
+      return -KERR_FAULT;
+    struct kernel_mmap_args request = *(const struct kernel_mmap_args *)(uintptr_t)a1;
+    return process_mmap(request.address, request.length, request.prot,
+                        request.flags);
+  }
+  case SYS_MUNMAP:
+    return process_munmap(a1, a2);
+  case SYS_MPROTECT:
+    return process_mprotect(a1, a2, a3);
+  case SYS_MREMAP:
+    return process_mremap(a1, a2, a3, r->rsi);
+  case SYS_POLL:
+    return poll_descriptors((struct kernel_pollfd *)(uintptr_t)a1, a2,
+                            (int64_t)(int32_t)a3);
+  case SYS_GUI_WINDOW_TITLE:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    return window_manager_set_title((uint32_t)process_current_pid(),
+                                    (const char *)(uintptr_t)a1)
+               ? 0
+               : -1;
+  }
+  case SYS_GUI_WINDOW_CMD:
+    return window_manager_command((uint32_t)process_current_pid(),
+                                  (uint32_t)a1)
+               ? 0
+               : -1;
   case SYS_GUI_WINDOW_STATE:
     return window_manager_state((uint32_t)process_current_pid());
   case SYS_GUI_WINDOW_REPAINT_DONE:
@@ -294,13 +505,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return 0;
   case SYS_GETPID:
     return process_current_pid();
-  case SYS_GETRANDOM: {
+  case SYS_GETRANDOM:
+  {
     if (a2 > 0x100000 || !writable((void *)(uintptr_t)a1, a2))
       return -1;
     krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
     return (int64_t)a2;
   }
-  case SYS_FB_BLIT: {
+  case SYS_FB_BLIT:
+  {
     if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
       return -1;
     struct fb_blit_request req =
@@ -317,7 +530,28 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -2;
     return 0;
   }
-  case SYS_TIME_GET: {
+  case SYS_DESKTOP_CLAIM:
+    return rs_session_claim((uint32_t)process_current_pid(),
+                            process_current_uid());
+  case SYS_DESKTOP_BLIT:
+  {
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
+      return -1;
+    struct fb_blit_request req =
+        *(const struct fb_blit_request *)(uintptr_t)a1;
+    uint64_t bytes;
+    if (!blit_source_bytes(req.stride, req.width, req.height, &bytes))
+      return -1;
+    if (!readable((const void *)(uintptr_t)req.pixels, bytes))
+      return -1;
+    return rs_session_blit((uint32_t)process_current_pid(), &req);
+  }
+  case SYS_DESKTOP_WAIT:
+    return rs_session_wait((uint32_t)process_current_pid(), (uint32_t)a1);
+  case SYS_DESKTOP_WM:
+    return rs_session_wm((uint32_t)process_current_pid(), a1, a2, a3);
+  case SYS_TIME_GET:
+  {
     if (!writable((void *)(uintptr_t)a1, sizeof(struct time_info)))
       return -1;
     struct time_info *info = (struct time_info *)(uintptr_t)a1;
@@ -334,11 +568,13 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (process_current_uid() != 0)
       return -1;
     return wallclock_set((int64_t)a1, (int32_t)a2);
-  case SYS_FILE_STAT_EX: {
+  case SYS_FILE_STAT_EX:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_ex)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_stat_ex((const char *)(uintptr_t)a1,
                                  (struct file_stat_ex *)(uintptr_t)a2);
     filesystem_syscall_unlock();
@@ -354,44 +590,53 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return process_set_uid((uint32_t)a1);
   case SYS_SETGID:
     return process_set_gid((uint32_t)a1);
-  case SYS_CHMOD: {
+  case SYS_CHMOD:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_chmod((const char *)(uintptr_t)a1, (uint16_t)a2);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_CHOWN: {
+  case SYS_CHOWN:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_chown((const char *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_PERM: {
+  case SYS_FILE_PERM:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2, sizeof(struct file_perm_info)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_get_perm((const char *)(uintptr_t)a1,
                                   (struct file_perm_info *)(uintptr_t)a2);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_USER_LOOKUP: {
+  case SYS_USER_LOOKUP:
+  {
     if ((a1 && !readable_string((const char *)(uintptr_t)a1)) ||
         !writable((void *)(uintptr_t)a3, sizeof(struct user_info)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_user_lookup((const char *)(uintptr_t)a1, (uint32_t)a2,
                                      (struct user_info *)(uintptr_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_HEAP_GROW: {
+  case SYS_HEAP_GROW:
+  {
     uint64_t address = process_heap_grow(a1);
     return address ? (int64_t)address : -1;
   }
@@ -401,7 +646,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return process_execve(r, (const char *)(uintptr_t)a1,
                           (const char *const *)(uintptr_t)a2,
                           (const char *const *)(uintptr_t)a3);
-  case SYS_WAITPID: {
+  case SYS_WAITPID:
+  {
     if (a2 && !writable((void *)(uintptr_t)a2, sizeof(int32_t)))
       return -KERR_FAULT;
     int32_t wait_status = 0;
@@ -410,7 +656,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       *(int32_t *)(uintptr_t)a2 = wait_status;
     return waited;
   }
-  case SYS_PIPE: {
+  case SYS_PIPE:
+  {
     if (!writable((void *)(uintptr_t)a1, 2 * sizeof(int32_t)))
       return -KERR_FAULT;
     int32_t pair[2];
@@ -434,7 +681,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (a3 > 0x7FFFFFFFULL || !readable((const void *)(uintptr_t)a2, a3))
       return -KERR_FAULT;
     return fd_write((int32_t)a1, (const void *)(uintptr_t)a2, (uint32_t)a3);
-  case SYS_FD_OPEN: {
+  case SYS_FD_OPEN:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -KERR_FAULT;
     char absolute[512];
@@ -475,7 +723,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if ((int32_t)a1 <= 0)
       return -KERR_SRCH;
     return signal_send((uint32_t)a1, (int32_t)a2);
-  case SYS_SIGACTION: {
+  case SYS_SIGACTION:
+  {
     if ((a2 && !readable((const void *)(uintptr_t)a2,
                          sizeof(struct ksigaction))) ||
         (a3 && !writable((void *)(uintptr_t)a3, sizeof(struct ksigaction))))
@@ -490,7 +739,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       *(struct ksigaction *)(uintptr_t)a3 = outgoing;
     return changed;
   }
-  case SYS_SIGPROCMASK: {
+  case SYS_SIGPROCMASK:
+  {
     if ((a2 && !readable((const void *)(uintptr_t)a2, sizeof(uint64_t))) ||
         (a3 && !writable((void *)(uintptr_t)a3, sizeof(uint64_t))))
       return -KERR_FAULT;
@@ -502,7 +752,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       *(uint64_t *)(uintptr_t)a3 = outgoing;
     return changed;
   }
-  case SYS_SIGPENDING: {
+  case SYS_SIGPENDING:
+  {
     if (!writable((void *)(uintptr_t)a1, sizeof(uint64_t)))
       return -KERR_FAULT;
     uint64_t pending = 0;
@@ -556,7 +807,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
     return process_environment_unset((const char *)(uintptr_t)a1);
-  case SYS_ENV_LIST: {
+  case SYS_ENV_LIST:
+  {
     if (a2 > PROCESS_ENVIRONMENT_LIMIT)
       return -1;
     struct process_environment_variable *variables =
@@ -569,7 +821,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return count;
     uint32_t copied =
         (uint32_t)count < (uint32_t)a2 ? (uint32_t)count : (uint32_t)a2;
-    for (uint32_t index = 0; index < copied; index++) {
+    for (uint32_t index = 0; index < copied; index++)
+    {
       variables[index].used = entries[index].used ? 1 : 0;
       strncpy(variables[index].name, entries[index].name,
               sizeof(variables[index].name) - 1);
@@ -580,7 +833,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     }
     return count;
   }
-  case SYS_GET_MOUSE: {
+  case SYS_GET_MOUSE:
+  {
     struct mouse_state *out = (struct mouse_state *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
@@ -594,12 +848,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_MOUSE_DEBUG_SET:
     mouse_set_debug_overlay(a1 != 0);
     return 0;
-  case SYS_FILE_OPEN: {
+  case SYS_FILE_OPEN:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_open((const char *)(uintptr_t)a1);
-    if (result >= 0) {
+    if (result >= 0)
+    {
       int32_t descriptor = process_fd_install(result);
       if (descriptor < 0)
         (void)vfs_close(result);
@@ -608,120 +865,144 @@ int64_t syscall_handler(struct syscall_regs *r) {
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_READ: {
+  case SYS_FILE_READ:
+  {
     if (!writable((void *)(uintptr_t)a2, (uint32_t)a3))
       return -1;
     int32_t descriptor = process_fd_resolve((int32_t)a1);
     if (descriptor < 0)
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_read(descriptor, (void *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_SEEK: {
+  case SYS_FILE_SEEK:
+  {
     int32_t descriptor = process_fd_resolve((int32_t)a1);
     if (descriptor < 0)
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int64_t result = vfs_seek(descriptor, (int64_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_STAT: {
+  case SYS_FILE_STAT:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_info)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_stat((const char *)(uintptr_t)a1,
                               (struct file_stat_info *)(uintptr_t)a2);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_CLOSE: {
-    filesystem_syscall_lock();
+  case SYS_FILE_CLOSE:
+  {
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = process_fd_close((int32_t)a1);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_DELETE: {
+  case SYS_FILE_DELETE:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_delete((const char *)(uintptr_t)a1);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_RENAME: {
+  case SYS_FILE_RENAME:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_rename((const char *)(uintptr_t)a1, (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_MOVE: {
+  case SYS_FILE_MOVE:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_move((const char *)(uintptr_t)a1, (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_DIR_LIST: {
+  case SYS_DIR_LIST:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2,
                   (uint64_t)(uint32_t)a3 * sizeof(struct fs_directory_entry)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result =
         vfs_list((const char *)(uintptr_t)a1,
                  (struct fs_directory_entry *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_DIR_LIST_LONG: {
+  case SYS_DIR_LIST_LONG:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !writable((void *)(uintptr_t)a2,
                   (uint64_t)(uint32_t)a3 *
                       sizeof(struct fs_directory_entry_long)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_list_long(
         (const char *)(uintptr_t)a1,
         (struct fs_directory_entry_long *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_IPC_SEND: {
+  case SYS_IPC_SEND:
+  {
     if (!a1 || !a2 || (uint32_t)a3 > IPC_MAX_PAYLOAD ||
         !readable((const void *)(uintptr_t)a2, (uint64_t)(uint32_t)a3))
       return -1;
     return ipc_send((uint32_t)a1, (const void *)(uintptr_t)a2,
                     (uint32_t)a3);
   }
-  case SYS_IPC_RECV: {
+  case SYS_IPC_RECV:
+  {
     if (!a1 || !a2 ||
         !writable((void *)(uintptr_t)a1, (uint64_t)(uint32_t)a2))
       return -1;
     return ipc_recv((void *)(uintptr_t)a1, (uint32_t)a2, (uint32_t)a3);
   }
-  case SYS_FILE_CREATE: {
+  case SYS_FILE_CREATE:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_create_file((const char *)(uintptr_t)a1);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_DIR_CREATE: {
+  case SYS_DIR_CREATE:
+  {
     if (!readable_string((const char *)(uintptr_t)a1))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_create_directory((const char *)(uintptr_t)a1);
     filesystem_syscall_unlock();
     return result;
@@ -739,65 +1020,76 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     return storage_controller_list(
         (struct storage_controller_info *)(uintptr_t)a1, (uint32_t)a2);
-  case SYS_FS_FORMAT: {
+  case SYS_FS_FORMAT:
+  {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2) ||
         (a3 && !readable_string((const char *)(uintptr_t)a3)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_format_device((const char *)(uintptr_t)a1,
                                        (const char *)(uintptr_t)a2,
                                        (const char *)(uintptr_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FS_FORMAT_FORCE: {
+  case SYS_FS_FORMAT_FORCE:
+  {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_format_device_force((const char *)(uintptr_t)a1,
                                              (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_INSTALL_DEVICE: {
+  case SYS_INSTALL_DEVICE:
+  {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_install_device((const char *)(uintptr_t)a1,
                                         (const char *)(uintptr_t)a2, 0);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_WRITE: {
+  case SYS_FILE_WRITE:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable((const void *)(uintptr_t)a2, (uint32_t)a3))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_write_file((const char *)(uintptr_t)a1,
                                     (const void *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FILE_APPEND: {
+  case SYS_FILE_APPEND:
+  {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable((const void *)(uintptr_t)a2, (uint32_t)a3))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = vfs_append_file((const char *)(uintptr_t)a1,
                                      (const void *)(uintptr_t)a2, (uint32_t)a3);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_USB_RESCAN: {
+  case SYS_USB_RESCAN:
+  {
     uint32_t count = block_device_rescan_usb();
     struct xhci_probe_stats xhci_stats;
     struct ehci_probe_stats ehci_stats;
@@ -806,7 +1098,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     struct usb_scan_status *status = (struct usb_scan_status *)(uintptr_t)a1;
     if (status && !writable(status, sizeof(*status)))
       return -1;
-    if (status) {
+    if (status)
+    {
       status->xhci_controllers = xhci_stats.controllers;
       status->xhci_connected_ports = xhci_stats.connected_ports;
       status->xhci_addressed_devices = xhci_stats.addressed_devices;
@@ -848,15 +1141,18 @@ int64_t syscall_handler(struct syscall_regs *r) {
           ehci_stats.connected_ports, ehci_stats.high_speed_ports,
           ehci_stats.mass_storage_devices, ehci_stats.failures,
           ehci_stats.last_stage);
-    if (count) {
-      filesystem_syscall_lock();
+    if (count)
+    {
+      if (!filesystem_syscall_acquire())
+      return -1;
       if (!vfs_is_root_mounted())
         (void)vfs_mount_root();
       filesystem_syscall_unlock();
     }
     return count;
   }
-  case SYS_CPU_INFO: {
+  case SYS_CPU_INFO:
+  {
     struct cpu_monitor_info *info = (struct cpu_monitor_info *)(uintptr_t)a1;
     if (!writable(info, sizeof(*info)))
       return -1;
@@ -868,7 +1164,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     info->uptime_ms = system_info_uptime_ms();
     return 0;
   }
-  case SYS_MEMORY_INFO: {
+  case SYS_MEMORY_INFO:
+  {
     struct memory_monitor_info *info =
         (struct memory_monitor_info *)(uintptr_t)a1;
     if (!writable(info, sizeof(*info)))
@@ -881,7 +1178,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     info->framebuffer_bytes = gop_get_framebuffer_size_bytes();
     return 0;
   }
-  case SYS_CPU_CORE_INFO: {
+  case SYS_CPU_CORE_INFO:
+  {
     struct cpu_core_info *info = (struct cpu_core_info *)(uintptr_t)a1;
     if (!writable(info, sizeof(*info)))
       return -1;
@@ -890,7 +1188,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (registered > CPU_CORE_MAX_COUNT)
       registered = CPU_CORE_MAX_COUNT;
     info->count = registered;
-    for (uint32_t i = 0; i < registered; i++) {
+    for (uint32_t i = 0; i < registered; i++)
+    {
       info->cores[i].id = i;
       info->cores[i].online = cpu_is_online(i) ? 1u : 0u;
       uint64_t total = 0, idle = 0;
@@ -900,7 +1199,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     }
     return 0;
   }
-  case SYS_PROCESS_LIST: {
+  case SYS_PROCESS_LIST:
+  {
     if (a2 > 1024)
       return -1;
     struct process_monitor_info *entries =
@@ -911,13 +1211,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     return process_monitor_list_page(entries, (uint32_t)a2, (uint32_t)a3);
   }
-  case SYS_DISK_STATS: {
+  case SYS_DISK_STATS:
+  {
     struct disk_monitor_info *info = (struct disk_monitor_info *)(uintptr_t)a1;
     if (!writable(info, sizeof(*info)))
       return -1;
     memset(info, 0, sizeof(*info));
     info->device_count = block_device_count();
-    for (uint32_t index = 0; index < info->device_count; index++) {
+    for (uint32_t index = 0; index < info->device_count; index++)
+    {
       struct storage_device_info device;
       if (!block_device_get_info(index, &device))
         continue;
@@ -944,19 +1246,22 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_SHUTDOWN:
     power_shutdown();
     return 0;
-  case SYS_BATTERY_INFO: {
+  case SYS_BATTERY_INFO:
+  {
     struct battery_info *out = (struct battery_info *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
     return power_battery_get(out) ? 0 : -1;
   }
-  case SYS_THERMAL_INFO: {
+  case SYS_THERMAL_INFO:
+  {
     struct thermal_info *out = (struct thermal_info *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
     return power_thermal_get(out) ? 0 : -1;
   }
-  case SYS_AUDIO_GET_STATUS: {
+  case SYS_AUDIO_GET_STATUS:
+  {
     struct audio_status *out = (struct audio_status *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
@@ -983,7 +1288,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_AUDIO_PLAY_TEST_SOUND:
     audio_play_test_sound();
     return 0;
-  case SYS_AUDIO_PLAY_TONE: {
+  case SYS_AUDIO_PLAY_TONE:
+  {
     uint32_t freq = (uint32_t)a1;
     uint32_t dur = (uint32_t)a2;
     if (freq < 30 || freq > 8000 || dur == 0 || dur > 5000)
@@ -994,9 +1300,11 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_AUDIO_STOP_TONE:
     audio_stop_tone();
     return 0;
-  case SYS_AUDIO_PCM_PUSH: {
+  case SYS_AUDIO_PCM_PUSH:
+  {
     uint32_t frames = (uint32_t)a2;
-    if (frames == 0) {
+    if (frames == 0)
+    {
       audio_pcm_eos();
       return 0;
     }
@@ -1024,15 +1332,18 @@ int64_t syscall_handler(struct syscall_regs *r) {
     return 0;
   case SYS_GETCHAR:
     return (uint8_t)keyboard_getc();
-  case SYS_TRY_GETCHAR: {
+  case SYS_TRY_GETCHAR:
+  {
     char character;
     return keyboard_try_getc(&character) ? (uint8_t)character : -1;
   }
-  case SYS_TRY_GET_SPECIAL: {
+  case SYS_TRY_GET_SPECIAL:
+  {
     uint8_t key;
     return keyboard_try_get_special(&key) ? key : -1;
   }
-  case SYS_KEY_EVENT_GET: {
+  case SYS_KEY_EVENT_GET:
+  {
     struct key_event *out = (struct key_event *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
@@ -1056,14 +1367,16 @@ int64_t syscall_handler(struct syscall_regs *r) {
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
-                                INSTALL_WORKER_PRIORITY, 0) < 0) {
+                                INSTALL_WORKER_PRIORITY, 0) < 0)
+    {
       install_job.state = 3;
       install_job.result = -1;
       install_progress(100, "Cannot start installer worker");
       return -1;
     }
     return 0;
-  case SYS_INSTALL_START_EX: {
+  case SYS_INSTALL_START_EX:
+  {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -10;
     const struct install_start_request *req =
@@ -1082,7 +1395,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     install_job.state = 1;
     install_progress(1, "Starting installer worker");
     if (scheduler_create_thread(install_worker, 0, "installer-io",
-                                INSTALL_WORKER_PRIORITY, 0) < 0) {
+                                INSTALL_WORKER_PRIORITY, 0) < 0)
+    {
       install_job.state = 3;
       install_job.result = -1;
       install_progress(100, "Cannot start installer worker");
@@ -1100,7 +1414,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     *(struct install_log *)(uintptr_t)a1 = install_history;
     return 0;
-  case SYS_NET_PING: {
+  case SYS_NET_PING:
+  {
     const struct network_ping_request *user_request =
         (const struct network_ping_request *)(uintptr_t)a1;
     struct network_ping_result *user_result =
@@ -1111,8 +1426,10 @@ int64_t syscall_handler(struct syscall_regs *r) {
     struct network_ping_request request = *user_request;
     request.target[sizeof(request.target) - 1] = '\0';
     bool terminated = false;
-    for (uint32_t index = 0; index < sizeof(request.target); index++) {
-      if (!request.target[index]) {
+    for (uint32_t index = 0; index < sizeof(request.target); index++)
+    {
+      if (!request.target[index])
+      {
         terminated = true;
         break;
       }
@@ -1131,12 +1448,14 @@ int64_t syscall_handler(struct syscall_regs *r) {
     user_result->reserved = 0;
     return NET_PING_OK;
   }
-  case SYS_WIFI_SCAN: {
+  case SYS_WIFI_SCAN:
+  {
     if (!wifi_has_device())
       return -1;
     return wifi_trigger_scan() ? 0 : -1;
   }
-  case SYS_WIFI_LIST: {
+  case SYS_WIFI_LIST:
+  {
     struct wifi_network_info *buffer =
         (struct wifi_network_info *)(uintptr_t)a1;
     uint32_t capacity = (uint32_t)a2;
@@ -1151,12 +1470,14 @@ int64_t syscall_handler(struct syscall_regs *r) {
         wifi_get_scan_results((struct wifi_network *)temp, WIFI_SCAN_MAX);
     if (count > capacity)
       count = capacity;
-    for (uint32_t i = 0; i < count; i++) {
+    for (uint32_t i = 0; i < count; i++)
+    {
       buffer[i] = *(struct wifi_network_info *)&temp[i];
     }
     return (int64_t)count;
   }
-  case SYS_WIFI_CONNECT: {
+  case SYS_WIFI_CONNECT:
+  {
     const struct wifi_connect_request *user_req =
         (const struct wifi_connect_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -1166,7 +1487,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     req.password[sizeof(req.password) - 1] = '\0';
     bool ssid_term = false;
     for (uint32_t i = 0; i < sizeof(req.ssid); i++)
-      if (!req.ssid[i]) {
+      if (!req.ssid[i])
+      {
         ssid_term = true;
         break;
       }
@@ -1174,7 +1496,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     bool pass_term = false;
     for (uint32_t i = 0; i < sizeof(req.password); i++)
-      if (!req.password[i]) {
+      if (!req.password[i])
+      {
         pass_term = true;
         break;
       }
@@ -1182,10 +1505,12 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     return wifi_connect(req.ssid, req.password) ? 0 : -1;
   }
-  case SYS_WIFI_DISCONNECT: {
+  case SYS_WIFI_DISCONNECT:
+  {
     return wifi_disconnect() ? 0 : -1;
   }
-  case SYS_WIFI_STATUS: {
+  case SYS_WIFI_STATUS:
+  {
     struct wifi_status_info *out = (struct wifi_status_info *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
@@ -1209,7 +1534,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     out->has_device = st.has_device ? 1 : 0;
     return 0;
   }
-  case SYS_SAVE_KLOG: {
+  case SYS_SAVE_KLOG:
+  {
     const struct save_klog_request *user_req =
         (const struct save_klog_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -1231,7 +1557,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return -1;
     return vfs_save_klog_to_device(req.device, req.path);
   }
-  case SYS_GET_ROOT_DEVICE: {
+  case SYS_GET_ROOT_DEVICE:
+  {
     char *buffer = (char *)(uintptr_t)a1;
     uint32_t capacity = (uint32_t)a2;
     if (!writable(buffer, capacity))
@@ -1245,7 +1572,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     memcpy(buffer, root, len + 1);
     return (int64_t)len;
   }
-  case SYS_GET_FS_TYPE: {
+  case SYS_GET_FS_TYPE:
+  {
     char *buffer = (char *)(uintptr_t)a1;
     uint32_t capacity = (uint32_t)a2;
     if (!writable(buffer, capacity))
@@ -1257,7 +1585,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     memcpy(buffer, name, len + 1);
     return (int64_t)len;
   }
-  case SYS_FS_FORMAT_CUSTOM: {
+  case SYS_FS_FORMAT_CUSTOM:
+  {
     const struct custom_format_request *user_req =
         (const struct custom_format_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -1266,13 +1595,15 @@ int64_t syscall_handler(struct syscall_regs *r) {
     req.device[sizeof(req.device) - 1] = '\0';
     if (req.partition_count == 0 || req.partition_count > 4)
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t result = installer_format_custom_device(
         req.device, req.partition_count, req.sizes_gb);
     filesystem_syscall_unlock();
     return result;
   }
-  case SYS_FORMAT_DEVICE_EX: {
+  case SYS_FORMAT_DEVICE_EX:
+  {
     if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     const struct format_request *req =
@@ -1283,53 +1614,63 @@ int64_t syscall_handler(struct syscall_regs *r) {
     r.device[sizeof(r.device) - 1] = '\0';
     r.serial[sizeof(r.serial) - 1] = '\0';
     r.erase[sizeof(r.erase) - 1] = '\0';
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t res = vfs_format_device_ex(
         r.device, r.serial, r.erase,
         VFS_FS_EXT2);
     filesystem_syscall_unlock();
     return res;
   }
-  case SYS_EXT2_STAT: {
+  case SYS_EXT2_STAT:
+  {
     const char *path = (const char *)(uintptr_t)a1;
     struct ext2_stat_info *out = (struct ext2_stat_info *)(uintptr_t)a2;
     if (!readable_string(path) || !writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_stat(path, out);
     filesystem_syscall_unlock();
     return r;
   }
-  case SYS_EXT2_INODE: {
+  case SYS_EXT2_INODE:
+  {
     uint32_t ino = (uint32_t)a1;
     struct ext2_stat_info *out = (struct ext2_stat_info *)(uintptr_t)a2;
     if (!writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_inode(ino, out);
     filesystem_syscall_unlock();
     return r;
   }
-  case SYS_EXT2_SUPER: {
+  case SYS_EXT2_SUPER:
+  {
     struct ext2_super_info *out = (struct ext2_super_info *)(uintptr_t)a1;
     if (!writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_super(out);
     filesystem_syscall_unlock();
     return r;
   }
-  case SYS_EXT2_BLOCKS: {
+  case SYS_EXT2_BLOCKS:
+  {
     const char *path = (const char *)(uintptr_t)a1;
     struct ext2_blocks_info *out = (struct ext2_blocks_info *)(uintptr_t)a2;
     if (!readable_string(path) || !writable(out, sizeof(*out)))
       return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire())
+      return -1;
     int32_t r = vfs_ext2_blocks(path, out);
     filesystem_syscall_unlock();
     return r;
   }
-  case SYS_PANIC_TEST: {
+  case SYS_PANIC_TEST:
+  {
 
     const char *msg = "SYS_PANIC_TEST called by userspace";
     if (a1 && readable_string((const char *)(uintptr_t)a1))
@@ -1345,19 +1686,22 @@ int64_t syscall_handler(struct syscall_regs *r) {
   case SYS_TCP_RECV:
   case SYS_TCP_CLOSE:
   case SYS_TCP_ABORT:
-  case SYS_TCP_INFO: {
+  case SYS_TCP_INFO:
+  {
     int32_t handle = (int32_t)(uint32_t)a1;
     uint32_t timeout_ms = (uint32_t)(a1 >> 32);
     if (!tcp_is_owner(handle, process_current()->pid))
       return TCP_ERR_INVALID;
-    switch (n) {
+    switch (n)
+    {
     case SYS_TCP_CONNECT:
       return tcp_connect(handle, (uint32_t)a2, (uint16_t)a3, timeout_ms);
     case SYS_TCP_LISTEN:
       return tcp_listen(handle, (uint16_t)a2, (uint8_t)a3);
     case SYS_TCP_ACCEPT:
       return tcp_accept(handle, timeout_ms);
-    case SYS_TCP_SEND: {
+    case SYS_TCP_SEND:
+    {
       uint32_t length = (uint32_t)a3;
       if (!length)
         return 0;
@@ -1365,7 +1709,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
         return TCP_ERR_INVALID;
       return tcp_send(handle, (const void *)(uintptr_t)a2, length, timeout_ms);
     }
-    case SYS_TCP_RECV: {
+    case SYS_TCP_RECV:
+    {
       uint32_t length = (uint32_t)a3;
       if (!length)
         return 0;
@@ -1377,7 +1722,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
       return tcp_close(handle);
     case SYS_TCP_ABORT:
       return tcp_abort(handle);
-    default: {
+    default:
+    {
       struct net_tcp_info *out = (struct net_tcp_info *)(uintptr_t)a2;
       struct tcp_socket_info info;
       if (!writable(out, sizeof(*out)))
@@ -1397,7 +1743,8 @@ int64_t syscall_handler(struct syscall_regs *r) {
     }
     }
   }
-  case SYS_NET_IF_LIST: {
+  case SYS_NET_IF_LIST:
+  {
     struct net_if_info *buffer = (struct net_if_info *)(uintptr_t)a1;
     uint32_t capacity = (uint32_t)a2;
     if (capacity > NET_IF_MAX_COUNT)
@@ -1410,17 +1757,20 @@ int64_t syscall_handler(struct syscall_regs *r) {
     if (capacity == 0)
       return (int64_t)total;
     uint32_t copy = total < capacity ? total : capacity;
-    for (uint32_t i = 0; i < copy; i++) {
+    for (uint32_t i = 0; i < copy; i++)
+    {
       struct net_device *dev = net_device_get(i);
       struct net_if_info info;
       memset(&info, 0, sizeof(info));
-      if (dev) {
+      if (dev)
+      {
         strncpy(info.name, dev->name, sizeof(info.name) - 1);
         memcpy(info.mac, dev->mac, 6);
         info.mtu = dev->mtu;
         info.link_up = dev->cached_link_up ? 1 : 0;
         struct ipv4_interface_config cfg;
-        if (ipv4_get_config(dev, &cfg) && cfg.configured) {
+        if (ipv4_get_config(dev, &cfg) && cfg.configured)
+        {
           info.has_ip = 1;
           info.ip_address = cfg.address;
           info.netmask = cfg.netmask;
@@ -1447,9 +1797,11 @@ int64_t syscall_handler(struct syscall_regs *r) {
   }
 }
 
-static uint32_t parse_setting_u32(const char *text) {
+static uint32_t parse_setting_u32(const char *text)
+{
   uint32_t value = 0;
-  while (*text >= '0' && *text <= '9') {
+  while (*text >= '0' && *text <= '9')
+  {
     uint32_t digit = (uint32_t)(*text - '0');
     if (value > (UINT32_MAX - digit) / 10U)
       return UINT32_MAX;
@@ -1459,9 +1811,11 @@ static uint32_t parse_setting_u32(const char *text) {
   return value;
 }
 
-static void audio_restore_system_settings(void) {
+static void audio_restore_system_settings(void)
+{
   int32_t descriptor = vfs_open("/config/settings.ini");
-  if (descriptor < 0) {
+  if (descriptor < 0)
+  {
     klog(KLOG_INFO, "audio: no saved system settings; detected defaults kept");
     return;
   }
@@ -1476,7 +1830,8 @@ static void audio_restore_system_settings(void) {
   uint32_t volume = detected.volume;
   uint32_t device = detected.selected_output_device;
   bool muted = detected.muted != 0;
-  for (char *line = buffer; *line;) {
+  for (char *line = buffer; *line;)
+  {
     char *end = line;
     while (*end && *end != '\n' && *end != '\r')
       end++;
@@ -1504,11 +1859,13 @@ static void audio_restore_system_settings(void) {
         muted ? 1 : 0, device);
 }
 
-void syscall_init(void) {
+void syscall_init(void)
+{
   static bool filesystem_checked;
   static bool audio_checked;
   klog(KLOG_DEBUG, "syscall: int 0x80 handler ready (DPL3)");
-  if (!audio_checked) {
+  if (!audio_checked)
+  {
     audio_checked = true;
     bool screen_logging = klog_is_screen_enabled();
     klog_set_screen_enabled(false);
@@ -1516,7 +1873,8 @@ void syscall_init(void) {
     klog_set_screen_enabled(screen_logging);
     klog(KLOG_INFO, "audio: PC speaker backend ready");
   }
-  if (!filesystem_checked) {
+  if (!filesystem_checked)
+  {
     filesystem_checked = true;
     boot_diag_checkpoint(BOOT_STAGE_SYSCALLS,
                          "storage: scanning PCI controllers");
@@ -1553,23 +1911,28 @@ void syscall_init(void) {
           ehci_stats.failures, ehci_stats.last_stage);
     klog(KLOG_DEBUG, "usb stages: 1=pci 2=running 3=port 4=addressed "
                      "5=bulk-endpoints 6=scsi 7=ready");
-    if (vfs_mount_root()) {
+    if (vfs_mount_root())
+    {
       klogf(KLOG_OK, "vfs: root mounted from %s", vfs_root_device_name());
       audio_restore_system_settings();
       {
         int32_t fd = vfs_open("/purec/install.cfg");
-        if (fd >= 0) {
+        if (fd >= 0)
+        {
           char cfg_buf[512] = {0};
           int32_t r = vfs_read(fd, cfg_buf, sizeof(cfg_buf) - 1);
           (void)vfs_close(fd);
-          if (r > 0) {
+          if (r > 0)
+          {
             klogf(KLOG_INFO, "config: /purec/install.cfg (%d bytes)", r);
             cfg_buf[r] = 0;
             char *p = cfg_buf;
-            while (*p) {
+            while (*p)
+            {
               char line[128] = {0};
               uint32_t i = 0;
-              while (*p && *p != '\n' && i < 127) {
+              while (*p && *p != '\n' && i < 127)
+              {
                 line[i++] = *p++;
               }
               if (*p == '\n')
@@ -1580,14 +1943,17 @@ void syscall_init(void) {
           }
         }
         fd = vfs_open("/etc/hostname");
-        if (fd >= 0) {
+        if (fd >= 0)
+        {
           char hn[64] = {0};
           int32_t r = vfs_read(fd, hn, sizeof(hn) - 1);
           (void)vfs_close(fd);
-          if (r > 0) {
+          if (r > 0)
+          {
             hn[r] = 0;
             for (int i = 0; i < r; i++)
-              if (hn[i] == '\n' || hn[i] == '\r') {
+              if (hn[i] == '\n' || hn[i] == '\r')
+              {
                 hn[i] = 0;
                 break;
               }
@@ -1595,17 +1961,21 @@ void syscall_init(void) {
           }
         }
         fd = vfs_open("/boot/loader.cfg");
-        if (fd >= 0) {
+        if (fd >= 0)
+        {
           char lb[256] = {0};
           int32_t r = vfs_read(fd, lb, sizeof(lb) - 1);
           (void)vfs_close(fd);
-          if (r > 0) {
+          if (r > 0)
+          {
             lb[r] = 0;
             klogf(KLOG_DEBUG, "config: /boot/loader.cfg %d bytes", r);
           }
         }
       }
-    } else {
+    }
+    else
+    {
       klog(KLOG_WARN, "vfs: no ext2 root found (use 'install' or "
                       "'mkfs' to create)");
     }

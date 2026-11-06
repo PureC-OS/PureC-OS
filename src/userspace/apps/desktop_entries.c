@@ -6,14 +6,39 @@
 
 #define ENTRY_FILE_MAX 4096
 #define DIR_CAP 128
-#define GRID_X0 40u
-#define GRID_DX 72u
-#define GRID_Y0 48u
-#define GRID_DY 82u
-#define GRID_PER_ROW 6u
+#define LAYOUT_PATH "/config/desktop.ini"
+#define LAYOUT_DIR "/config"
+#define GRID_MAX 64u
 
 static struct desktop_entry g_entries[DESKTOP_ENTRY_MAX];
 static uint32_t g_count;
+static uint32_t m_label = 8, m_w = 1024, m_h = 768, m_top = 28, m_bottom = 30;
+static bool g_used[GRID_MAX * GRID_MAX];
+
+static uint32_t icon_w(void) { return 58u * m_label / 8u; }
+static uint32_t icon_h(void) { return 72u * m_label / 8u; }
+static uint32_t cell_dx(void) { return icon_w() + 14u; }
+static uint32_t cell_dy(void) { return icon_h() + 10u; }
+static uint32_t grid_x0(void) { return 24u; }
+static uint32_t grid_y0(void) { return m_top + 14u; }
+
+static uint32_t grid_cols(void) {
+    uint32_t n = m_w > grid_x0() ? (m_w - grid_x0()) / cell_dx() : 1u;
+    if (n < 1u) n = 1u;
+    return n > GRID_MAX ? GRID_MAX : n;
+}
+
+static uint32_t grid_rows(void) {
+    uint32_t avail = m_h > m_bottom + grid_y0() ? m_h - m_bottom - grid_y0() : 0u;
+    uint32_t n = avail / cell_dy();
+    if (n < 1u) n = 1u;
+    return n > GRID_MAX ? GRID_MAX : n;
+}
+
+uint32_t desktop_entries_icon_w(void) { return icon_w(); }
+uint32_t desktop_entries_icon_h(void) { return icon_h(); }
+uint32_t desktop_entries_cell_w(void) { return cell_dx(); }
+
 
 static void copy_trunc(char *dst, uint32_t cap, const char *src,
                        uint32_t len) {
@@ -158,7 +183,7 @@ static uint8_t g_file_buf[ENTRY_FILE_MAX];
 static int32_t read_whole_file(const char *path, uint32_t *out_size) {
     if (out_size) *out_size = 0;
     if (!vfs_is_root_mounted()) return -1;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire()) return -1;
     int32_t fd = vfs_open(path);
     uint32_t total = 0;
     if (fd >= 0) {
@@ -177,10 +202,146 @@ static int32_t read_whole_file(const char *path, uint32_t *out_size) {
     return 0;
 }
 
-static void assign_grid(void) {
+static void cell_pos(uint32_t col, uint32_t row, uint32_t *x, uint32_t *y) {
+    *x = grid_x0() + col * cell_dx();
+    *y = grid_y0() + row * cell_dy();
+}
+
+static void mark_used(uint32_t skip) {
+    uint32_t cols = grid_cols(), rows = grid_rows();
+    for (uint32_t i = 0; i < cols * rows; i++) g_used[i] = false;
     for (uint32_t i = 0; i < g_count; i++) {
-        g_entries[i].x = GRID_X0 + (i % GRID_PER_ROW) * GRID_DX;
-        g_entries[i].y = GRID_Y0 + (i / GRID_PER_ROW) * GRID_DY;
+        if (i == skip || g_entries[i].hidden || !g_entries[i].placed) continue;
+        if (g_entries[i].col < cols && g_entries[i].row < rows)
+            g_used[g_entries[i].col * rows + g_entries[i].row] = true;
+    }
+}
+
+static bool nearest_free(uint32_t want_col, uint32_t want_row,
+                         uint32_t *out_col, uint32_t *out_row) {
+    uint32_t cols = grid_cols(), rows = grid_rows();
+    if (want_col >= cols) want_col = cols - 1;
+    if (want_row >= rows) want_row = rows - 1;
+    bool found = false;
+    uint64_t best = 0;
+    for (uint32_t c = 0; c < cols; c++) {
+        for (uint32_t r = 0; r < rows; r++) {
+            if (g_used[c * rows + r]) continue;
+            int64_t dc = (int64_t)c - (int64_t)want_col;
+            int64_t dr = (int64_t)r - (int64_t)want_row;
+            uint64_t d = (uint64_t)(dc * dc + dr * dr);
+            if (!found || d < best) {
+                found = true;
+                best = d;
+                *out_col = c;
+                *out_row = r;
+            }
+        }
+    }
+    return found;
+}
+
+static void apply_layout(void) {
+    uint32_t cols = grid_cols(), rows = grid_rows();
+    mark_used((uint32_t)-1);
+    for (uint32_t i = 0; i < g_count; i++) {
+        struct desktop_entry *e = &g_entries[i];
+        if (e->hidden || !e->placed) continue;
+        if (e->col >= cols || e->row >= rows) e->placed = false;
+    }
+    mark_used((uint32_t)-1);
+    uint32_t next_col = 0, next_row = 0;
+    for (uint32_t i = 0; i < g_count; i++) {
+        struct desktop_entry *e = &g_entries[i];
+        if (e->hidden || e->placed) continue;
+        bool done = false;
+        for (; next_col < cols && !done; next_col++) {
+            for (; next_row < rows; next_row++) {
+                if (g_used[next_col * rows + next_row]) continue;
+                e->col = (uint16_t)next_col;
+                e->row = (uint16_t)next_row;
+                e->placed = true;
+                g_used[next_col * rows + next_row] = true;
+                done = true;
+                next_row++;
+                break;
+            }
+            if (!done) next_row = 0;
+            else break;
+        }
+    }
+    for (uint32_t i = 0; i < g_count; i++) {
+        struct desktop_entry *e = &g_entries[i];
+        if (!e->placed) continue;
+        cell_pos(e->col, e->row, &e->x, &e->y);
+    }
+}
+
+static void save_layout(void) {
+    char text[DESKTOP_ENTRY_MAX * 48];
+    uint32_t len = 0;
+    for (uint32_t i = 0; i < g_count; i++) {
+        const struct desktop_entry *e = &g_entries[i];
+        if (!e->placed || !e->id[0]) continue;
+        uint32_t idl = (uint32_t)strlen(e->id);
+        if (len + idl + 16 >= sizeof(text)) break;
+        memcpy(text + len, e->id, idl);
+        len += idl;
+        text[len++] = '=';
+        char num[12];
+        uint32_t n = 0;
+        uint32_t v = e->col;
+        do { num[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+        while (n) text[len++] = num[--n];
+        text[len++] = ',';
+        v = e->row;
+        do { num[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+        while (n) text[len++] = num[--n];
+        text[len++] = '\n';
+    }
+    if (!vfs_is_root_mounted() || !filesystem_syscall_acquire()) return;
+    (void)vfs_create_directory(LAYOUT_DIR);
+    (void)vfs_write_file(LAYOUT_PATH, text, len);
+    filesystem_syscall_unlock();
+}
+
+static uint32_t parse_num(const char **p) {
+    uint32_t v = 0;
+    while (**p >= '0' && **p <= '9') {
+        v = v * 10u + (uint32_t)(**p - '0');
+        (*p)++;
+    }
+    return v;
+}
+
+static void load_layout(void) {
+    uint32_t size = 0;
+    if (read_whole_file(LAYOUT_PATH, &size) < 0) return;
+    const char *p = (const char *)g_file_buf;
+    const char *end = p + size;
+    while (p < end) {
+        const char *line = p;
+        while (p < end && *p != '\n') p++;
+        const char *eq = line;
+        while (eq < p && *eq != '=') eq++;
+        if (eq < p) {
+            uint32_t idl = (uint32_t)(eq - line);
+            const char *q = eq + 1;
+            uint32_t col = parse_num(&q);
+            if (q < p && *q == ',') {
+                q++;
+                uint32_t row = parse_num(&q);
+                for (uint32_t i = 0; i < g_count; i++) {
+                    if (strlen(g_entries[i].id) == idl &&
+                        memcmp(g_entries[i].id, line, idl) == 0) {
+                        g_entries[i].col = (uint16_t)col;
+                        g_entries[i].row = (uint16_t)row;
+                        g_entries[i].placed = true;
+                    }
+                }
+            }
+        }
+        if (p < end) p++;
     }
 }
 
@@ -190,7 +351,7 @@ void desktop_entries_rescan(void) {
     static struct fs_directory_entry_long dir[DIR_CAP];
     memset(dir, 0, sizeof(dir));
     if (!vfs_is_root_mounted()) return;
-    filesystem_syscall_lock();
+    if (!filesystem_syscall_acquire()) return;
     int32_t n = vfs_list_long(DESKTOP_ENTRY_SCAN_DIR, dir, DIR_CAP);
     filesystem_syscall_unlock();
     if (n <= 0) return;
@@ -236,7 +397,8 @@ void desktop_entries_rescan(void) {
         e.hidden = false;
         g_entries[g_count++] = e;
     }
-    assign_grid();
+    load_layout();
+    apply_layout();
 }
 
 void desktop_entries_init(void) {
@@ -264,4 +426,54 @@ void desktop_entries_set_installer_visible(bool visible) {
             g_entries[i].hidden = !visible;
         }
     }
+    apply_layout();
+}
+
+void desktop_entries_configure(uint32_t label_px, uint32_t desktop_width,
+                               uint32_t desktop_height, uint32_t top,
+                               uint32_t bottom) {
+    if (label_px < 8) label_px = 8;
+    if (label_px > 20) label_px = 20;
+    if (label_px == m_label && desktop_width == m_w &&
+        desktop_height == m_h && top == m_top && bottom == m_bottom)
+        return;
+    m_label = label_px;
+    m_w = desktop_width;
+    m_h = desktop_height;
+    m_top = top;
+    m_bottom = bottom;
+    apply_layout();
+}
+
+static void wanted_cell(uint32_t index, uint32_t *col, uint32_t *row) {
+    const struct desktop_entry *e = &g_entries[index];
+    uint32_t dx = cell_dx(), dy = cell_dy();
+    uint32_t px = e->x + dx / 2u, py = e->y + dy / 2u;
+    *col = px > grid_x0() ? (px - grid_x0()) / dx : 0u;
+    *row = py > grid_y0() ? (py - grid_y0()) / dy : 0u;
+    uint32_t cols = grid_cols(), rows = grid_rows();
+    if (*col >= cols) *col = cols - 1;
+    if (*row >= rows) *row = rows - 1;
+}
+
+void desktop_entries_target_cell(uint32_t index, uint32_t *x, uint32_t *y) {
+    if (index >= g_count) return;
+    uint32_t col, row, tc, tr;
+    wanted_cell(index, &col, &row);
+    mark_used(index);
+    if (!nearest_free(col, row, &tc, &tr)) { tc = col; tr = row; }
+    cell_pos(tc, tr, x, y);
+}
+
+void desktop_entries_snap(uint32_t index) {
+    if (index >= g_count) return;
+    uint32_t col, row, tc, tr;
+    wanted_cell(index, &col, &row);
+    mark_used(index);
+    if (!nearest_free(col, row, &tc, &tr)) { tc = col; tr = row; }
+    g_entries[index].col = (uint16_t)tc;
+    g_entries[index].row = (uint16_t)tr;
+    g_entries[index].placed = true;
+    cell_pos(tc, tr, &g_entries[index].x, &g_entries[index].y);
+    save_layout();
 }

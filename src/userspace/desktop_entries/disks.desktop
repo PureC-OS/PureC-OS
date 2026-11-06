@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Disks
 Exec=/bin/program/disks
+Icon=/usr/share/icons/disks.icn
 IconColor=0xF9E2AF
 IconText=HD
 Type=Application

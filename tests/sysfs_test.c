@@ -1,5 +1,5 @@
 #include "../src/drivers/pci/pci.h"
-#include "../src/drivers/storage/storage_types.h"
+#include "../src/io/storage/storage_types.h"
 #include "../src/fs/vfs.h"
 #include "../src/fs/vfs_backends.h"
 #include "../src/kernel/smp/cpu.h"

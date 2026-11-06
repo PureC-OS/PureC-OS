@@ -7,7 +7,8 @@
 #define DEVICE_NAME_MAX_LEN 64
 #define ACPI_HID_MAX_LEN 32
 
-enum device_type {
+enum device_type
+{
   DEVICE_TYPE_UNKNOWN = 0,
   DEVICE_TYPE_PCI,
   DEVICE_TYPE_ACPI,
@@ -18,7 +19,8 @@ enum device_type {
   DEVICE_TYPE_SPI,
 };
 
-enum device_class {
+enum device_class
+{
   CLASS_NONE = 0,
   CLASS_MASS_STORAGE,
   CLASS_NETWORK,
@@ -33,7 +35,8 @@ enum device_class {
   CLASS_SENSOR,
 };
 
-struct device_pci_info {
+struct device_pci_info
+{
   uint16_t vendor_id;
   uint16_t device_id;
   uint8_t bus;
@@ -48,7 +51,8 @@ struct device_pci_info {
   uint8_t interrupt_line;
 };
 
-struct device_acpi_info {
+struct device_acpi_info
+{
   char hid[ACPI_HID_MAX_LEN];
   char uid[32];
   uint32_t irq;
@@ -56,13 +60,15 @@ struct device_acpi_info {
   bool has_ec;
 };
 
-struct device_i2c_info {
+struct device_i2c_info
+{
   uint16_t address;
   uint32_t speed_hz;
   char controller[ACPI_HID_MAX_LEN];
 };
 
-struct device_info {
+struct device_info
+{
   uint32_t id;
   enum device_type type;
   enum device_class device_class;
@@ -85,7 +91,8 @@ typedef bool (*device_driver_match_t)(const struct device_info *dev, void *ctx);
 
 struct devman_pci_id;
 
-struct device_driver {
+struct device_driver
+{
   const char *name;
   enum device_type type;
   enum device_class device_class;

@@ -19,3 +19,4 @@ lang/Cargo.lock
 kernel.map
 *PureC-OS-1.2.6 (2)/
 *.obsidian/
+old/

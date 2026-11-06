@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=Calendar
 Builtin=calendar
+Icon=/usr/share/icons/calendar.icn
 IconColor=0xF9E2AF
 IconText=28
 Type=Application

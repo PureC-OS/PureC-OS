@@ -8,8 +8,8 @@
 
 | Файл | Назначение |
 |------|------------|
-| `src/drivers/storage/ata_pio.h` | Публичный API |
-| `src/drivers/storage/ata_pio.c` | Реализация (около 320 строк) |
+| `src/io/storage/ata_pio.h` | Публичный API |
+| `src/io/storage/ata_pio.c` | Реализация (около 320 строк) |
 
 ## Публичный API
 
@@ -54,8 +54,8 @@
 
 ## Где используется
 
-- `src/drivers/storage/block_device.c` — блочный слой вызывает `ata_pio_init()` первым (приоритет ATA PIO выше остальных транспортов).
-- `src/drivers/storage/block_device.c` — `ata_pio_get_device_info` и `ata_pio_select_device` при выборе диска.
+- `src/io/storage/block_device.c` — блочный слой вызывает `ata_pio_init()` первым (приоритет ATA PIO выше остальных транспортов).
+- `src/io/storage/block_device.c` — `ata_pio_get_device_info` и `ata_pio_select_device` при выборе диска.
 
 ## Ограничения
 

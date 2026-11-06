@@ -1,7 +1,8 @@
 #pragma once
 #include <stdint.h>
 
-enum boot_stage {
+enum boot_stage
+{
   BOOT_STAGE_ENTRY = 1,
   BOOT_STAGE_BOOT_PROTOCOL,
   BOOT_STAGE_FRAMEBUFFER,

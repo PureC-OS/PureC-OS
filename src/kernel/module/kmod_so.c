@@ -26,19 +26,22 @@
 #define KMOD_SHN_ABS 0xFFF1
 #define KMOD_RELA_WIDTH 24
 
-struct ksym_entry {
+struct ksym_entry
+{
   char name[KSYM_NAME_LEN];
   uint64_t addr;
 };
 
-struct ksym_table {
+struct ksym_table
+{
   uint64_t magic;
   uint64_t count;
   uint64_t cap;
   struct ksym_entry entries[];
 };
 
-struct kmod_ehdr {
+struct kmod_ehdr
+{
   uint8_t ident[16];
   uint16_t type;
   uint16_t machine;
@@ -55,7 +58,8 @@ struct kmod_ehdr {
   uint16_t shstrndx;
 } __attribute__((packed));
 
-struct kmod_phdr {
+struct kmod_phdr
+{
   uint32_t type;
   uint32_t flags;
   uint64_t offset;
@@ -66,18 +70,21 @@ struct kmod_phdr {
   uint64_t align;
 } __attribute__((packed));
 
-struct kmod_dyn {
+struct kmod_dyn
+{
   int64_t tag;
   uint64_t value;
 } __attribute__((packed));
 
-struct kmod_rela {
+struct kmod_rela
+{
   uint64_t offset;
   uint64_t info;
   int64_t addend;
 } __attribute__((packed));
 
-struct kmod_sym {
+struct kmod_sym
+{
   uint32_t name;
   uint8_t info;
   uint8_t other;
@@ -86,7 +93,8 @@ struct kmod_sym {
   uint64_t size;
 } __attribute__((packed));
 
-struct kmod_load {
+struct kmod_load
+{
   uint64_t offset;
   uint64_t vaddr;
   uint64_t filesz;
@@ -94,7 +102,8 @@ struct kmod_load {
   uint32_t flags;
 };
 
-struct kmod_dyninfo {
+struct kmod_dyninfo
+{
   uint64_t rela;
   uint64_t relasz;
   uint64_t relaent;
@@ -108,7 +117,8 @@ struct kmod_dyninfo {
   bool needed;
 };
 
-struct kmod_slot {
+struct kmod_slot
+{
   bool used;
   char name[KMOD_NAME_CAP];
   uint64_t bias;
@@ -121,26 +131,31 @@ extern uint8_t __ksyms_end[];
 static struct kmod_slot g_mods[KMOD_MAX];
 static uint64_t g_next;
 
-static const struct ksym_table *ksyms_table(void) {
+static const struct ksym_table *ksyms_table(void)
+{
   return (const struct ksym_table *)__ksyms_area;
 }
 
-bool kmod_syms_ready(void) {
+bool kmod_syms_ready(void)
+{
   const struct ksym_table *t = ksyms_table();
   return t->magic == KSYM_MAGIC && t->count <= t->cap && t->cap <= KSYM_CAP &&
          t->count > 0;
 }
 
-bool kmod_find(const char *name, uint64_t *addr) {
+bool kmod_find(const char *name, uint64_t *addr)
+{
   if (!name || !addr || !kmod_syms_ready())
     return false;
   const struct ksym_table *t = ksyms_table();
   uint64_t lo = 0;
   uint64_t hi = t->count;
-  while (lo < hi) {
+  while (lo < hi)
+  {
     uint64_t mid = lo + (hi - lo) / 2;
     int cmp = strcmp(name, t->entries[mid].name);
-    if (cmp == 0) {
+    if (cmp == 0)
+    {
       *addr = t->entries[mid].addr;
       return true;
     }
@@ -152,9 +167,11 @@ bool kmod_find(const char *name, uint64_t *addr) {
   return false;
 }
 
-static bool kmod_read(uint64_t as, uint64_t src, void *dst, uint64_t size) {
+static bool kmod_read(uint64_t as, uint64_t src, void *dst, uint64_t size)
+{
   uint8_t *out = (uint8_t *)dst;
-  while (size) {
+  while (size)
+  {
     uint64_t phys = vmm_translate(as, src);
     if (!phys)
       return false;
@@ -170,9 +187,11 @@ static bool kmod_read(uint64_t as, uint64_t src, void *dst, uint64_t size) {
 }
 
 static bool kmod_write(uint64_t as, uint64_t dst, const void *src,
-                       uint64_t size) {
+                       uint64_t size)
+{
   const uint8_t *in = (const uint8_t *)src;
-  while (size) {
+  while (size)
+  {
     uint64_t phys = vmm_translate(as, dst);
     if (!phys)
       return false;
@@ -187,8 +206,10 @@ static bool kmod_write(uint64_t as, uint64_t dst, const void *src,
   return true;
 }
 
-static bool kmod_zero(uint64_t as, uint64_t dst, uint64_t size) {
-  while (size) {
+static bool kmod_zero(uint64_t as, uint64_t dst, uint64_t size)
+{
+  while (size)
+  {
     uint64_t phys = vmm_translate(as, dst);
     if (!phys)
       return false;
@@ -203,18 +224,21 @@ static bool kmod_zero(uint64_t as, uint64_t dst, uint64_t size) {
 }
 
 static bool kmod_read_cstring(uint64_t as, uint64_t addr, char *out,
-                              uint64_t capacity) {
+                              uint64_t capacity)
+{
   if (!out || capacity < 2)
     return false;
   uint64_t pos = 0;
-  while (pos + 1 < capacity) {
+  while (pos + 1 < capacity)
+  {
     uint64_t page_remain = PMM_PAGE_SIZE - (addr & (PMM_PAGE_SIZE - 1));
     uint64_t take = page_remain;
     if (take > capacity - 1 - pos)
       take = capacity - 1 - pos;
     if (!kmod_read(as, addr, out + pos, take))
       return false;
-    for (uint64_t i = 0; i < take; i++) {
+    for (uint64_t i = 0; i < take; i++)
+    {
       if (out[pos + i] == 0)
         return pos + i > 0;
     }
@@ -224,7 +248,8 @@ static bool kmod_read_cstring(uint64_t as, uint64_t addr, char *out,
   return false;
 }
 
-static bool kmod_valid_ehdr(const struct kmod_ehdr *h, uint64_t size) {
+static bool kmod_valid_ehdr(const struct kmod_ehdr *h, uint64_t size)
+{
   if (size < sizeof(*h))
     return false;
   if (h->ident[0] != 0x7F || h->ident[1] != 'E' || h->ident[2] != 'L' ||
@@ -240,7 +265,8 @@ static bool kmod_valid_ehdr(const struct kmod_ehdr *h, uint64_t size) {
 }
 
 static bool kmod_hash_nchain(uint64_t as, uint64_t hash, uint64_t bias,
-                             uint32_t *count) {
+                             uint32_t *count)
+{
   uint8_t raw[8];
   if (!kmod_read(as, hash + bias, raw, 8))
     return false;
@@ -253,7 +279,8 @@ static bool kmod_hash_nchain(uint64_t as, uint64_t hash, uint64_t bias,
 }
 
 static bool kmod_read_sym(uint64_t as, const struct kmod_dyninfo *dyn,
-                          uint64_t bias, uint32_t index, struct kmod_sym *out) {
+                          uint64_t bias, uint32_t index, struct kmod_sym *out)
+{
   if (!dyn->symtab || dyn->syment != KMOD_SYM_SIZE)
     return false;
   return kmod_read(as, dyn->symtab + bias + (uint64_t)index * KMOD_SYM_SIZE,
@@ -261,7 +288,8 @@ static bool kmod_read_sym(uint64_t as, const struct kmod_dyninfo *dyn,
 }
 
 static bool kmod_self_lookup(uint64_t as, const struct kmod_dyninfo *dyn,
-                             uint64_t bias, const char *name, uint64_t *value) {
+                             uint64_t bias, const char *name, uint64_t *value)
+{
   if (!dyn->symtab || !dyn->strtab || !dyn->strsz || !dyn->hash)
     return false;
   if (dyn->syment != KMOD_SYM_SIZE)
@@ -269,8 +297,10 @@ static bool kmod_self_lookup(uint64_t as, const struct kmod_dyninfo *dyn,
   uint32_t nchain = 0;
   if (!kmod_hash_nchain(as, dyn->hash, bias, &nchain))
     return false;
-  for (uint32_t pass = 0; pass < 2; pass++) {
-    for (uint32_t i = 1; i < nchain; i++) {
+  for (uint32_t pass = 0; pass < 2; pass++)
+  {
+    for (uint32_t i = 1; i < nchain; i++)
+    {
       struct kmod_sym s;
       if (!kmod_read_sym(as, dyn, bias, i, &s))
         return false;
@@ -304,7 +334,8 @@ static bool kmod_self_lookup(uint64_t as, const struct kmod_dyninfo *dyn,
 
 static bool kmod_parse_dynamic(const uint8_t *bytes, uint64_t size,
                                uint64_t dyn_off, uint64_t dyn_filesz,
-                               struct kmod_dyninfo *dyn) {
+                               struct kmod_dyninfo *dyn)
+{
   memset(dyn, 0, sizeof(*dyn));
   dyn->syment = KMOD_SYM_SIZE;
   dyn->relaent = KMOD_RELA_WIDTH;
@@ -314,10 +345,12 @@ static bool kmod_parse_dynamic(const uint8_t *bytes, uint64_t size,
     return false;
   uint64_t count = dyn_filesz / 16;
   bool null_seen = false;
-  for (uint64_t i = 0; i < count; i++) {
+  for (uint64_t i = 0; i < count; i++)
+  {
     struct kmod_dyn e;
     memcpy(&e, bytes + dyn_off + i * 16, 16);
-    if (e.tag == ELF_DT_NULL) {
+    if (e.tag == ELF_DT_NULL)
+    {
       null_seen = true;
       break;
     }
@@ -349,13 +382,15 @@ static bool kmod_parse_dynamic(const uint8_t *bytes, uint64_t size,
 
 static bool kmod_apply_table(uint64_t as, uint64_t bias,
                              const struct kmod_dyninfo *dyn, uint64_t table,
-                             uint64_t size, const char *modname) {
+                             uint64_t size, const char *modname)
+{
   if (size == 0)
     return true;
   if (size % KMOD_RELA_WIDTH != 0)
     return false;
   uint64_t count = size / KMOD_RELA_WIDTH;
-  for (uint64_t i = 0; i < count; i++) {
+  for (uint64_t i = 0; i < count; i++)
+  {
     struct kmod_rela r;
     if (!kmod_read(as, table + bias + i * KMOD_RELA_WIDTH, &r, sizeof(r)))
       return false;
@@ -363,7 +398,8 @@ static bool kmod_apply_table(uint64_t as, uint64_t bias,
     uint32_t sym = (uint32_t)(r.info >> 32);
     if (type == ELF_R_X86_64_NONE)
       continue;
-    if (type == ELF_R_X86_64_RELATIVE) {
+    if (type == ELF_R_X86_64_RELATIVE)
+    {
       if (sym != 0)
         return false;
       uint64_t value = bias + (uint64_t)r.addend;
@@ -372,18 +408,23 @@ static bool kmod_apply_table(uint64_t as, uint64_t bias,
       continue;
     }
     if (type != ELF_R_X86_64_GLOB_DAT && type != ELF_R_X86_64_JUMP_SLOT &&
-        type != ELF_R_X86_64_64) {
+        type != ELF_R_X86_64_64)
+    {
       klogf(KLOG_ERROR, "kmod: %s: unsupported reloc type %u", modname, type);
       return false;
     }
     uint64_t resolved = 0;
-    if (sym == 0) {
+    if (sym == 0)
+    {
       if (type != ELF_R_X86_64_64)
         return false;
       resolved = bias + (uint64_t)r.addend;
-    } else {
+    }
+    else
+    {
       if (!dyn->symtab || !dyn->strtab || !dyn->strsz ||
-          dyn->syment != KMOD_SYM_SIZE) {
+          dyn->syment != KMOD_SYM_SIZE)
+      {
         klogf(KLOG_ERROR, "kmod: %s: named reloc without symtab", modname);
         return false;
       }
@@ -400,8 +441,10 @@ static bool kmod_apply_table(uint64_t as, uint64_t bias,
         return false;
       uint64_t found = 0;
       if (!kmod_find(wanted, &found) &&
-          !kmod_self_lookup(as, dyn, bias, wanted, &found)) {
-        if ((e.info >> 4) != ELF_STB_WEAK) {
+          !kmod_self_lookup(as, dyn, bias, wanted, &found))
+      {
+        if ((e.info >> 4) != ELF_STB_WEAK)
+        {
           klogf(KLOG_ERROR, "kmod: %s: unresolved symbol", modname);
           return false;
         }
@@ -418,21 +461,25 @@ static bool kmod_apply_table(uint64_t as, uint64_t bias,
   return true;
 }
 
-static uint64_t kmod_region_base(void) {
+static uint64_t kmod_region_base(void)
+{
   uint64_t base = ((uint64_t)__ksyms_end + KMOD_ALIGN - 1) & ~(KMOD_ALIGN - 1);
   if (base < 0xFFFFFFFF80000000ULL)
     base = 0xFFFFFFFF80000000ULL + 0x2000000ULL;
   return base;
 }
 
-uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
-  if (!modname || !image || !kmod_syms_ready()) {
+uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size)
+{
+  if (!modname || !image || !kmod_syms_ready())
+  {
     klog(KLOG_ERROR, "kmod: bad arguments or symbol table missing");
     return 0;
   }
   const uint8_t *bytes = (const uint8_t *)image;
   const struct kmod_ehdr *h = (const struct kmod_ehdr *)bytes;
-  if (!kmod_valid_ehdr(h, size)) {
+  if (!kmod_valid_ehdr(h, size))
+  {
     klogf(KLOG_ERROR, "kmod: %s: not a 64-bit shared object", modname);
     return 0;
   }
@@ -441,10 +488,12 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   uint64_t dyn_off = 0;
   uint64_t dyn_filesz = 0;
   bool have_dyn = false;
-  for (uint16_t i = 0; i < h->phnum; i++) {
+  for (uint16_t i = 0; i < h->phnum; i++)
+  {
     struct kmod_phdr p;
     memcpy(&p, bytes + h->phoff + (uint64_t)i * h->phentsize, sizeof(p));
-    if (p.type == KMOD_DYNAMIC) {
+    if (p.type == KMOD_DYNAMIC)
+    {
       if (have_dyn)
         return 0;
       have_dyn = true;
@@ -469,7 +518,8 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
     return 0;
   uint64_t lo = loads[0].vaddr;
   uint64_t hi = loads[0].vaddr + loads[0].memsz;
-  for (uint64_t i = 1; i < nloads; i++) {
+  for (uint64_t i = 1; i < nloads; i++)
+  {
     if (loads[i].vaddr < lo)
       lo = loads[i].vaddr;
     if (loads[i].vaddr + loads[i].memsz > hi)
@@ -478,14 +528,18 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   if (hi < lo || (lo & (PMM_PAGE_SIZE - 1)) != 0)
     return 0;
   struct kmod_dyninfo dyn;
-  if (have_dyn) {
+  if (have_dyn)
+  {
     if (!kmod_parse_dynamic(bytes, size, dyn_off, dyn_filesz, &dyn))
       return 0;
-    if (dyn.needed) {
+    if (dyn.needed)
+    {
       klogf(KLOG_ERROR, "kmod: %s: dependencies not supported", modname);
       return 0;
     }
-  } else {
+  }
+  else
+  {
     memset(&dyn, 0, sizeof(dyn));
   }
   if (g_next == 0)
@@ -499,7 +553,8 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   if (!as)
     return 0;
   uint64_t pages = (end - first) / PMM_PAGE_SIZE;
-  if (pages > KMOD_UNWIND_CAP) {
+  if (pages > KMOD_UNWIND_CAP)
+  {
     klogf(KLOG_ERROR, "kmod: %s: image too large", modname);
     return 0;
   }
@@ -509,9 +564,11 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   uint64_t *unw = (uint64_t *)pmm_physical_to_virtual(unw_phys);
   uint64_t nunw = 0;
   bool failed = false;
-  for (uint64_t a = first; a < end; a += PMM_PAGE_SIZE) {
+  for (uint64_t a = first; a < end; a += PMM_PAGE_SIZE)
+  {
     uint64_t phys = pmm_allocate_page();
-    if (!phys || !vmm_map_page(as, a, phys, VMM_PAGE_WRITABLE | VMM_PAGE_NX)) {
+    if (!phys || !vmm_map_page(as, a, phys, VMM_PAGE_WRITABLE | VMM_PAGE_NX))
+    {
       if (phys)
         pmm_free_page(phys);
       failed = true;
@@ -519,7 +576,8 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
     }
     unw[nunw++] = phys;
   }
-  if (failed) {
+  if (failed)
+  {
     for (uint64_t i = 0; i < nunw; i++)
       pmm_free_page(unw[i]);
     pmm_free_page(unw_phys);
@@ -527,7 +585,8 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   }
   pmm_free_page(unw_phys);
   g_next = end;
-  for (uint64_t i = 0; i < nloads; i++) {
+  for (uint64_t i = 0; i < nloads; i++)
+  {
     uint64_t dst = loads[i].vaddr + bias;
     if (loads[i].filesz &&
         !kmod_write(as, dst, bytes + loads[i].offset, loads[i].filesz))
@@ -539,14 +598,17 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   if (!kmod_apply_table(as, bias, &dyn, dyn.rela, dyn.relasz, modname) ||
       !kmod_apply_table(as, bias, &dyn, dyn.jmprel, dyn.jmpsz, modname))
     return 0;
-  for (uint64_t a = first; a < end; a += PMM_PAGE_SIZE) {
+  for (uint64_t a = first; a < end; a += PMM_PAGE_SIZE)
+  {
     uint64_t want = VMM_PAGE_NX;
-    for (uint64_t i = 0; i < nloads; i++) {
+    for (uint64_t i = 0; i < nloads; i++)
+    {
       uint64_t s = (loads[i].vaddr + bias) & ~(PMM_PAGE_SIZE - 1);
       uint64_t e =
           (loads[i].vaddr + bias + loads[i].memsz + PMM_PAGE_SIZE - 1) &
           ~(PMM_PAGE_SIZE - 1);
-      if (a >= s && a < e) {
+      if (a >= s && a < e)
+      {
         want = 0;
         if (loads[i].flags & KMOD_FLAG_W)
           want |= VMM_PAGE_WRITABLE;
@@ -557,8 +619,10 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
     }
     vmm_protect_page(as, a, want);
   }
-  for (uint64_t i = 0; i < KMOD_MAX; i++) {
-    if (!g_mods[i].used) {
+  for (uint64_t i = 0; i < KMOD_MAX; i++)
+  {
+    if (!g_mods[i].used)
+    {
       g_mods[i].used = true;
       strncpy(g_mods[i].name, modname, KMOD_NAME_CAP - 1);
       g_mods[i].name[KMOD_NAME_CAP - 1] = 0;
@@ -572,10 +636,12 @@ uint64_t kmod_load_so(const char *modname, const void *image, uint64_t size) {
   return 0;
 }
 
-uint64_t kmod_get(const char *modname, const char *name) {
+uint64_t kmod_get(const char *modname, const char *name)
+{
   if (!modname || !name)
     return 0;
-  for (uint64_t i = 0; i < KMOD_MAX; i++) {
+  for (uint64_t i = 0; i < KMOD_MAX; i++)
+  {
     if (!g_mods[i].used || strcmp(g_mods[i].name, modname) != 0)
       continue;
     uint64_t value = 0;

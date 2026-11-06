@@ -1,3 +1,4 @@
+#include "vbox_mouse.h"
 #include "ps2_mouse.h"
 #include "usb_mouse.h"
 #include "../interrupts/pic.h"
@@ -95,6 +96,7 @@ static uint8_t mouse_read_ack(void)
 
 static struct mouse_state state = {.x = 400, .y = 300, .buttons = 0};
 static int32_t bound_w = 1280, bound_h = 800;
+static bool absolute_mode;
 static uint8_t packet[4];
 static int pkt_idx = 0;
 static int pkt_size = 3;
@@ -442,10 +444,57 @@ static int32_t accelerate_axis(int32_t delta, int32_t magnitude, int32_t *remain
     return whole;
 }
 
+void mouse_set_absolute_mode(bool enabled)
+{
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    absolute_mode = enabled;
+    accel_x = 0;
+    accel_y = 0;
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
+}
+
+void mouse_handle_absolute(int32_t x16, int32_t y16)
+{
+    if (x16 < 0)
+        x16 = 0;
+    if (y16 < 0)
+        y16 = 0;
+    if (x16 > 0xFFFF)
+        x16 = 0xFFFF;
+    if (y16 > 0xFFFF)
+        y16 = 0xFFFF;
+    uint64_t flags;
+    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    int32_t nx = (int32_t)(((int64_t)x16 * bound_w) / 0x10000);
+    int32_t ny = (int32_t)(((int64_t)y16 * bound_h) / 0x10000);
+    if (nx >= bound_w)
+        nx = bound_w - 1;
+    if (ny >= bound_h)
+        ny = bound_h - 1;
+    if (nx != state.x || ny != state.y)
+    {
+        state.dx = nx - state.x;
+        state.dy = ny - state.y;
+        state.x = nx;
+        state.y = ny;
+        state.has_data = true;
+        mouse_ui_pending = true;
+    }
+    if (flags & (1ULL << 9))
+        __asm__ volatile("sti" ::: "memory");
+}
+
 void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy)
 {
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    if (absolute_mode)
+    {
+        dx = 0;
+        dy = 0;
+    }
     int32_t old_x = state.x;
     int32_t old_y = state.y;
     uint8_t old_buttons = state.buttons;
@@ -528,6 +577,7 @@ void ps2_mouse_poll(void)
     }
     if (flags & (1ULL << 9))
         __asm__ volatile("sti" ::: "memory");
+    vbox_mouse_poll();
 }
 
 void ps2_mouse_init(void)

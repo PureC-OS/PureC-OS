@@ -75,6 +75,10 @@ struct pg_window {
     bool registered;
     bool repainting;
     bool closable;
+    bool server;
+    bool maximized;
+    bool frame_synced;
+    uint32_t frame_generation;
 };
 
 const char *pg_version(void);
@@ -93,7 +97,11 @@ void pg_window_close(struct pg_window *window);
 void pg_window_set_closable(struct pg_window *window, bool closable);
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
+void pg_window_fit_display(struct pg_window *window);
 void pg_window_minimize(struct pg_window *window);
+void pg_window_maximize(struct pg_window *window);
+void pg_window_unmaximize(struct pg_window *window);
+bool pg_window_is_maximized(const struct pg_window *window);
 void pg_window_restore(struct pg_window *window);
 bool pg_window_is_open(const struct pg_window *window);
 bool pg_window_is_minimized(const struct pg_window *window);
@@ -101,6 +109,13 @@ struct pg_rect pg_window_client(const struct pg_window *window);
 void pg_window_clear(struct pg_window *window, uint32_t color);
 void pg_window_rect(struct pg_window *window, struct pg_rect bounds,
                     uint32_t color);
+bool pg_window_blit_scaled(struct pg_window *window, const uint32_t *pixels,
+                           uint32_t source_width, uint32_t source_height,
+                           uint32_t stride);
+bool pg_window_scaled_point(const struct pg_window *window,
+                            uint32_t source_width, uint32_t source_height,
+                            int32_t window_x, int32_t window_y,
+                            int32_t *source_x, int32_t *source_y);
 bool pg_window_blit(struct pg_window *window, int32_t x, int32_t y,
                     uint32_t width, uint32_t height, const uint32_t *pixels,
                     uint32_t stride);

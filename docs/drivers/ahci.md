@@ -6,8 +6,8 @@
 
 | Файл | Назначение |
 |------|------------|
-| `src/drivers/storage/ahci.h` | Публичный API и `struct ahci_probe_stats` |
-| `src/drivers/storage/ahci.c` | Реализация (около 475 строк) |
+| `src/io/storage/ahci.h` | Публичный API и `struct ahci_probe_stats` |
+| `src/io/storage/ahci.c` | Реализация (около 475 строк) |
 
 Контроллер выбирает `storage_probe` (см. [storage-probe.md](storage-probe.md)). Накопители попадают в общую таблицу через [блочный слой](block-device.md).
 
@@ -46,8 +46,8 @@
 
 ## Где используется
 
-- `src/drivers/storage/block_device.c` — блочный слой вызывает `ahci_*` для дисков, выбранных как AHCI-транспорт.
-- `src/drivers/storage/storage_probe.c` — классификация контроллера.
+- `src/io/storage/block_device.c` — блочный слой вызывает `ahci_*` для дисков, выбранных как AHCI-транспорт.
+- `src/io/storage/storage_probe.c` — классификация контроллера.
 
 ## Ограничения
 

@@ -1,3 +1,4 @@
+#include "../drivers/display/gop.h"
 #include "personalization.h"
 #include "wallpaper.h"
 #include "display.h"
@@ -96,7 +97,7 @@ bool personalization_load(struct personalization *p){
     if(!p) return false;
     personalization_defaults(p);
     if(!vfs_is_root_mounted()) return true;
-    filesystem_syscall_lock();
+    if(!filesystem_syscall_acquire()) return true;
     int32_t fd=vfs_open(PERSONALIZATION_PATH);
     char buffer[512];
     int32_t total=0;
@@ -160,6 +161,7 @@ void personalization_apply(const struct personalization *p){
     display_set_font_face(face==0 ? DISPLAY_FONT_CLASSIC
         : face==2 ? DISPLAY_FONT_BOLD : DISPLAY_FONT_CLEAN);
     wallpaper_set_path(p->wallpaper);
+    gop_set_console_font_size(personalization_font_size_clamped(p->font_size));
 }
 
 bool personalization_poll(void){
