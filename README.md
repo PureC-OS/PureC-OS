@@ -125,6 +125,7 @@ make all-target-libgcc -j$(nproc) && sudo make install-target-libgcc
 
 <details>
 <summary><b>Linux (Fedora)</b></summary>
+
 On Fedora:
 ```bash
 sudo dnf update --refresh
