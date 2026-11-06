@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt
 	@echo "All host tests passed"
 
 test-wolfcrypt:
@@ -60,6 +60,12 @@ test-scheduler-cpu:
 	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST -pthread -ffunction-sections -fdata-sections \
 		tests/scheduler_cpu_test.c src/mm/oom/oom_slab.c -Wl,--gc-sections -o $(BIN_DIR)/tests/scheduler_cpu_test
 	$(BIN_DIR)/tests/scheduler_cpu_test
+
+test-scheduler-rq:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) $(HOST_TEST_FLAGS) -DPUREC_HOST_TEST -pthread -ffunction-sections -fdata-sections \
+		tests/scheduler_rq_test.c src/mm/oom/oom_slab.c -Wl,--gc-sections -o $(BIN_DIR)/tests/scheduler_rq_test
+	$(BIN_DIR)/tests/scheduler_rq_test
 
 test-scheduler-balance:
 	@mkdir -p $(BIN_DIR)/tests

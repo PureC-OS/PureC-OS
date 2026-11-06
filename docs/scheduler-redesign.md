@@ -50,6 +50,42 @@ removes that class by construction.
 6. Per-CPU run queues with load balancing.
 7. System call layer rework and sockets.
 
+## Run queues and balancing (implemented, stage 6 part 1)
+
+Every CPU owns a run queue (`rq_*` fields of `struct scheduler_cpu`) holding the
+threads that are ready and placed on it. The running thread is not in the
+queue. All queues, the sleeper list and the thread list are still protected by
+the single `runqueue_lock`; splitting it per queue is the next step. The lock is
+still held across the context switch and released in `finish_switch()`, so no
+other CPU can pick a thread whose stack is still in use.
+
+- Placement (`select_cpu`): among started CPUs the thread may run on, the least
+  loaded one wins; the CPU it last ran on is kept unless it is loaded by at
+  least one thread weight more than the best choice. `kernel_only` threads
+  (user threads inside a system call) stay on CPU 0, pinned threads on their
+  CPU. Placement happens on create, wake-up and when a preempted thread is put
+  back.
+- Selection (`rq_select`): the earlier EEVDF-like rule, now over the local queue
+  only, so it costs O(local queue) instead of O(all threads). Time slices are
+  computed from the weight of the local queue.
+- Idle pull (`pull_task(id, true)`): a CPU with nothing to run takes one
+  thread from the most loaded queue. Periodic pull (every 4 ms on each CPU,
+  skipping threads that ran within the last 2 ms). Both move a thread only when
+  the source load exceeds the destination load by more than the thread weight,
+  which strictly reduces the imbalance and prevents ping-pong. A thread stranded
+  in a queue of a CPU it may not run on is always taken.
+- `virtual_runtime` is kept relative to the queue minimum while a thread is
+  blocked or moves between queues, so a migrated or woken thread neither starves
+  nor overtakes the destination queue.
+- Sleepers wait in one list ordered by wake-up time. Expired sleepers are woken
+  on every timer tick of any CPU and placed with the same rules.
+- A thread placed on another CPU makes the placing CPU send a reschedule IPI to
+  that CPU only (previously every CPU was interrupted).
+
+Known limits: one global lock; no wake-up preemption (a woken thread placed on
+a busy CPU waits for that CPU's slice to end unless an idle CPU pulls it);
+system calls of user threads still run on CPU 0.
+
 ## Verification
 
 Host tests in `tests/` (`scheduler_cpu_test`, `scheduler_balance_test`) must
