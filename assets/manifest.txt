@@ -73,6 +73,17 @@
 /usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
 /usr/bin/curl /usr/bin/curl - 0 bin/programs/curl
 /usr/bin/netsurf /usr/bin/netsurf - 0 bin/programs/netsurf
+/usr/local/share/netsurf/Messages /usr/local/share/netsurf/Messages - 0 netsurf/frontends/framebuffer/res/Messages
+/usr/local/share/netsurf/default.css /usr/local/share/netsurf/default.css - 0 netsurf/frontends/framebuffer/res/default.css
+/usr/local/share/netsurf/internal.css /usr/local/share/netsurf/internal.css - 0 netsurf/frontends/framebuffer/res/internal.css
+/usr/local/share/netsurf/quirks.css /usr/local/share/netsurf/quirks.css - 0 netsurf/frontends/framebuffer/res/quirks.css
+/usr/local/share/netsurf/adblock.css /usr/local/share/netsurf/adblock.css - 0 netsurf/frontends/framebuffer/res/adblock.css
+/usr/local/share/netsurf/netsurf.png /usr/local/share/netsurf/netsurf.png - 0 netsurf/frontends/framebuffer/res/netsurf.png
+/usr/local/share/netsurf/welcome.html /usr/local/share/netsurf/welcome.html - 0 netsurf/frontends/framebuffer/res/welcome.html
+/usr/local/share/netsurf/credits.html /usr/local/share/netsurf/credits.html - 0 netsurf/frontends/framebuffer/res/credits.html
+/usr/local/share/netsurf/licence.html /usr/local/share/netsurf/licence.html - 0 netsurf/frontends/framebuffer/res/licence.html
+/usr/local/share/netsurf/favicon.png /usr/local/share/netsurf/favicon.png - 0 netsurf/frontends/framebuffer/res/favicon.png
+/usr/local/share/netsurf/Choices /usr/local/share/netsurf/Choices - 0 mk/netsurf/Choices
 /etc/ssl/cert.pem /etc/ssl/cert.pem - 0 rootfs/etc/ssl/cert.pem
 /usr/bin/make /usr/bin/make - 0 bin/programs/make
 /bin/login /bin/login - 0 bin/programs/login

@@ -25,7 +25,10 @@ struct purec_state {
     int queue_head;
     int queue_count;
     int mouse_buttons;
+    long long last_full_ms;
 };
+
+#define FULL_REPAINT_MS 150
 
 static struct purec_state *state_of(nsfb_t *nsfb)
 {
@@ -273,6 +276,15 @@ static int64_t purec_now_ms(void)
     return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
+static void purec_maybe_repaint(nsfb_t *nsfb, struct purec_state *state)
+{
+    long long now = purec_now_ms();
+    if (now - state->last_full_ms < FULL_REPAINT_MS)
+        return;
+    state->last_full_ms = now;
+    purec_blit(nsfb, 0, 0, nsfb->width, nsfb->height);
+}
+
 static bool purec_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
 {
     struct purec_state *state = state_of(nsfb);
@@ -280,6 +292,7 @@ static bool purec_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
         return false;
     int64_t deadline = timeout > 0 ? purec_now_ms() + timeout : 0;
     for (;;) {
+        purec_maybe_repaint(nsfb, state);
         if (queue_pop(state, event))
             return true;
         if (!pg_window_is_open(&state->window)) {
