@@ -26,6 +26,8 @@ struct purec_state {
     int queue_count;
     int mouse_buttons;
     bool need_frame;
+    int resize_w;
+    int resize_h;
 };
 
 static struct purec_state *state_of(nsfb_t *nsfb)
@@ -53,6 +55,17 @@ static void queue_move(struct purec_state *state, int x, int y)
     state->queue[slot].value.vector.x = x;
     state->queue[slot].value.vector.y = y;
     state->queue[slot].value.vector.z = 0;
+    state->queue_count++;
+}
+
+static void queue_resize(struct purec_state *state, int width, int height)
+{
+    if (state->queue_count >= QUEUE_SIZE)
+        return;
+    int slot = (state->queue_head + state->queue_count) % QUEUE_SIZE;
+    state->queue[slot].type = NSFB_EVENT_RESIZE;
+    state->queue[slot].value.resize.w = width;
+    state->queue[slot].value.resize.h = height;
     state->queue_count++;
 }
 
@@ -266,6 +279,17 @@ static void purec_poll_window(nsfb_t *nsfb, struct purec_state *state)
             break;
         default:
             break;
+        }
+    }
+    if (!pg_window_is_minimized(&state->window)) {
+        int cw = (int)state->window.client.width;
+        int ch = (int)state->window.client.height;
+        if (cw >= 160 && ch >= 120 && (cw != nsfb->width || ch != nsfb->height) &&
+            (cw != state->resize_w || ch != state->resize_h) &&
+            state->queue_count < QUEUE_SIZE - 2) {
+            state->resize_w = cw;
+            state->resize_h = ch;
+            queue_resize(state, cw, ch);
         }
     }
     if (state->need_frame) {
