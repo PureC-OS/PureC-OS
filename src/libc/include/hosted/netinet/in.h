@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PUREC_HOSTED_NETINET_IN_H
+#define PUREC_HOSTED_NETINET_IN_H
 #include <stdint.h>
 #include "../sys/socket.h"
 
@@ -54,4 +55,6 @@ struct sockaddr_in6 {
 #ifndef IN6_IS_ADDR_SITELOCAL
 #define IN6_IS_ADDR_SITELOCAL(a) \
     (((a)->s6_addr[0] == 0xfe) && (((a)->s6_addr[1] & 0xc0) == 0xc0))
+#endif
+
 #endif

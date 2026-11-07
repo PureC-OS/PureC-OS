@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PUREC_HOSTED_SYS_SOCKET_H
+#define PUREC_HOSTED_SYS_SOCKET_H
 #include <stddef.h>
 #include <stdint.h>
 #include "types.h"
@@ -94,4 +95,6 @@ int socketpair(int domain, int type, int protocol, int fds[2]);
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif

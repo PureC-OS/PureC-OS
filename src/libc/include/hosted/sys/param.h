@@ -1,5 +1,4 @@
 #pragma once
-#include <limits.h>
 #include <sys/types.h>
 
 #ifndef MAXPATHLEN
