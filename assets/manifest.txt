@@ -70,6 +70,8 @@
 /usr/bin/proctest /usr/bin/proctest - 0 bin/programs/proctest
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
 /usr/bin/httpget /usr/bin/httpget - 0 bin/programs/httpget
+/usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
+/etc/ssl/cert.pem /etc/ssl/cert.pem - 0 rootfs/etc/ssl/cert.pem
 /usr/bin/make /usr/bin/make - 0 bin/programs/make
 /bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
@@ -150,6 +152,12 @@
 /usr/include/netinet/tcp.h /usr/include/netinet/tcp.h - 1 src/libc/include/hosted/netinet/tcp.h
 /usr/include/arpa/inet.h /usr/include/arpa/inet.h - 1 src/libc/include/hosted/arpa/inet.h
 /usr/include/netdb.h /usr/include/netdb.h - 1 src/libc/include/hosted/netdb.h
+/usr/include/wchar.h /usr/include/wchar.h - 1 src/libc/include/hosted/wchar.h
+/usr/include/fnmatch.h /usr/include/fnmatch.h - 1 src/libc/include/hosted/fnmatch.h
+/usr/include/langinfo.h /usr/include/langinfo.h - 1 src/libc/include/hosted/langinfo.h
+/usr/include/libgen.h /usr/include/libgen.h - 1 src/libc/include/hosted/libgen.h
+/usr/include/pthread.h /usr/include/pthread.h - 1 src/libc/include/hosted/pthread.h
+/usr/include/getopt.h /usr/include/getopt.h - 1 src/libc/include/hosted/getopt.h
 /usr/include/pwd.h /usr/include/pwd.h - 1 src/libc/include/hosted/pwd.h
 /usr/include/spawn.h /usr/include/spawn.h - 1 src/libc/include/hosted/spawn.h
 /usr/include/strings.h /usr/include/strings.h - 1 src/libc/include/hosted/strings.h

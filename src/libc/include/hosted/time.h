@@ -31,6 +31,11 @@ struct timespec {
 };
 
 int clock_gettime(int clock_id, struct timespec *out);
+int nanosleep(const struct timespec *request, struct timespec *remaining);
+struct tm *gmtime_r(const time_t *value, struct tm *result);
+struct tm *localtime_r(const time_t *value, struct tm *result);
+time_t timegm(struct tm *parts);
+
 time_t time(time_t *result);
 clock_t clock(void);
 double difftime(time_t end, time_t start);

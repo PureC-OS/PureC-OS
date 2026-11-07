@@ -156,6 +156,7 @@ TARGETS := \
   	$(PROGRAM_DIR)/proctest \
   	$(PROGRAM_DIR)/journalctl \
   	$(PROGRAM_DIR)/httpget \
+  	$(PROGRAM_DIR)/httpsget \
   	$(PROGRAM_DIR)/fputest \
   	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/cd \
@@ -532,6 +533,19 @@ $(OBJ_DIR)/httpget/main.o: $(ROOT_DIR)/src/programs/httpget/main.c
 $(PROGRAM_DIR)/httpget: $(OBJ_DIR)/httpget/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpget/main.o $(LIBPUREFS) $(LIBPUREC)
+
+LIBWOLF := $(LIB_DIR)/libwolf.a
+
+$(LIBWOLF):
+	$(MAKE) -C $(ROOT_DIR)/wolfssl lib
+
+$(OBJ_DIR)/httpsget/main.o: $(ROOT_DIR)/src/programs/httpsget/main.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec -DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/httpsget/main.o $(LIB_DIR)/crt0.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/proctest/main.o: $(ROOT_DIR)/src/programs/proctest/main.c
 	@mkdir -p $(@D)

@@ -156,6 +156,28 @@ struct tm *gmtime(const time_t *value) {
     return time_fill(*value);
 }
 
+struct tm *gmtime_r(const time_t *value, struct tm *result) {
+    if (!value || !result) { errno = EINVAL; return 0; }
+    *result = *time_fill(*value);
+    return result;
+}
+
+struct tm *localtime_r(const time_t *value, struct tm *result) {
+    if (!value || !result) { errno = EINVAL; return 0; }
+    *result = *time_fill(*value + time_zone_seconds());
+    return result;
+}
+
+time_t timegm(struct tm *parts) {
+    if (!parts) { errno = EINVAL; return -1; }
+    long days = time_days_from_civil((long)parts->tm_year + 1900, parts->tm_mon, parts->tm_mday);
+    long long seconds = (long long)days * 86400LL + (long long)parts->tm_hour * 3600LL
+        + (long long)parts->tm_min * 60LL + (long long)parts->tm_sec;
+    struct tm normalized = *time_fill((time_t)seconds);
+    *parts = normalized;
+    return (time_t)seconds;
+}
+
 struct tm *localtime(const time_t *value) {
     if (!value) { errno = EINVAL; return 0; }
     return time_fill(*value + time_zone_seconds());

@@ -160,17 +160,21 @@ char *strpbrk(const char *text, const char *accept) {
     return 0;
 }
 
+char *strtok_r(char *text, const char *delimiters, char **saved) {
+    if (text) *saved = text;
+    if (!*saved) return 0;
+    *saved += strspn(*saved, delimiters);
+    if (!**saved) { *saved = 0; return 0; }
+    char *token = *saved;
+    *saved += strcspn(*saved, delimiters);
+    if (**saved) *(*saved)++ = '\0';
+    else *saved = 0;
+    return token;
+}
+
 char *strtok(char *text, const char *delimiters) {
     static char *saved;
-    if (text) saved = text;
-    if (!saved) return 0;
-    saved += strspn(saved, delimiters);
-    if (!*saved) { saved = 0; return 0; }
-    char *token = saved;
-    saved += strcspn(saved, delimiters);
-    if (*saved) *saved++ = '\0';
-    else saved = 0;
-    return token;
+    return strtok_r(text, delimiters, &saved);
 }
 
 // strdup/strndup need malloc;Allocated here to keep string.c
