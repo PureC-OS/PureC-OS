@@ -147,6 +147,7 @@ C_SOURCES := \
 	fs/sysfs.c \
 	fs/tmpfs.c \
 	fs/vfs_fat32.c \
+	kernel/diagnostics/journal.c \
 	lib/format.c \
 	fs/initramfs.c \
 	userspace/display.c \

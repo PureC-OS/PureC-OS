@@ -10,6 +10,7 @@
 #include "../../userspace/rs_session.h"
 #include "../../userspace/userspace.h"
 #include "../diagnostics/boot_diag.h"
+#include "../diagnostics/journal.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../process/process.h"
@@ -57,6 +58,7 @@ void init_process_start(void)
       scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, -1);
   if (log_tid >= 0)
     scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
+  journal_start();
   (void)purec_i2c_hid_touchpad_start();
   int32_t net_pid = process_spawn_service(net_service_thread, 0, "net-rx", 2,
                                           -1, SCHED_QOS_UTILITY,

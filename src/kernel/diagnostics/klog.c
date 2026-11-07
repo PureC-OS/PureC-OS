@@ -704,3 +704,9 @@ uint64_t klog_total_bytes(void)
   LOG_SCOPE;
   return klog_ring_pos;
 }
+
+uint64_t klog_uptime_us(void)
+{
+  uint64_t delta = klog_inited ? (rdtsc() - klog_boot_tsc) : 0;
+  return delta / 3000;
+}
