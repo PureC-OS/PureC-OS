@@ -3,7 +3,6 @@
 
 #define CURL_OS "x86_64-purec"
 #define CURL_CA_BUNDLE "/etc/ssl/cert.pem"
-#define CURL_CA_PATH "none"
 #define CURL_DISABLE_LDAP 1
 #define CURL_DISABLE_LDAPS 1
 #define CURL_DISABLE_DICT 1
