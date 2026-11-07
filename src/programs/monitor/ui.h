@@ -26,6 +26,8 @@ struct ui_state {
   int filter_len;
   bool filter_mode;
   bool details;
+  char detail[1536];
+  uint32_t detail_pid;
   bool kill_prompt;
   uint32_t kill_pid;
   char message[96];
