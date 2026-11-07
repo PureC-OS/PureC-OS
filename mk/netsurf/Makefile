@@ -121,8 +121,16 @@ nslibs: deps
 nscore: nslibs
 	$(ROOT_DIR)/mk/netsurf/build-netsurf.sh
 
-$(BROWSER): nscore $(BIN_DIR)/lib/crt0.o $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a
+NS_START := $(OBJ_DIR)/ns_start.o
+NS_LINK_LIBS := $(filter-out $(SLIB)/libnsfb.a,$(NS_LINK_LIBS))
+
+$(NS_START): $(ROOT_DIR)/mk/netsurf/ns_start.c
 	@mkdir -p $(@D)
-	$(LD) -S -T $(ROOT_DIR)/linker-userspace.ld -o $@ $(BIN_DIR)/lib/crt0.o \
-		$$(find $(NS_BUILD) -name '*.o') --start-group $(NS_LINK_LIBS) \
+	$(CC) $(NS_CFLAGS) -c $< -o $@
+
+$(BROWSER): nscore $(NS_START) $(ROOT_DIR)/mk/netsurf/netsurf.ld $(BIN_DIR)/lib/crt0.o $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a
+	@mkdir -p $(@D)
+	$(LD) -S --wrap=main -T $(ROOT_DIR)/mk/netsurf/netsurf.ld -o $@ $(BIN_DIR)/lib/crt0.o $(NS_START) \
+		$$(find $(NS_BUILD) -name '*.o') --whole-archive $(SLIB)/libnsfb.a --no-whole-archive \
+		--start-group $(NS_LINK_LIBS) $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a \
 		$(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpurec.a $(LIBGCC) --end-group
