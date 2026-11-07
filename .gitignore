@@ -21,3 +21,5 @@ kernel.map
 *.obsidian/
 old/
 netsurf-libs/unifont.hex
+*/netsurf-libs/*
+netsurf-libs/libnsfb
