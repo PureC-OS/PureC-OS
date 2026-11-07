@@ -31,6 +31,7 @@ char *strtok(char *text, const char *delimiters);
 char *strtok_r(char *text, const char *delimiters, char **saved);
 int strerror_r(int code, char *buffer, size_t size);
 char *strcasestr(const char *haystack, const char *needle);
+char *strchrnul(const char *text, int ch);
 size_t strlcpy(char *destination, const char *source, size_t size);
 size_t strlcat(char *destination, const char *source, size_t size);
 void *memrchr(const void *buffer, int value, size_t count);

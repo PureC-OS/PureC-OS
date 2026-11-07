@@ -1027,3 +1027,10 @@ void regfree(regex_t *preg)
 {
     (void)preg;
 }
+
+char *strchrnul(const char *text, int ch)
+{
+    while (*text && *text != (char)ch)
+        text++;
+    return (char *)text;
+}
