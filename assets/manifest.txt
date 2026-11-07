@@ -39,6 +39,7 @@
 /bin/pwd /bin/pwd - 1 bin/programs/pwd
 /bin/clear /bin/clear - 1 bin/programs/clear
 /bin/echo /bin/echo - 1 bin/programs/echo
+/bin/echo-dyn /bin/echo-dyn - 0 bin/programs/echo-dyn
 /bin/battery /bin/battery - 1 bin/programs/battery
 /bin/cpuinfo /bin/cpuinfo - 1 bin/programs/cpuinfo
 /sbin/hddcheck /sbin/hddcheck - 1 bin/programs/hddcheck
@@ -109,6 +110,7 @@
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
 /lib/libpurec.so /lib/libpurec.so - 0 bin/lib/libpurec.so
+/lib/pc-ld.o /lib/pc-ld.o - 0 bin/lib/pc-ld.o
 /lib/libpurefs.a /lib/libpurefs.a - 1 bin/lib/libpurefs.a
 /lib/libpuregui.a /lib/libpuregui.a - 1 bin/lib/libpuregui.a
 /lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
