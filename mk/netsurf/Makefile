@@ -97,7 +97,10 @@ $(SLIB)/libexpat.a: $(EXPAT_OBJECTS)
 
 CURL_OBJ_DIR := $(BIN_DIR)/obj/curl/lib
 
-$(SLIB)/libcurl.a: $(SLIB)/libz.a
+.PHONY: FORCE
+FORCE:
+
+$(SLIB)/libcurl.a: $(SLIB)/libz.a FORCE
 	$(MAKE) -C $(ROOT_DIR)/src/programs $(BIN_DIR)/programs/curl
 	@mkdir -p $(SLIB) $(SINC)/curl $(SPC)
 	$(AR) rcs $@ $$(find $(CURL_OBJ_DIR) -name '*.o')

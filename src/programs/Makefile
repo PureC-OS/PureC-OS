@@ -562,6 +562,13 @@ CURL_CFLAGS := -I$(ROOT_DIR)/mk/curl -I$(CURL_DIR)/include -I$(CURL_DIR)/lib -I$
 	-I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec \
 	-DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS -DHAVE_CONFIG_H -DBUILDING_LIBCURL -DCURL_STATICLIB \
 	-include sys/select.h -w
+ifneq ($(wildcard $(ROOT_DIR)/netsurf-libs/zlib/zlib.h),)
+CURL_CFLAGS += -DHAVE_LIBZ -DHAVE_ZLIB_H -I$(ROOT_DIR)/netsurf-libs/zlib
+CURL_ZLIB := $(LIB_DIR)/libz.a
+
+$(LIB_DIR)/libz.a:
+	$(MAKE) -C $(ROOT_DIR)/mk/netsurf zlib
+endif
 LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 TARGETS += $(PROGRAM_DIR)/curl
 -include $(CURL_OBJECTS:.o=.d)
@@ -574,9 +581,9 @@ $(CURL_OBJ_DIR)/src/%.o: $(CURL_DIR)/src/%.c $(LIBWOLF)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(CURL_CFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
-$(PROGRAM_DIR)/curl: $(CURL_OBJECTS) $(LIB_DIR)/crt0.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/curl: $(CURL_OBJECTS) $(LIB_DIR)/crt0.o $(LIBWOLF) $(CURL_ZLIB) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(CURL_OBJECTS) $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LIBGCC)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(CURL_OBJECTS) $(LIBWOLF) $(CURL_ZLIB) $(LIBPUREFS) $(LIBPUREC) $(LIBGCC)
 endif
 
 $(OBJ_DIR)/proctest/main.o: $(ROOT_DIR)/src/programs/proctest/main.c
