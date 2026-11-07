@@ -1275,6 +1275,71 @@ static void abort_children(int32_t parent)
     }
 }
 
+int32_t tcp_bind(int32_t handle, uint16_t port)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s || s->state != TCP_STATE_CLOSED || s->app_closed || s->local_port)
+        return TCP_ERR_INVALID;
+    if (port)
+    {
+        if (port_in_use(port))
+            return TCP_ERR_IN_USE;
+        s->local_port = port;
+    }
+    return TCP_OK;
+}
+
+int32_t tcp_shutdown_write(int32_t handle)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s || s->app_closed)
+        return TCP_ERR_INVALID;
+    if (s->fin_queued)
+        return TCP_OK;
+    if (s->state != TCP_STATE_ESTABLISHED && s->state != TCP_STATE_CLOSE_WAIT &&
+        s->state != TCP_STATE_SYN_RECEIVED)
+        return TCP_ERR_NOT_CONNECTED;
+    s->fin_queued = true;
+    tcp_output(s);
+    return TCP_OK;
+}
+
+uint32_t tcp_readiness(int32_t handle)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s)
+        return TCP_READY_ERR | TCP_READY_HUP;
+    uint32_t ready = 0;
+    if (s->state == TCP_STATE_LISTEN)
+        return s->accept_count ? TCP_READY_IN : 0;
+    if (s->rx_length || s->fin_received)
+        ready |= TCP_READY_IN;
+    if (s->error)
+        ready |= TCP_READY_ERR | TCP_READY_IN;
+    if (s->state == TCP_STATE_CLOSED || s->state == TCP_STATE_TIME_WAIT ||
+        s->state == TCP_STATE_LAST_ACK || s->state == TCP_STATE_CLOSING)
+        ready |= TCP_READY_HUP | TCP_READY_IN;
+    if (!s->fin_queued && (s->state == TCP_STATE_ESTABLISHED || s->state == TCP_STATE_CLOSE_WAIT) &&
+        s->tx_length < TCP_BUFFER_SIZE)
+        ready |= TCP_READY_OUT;
+    return ready;
+}
+
+int32_t tcp_pending_error(int32_t handle)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s)
+        return TCP_ERR_INVALID;
+    int32_t error = s->error;
+    if (s->state != TCP_STATE_CLOSED)
+        return 0;
+    return error;
+}
+
 int32_t tcp_close(int32_t handle)
 {
     MUTEX_SCOPE(&tcp_lock);
