@@ -138,6 +138,8 @@
 /usr/include/stdio.h /usr/include/stdio.h - 1 src/libc/include/hosted/stdio.h
 /usr/include/stdlib.h /usr/include/stdlib.h - 1 src/libc/include/hosted/stdlib.h
 /usr/include/stdint.h /usr/include/stdint.h - 1 src/libc/include/hosted/stdint.h
+/usr/include/iconv.h /usr/include/iconv.h - 1 src/libc/include/hosted/iconv.h
+/usr/include/endian.h /usr/include/endian.h - 1 src/libc/include/hosted/endian.h
 /usr/include/string.h /usr/include/string.h - 1 src/libc/include/hosted/string.h
 /usr/include/time.h /usr/include/time.h - 1 src/libc/include/hosted/time.h
 /usr/include/unistd.h /usr/include/unistd.h - 1 src/libc/include/hosted/unistd.h

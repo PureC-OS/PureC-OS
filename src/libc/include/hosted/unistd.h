@@ -23,6 +23,8 @@ extern char **environ;
 
 ssize_t read(int fd, void *buffer, size_t count);
 ssize_t write(int fd, const void *buffer, size_t count);
+ssize_t pread(int fd, void *buffer, size_t count, off_t offset);
+ssize_t pwrite(int fd, const void *buffer, size_t count, off_t offset);
 int close(int fd);
 off_t lseek(int fd, off_t offset, int origin);
 int unlink(const char *path);

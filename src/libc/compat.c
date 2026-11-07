@@ -964,3 +964,31 @@ int pthread_attr_destroy(pthread_attr_t *attr)
     (void)attr;
     return 0;
 }
+
+ssize_t pread(int fd, void *buffer, size_t count, off_t offset)
+{
+    off_t saved = lseek(fd, 0, SEEK_CUR);
+    if (saved < 0)
+        return -1;
+    if (lseek(fd, offset, SEEK_SET) < 0)
+        return -1;
+    ssize_t got = read(fd, buffer, count);
+    int saved_errno = errno;
+    lseek(fd, saved, SEEK_SET);
+    errno = saved_errno;
+    return got;
+}
+
+ssize_t pwrite(int fd, const void *buffer, size_t count, off_t offset)
+{
+    off_t saved = lseek(fd, 0, SEEK_CUR);
+    if (saved < 0)
+        return -1;
+    if (lseek(fd, offset, SEEK_SET) < 0)
+        return -1;
+    ssize_t put = write(fd, buffer, count);
+    int saved_errno = errno;
+    lseek(fd, saved, SEEK_SET);
+    errno = saved_errno;
+    return put;
+}
