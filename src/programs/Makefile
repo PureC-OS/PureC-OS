@@ -224,16 +224,16 @@ $(LUA_OBJECTS): PRIVATE_CFLAGS := -DLUA_ANSI -I$(ROOT_DIR)/src/libc/include/host
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
 
-$(LIB_DIR)/libpurec.so:
+$(LIB_DIR)/libpurec.so $(DYN_LD_STUB):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
 
 ifdef PUREC_DYNAMIC
 TARGETS += $(PROGRAM_DIR)/echo-dyn
 PIE_LD_SCRIPT := $(ROOT_DIR)/linker-userspace-pie.ld
 
-$(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(PIE_LD_SCRIPT)
+$(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(DYN_LD_STUB) $(PIE_LD_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) $(PIE_LINK_FLAGS) -T $(PIE_LD_SCRIPT) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so
+	$(LD) $(DYN_LINK_FLAGS) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(DYN_LD_STUB) $(LIB_DIR)/libpurec.so
 
 $(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/echo/echo.c
 	@mkdir -p $(@D)

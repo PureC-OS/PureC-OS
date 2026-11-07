@@ -99,7 +99,5 @@ void crt0_main(uint64_t *frame) {
     }
     crt0_argv[argc] = 0;
     int status = main(argc, crt0_argv);
-    // Like hosted exit(): flush stdio buffers (stdout is line-buffered,
-    // so a printf without trailing '\n' would otherwise be lost).
     exit(status);
 }
