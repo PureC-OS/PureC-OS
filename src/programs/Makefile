@@ -547,6 +547,38 @@ $(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/httpsget/main.o $(LIB_DIR)/crt0.o $(LIBWOLF)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
 
+CURL_DIR := $(ROOT_DIR)/curl
+CURL_PRESENT := $(wildcard $(CURL_DIR)/lib/curl_setup.h)
+ifneq ($(CURL_PRESENT),)
+CURL_LIB_EXCLUDE := schannel sspi amigaos rustls mbedtls gtls vtls/apple openssl winapi multibyte \
+	version_win32 gsasl krb5 spnego asyn-ares ngtcp2 quiche vquic-tls capsule vssh/libssh rtsp \
+	win32_threads bearssl sectransp
+CURL_LIB_ALL := $(sort $(shell cd $(CURL_DIR)/lib && $(MAKE) -s -f $(ROOT_DIR)/mk/curl/list.mk VAR=CSOURCES 2>/dev/null))
+CURL_LIB_SOURCES := $(foreach f,$(filter %.c,$(CURL_LIB_ALL)),$(if $(strip $(foreach x,$(CURL_LIB_EXCLUDE),$(findstring $(x),$(f)))),,$(f)))
+CURL_TOOL_SOURCES := $(filter %.c,$(shell cd $(CURL_DIR)/src && $(MAKE) -s -f $(ROOT_DIR)/mk/curl/list.mk VAR=CURL_CFILES 2>/dev/null))
+CURL_OBJ_DIR := $(BIN_DIR)/obj/curl
+CURL_OBJECTS := $(CURL_LIB_SOURCES:%.c=$(CURL_OBJ_DIR)/lib/%.o) $(CURL_TOOL_SOURCES:%.c=$(CURL_OBJ_DIR)/src/%.o)
+CURL_CFLAGS := -I$(ROOT_DIR)/mk/curl -I$(CURL_DIR)/include -I$(CURL_DIR)/lib -I$(CURL_DIR)/src \
+	-I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec \
+	-DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS -DHAVE_CONFIG_H -DBUILDING_LIBCURL -DCURL_STATICLIB \
+	-include sys/select.h -w
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
+TARGETS += $(PROGRAM_DIR)/curl
+-include $(CURL_OBJECTS:.o=.d)
+
+$(CURL_OBJ_DIR)/lib/%.o: $(CURL_DIR)/lib/%.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CURL_CFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(CURL_OBJ_DIR)/src/%.o: $(CURL_DIR)/src/%.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CURL_CFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/curl: $(CURL_OBJECTS) $(LIB_DIR)/crt0.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(CURL_OBJECTS) $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LIBGCC)
+endif
+
 $(OBJ_DIR)/proctest/main.o: $(ROOT_DIR)/src/programs/proctest/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@

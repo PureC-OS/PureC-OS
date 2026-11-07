@@ -71,6 +71,7 @@
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
 /usr/bin/httpget /usr/bin/httpget - 0 bin/programs/httpget
 /usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
+/usr/bin/curl /usr/bin/curl - 0 bin/programs/curl
 /etc/ssl/cert.pem /etc/ssl/cert.pem - 0 rootfs/etc/ssl/cert.pem
 /usr/bin/make /usr/bin/make - 0 bin/programs/make
 /bin/login /bin/login - 0 bin/programs/login
