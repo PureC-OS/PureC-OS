@@ -9,7 +9,7 @@ mkdir -p "$STAGE"
 if [ ! -d "$STAGE/share/netsurf-buildsystem" ]; then
   make -C "$NSLIBS/buildsystem" install PREFIX="$STAGE" >/dev/null || exit 1
 fi
-LIBS="${NS_LIBS:-libwapcaplet libparserutils libhubbub libcss libdom libnsutils libnslog libnsgif libnsbmp libnsfb}"
+LIBS="${NS_LIBS:-libwapcaplet libparserutils libhubbub libcss libdom libnsutils libnslog libnsgif libnsbmp libnsfb libutf8proc}"
 for lib in $LIBS; do
   echo "== $lib"
   if ! make -C "$NSLIBS/$lib" PREFIX="$STAGE" CC=x86_64-elf-gcc AR=x86_64-elf-ar WARNFLAGS=-w \

@@ -32,9 +32,10 @@ JPEG_OBJECTS := $(JPEG_SOURCES:%=$(OBJ_DIR)/libjpeg/%.o)
 EXPAT_SOURCES := xmlparse xmlrole xmltok
 EXPAT_OBJECTS := $(EXPAT_SOURCES:%=$(OBJ_DIR)/expat/%.o)
 
-.PHONY: all zlib png jpeg expat deps
+.PHONY: all zlib png jpeg expat curl deps
 all: deps
-deps: zlib png jpeg expat
+deps: zlib png jpeg expat curl
+curl: $(SLIB)/libcurl.a
 zlib: $(SLIB)/libz.a
 png: $(SLIB)/libpng.a
 jpeg: $(SLIB)/libjpeg.a
@@ -93,3 +94,13 @@ $(SLIB)/libexpat.a: $(EXPAT_OBJECTS)
 	$(AR) rcs $@ $^
 	cp $(NSLIBS)/libexpat/expat/lib/expat.h $(NSLIBS)/libexpat/expat/lib/expat_external.h $(SINC)/
 	printf 'prefix=$(STAGE)\nName: expat\nDescription: expat\nVersion: 2.6.4\nLibs: -L$(SLIB) -lexpat\nCflags: -I$(SINC) -DXML_STATIC\n' > $(SPC)/expat.pc
+
+CURL_OBJ_DIR := $(BIN_DIR)/obj/curl/lib
+
+$(SLIB)/libcurl.a: $(SLIB)/libz.a
+	$(MAKE) -C $(ROOT_DIR)/src/programs $(BIN_DIR)/programs/curl
+	@mkdir -p $(SLIB) $(SINC)/curl $(SPC)
+	$(AR) rcs $@ $$(find $(CURL_OBJ_DIR) -name '*.o')
+	cp $(ROOT_DIR)/curl/include/curl/*.h $(SINC)/curl/
+	cp $(BIN_DIR)/lib/libwolf.a $(SLIB)/libwolf.a
+	printf 'prefix=$(STAGE)\nName: libcurl\nDescription: libcurl\nVersion: 8.23.1\nLibs: -L$(SLIB) -lcurl -lwolf -lz\nCflags: -I$(SINC) -DCURL_STATICLIB\n' > $(SPC)/libcurl.pc
