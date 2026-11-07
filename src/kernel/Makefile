@@ -146,6 +146,7 @@ C_SOURCES := \
 	fs/procfs.c \
 	fs/sysfs.c \
 	fs/tmpfs.c \
+	fs/vfs_fat32.c \
 	lib/format.c \
 	fs/initramfs.c \
 	userspace/display.c \
