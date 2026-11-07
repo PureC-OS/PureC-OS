@@ -166,6 +166,18 @@
 #define SYS_MPROTECT 359         /* (address, length, KMAP_PROT_*) */
 #define SYS_MREMAP 360           /* (old, old_len, new_len, KMAP_REMAP_*) -> address */
 #define SYS_DISPLAY_SCALE_INFO 361 /* (struct display_scale_info *) */
+#define SYS_SOCKET 362       /* (domain, type|flags, protocol) -> fd */
+#define SYS_CONNECT 363      /* (fd, sockaddr *, len) */
+#define SYS_BIND 364         /* (fd, sockaddr *, len) */
+#define SYS_LISTEN 365       /* (fd, backlog) */
+#define SYS_ACCEPT 366       /* (fd, sockaddr *, socklen_t *, flags) -> fd */
+#define SYS_SHUTDOWN 367     /* (fd, how) */
+#define SYS_SOCKNAME 368     /* (fd, sockaddr *, socklen_t *, peer) */
+#define SYS_SETSOCKOPT 369   /* (fd, level<<32|name, value *, len) */
+#define SYS_GETSOCKOPT 370   /* (fd, level<<32|name, value *, len *) */
+#define SYS_DNS_RESOLVE 371  /* (name, timeout_ms, uint32_t *ipv4_be) */
+#define SYS_SOCK_SEND 372    /* (fd, buf, len, msg_flags) */
+#define SYS_SOCK_RECV 373    /* (fd, buf, len, msg_flags) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -178,6 +190,7 @@
 #define FD_KIND_CONSOLE 0
 #define FD_KIND_FILE 1
 #define FD_KIND_PIPE 2
+#define FD_KIND_SOCKET 3
 
 #define TTY_TCGETS 0x5401u
 #define TTY_TCSETS 0x5402u
@@ -236,6 +249,26 @@ struct kernel_mmap_args {
 #define KERR_SPIPE 29
 #define KERR_PIPE 32
 #define KERR_NAMETOOLONG 36
+#define KERR_NOTSOCK 88
+#define KERR_DESTADDRREQ 89
+#define KERR_PROTOTYPE 91
+#define KERR_NOPROTOOPT 92
+#define KERR_PROTONOSUPPORT 93
+#define KERR_OPNOTSUPP 95
+#define KERR_AFNOSUPPORT 97
+#define KERR_ADDRINUSE 98
+#define KERR_ADDRNOTAVAIL 99
+#define KERR_NETUNREACH 101
+#define KERR_CONNABORTED 103
+#define KERR_CONNRESET 104
+#define KERR_NOBUFS 105
+#define KERR_ISCONN 106
+#define KERR_NOTCONN 107
+#define KERR_TIMEDOUT 110
+#define KERR_CONNREFUSED 111
+#define KERR_HOSTUNREACH 113
+#define KERR_ALREADY 114
+#define KERR_INPROGRESS 115
 #define KERR_NOSYS 38
 #define KERR_CONSOLE 1000
 
