@@ -1,6 +1,6 @@
 #pragma once
-#include <netinet/in.h>
-#include <sys/socket.h>
+#include "../netinet/in.h"
+#include "../sys/socket.h"
 
 #ifdef __cplusplus
 extern "C" {

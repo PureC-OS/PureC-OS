@@ -144,6 +144,11 @@
 /usr/include/link.h /usr/include/link.h - 1 src/libc/include/hosted/link.h
 /usr/include/locale.h /usr/include/locale.h - 1 src/libc/include/hosted/locale.h
 /usr/include/poll.h /usr/include/poll.h - 1 src/libc/include/hosted/poll.h
+/usr/include/sys/socket.h /usr/include/sys/socket.h - 1 src/libc/include/hosted/sys/socket.h
+/usr/include/netinet/in.h /usr/include/netinet/in.h - 1 src/libc/include/hosted/netinet/in.h
+/usr/include/netinet/tcp.h /usr/include/netinet/tcp.h - 1 src/libc/include/hosted/netinet/tcp.h
+/usr/include/arpa/inet.h /usr/include/arpa/inet.h - 1 src/libc/include/hosted/arpa/inet.h
+/usr/include/netdb.h /usr/include/netdb.h - 1 src/libc/include/hosted/netdb.h
 /usr/include/pwd.h /usr/include/pwd.h - 1 src/libc/include/hosted/pwd.h
 /usr/include/spawn.h /usr/include/spawn.h - 1 src/libc/include/hosted/spawn.h
 /usr/include/strings.h /usr/include/strings.h - 1 src/libc/include/hosted/strings.h

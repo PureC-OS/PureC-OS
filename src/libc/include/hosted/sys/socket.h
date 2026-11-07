@@ -1,7 +1,7 @@
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/types.h>
+#include "types.h"
 
 typedef unsigned int socklen_t;
 typedef unsigned short sa_family_t;
