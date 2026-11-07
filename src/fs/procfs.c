@@ -4,6 +4,8 @@
 #include "../drivers/interrupts/timer.h"
 #include "../io/storage/block_device.h"
 #include "../io/storage/storage_types.h"
+#include "../io/swap.h"
+#include "../kernel/process/scheduler.h"
 #include "../kernel/process/process.h"
 #include "../kernel/smp/cpu.h"
 #include "../kernel/smp/cpufreq.h"
@@ -71,6 +73,15 @@ static void generate_meminfo(struct pbuf *out, uint32_t pid) {
   emit(out, "MemTotal:    %8llu kB\n", total);
   emit(out, "MemFree:     %8llu kB\n", free);
   emit(out, "MemUsed:     %8llu kB\n", total - free);
+  struct swap_info swap;
+  swap_info_get(&swap);
+  uint64_t swap_total = swap.enabled ? (uint64_t)swap.total_pages * 4 : 0;
+  uint64_t swap_used = swap.enabled ? (uint64_t)swap.used_pages * 4 : 0;
+  emit(out, "SwapTotal:   %8llu kB\n", swap_total);
+  emit(out, "SwapFree:    %8llu kB\n",
+       swap_total > swap_used ? swap_total - swap_used : 0);
+  emit(out, "SwapIn:      %8llu pages\n", (unsigned long long)swap.pages_in);
+  emit(out, "SwapOut:     %8llu pages\n", (unsigned long long)swap.pages_out);
 }
 
 static void brand_string(char brand[49]) {
@@ -111,6 +122,36 @@ static void generate_cpuinfo(struct pbuf *out, uint32_t pid) {
     emit(out, "apicid\t\t: %u\n", info ? info->lapic_id : 0);
     emit(out, "online\t\t: %s\n\n", cpu_is_online(id) ? "yes" : "no");
   }
+}
+
+static void generate_stat(struct pbuf *out, uint32_t pid) {
+  (void)pid;
+  uint32_t count = cpu_registered_count();
+  uint64_t total_sum = 0, idle_sum = 0;
+  uint32_t online_count = 0;
+  for (uint32_t id = 0; id < count; id++) {
+    uint64_t total = 0, idle = 0;
+    (void)scheduler_cpu_ticks(id, &total, &idle);
+    total_sum += total;
+    idle_sum += idle;
+    if (cpu_is_online(id))
+      online_count++;
+  }
+  emit(out, "cpu  %llu %llu %u\n", (unsigned long long)total_sum,
+       (unsigned long long)idle_sum, online_count);
+  for (uint32_t id = 0; id < count; id++) {
+    uint64_t total = 0, idle = 0;
+    (void)scheduler_cpu_ticks(id, &total, &idle);
+    emit(out, "cpu%u %llu %llu %u\n", id, (unsigned long long)total,
+         (unsigned long long)idle, cpu_is_online(id) ? 1u : 0u);
+  }
+  int32_t processes = process_monitor_list(process_list, PROCFS_MAX_PROCESSES);
+  uint32_t running = 0;
+  for (int32_t i = 0; i < processes; i++)
+    if (process_list[i].state == PROCESS_MONITOR_STATE_RUNNING)
+      running++;
+  emit(out, "tasks %d %u\n", processes < 0 ? 0 : processes, running);
+  emit(out, "ticks %llu\n", (unsigned long long)timer_ticks());
 }
 
 static void generate_mounts(struct pbuf *out, uint32_t pid) {
@@ -174,6 +215,15 @@ static void generate_pid_status(struct pbuf *out, uint32_t pid) {
   emit(out, "VmRSS:\t%llu kB\n", process->resident_bytes / 1024);
   emit(out, "CpuTime:\t%llu ms\n", process->runtime_ms);
   emit(out, "Cpu:\t%u%%\n", process->cpu_percent);
+  struct process_proc_info extra;
+  if (process_proc_info_get(pid, &extra)) {
+    emit(out, "Uid:\t%u\n", extra.uid);
+    emit(out, "Gid:\t%u\n", extra.gid);
+    emit(out, "VmHeap:\t%llu kB\n", (unsigned long long)(extra.heap_bytes / 1024));
+    emit(out, "VmStack:\t%llu kB\n", (unsigned long long)(extra.stack_bytes / 1024));
+    if (process->state == PROCESS_MONITOR_STATE_EXITED)
+      emit(out, "ExitCode:\t%d\n", extra.exit_code);
+  }
 }
 
 static void generate_pid_name(struct pbuf *out, uint32_t pid) {
@@ -182,15 +232,34 @@ static void generate_pid_name(struct pbuf *out, uint32_t pid) {
     emit(out, "%s\n", process->name);
 }
 
+static void generate_pid_cmdline(struct pbuf *out, uint32_t pid) {
+  const struct process_monitor_info *process = find_process(pid);
+  if (!process)
+    return;
+  struct process_proc_info extra;
+  if (process_proc_info_get(pid, &extra) && extra.command_line[0])
+    emit(out, "%s %s\n", process->name, extra.command_line);
+  else
+    emit(out, "%s\n", process->name);
+}
+
+static void generate_pid_cwd(struct pbuf *out, uint32_t pid) {
+  struct process_proc_info extra;
+  if (process_proc_info_get(pid, &extra))
+    emit(out, "%s\n", extra.cwd[0] ? extra.cwd : "/");
+}
+
 static const struct proc_entry root_entries[] = {
     {"version", generate_version},       {"uptime", generate_uptime},
     {"meminfo", generate_meminfo},       {"cpuinfo", generate_cpuinfo},
+    {"stat", generate_stat},
     {"mounts", generate_mounts},         {"interrupts", generate_interrupts},
     {"filesystems", generate_filesystems},
     {"partitions", generate_partitions}};
 
 static const struct proc_entry pid_entries[] = {
-    {"status", generate_pid_status}, {"name", generate_pid_name}};
+    {"status", generate_pid_status}, {"name", generate_pid_name},
+    {"cmdline", generate_pid_cmdline}, {"cwd", generate_pid_cwd}};
 
 #define ROOT_COUNT (sizeof(root_entries) / sizeof(root_entries[0]))
 #define PID_COUNT (sizeof(pid_entries) / sizeof(pid_entries[0]))

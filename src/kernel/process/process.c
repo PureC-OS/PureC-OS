@@ -218,6 +218,29 @@ struct process *process_lookup_by_pid(uint32_t pid)
   return process_find_by_pid(pid);
 }
 
+bool process_proc_info_get(uint32_t pid, struct process_proc_info *out)
+{
+  if (!out)
+    return false;
+  MUTEX_SCOPE(&process_mutex);
+  struct process *p = process_find_by_pid(pid);
+  if (!p)
+    return false;
+  out->uid = p->uid;
+  out->gid = p->gid;
+  out->exit_code = p->exit_code;
+  out->heap_bytes =
+      p->heap_break > p->heap_base ? p->heap_break - p->heap_base : 0;
+  out->stack_bytes = p->stack_low && p->stack_limit && p->user_stack_top > p->stack_low
+                         ? p->user_stack_top - p->stack_low
+                         : 0;
+  memcpy(out->command_line, p->command_line, sizeof(out->command_line));
+  out->command_line[sizeof(out->command_line) - 1] = '\0';
+  memcpy(out->cwd, p->cwd, sizeof(out->cwd));
+  out->cwd[sizeof(out->cwd) - 1] = '\0';
+  return true;
+}
+
 void process_table_lock(void)
 {
   mutex_lock(&process_mutex);
