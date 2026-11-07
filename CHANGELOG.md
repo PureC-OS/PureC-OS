@@ -2,6 +2,10 @@
 
 ## V1.2.28 — Права доступа и аккаунты, новый установщик, драйвер RNG, ext2 без заглушек, VFS на таблице монтирования, драйверы железа
 
+### MicroPython: модуль `posix` с системными вызовами (`src/programs/micropython/modposix.c`, `src/programs/micropython/Makefile`)
+- Порт MicroPython собран в минимальной конфигурации: нет `open()`, `os`, `io`, из Python нельзя было вызвать ни одного системного вызова. Добавлен встроенный модуль `posix` поверх libc: `open`, `read`, `write`, `close`, `lseek`, `unlink`, `mkdir`, `rmdir`, `rename`, `stat` (режим и размер), `access`, `listdir`, `getpid`, `getcwd`, `pipe`, `dup2`, `fork`, `waitpid`, `exit` и константы `O_*`/`SEEK_*`. Ошибки превращаются в `OSError` с `errno`.
+- Собирается (`make -C src/programs/micropython`); в VM ещё не запускался.
+
 ### `echo` и другие программы печатали пустую строку: `SYS_GET_COMMAND_LINE` отвергал буфер больше 256 байт (`src/kernel/syscall/syscall.c`)
 - Ядро возвращало `-1`, если размер буфера больше `PROCESS_COMMAND_LINE_CAPACITY` (256). `echo` запрашивает 512 байт, получал ошибку и печатал только перевод строки. Теперь размер буфера может быть любым, копируется не больше самой командной строки (до 255 символов). Исправление собрано (`make kernel`), в VM ещё не проверено.
 
