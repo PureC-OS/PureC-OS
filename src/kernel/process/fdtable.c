@@ -53,6 +53,40 @@ int32_t fd_install_handle(int32_t handle)
   return -1;
 }
 
+int32_t fd_install_socket(int32_t sock_id, uint32_t flags)
+{
+  struct process *process = process_current();
+  if (!process)
+    return -KERR_BADF;
+  int32_t object = ofd_create_socket(sock_id, flags);
+  if (object < 0)
+    return -KERR_NFILE;
+  process_table_lock();
+  int32_t fd = slot_find(process, 0);
+  if (fd < 0)
+  {
+    process_table_unlock();
+    ofd_release(object);
+    return -KERR_MFILE;
+  }
+  process->descriptors[fd] = object;
+  process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
+  process_table_unlock();
+  return fd;
+}
+
+int32_t fd_socket_id(int32_t fd)
+{
+  int32_t object = object_get(fd);
+  return object < 0 ? -1 : ofd_socket_id(object);
+}
+
+bool fd_nonblocking(int32_t fd)
+{
+  int32_t object = object_get(fd);
+  return object >= 0 && ofd_nonblocking(object);
+}
+
 int32_t fd_vfs_handle(int32_t fd)
 {
   struct process *process = process_current();

@@ -171,7 +171,7 @@
 #define SYS_BIND 364         /* (fd, sockaddr *, len) */
 #define SYS_LISTEN 365       /* (fd, backlog) */
 #define SYS_ACCEPT 366       /* (fd, sockaddr *, socklen_t *, flags) -> fd */
-#define SYS_SHUTDOWN 367     /* (fd, how) */
+#define SYS_SOCK_SHUTDOWN 367    /* (fd, how) */
 #define SYS_SOCKNAME 368     /* (fd, sockaddr *, socklen_t *, peer) */
 #define SYS_SETSOCKOPT 369   /* (fd, level<<32|name, value *, len) */
 #define SYS_GETSOCKOPT 370   /* (fd, level<<32|name, value *, len *) */

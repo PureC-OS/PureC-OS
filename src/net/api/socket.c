@@ -105,7 +105,7 @@ int32_t sock_create(int32_t domain, int32_t type, int32_t protocol)
 
 void sock_release(int32_t id)
 {
-    struct sock s;
+    struct sock s = {0};
     mutex_lock(&table_mutex);
     bool ok = id >= 0 && id < SOCK_CAPACITY && table[id].used;
     if (ok)

@@ -11,7 +11,8 @@ enum ofd_kind
   OFD_CONSOLE_IN,
   OFD_CONSOLE_OUT,
   OFD_FILE,
-  OFD_PIPE
+  OFD_PIPE,
+  OFD_SOCKET
 };
 
 #define OFD_STATUS_MASK 03003U
@@ -20,6 +21,7 @@ int32_t kerr_from_vfs(int32_t code);
 void ofd_init(void);
 int32_t ofd_create_file(int32_t handle, uint32_t flags);
 int32_t ofd_create_pipe(int32_t pipe_id, bool write_end);
+int32_t ofd_create_socket(int32_t sock_id, uint32_t flags);
 void ofd_ref(int32_t ofd);
 void ofd_release(int32_t ofd);
 int32_t ofd_vfs_handle(int32_t ofd);
@@ -33,3 +35,5 @@ int32_t ofd_path(int32_t ofd, char *out, uint32_t capacity);
 int32_t ofd_flags_get(int32_t ofd);
 int32_t ofd_flags_set(int32_t ofd, uint32_t flags);
 int32_t ofd_poll(int32_t ofd);
+int32_t ofd_socket_id(int32_t ofd);
+bool ofd_nonblocking(int32_t ofd);

@@ -121,6 +121,7 @@ C_SOURCES := \
 	net/config/dhcp.c \
 	net/diagnostics/icmp.c \
 	net/api/ping.c \
+	net/api/socket.c \
 	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
 	drivers/usb/xhci.c \
