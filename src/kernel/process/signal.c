@@ -227,6 +227,26 @@ void signal_fault(int32_t sig, struct syscall_regs *regs) {
         process ? (int)process->pid : -1, (int)sig,
         (unsigned long long)regs->rip, (unsigned long long)regs->rsp,
         (unsigned long long)fault_address);
+  if (process) {
+    klogf(KLOG_WARN, "fault: rdi=%llx rsi=%llx rax=%llx rbp=%llx",
+          (unsigned long long)regs->rdi, (unsigned long long)regs->rsi,
+          (unsigned long long)regs->rax, (unsigned long long)regs->rbp);
+    uint64_t words[64];
+    uint64_t rsp_aligned = regs->rsp & ~7ULL;
+    if (rsp_aligned < USER_TOP_ADDRESS - sizeof(words) &&
+        process_user_buffer((const void *)(uintptr_t)rsp_aligned,
+                            sizeof(words), false)) {
+      memcpy(words, (const void *)(uintptr_t)rsp_aligned, sizeof(words));
+      int shown = 0;
+      for (int i = 0; i < 64 && shown < 10; i++) {
+        if (words[i] >= 0x400000ULL && words[i] < process->heap_base) {
+          klogf(KLOG_WARN, "fault: stack+%d = %llx", i * 8,
+                (unsigned long long)words[i]);
+          shown++;
+        }
+      }
+    }
+  }
   if (!process || !signal_valid(sig))
     process_exit_signal(sig > 0 ? sig : SIGSEGV);
   bool handled = process->signals &&
