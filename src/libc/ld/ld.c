@@ -98,6 +98,7 @@ typedef struct { uint64_t offset, info; int64_t addend; } Rela;
 struct obj {
   struct obj *next;
   struct obj *gnext;
+  struct obj *cnext;
   uint64_t base;
   uint64_t lo;
   uint64_t hi;
@@ -868,23 +869,20 @@ static struct obj *load_file(int fd, const char *path)
     sys3(SYS_MUNMAP_N, o->lo, o->hi - o->lo, 0);
     return 0;
   }
-  o->refs = 1;
+  o->refs = 0;
   link_obj(o);
   adds_counter++;
   return o;
 }
 
-static int load_deps(struct obj *o, struct obj **created, uint64_t *ncreated);
+static int load_deps(struct obj *o, struct obj **created);
 
 static struct obj *load_named(const struct obj *requester, const char *name,
-                              struct obj **created, uint64_t *ncreated)
+                              struct obj **created)
 {
   struct obj *have = find_loaded(name);
   if (have)
-  {
-    have->refs++;
     return have;
-  }
   char path[512];
   int fd = open_library(requester, name, path, sizeof(path));
   if (fd < 0)
@@ -896,8 +894,9 @@ static struct obj *load_named(const struct obj *requester, const char *name,
   ld_close(fd);
   if (!o)
     return 0;
-  created[(*ncreated)++] = o;
-  if (load_deps(o, created, ncreated) < 0)
+  o->cnext = *created;
+  *created = o;
+  if (load_deps(o, created) < 0)
     return 0;
   return o;
 }
@@ -911,7 +910,7 @@ static uint64_t count_needed(const struct obj *o)
   return n;
 }
 
-static int load_deps(struct obj *o, struct obj **created, uint64_t *ncreated)
+static int load_deps(struct obj *o, struct obj **created)
 {
   uint64_t n = count_needed(o);
   o->ndeps = 0;
@@ -927,7 +926,7 @@ static int load_deps(struct obj *o, struct obj **created, uint64_t *ncreated)
   {
     if (d->tag != DT_NEEDED)
       continue;
-    struct obj *dep = load_named(o, o->strtab + d->val, created, ncreated);
+    struct obj *dep = load_named(o, o->strtab + d->val, created);
     if (!dep)
       return -1;
     o->deps[o->ndeps++] = dep;
@@ -1158,19 +1157,15 @@ static void release_object(struct obj *o)
     drop_ref(deps[i]);
 }
 
-static void discard_created(struct obj **created, uint64_t n)
+static void discard_created(struct obj *created)
 {
-  for (uint64_t i = n; i > 0; i--)
+  for (struct obj *o = created; o;)
   {
-    struct obj *o = created[i - 1];
-    o->refs = 1;
-    o->pinned = 0;
-    o->inited = 0;
-    o->deps = 0;
-    o->ndeps = 0;
+    struct obj *next = o->cnext;
     global_remove(o);
     unlink_obj(o);
     sys3(SYS_MUNMAP_N, o->lo, o->hi - o->lo, 0);
+    o = next;
   }
 }
 
@@ -1190,16 +1185,15 @@ static const char *env_lookup(const char *name)
   return 0;
 }
 
-static void collect_objs_bfs(struct obj *root, struct obj **out, uint64_t *n)
+static void finish_new(struct obj *created)
 {
-  (void)root;
-  (void)out;
-  (void)n;
+  for (struct obj *o = created; o; o = o->cnext)
+    for (uint64_t i = 0; i < o->ndeps; i++)
+      o->deps[i]->refs++;
 }
 
 HIDDEN uint64_t pc_dl_start(uint64_t *frame)
 {
-  (void)collect_objs_bfs;
   uint64_t argc = frame[1];
   if (argc > 0 && argc < 0x10000)
   {
@@ -1244,30 +1238,19 @@ HIDDEN uint64_t pc_dl_start(uint64_t *frame)
   main_obj = exe;
   link_obj(exe);
   global_add(exe);
-  struct obj *created[1];
-  (void)created;
-  uint64_t total = 0;
-  uint64_t cap = 16;
-  struct obj **batch = ld_alloc(cap * sizeof(struct obj *));
-  if (!batch)
-    fatal("out of memory", 0);
-  struct obj *queue_head = exe;
-  (void)queue_head;
-  if (load_exe_deps(exe, &batch, &total, &cap) < 0)
+  struct obj *created = 0;
+  if (load_deps(exe, &created) < 0)
     fatal(error_text, 0);
   if (build_scope(exe) < 0)
     fatal("out of memory", 0);
-  for (uint64_t i = 1; i < exe->nscope; i++)
+  for (struct obj *o = created; o; o = o->cnext)
   {
-    exe->scope[i]->pinned = 1;
-    global_add(exe->scope[i]);
-  }
-  for (uint64_t i = 0; i < exe->nscope; i++)
-  {
-    struct obj *o = exe->scope[i];
-    if (o != exe && build_scope(o) < 0)
+    o->pinned = 1;
+    if (build_scope(o) < 0)
       fatal("out of memory", 0);
   }
+  for (uint64_t i = 1; i < exe->nscope; i++)
+    global_add(exe->scope[i]);
   for (uint64_t i = exe->nscope; i > 0; i--)
   {
     struct obj *o = exe->scope[i - 1];
@@ -1278,4 +1261,242 @@ HIDDEN uint64_t pc_dl_start(uint64_t *frame)
     protect_object(exe->scope[i]);
   run_init(exe);
   return (uint64_t)_start;
+}
+
+static struct obj *handle_obj(void *handle)
+{
+  struct obj *o = handle;
+  for (struct obj *c = objs_head; c; c = c->next)
+    if (c == o)
+      return o;
+  return 0;
+}
+
+static struct obj *obj_for_address(uint64_t addr)
+{
+  for (struct obj *o = objs_head; o; o = o->next)
+    if (addr >= o->lo && addr < o->hi)
+      return o;
+  return 0;
+}
+
+EXPORT void *__pc_dl_open(const char *name, int flags, void *caller)
+{
+  (void)caller;
+  error_set = 0;
+  if (!name)
+    return main_obj;
+  struct obj *have = find_loaded(name);
+  if (have)
+  {
+    if (flags & RTLD_NOLOAD_F)
+    {
+      if (flags & RTLD_GLOBAL_F)
+        global_add(have);
+      return have;
+    }
+    have->refs++;
+    if (flags & RTLD_GLOBAL_F)
+      global_add(have);
+    if (flags & RTLD_NODELETE_F)
+      have->pinned = 1;
+    return have;
+  }
+  if (flags & RTLD_NOLOAD_F)
+  {
+    set_error(name, "shared object not loaded");
+    return 0;
+  }
+  struct obj *created = 0;
+  struct obj *root = load_named(caller ? obj_for_address((uint64_t)caller) : 0, name, &created);
+  if (!root)
+  {
+    discard_created(created);
+    return 0;
+  }
+  int ok = 1;
+  for (struct obj *o = created; o && ok; o = o->cnext)
+    if (build_scope(o) < 0)
+    {
+      set_error(name, "out of memory");
+      ok = 0;
+    }
+  int lazy = !(flags & RTLD_NOW_F) && !force_now;
+  for (struct obj *o = created; o && ok; o = o->cnext)
+    if (relocate_object(o, lazy && !o->bind_now) < 0)
+      ok = 0;
+  if (!ok)
+  {
+    discard_created(created);
+    return 0;
+  }
+  for (struct obj *o = created; o; o = o->cnext)
+    protect_object(o);
+  finish_new(created);
+  root->refs++;
+  if (flags & RTLD_GLOBAL_F)
+    for (struct obj *o = created; o; o = o->cnext)
+      global_add(o);
+  if (flags & RTLD_NODELETE_F)
+    root->pinned = 1;
+  run_init(root);
+  return root;
+}
+
+EXPORT void *__pc_dl_sym(void *handle, const char *name, void *caller)
+{
+  error_set = 0;
+  uint32_t sh = sysv_hash(name);
+  uint32_t gh = gnu_hash_fn(name);
+  struct found f = {0, 0};
+  if (handle == 0)
+    f = lookup_global(name, sh, gh, 0);
+  else if (handle == RTLD_NEXT_H)
+  {
+    struct obj *from = caller ? obj_for_address((uint64_t)caller) : 0;
+    int seen = from == 0;
+    for (struct obj *o = objs_head; o && !f.sym; o = o->next)
+    {
+      if (!seen)
+      {
+        seen = o == from;
+        continue;
+      }
+      const Sym *s = lookup_in_obj(o, name, sh, gh);
+      if (s)
+      {
+        f.sym = s;
+        f.obj = o;
+      }
+    }
+  }
+  else
+  {
+    struct obj *o = handle_obj(handle);
+    if (!o)
+    {
+      set_error("invalid handle", 0);
+      return 0;
+    }
+    f = lookup_scope(o->scope, o->nscope, name, sh, gh, 0);
+  }
+  if (!f.sym)
+  {
+    set_error(name, "undefined symbol");
+    return 0;
+  }
+  return (void *)sym_address(&f);
+}
+
+EXPORT int __pc_dl_close(void *handle)
+{
+  error_set = 0;
+  struct obj *o = handle_obj(handle);
+  if (!o)
+  {
+    set_error("invalid handle", 0);
+    return -1;
+  }
+  if (o->is_exe)
+    return 0;
+  drop_ref(o);
+  return 0;
+}
+
+EXPORT const char *__pc_dl_error(void)
+{
+  if (!error_set)
+    return 0;
+  error_set = 0;
+  return error_text;
+}
+
+EXPORT int __pc_dl_addr(const void *addr, struct dl_info_t *info)
+{
+  struct obj *o = obj_for_address((uint64_t)addr);
+  if (!o)
+    return 0;
+  info->dli_fname = o->path;
+  info->dli_fbase = (void *)o->base;
+  info->dli_sname = 0;
+  info->dli_saddr = 0;
+  uint64_t target = (uint64_t)addr;
+  uint64_t best = 0;
+  uint64_t count = 0;
+  if (o->gnu_hash)
+  {
+    const uint32_t *h = o->gnu_hash;
+    uint32_t nbuckets = h[0];
+    uint32_t symoffset = h[1];
+    uint32_t bloom_size = h[2];
+    const uint64_t *bloom = (const uint64_t *)(h + 4);
+    const uint32_t *buckets = (const uint32_t *)(bloom + bloom_size);
+    const uint32_t *chain = buckets + nbuckets;
+    uint32_t max = 0;
+    for (uint32_t i = 0; i < nbuckets; i++)
+      if (buckets[i] > max)
+        max = buckets[i];
+    if (max >= symoffset)
+    {
+      while (!(chain[max - symoffset] & 1))
+        max++;
+      count = (uint64_t)max + 1;
+    }
+    else
+      count = symoffset;
+  }
+  else if (o->hash)
+    count = o->hash[1];
+  for (uint64_t i = 1; i < count; i++)
+  {
+    const Sym *s = &o->symtab[i];
+    uint8_t type = s->info & 15;
+    if (s->shndx == SHN_UNDEF || (type != STT_FUNC && type != STT_OBJECT && type != STT_NOTYPE))
+      continue;
+    uint64_t start = o->base + s->value;
+    if (start <= target && start >= best && (s->size == 0 || target < start + s->size))
+    {
+      best = start;
+      info->dli_sname = o->strtab + s->name;
+      info->dli_saddr = (void *)start;
+    }
+  }
+  return 1;
+}
+
+EXPORT int __pc_dl_iterate_phdr(int (*callback)(struct dl_phdr_info_t *, uint64_t, void *), void *data)
+{
+  int result = 0;
+  for (struct obj *o = objs_head; o && !result;)
+  {
+    struct obj *next = o->next;
+    struct dl_phdr_info_t info;
+    memset(&info, 0, sizeof(info));
+    info.dlpi_addr = o->base;
+    info.dlpi_name = o->is_exe ? "" : o->path;
+    info.dlpi_phdr = o->phdr;
+    info.dlpi_phnum = o->phnum;
+    info.dlpi_adds = adds_counter;
+    info.dlpi_subs = subs_counter;
+    result = callback(&info, sizeof(info), data);
+    o = next;
+  }
+  return result;
+}
+
+EXPORT void __pc_dl_fini(void)
+{
+  uint64_t n = 0;
+  for (struct obj *o = objs_head; o; o = o->next)
+    n++;
+  for (uint64_t pass = 0; pass < n; pass++)
+  {
+    struct obj *pick = 0;
+    for (struct obj *o = objs_head; o; o = o->next)
+      if (o->inited && !o->finied)
+        pick = o;
+    if (!pick)
+      break;
+    run_fini(pick);
+  }
 }
