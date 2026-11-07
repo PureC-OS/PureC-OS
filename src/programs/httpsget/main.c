@@ -102,13 +102,16 @@ int main(int argc, char **argv)
   }
   fprintf(stderr, "httpsget: tcp connected\n");
 
+  fprintf(stderr, "httpsget: init\n");
   wolfSSL_Init();
+  fprintf(stderr, "httpsget: ctx\n");
   WOLFSSL_CTX *context = wolfSSL_CTX_new(wolfSSLv23_client_method());
   if (!context)
   {
     fprintf(stderr, "httpsget: cannot create TLS context\n");
     return 1;
   }
+  fprintf(stderr, "httpsget: ctx ok\n");
   wolfSSL_SetIORecv(context, io_receive);
   wolfSSL_SetIOSend(context, io_send);
   if (insecure)
@@ -132,6 +135,7 @@ int main(int argc, char **argv)
     }
     wolfSSL_CTX_set_verify(context, WOLFSSL_VERIFY_PEER, 0);
   }
+  fprintf(stderr, "httpsget: trust loaded\n");
   WOLFSSL *ssl = wolfSSL_new(context);
   if (!ssl)
   {
@@ -143,6 +147,7 @@ int main(int argc, char **argv)
   wolfSSL_UseSNI(ssl, WOLFSSL_SNI_HOST_NAME, host, (word16)strlen(host));
   if (!insecure)
     wolfSSL_check_domain_name(ssl, host);
+  fprintf(stderr, "httpsget: handshake\n");
   int result = wolfSSL_connect(ssl);
   if (result != WOLFSSL_SUCCESS)
   {
