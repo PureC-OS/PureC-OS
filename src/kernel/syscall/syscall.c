@@ -780,9 +780,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     return process_spawn_module((const char *)(uintptr_t)a1,
                                 (const char *)(uintptr_t)a2);
   case SYS_GET_COMMAND_LINE:
-    if (a2 > PROCESS_COMMAND_LINE_CAPACITY)
-      return -1;
-    if (!writable((void *)(uintptr_t)a1, (uint32_t)a2))
+    if (a2 > 0x7FFFFFFFULL ||
+        !writable((void *)(uintptr_t)a1, (uint32_t)a2))
       return -1;
     return process_command_line((char *)(uintptr_t)a1, (uint32_t)a2);
   case SYS_GET_PROCESS_NAME:
