@@ -38,7 +38,6 @@ static mutex_t process_mutex;
 #define MMAP_MIN_FIXED 0x10000ULL
 #define MMAP_PROT_MASK 7ULL
 #define USER_PROCESS_PRIORITY 1
-#define SPAWN_MAX_OBJECTS (ELF_MAX_NEEDED + 1)
 #define SPAWN_PATH_CAP 128
 #define SPAWN_FILE_LIMIT (64ULL * 1024ULL * 1024ULL)
 #define SPAWN_READ_CHUNK 1048576U
@@ -131,45 +130,6 @@ static int32_t spawn_fail(struct process *process, struct spawn_image *images,
   process->address_space = 0;
   process_node_free(process);
   return -1;
-}
-
-static void spawn_join_lib_path(char *out, const char *name)
-{
-  uint64_t pos = 0;
-  const char *prefix = "/lib/";
-  while (*prefix && pos + 1 < SPAWN_PATH_CAP)
-    out[pos++] = *prefix++;
-  bool slash = false;
-  for (const char *c = name; *c; c++)
-  {
-    if (*c == '/')
-    {
-      slash = true;
-      break;
-    }
-  }
-  if (slash)
-  {
-    while (*name && pos + 1 < SPAWN_PATH_CAP)
-      out[pos++] = *name++;
-  }
-  else
-  {
-    while (*name && pos + 1 < SPAWN_PATH_CAP)
-      out[pos++] = *name++;
-  }
-  out[pos] = 0;
-}
-
-static bool spawn_images_have(struct spawn_image *images, uint64_t count,
-                              const char *path)
-{
-  for (uint64_t i = 0; i < count; i++)
-  {
-    if (strcmp(images[i].path, path) == 0)
-      return true;
-  }
-  return false;
 }
 
 static const char *canonical_path(const char *path, char *buffer,
@@ -374,18 +334,6 @@ struct built_image
   uint64_t stack_low;
 };
 
-static bool build_fail(struct spawn_image *images, uint64_t image_count,
-                       const char *message)
-{
-  last_spawn_error = message;
-  for (uint64_t i = 0; i < image_count; i++)
-  {
-    if (images[i].owned && images[i].phys)
-      pmm_free_contiguous(images[i].phys, images[i].pages);
-  }
-  return false;
-}
-
 static bool build_user_image(const void *image, uint64_t image_size,
                              uint64_t address_space, uint64_t stack_pages,
                              struct built_image *out)
@@ -409,77 +357,15 @@ static bool build_user_image(const void *image, uint64_t image_size,
   }
   else
   {
-    struct spawn_image images[SPAWN_MAX_OBJECTS];
-    struct elf_object scope[SPAWN_MAX_OBJECTS];
-    memset(images, 0, sizeof(images));
-    memset(scope, 0, sizeof(scope));
-    images[0].data = image;
-    images[0].size = image_size;
-    images[0].owned = false;
-    uint64_t image_count = 1;
-    uint64_t so_index = 0;
-    if (!elf_load_user_image_biased(images[0].data, images[0].size,
-                                    address_space, ELF_PIE_DEFAULT_BASE,
-                                    &loaded, &scope[0].dyn))
-      return build_fail(images, image_count,
-                        "ELF image validation or mapping failed");
-    scope[0].top = loaded.highest_address;
-    uint64_t top = loaded.highest_address;
-    for (uint64_t i = 0; i < image_count; i++)
+    struct elf_dynamic_info dynamic;
+    if (!elf_load_user_image_biased(image, image_size, address_space,
+                                    ELF_PIE_DEFAULT_BASE, &loaded, &dynamic) ||
+        !elf_apply_relative_relocs(address_space, &dynamic))
     {
-      uint64_t need = elf_needed_count(images[i].data, images[i].size);
-      if (need > ELF_MAX_NEEDED)
-        return build_fail(images, image_count,
-                          "too many shared library dependencies");
-      for (uint64_t j = 0; j < need; j++)
-      {
-        char name[ELF_NAME_CAP + 1];
-        char path[SPAWN_PATH_CAP];
-        if (!elf_needed_name(images[i].data, images[i].size, j, name,
-                             sizeof(name)))
-          return build_fail(images, image_count,
-                            "cannot read shared library name");
-        spawn_join_lib_path(path, name);
-        if (spawn_images_have(images, image_count, path))
-          continue;
-        if (image_count >= SPAWN_MAX_OBJECTS)
-          return build_fail(images, image_count,
-                            "too many shared library dependencies");
-        if (!spawn_load_image(path, &images[image_count]))
-          return build_fail(images, image_count,
-                            "shared library not found in initramfs or VFS");
-        uint64_t base = elf_dyn_base_for_index(so_index++);
-        if (!base)
-          return build_fail(images, image_count,
-                            "no address range left for shared library");
-        struct elf_load_result lib_loaded;
-        if (!elf_load_user_image_biased(
-                images[image_count].data, images[image_count].size,
-                address_space, base, &lib_loaded, &scope[image_count].dyn))
-          return build_fail(images, image_count,
-                            "shared library mapping failed");
-        scope[image_count].top = lib_loaded.highest_address;
-        if (lib_loaded.highest_address > top)
-          top = lib_loaded.highest_address;
-        image_count++;
-      }
+      last_spawn_error = "ELF image validation or mapping failed";
+      return false;
     }
-    for (uint64_t k = 0; k < image_count; k++)
-    {
-      if (!elf_apply_relocs_with_scope(address_space, scope, image_count, k))
-        return build_fail(images, image_count,
-                          "shared library relocation failed");
-    }
-    heap_base = top + USER_HEAP_GUARD_PAGES * PMM_PAGE_SIZE;
-    for (uint64_t i = 1; i < image_count; i++)
-    {
-      if (images[i].owned && images[i].phys)
-      {
-        pmm_free_contiguous(images[i].phys, images[i].pages);
-        images[i].owned = false;
-        images[i].phys = 0;
-      }
-    }
+    heap_base = loaded.highest_address + USER_HEAP_GUARD_PAGES * PMM_PAGE_SIZE;
   }
   uint64_t stack_base = USER_STACK_TOP - stack_pages * PMM_PAGE_SIZE;
   uint64_t stack_limit = USER_STACK_TOP - USER_STACK_MAX_PAGES * PMM_PAGE_SIZE;

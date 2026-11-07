@@ -531,8 +531,60 @@ int clearenv(void) {
     return 0;
 }
 
+struct exit_handler {
+    struct exit_handler *next;
+    void (*function)(void *);
+    void *argument;
+    void *dso;
+};
+
+extern void __pc_dl_fini(void) __attribute__((weak));
+
+static struct exit_handler *exit_handlers;
+static int exit_running;
+
+int __cxa_atexit(void (*function)(void *), void *argument, void *dso) {
+    struct exit_handler *entry = (struct exit_handler *)malloc(sizeof(*entry));
+    if (!entry) return -1;
+    entry->function = function;
+    entry->argument = argument;
+    entry->dso = dso;
+    entry->next = exit_handlers;
+    exit_handlers = entry;
+    return 0;
+}
+
+static void atexit_thunk(void *function) {
+    ((void (*)(void))function)();
+}
+
+int atexit(void (*function)(void)) {
+    if (!function) return -1;
+    return __cxa_atexit(atexit_thunk, (void *)function, 0);
+}
+
+void __cxa_finalize(void *dso) {
+    struct exit_handler **link = &exit_handlers;
+    while (*link) {
+        struct exit_handler *entry = *link;
+        if (dso && entry->dso != dso) {
+            link = &entry->next;
+            continue;
+        }
+        *link = entry->next;
+        entry->function(entry->argument);
+        free(entry);
+        link = &exit_handlers;
+    }
+}
+
 void exit(int status) {
     extern int fflush(void *stream);
+    if (!exit_running) {
+        exit_running = 1;
+        __cxa_finalize(0);
+        if (__pc_dl_fini) __pc_dl_fini();
+    }
     fflush(0);
     pc_exit(status);
 }
