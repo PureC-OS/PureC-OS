@@ -91,7 +91,6 @@ GENERAL_SOURCES := \
   	settings/pages/appearance.c \
   	settings/pages/display.c \
 	login/main.c \
- 	monitor/main.c \
 	disks/main.c \
 	devmgr/main.c \
 	logview/main.c \
@@ -300,9 +299,17 @@ $(PROGRAM_DIR)/settings: $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/mod
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/monitor: $(OBJ_DIR)/monitor/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+MONITOR_OBJECTS := $(OBJ_DIR)/monitor/main.o $(OBJ_DIR)/monitor/model.o $(OBJ_DIR)/monitor/ui.o
+
+$(OBJ_DIR)/monitor/%.o: $(ROOT_DIR)/src/programs/monitor/%.c
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/monitor: $(MONITOR_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(MONITOR_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC)
+
+-include $(MONITOR_OBJECTS:.o=.d)
 
 $(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

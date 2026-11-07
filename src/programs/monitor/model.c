@@ -396,8 +396,17 @@ static void refresh_processes(struct mon_model *m) {
     }
     count++;
   }
+  int running = 0;
+  for (int i = 0; i < count; i++) {
+    if (fresh[i].state == 'R' && fresh[i].cpu == 0)
+      fresh[i].state = 'S';
+    if (fresh[i].state == 'R')
+      running++;
+  }
   memcpy(m->procs, fresh, sizeof(fresh[0]) * (size_t)count);
   m->proc_count = count;
+  m->tasks_total = count;
+  m->tasks_running = running;
 }
 
 void mon_refresh(struct mon_model *m) {

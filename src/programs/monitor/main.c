@@ -1,218 +1,124 @@
+#include <stdint.h>
+#include <string.h>
+
 #include "../../libgui/include/puregui.h"
 #include "../../libc/include/purec.h"
+#include "ui.h"
 
-#define MONITOR_WIDTH 720
-#define MONITOR_HEIGHT 600
-#define MONITOR_MAX_PROCESSES 64
-#define MONITOR_PROCESS_QUERY 64
-#define MONITOR_MAX_CORES 16
-#define MIB (1024ULL*1024ULL)
+#define WINDOW_WIDTH 1040
+#define WINDOW_HEIGHT 700
+#define MIN_CLIENT_WIDTH 640
+#define MIN_CLIENT_HEIGHT 360
+#define REFRESH_MS 1000
+#define SIGTERM_NUMBER 15
 
-static struct cpu_core_info prev_cores={0};
-static bool prev_cores_valid=false;
+static struct ui_state ui;
+static struct pg_window window;
+static uint32_t *pixels;
+static uint64_t pixels_capacity;
 
-static uint32_t core_usage_live(uint32_t index,
-                                const struct cpu_core_info *cur){
-    if(!prev_cores_valid || index>=prev_cores.count || index>=cur->count)
-        return 0;
-    uint64_t total_a=prev_cores.cores[index].total_ticks;
-    uint64_t idle_a=prev_cores.cores[index].idle_ticks;
-    uint64_t total_b=cur->cores[index].total_ticks;
-    uint64_t idle_b=cur->cores[index].idle_ticks;
-    uint64_t elapsed=total_b>total_a ? total_b-total_a : 0;
-    uint64_t idle_elapsed=idle_b>idle_a ? idle_b-idle_a : 0;
-    if(!elapsed) return 0;
-    if(idle_elapsed>elapsed) idle_elapsed=elapsed;
-    return 100U-(uint32_t)((idle_elapsed*100)/elapsed);
+static int kill_process(uint32_t pid) {
+  return (int)pc_syscall(SYS_KILL, pid, SIGTERM_NUMBER, 0);
 }
 
-static char *append_text(char *output, const char *text){
-    while(*text) *output++=*text++;
-    *output='\0';
-    return output;
-}
-
-static char *append_u64(char *output, uint64_t value){
-    char reverse[24];
-    uint32_t length=0;
-    if(!value) reverse[length++]='0';
-    while(value && length<sizeof(reverse)){
-        reverse[length++]=(char)('0'+value%10);
-        value/=10;
-    }
-    while(length) *output++=reverse[--length];
-    *output='\0';
-    return output;
-}
-
-static const char *state_name(const struct process_monitor_info *process){
-    if(process->state==PROCESS_MONITOR_STATE_EXITED) return "dead";
-    if(process->state==PROCESS_MONITOR_STATE_RUNNING) return "alive";
-    return "ready";
-}
-
-static void draw_header(struct pg_window *window,
-                        const struct cpu_monitor_info *cpu,
-                        const struct memory_monitor_info *memory){
-    char line[120];
-    char *position=append_text(line,"CPU: ");
-    position=append_u64(position,cpu->usage_percent);
-    position=append_text(position,"%   RAM: ");
-    position=append_u64(position,memory->used_bytes/MIB);
-    position=append_text(position," / ");
-    position=append_u64(position,memory->total_bytes/MIB);
-    (void)append_text(position," MiB");
-    pg_window_text(window,18,18,line,window->theme.text);
-}
-
-static uint32_t draw_cores(struct pg_window *window,
-                           const struct cpu_core_info *cores){
-    uint32_t count=cores->count;
-    if(count>MONITOR_MAX_CORES) count=MONITOR_MAX_CORES;
-    pg_window_text(window,18,42,"Per-core (live, 500ms):",
-                   window->theme.muted_text);
-    uint32_t y=60;
-    for(uint32_t i=0;i<count;i++){
-        uint32_t usage=core_usage_live(i,cores);
-        char label[32];
-        char *p=append_text(label,"cpu");
-        p=append_u64(p,cores->cores[i].id);
-        if(!cores->cores[i].online){
-            p=append_text(p," offline");
-            pg_window_text(window,18,y,label,window->theme.muted_text);
-        } else {
-            p=append_text(p," ");
-            p=append_u64(p,usage);
-            (void)append_text(p,"%");
-            pg_window_text(window,18,y,label,window->theme.text);
-            uint32_t bar_x=110;
-            uint32_t bar_w=window->client.width>bar_x+36
-                ? window->client.width-bar_x-18 : 60;
-            pg_window_rect(window,
-                (struct pg_rect){bar_x,y,bar_w,10},window->theme.border);
-            uint32_t fill=(bar_w*usage)/100;
-            if(fill) pg_window_rect(window,
-                (struct pg_rect){bar_x,y,fill,10},window->theme.accent);
-        }
-        y+=18;
-    }
-    return y;
-}
-
-static void draw_process_header(struct pg_window *window, uint32_t y){
-    pg_window_text(window,18,y,
-        "PID   PPID  STATE   CPU    RAM MiB   TIME ms    PROCESS",
-        window->theme.muted_text);
-    pg_window_rect(window,(struct pg_rect){18,y+18,window->client.width-36,1},
-                   window->theme.border);
-}
-
-static void draw_process(struct pg_window *window, uint32_t row,
-                         uint32_t base_y,
-                         const struct process_monitor_info *process){
-    char line[128];
-    char *position=line;
-    position=append_u64(position,process->pid);
-    position=append_text(position,"     ");
-    position=append_u64(position,process->parent_pid);
-    position=append_text(position,"     ");
-    position=append_text(position,state_name(process));
-    position=append_text(position,"     ");
-    position=append_u64(position,process->cpu_percent);
-    position=append_text(position,"%     ");
-    position=append_u64(position,process->resident_bytes/MIB);
-    position=append_text(position,"        ");
-    position=append_u64(position,process->runtime_ms);
-    position=append_text(position,"       ");
-    (void)append_text(position,process->name);
-    uint32_t color=process->state==PROCESS_MONITOR_STATE_EXITED
-        ? window->theme.danger : window->theme.text;
-    pg_window_text(window,18,base_y+row*22,line,color);
-}
-
-#define MONITOR_FETCH_CHUNK 32
-static void redraw(struct pg_window *window){
-    struct cpu_monitor_info cpu={0};
-    struct memory_monitor_info memory={0};
-    struct cpu_core_info cores={0};
-    static struct process_monitor_info *heap_procs=0;
-    static uint32_t heap_cap=0;
-    if(!heap_procs){
-        heap_procs=(struct process_monitor_info*)pc_heap_grow((uint64_t)MONITOR_MAX_PROCESSES*sizeof(*heap_procs));
-        if(heap_procs) heap_cap=MONITOR_MAX_PROCESSES;
-    }
-    int32_t count=-1;
-    if(heap_procs && heap_cap){
-        uint32_t off=0;
-        int32_t total=pc_process_list_page(0,0,0);
-        if(total>=0){
-            if(total>MONITOR_MAX_PROCESSES) total=MONITOR_MAX_PROCESSES;
-            count=total;
-            while(off<(uint32_t)count){
-                uint32_t want=(uint32_t)count-off;
-                if(want>MONITOR_FETCH_CHUNK) want=MONITOR_FETCH_CHUNK;
-                int32_t got=pc_process_list_page(heap_procs+off,want,off);
-                if(got<0){ count=-1; break; }
-                if(got<count) count=got;
-                off+=want;
-            }
-        }
-    }
-    bool available=pc_cpu_info(&cpu) && pc_memory_info(&memory) && count>=0;
-    bool cores_ok=pc_cpu_core_info(&cores)>=0;
-    pg_window_begin(window);
-    if(available){
-        draw_header(window,&cpu,&memory);
-        uint32_t list_y=70;
-        if(cores_ok) list_y=draw_cores(window,&cores)+6;
-        draw_process_header(window,list_y);
-        list_y+=28;
-        uint32_t visible=(uint32_t)count;
-        if(visible>MONITOR_MAX_PROCESSES) visible=MONITOR_MAX_PROCESSES;
-        uint32_t max_rows=0;
-        if(window->client.height>list_y+10)
-            max_rows=(window->client.height-list_y-10)/22;
-        if(visible>max_rows) visible=max_rows;
-        for(uint32_t index=0;index<visible;index++)
-            draw_process(window,index,list_y,&heap_procs[index]);
-        if(cores_ok){
-            prev_cores=cores;
-            prev_cores_valid=true;
-        }
-    } else {
-        pg_window_text(window,18,18,"Monitoring data unavailable",
-                       window->theme.danger);
-    }
-    pg_window_end(window);
-}
-
-static int monitor_main(void){
-    struct pg_window window;
-    struct pc_display_info display;
-    if(!pc_display_get_info(&display) || !display.available) return 1;
-    uint32_t width=display.width>MONITOR_WIDTH+20
-        ? MONITOR_WIDTH : display.width-20;
-    uint32_t height=display.height>MONITOR_HEIGHT+40
-        ? MONITOR_HEIGHT : display.height-40;
-    if(!pg_window_center(&window,"System Monitor",width,height)) return 1;
-    redraw(&window);
-    uint32_t refresh_elapsed=0;
-    while(pg_window_is_open(&window)){
-        struct pg_event event;
-        if(pg_window_poll_event(&window,&event)){
-            if(event.type==PG_EVENT_CLOSE) break;
-            if(event.type==PG_EVENT_REPAINT || event.type==PG_EVENT_MOVE
-               || event.type==PG_EVENT_FOCUS) redraw(&window);
-        }
-        pc_sleep(16);
-        refresh_elapsed+=16;
-        if(refresh_elapsed>=500){
-            refresh_elapsed=0;
-            if(!pg_window_is_minimized(&window)) redraw(&window);
-        }
-    }
-    pg_window_close(&window);
+static uint64_t uptime_ms(void) {
+  struct cpu_monitor_info info = {0};
+  if (!pc_cpu_info(&info))
     return 0;
+  return info.uptime_ms;
 }
 
-void _start(void){ pc_exit(monitor_main()); }
+static bool ensure_pixels(uint32_t width, uint32_t height) {
+  uint64_t need = (uint64_t)width * height;
+  if (need <= pixels_capacity)
+    return true;
+  void *memory = pc_heap_grow(need * sizeof(uint32_t));
+  if (!memory)
+    return false;
+  pixels = (uint32_t *)memory;
+  pixels_capacity = need;
+  return true;
+}
+
+static void redraw(void) {
+  uint32_t width = window.client.width;
+  uint32_t height = window.client.height;
+  if (width < MIN_CLIENT_WIDTH || height < MIN_CLIENT_HEIGHT || !ensure_pixels(width, height))
+    return;
+  struct canvas canvas;
+  cv_init(&canvas, pixels, (int)width, (int)height, (int)width);
+  ui_render(&ui, &canvas);
+  pg_window_begin(&window);
+  (void)pg_window_blit(&window, 0, 0, width, height, pixels, width);
+  pg_window_end(&window);
+}
+
+int main(void) {
+  struct pc_display_info display;
+  if (!pc_display_get_info(&display) || !display.available)
+    return 1;
+  uint32_t width = display.width > WINDOW_WIDTH + 20 ? WINDOW_WIDTH : display.width - 20;
+  uint32_t height = display.height > WINDOW_HEIGHT + 40 ? WINDOW_HEIGHT : display.height - 40;
+  if (!pg_window_center(&window, "htop", width, height))
+    return 1;
+  pg_window_set_esc_closes(&window, false);
+  ui_init(&ui);
+  ui.kill_hook = kill_process;
+  redraw();
+  uint64_t last_refresh = uptime_ms();
+  int32_t mouse_x = 0, mouse_y = 0;
+  while (pg_window_is_open(&window) && !ui.quit) {
+    bool dirty = false;
+    struct pg_event event;
+    while (pg_window_poll_event(&window, &event)) {
+      switch (event.type) {
+      case PG_EVENT_CLOSE:
+        ui.quit = true;
+        break;
+      case PG_EVENT_KEY:
+        dirty |= ui_key(&ui, event.key);
+        break;
+      case PG_EVENT_SPECIAL_KEY:
+        dirty |= ui_special(&ui, event.key);
+        break;
+      case PG_EVENT_MOUSE_MOVE:
+        mouse_x = event.x - (int32_t)window.client.x;
+        mouse_y = event.y - (int32_t)window.client.y;
+        break;
+      case PG_EVENT_MOUSE_DOWN: {
+        int32_t x = event.x - (int32_t)window.client.x;
+        int32_t y = event.y - (int32_t)window.client.y;
+        mouse_x = x;
+        mouse_y = y;
+        if (event.button == 1 && x >= 0 && y >= 0 && x < (int32_t)window.client.width &&
+            y < (int32_t)window.client.height)
+          dirty |= ui_click(&ui, x, y);
+        break;
+      }
+      case PG_EVENT_REPAINT:
+      case PG_EVENT_MOVE:
+      case PG_EVENT_FOCUS:
+        dirty = true;
+        break;
+      default:
+        break;
+      }
+    }
+    int32_t wheel = pg_window_take_wheel(&window);
+    if (wheel)
+      dirty |= ui_wheel(&ui, wheel, mouse_x, mouse_y);
+    uint64_t now = uptime_ms();
+    if (now - last_refresh >= REFRESH_MS) {
+      last_refresh = now;
+      if (!pg_window_is_minimized(&window)) {
+        ui_refresh(&ui);
+        dirty = true;
+      }
+    }
+    if (dirty && !pg_window_is_minimized(&window))
+      redraw();
+    pc_sleep(16);
+  }
+  pg_window_close(&window);
+  return 0;
+}

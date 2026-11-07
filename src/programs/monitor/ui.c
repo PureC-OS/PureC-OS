@@ -425,7 +425,8 @@ static void draw_footer(struct ui_state *u, struct canvas *c) {
     char line[64];
     snprintf(line, sizeof(line), "Filter: %s_", u->filter);
     cv_text(c, x, y + 9, line, C_YELLOW, 8);
-    cv_text(c, c->w - PAD - 160, y + 9, "Enter apply  Esc clear", C_OVER0, 8);
+    cv_text(c, right_align_x("Enter apply   Esc clear", c->w - PAD), y + 9,
+            "Enter apply   Esc clear", C_OVER0, 8);
     return;
   }
   if (u->message[0] && u->message_age < 4) {
@@ -477,7 +478,7 @@ static int draw_cores(struct ui_state *u, struct canvas *c, int x, int y, int w)
     int col = i / rows, row = i % rows;
     int bx = x + col * (colw + gap);
     int by = y + row * LH;
-    char label[8], t[8];
+    char label[16], t[8];
     snprintf(label, sizeof(label), "%2d", i);
     cv_text(c, bx, by + 4, label, C_TEAL, 8);
     int bar_w = colw - 24 - 44;
@@ -772,7 +773,10 @@ static int draw_system(struct ui_state *u, struct canvas *c) {
   card_begin(c, lx, ly, colw, ch, "CPU");
   ty = ly + 34;
   kv(c, lx + 14, ty, 96, "Model", m->cpu_model[0] ? m->cpu_model : "unknown", colw - 28);
-  snprintf(buf, sizeof(buf), "%u MHz    %d of %d online", m->cpu_mhz, m->cpus_online, n);
+  if (m->cpu_mhz)
+    snprintf(buf, sizeof(buf), "%u MHz    %d of %d online", m->cpu_mhz, m->cpus_online, n);
+  else
+    snprintf(buf, sizeof(buf), "n/a    %d of %d online", m->cpus_online, n);
   kv(c, lx + 14, ty + LH, 96, "Clock", buf, colw - 28);
   int by = ty + 2 * LH + 6;
   int bw = (colw - 28 - (cols - 1) * 16) / cols;
@@ -890,7 +894,7 @@ static void draw_proc_tab(struct ui_state *u, struct canvas *c) {
   cv_clip(c, PAD, y + 28, LIST_W, h - 32);
   for (int r = 0; r < u->list_rows && u->browse_scroll + r < u->browse_count; r++) {
     int index = u->browse_scroll + r;
-    const struct mon_entry *e = &u->browse[u->browse_sel >= 0 ? index : 0];
+    const struct mon_entry *e = &u->browse[index];
     int yy = y + 32 + r * LH;
     bool selected = index == u->browse_sel;
     if (selected) {
@@ -974,7 +978,6 @@ static void draw_proc_tab(struct ui_state *u, struct canvas *c) {
 }
 
 static void draw_kill_dialog(struct ui_state *u, struct canvas *c) {
-  cv_fill(c, 0, TOP, c->w, c->h - TOP - FOOT, cv_mix(C_BASE, C_CRUST, 3, 4));
   int w = 420, h = 100;
   int x = (c->w - w) / 2, y = (c->h - h) / 2;
   cv_frame(c, x, y, w, h, 10, C_RED, C_MANTLE);
@@ -985,11 +988,10 @@ static void draw_kill_dialog(struct ui_state *u, struct canvas *c) {
   char line[96];
   snprintf(line, sizeof(line), "Send SIGTERM to PID %u (%s)?", u->kill_pid, name);
   cv_text(c, x + 24, y + 22, line, C_TEXT, 8);
-  cv_text(c, x + 24, y + 52, "y", C_CRUST, 8);
-  cv_rrect(c, x + 20, y + 62, 120, 22, 5, C_RED);
-  cv_text(c, x + 32, y + 69, "[y] terminate", C_CRUST, 8);
-  cv_rrect(c, x + 160, y + 62, 90, 22, 5, C_SURF1);
-  cv_text(c, x + 172, y + 69, "[n] cancel", C_TEXT, 8);
+  cv_rrect(c, x + 24, y + 58, 136, 24, 5, C_RED);
+  cv_text(c, x + 36, y + 66, "[y] terminate", C_CRUST, 8);
+  cv_rrect(c, x + 176, y + 58, 112, 24, 5, C_SURF1);
+  cv_text(c, x + 188, y + 66, "[n] cancel", C_TEXT, 8);
 }
 
 void ui_render(struct ui_state *u, struct canvas *c) {
