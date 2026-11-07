@@ -93,10 +93,10 @@ void vfs_fat32_mount_boot(void) {
     return;
   }
   if (vfs_mount_replace("/boot", (const struct vfs_fs_ops *)ops, context,
-                        "esp", VFS_MOUNT_READ_ONLY) < 0) {
+                        "esp", 0) < 0) {
     klog(KLOG_WARN, "fat32: cannot mount /boot");
     return;
   }
-  klogf(KLOG_OK, "fat32: ESP (dev %u, lba %u) mounted on /boot (ro)", device,
+  klogf(KLOG_OK, "fat32: ESP (dev %u, lba %u) mounted on /boot (rw)", device,
         esp);
 }
