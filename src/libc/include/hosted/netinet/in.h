@@ -46,3 +46,12 @@ struct sockaddr_in6 {
 #define ntohs(x) ((uint16_t)__builtin_bswap16((uint16_t)(x)))
 #define htonl(x) ((uint32_t)__builtin_bswap32((uint32_t)(x)))
 #define ntohl(x) ((uint32_t)__builtin_bswap32((uint32_t)(x)))
+
+#ifndef IN6_IS_ADDR_LINKLOCAL
+#define IN6_IS_ADDR_LINKLOCAL(a) \
+    (((a)->s6_addr[0] == 0xfe) && (((a)->s6_addr[1] & 0xc0) == 0x80))
+#endif
+#ifndef IN6_IS_ADDR_SITELOCAL
+#define IN6_IS_ADDR_SITELOCAL(a) \
+    (((a)->s6_addr[0] == 0xfe) && (((a)->s6_addr[1] & 0xc0) == 0xc0))
+#endif
