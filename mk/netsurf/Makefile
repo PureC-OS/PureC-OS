@@ -133,7 +133,7 @@ $(NS_START): $(ROOT_DIR)/mk/netsurf/ns_start.c
 
 $(BROWSER): nscore $(NS_START) $(ROOT_DIR)/mk/netsurf/netsurf.ld $(BIN_DIR)/lib/crt0.o $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a
 	@mkdir -p $(@D)
-	$(LD) -S --wrap=main -T $(ROOT_DIR)/mk/netsurf/netsurf.ld -o $@ $(BIN_DIR)/lib/crt0.o $(NS_START) \
+	$(LD) -S --wrap=main --wrap=curl_easy_setopt -T $(ROOT_DIR)/mk/netsurf/netsurf.ld -o $@ $(BIN_DIR)/lib/crt0.o $(NS_START) \
 		$$(find $(NS_BUILD) -name '*.o') --whole-archive $(SLIB)/libnsfb.a --no-whole-archive \
 		--start-group $(NS_LINK_LIBS) $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a \
 		$(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpurec.a $(LIBGCC) --end-group

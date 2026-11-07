@@ -12,6 +12,9 @@ done
 if [ ! -d "$DEST/zlib" ]; then
   git clone --depth 1 --branch v1.3.1 https://github.com/madler/zlib "$DEST/zlib"
 fi
+if [ ! -f "$DEST/unifont.hex" ]; then
+  curl -sL https://unifoundry.com/pub/unifont/unifont-16.0.01/font-builds/unifont-16.0.01.hex.gz | gzip -dc > "$DEST/unifont.hex"
+fi
 for lib in $LIBS zlib; do
   [ -d "$DEST/$lib/.git" ] && echo "$lib $(git -C "$DEST/$lib" rev-parse HEAD)"
 done > "$ROOT/mk/netsurf/versions.txt"
