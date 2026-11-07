@@ -1494,7 +1494,10 @@ EXPORT void __pc_dl_fini(void)
     struct obj *pick = 0;
     for (struct obj *o = objs_head; o; o = o->next)
       if (o->inited && !o->finied)
+      {
         pick = o;
+        break;
+      }
     if (!pick)
       break;
     run_fini(pick);
