@@ -11,6 +11,9 @@
 
 #include <wolfssl/ssl.h>
 
+long purec_wolf_time(long *timer);
+int wc_ValidateDate(const unsigned char *date, unsigned char format, int date_type, int length);
+
 #define CA_FILE "/etc/ssl/cert.pem"
 
 static int io_receive(WOLFSSL *ssl, char *buffer, int size, void *context)
@@ -119,20 +122,55 @@ int main(int argc, char **argv)
   else
   {
     long size = 0;
+    {
+      static const unsigned char after[] = "351231235959Z";
+      static const unsigned char before[] = "200101000000Z";
+      fprintf(stderr, "httpsget: date-test start\n");
+      int a = wc_ValidateDate(after, 0x17, 1, 13);
+      fprintf(stderr, "httpsget: valid-after=%d\n", a);
+      int b = wc_ValidateDate(before, 0x17, 0, 13);
+      fprintf(stderr, "httpsget: valid-before=%d\n", b);
+    }
     unsigned char *bundle = read_file(CA_FILE, &size);
     if (!bundle)
     {
       fprintf(stderr, "httpsget: cannot read %s\n", CA_FILE);
       return 1;
     }
-    int loaded = wolfSSL_CTX_load_verify_buffer(context, bundle, size,
-                                                WOLFSSL_FILETYPE_PEM);
-    free(bundle);
-    if (loaded != WOLFSSL_SUCCESS)
+    unsigned long sum = 0;
+    for (long i = 0; i < size; i++)
+      sum = sum * 31 + bundle[i];
+    unsigned int low = (unsigned int)sum;
+    fprintf(stderr, "httpsget: bundle %ld bytes sum=%u time=%ld\n", size, low,
+            purec_wolf_time(0));
+    fprintf(stderr, "httpsget: head=%.40s\n", (const char *)bundle);
+    fprintf(stderr, "httpsget: bytes %02x %02x %02x %02x\n", bundle[0],
+            bundle[1], bundle[2], bundle[3]);
+    const char *marker = "-----END CERTIFICATE-----";
+    size_t marker_length = strlen(marker);
+    long start = 0;
+    int count = 0;
+    int accepted = 0;
+    for (long i = 0; i + (long)marker_length <= size; i++)
     {
-      fprintf(stderr, "httpsget: CA bundle rejected (%d)\n", loaded);
-      return 1;
+      if (memcmp(bundle + i, marker, marker_length) != 0)
+        continue;
+      long end = i + (long)marker_length;
+      if (count < 3)
+        fprintf(stderr, "httpsget: cert %d [%ld,%ld)\n", count, start, end);
+      int one = wolfSSL_CTX_load_verify_buffer(context, bundle + start,
+                                               end - start,
+                                               WOLFSSL_FILETYPE_PEM);
+      if (one == WOLFSSL_SUCCESS)
+        accepted++;
+      count++;
+      start = end;
     }
+    free(bundle);
+    fprintf(stderr, "httpsget: %d/%d CA certificates accepted\n", accepted,
+            count);
+    if (!accepted)
+      return 1;
     wolfSSL_CTX_set_verify(context, WOLFSSL_VERIFY_PEER, 0);
   }
   fprintf(stderr, "httpsget: trust loaded\n");

@@ -23,7 +23,7 @@ struct malloc_block {
     size_t size; // usable payload bytes after this header
     struct malloc_block *next;
     bool free;
-};
+} __attribute__((aligned(16)));
 
 static struct malloc_block *malloc_head = 0;
 
