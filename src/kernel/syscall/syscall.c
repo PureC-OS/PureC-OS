@@ -238,7 +238,7 @@ static int64_t tty_ioctl_request(uint32_t request, uint64_t argument)
   }
 }
 
-#define POLL_MAX_DESCRIPTORS 256
+#define POLL_MAX_DESCRIPTORS 1024
 static uint32_t poll_overshoot_reports;
 
 static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,

@@ -10,7 +10,7 @@
 #include "../name/dns.h"
 #include "../transport/tcp.h"
 
-#define SOCK_CAPACITY 64
+#define SOCK_CAPACITY 16384
 #define SOCK_MAX_TIMEOUT_MS 0xFFFFFFF0ULL
 
 struct sock {

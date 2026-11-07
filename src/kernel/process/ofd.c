@@ -9,7 +9,7 @@
 #include "../sync/mutex.h"
 #include "../syscall/syscall.h"
 
-#define OFD_MAX 4096
+#define OFD_MAX 16384
 #define OFD_CONSOLE_COUNT 3
 #define OFD_O_ACCMODE 03U
 #define OFD_O_WRONLY 01U

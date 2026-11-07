@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PROCESS_FD_COUNT 64
+#define PROCESS_FD_COUNT 1024
 #define PROCESS_CWD_CAPACITY 256
 #define PROCESS_FD_CLOEXEC 1
 #define FD_PIPE_BASE 0x40000000

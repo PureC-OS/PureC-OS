@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "time.h"
 
-#define FD_SETSIZE 64
+#define FD_SETSIZE 1024
 
 typedef struct {
     uint64_t bits[FD_SETSIZE / 64];
