@@ -28,6 +28,7 @@ ssize_t pwrite(int fd, const void *buffer, size_t count, off_t offset);
 int close(int fd);
 off_t lseek(int fd, off_t offset, int origin);
 int unlink(const char *path);
+int unlinkat(int dirfd, const char *path, int flags);
 int rmdir(const char *path);
 int access(const char *path, int mode);
 int isatty(int fd);

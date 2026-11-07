@@ -14,6 +14,10 @@
 #define O_NONBLOCK 04000
 #define O_CLOEXEC 02000000
 
+#define AT_FDCWD (-100)
+#define AT_SYMLINK_NOFOLLOW 0x100
+#define AT_REMOVEDIR 0x200
+
 #define F_DUPFD 0
 #define F_GETFD 1
 #define F_SETFD 2

@@ -14,3 +14,5 @@ typedef unsigned long long ino_t;
 typedef unsigned int nlink_t;
 typedef long blksize_t;
 typedef long blkcnt_t;
+
+#include "select.h"
