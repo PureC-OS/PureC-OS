@@ -9,6 +9,9 @@ for lib in $LIBS; do
   if [ -d "$DEST/$lib" ]; then continue; fi
   git clone --depth 1 "$BASE/$lib.git" "$DEST/$lib"
 done
-for lib in $LIBS; do
+if [ ! -d "$DEST/zlib" ]; then
+  git clone --depth 1 --branch v1.3.1 https://github.com/madler/zlib "$DEST/zlib"
+fi
+for lib in $LIBS zlib; do
   [ -d "$DEST/$lib/.git" ] && echo "$lib $(git -C "$DEST/$lib" rev-parse HEAD)"
 done > "$ROOT/mk/netsurf/versions.txt"
