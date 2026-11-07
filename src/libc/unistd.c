@@ -269,7 +269,14 @@ struct dir_impl
     int count;
     int index;
     struct dirent current;
+    int pseudo_fd;
+    char path[512];
 };
+
+#define DIRFD_BASE 1000000
+#define DIRFD_SLOTS 64
+static char dirfd_paths[DIRFD_SLOTS][512];
+static int dirfd_used[DIRFD_SLOTS];
 
 #define DIR_CAPACITY 1024
 
@@ -305,7 +312,130 @@ DIR *opendir(const char *path)
     }
     directory->count = count;
     directory->index = 0;
+    directory->pseudo_fd = -1;
+    strncpy(directory->path, path, sizeof(directory->path) - 1);
+    directory->path[sizeof(directory->path) - 1] = 0;
+    for (int slot = 0; slot < DIRFD_SLOTS; slot++)
+    {
+        if (!dirfd_used[slot])
+        {
+            dirfd_used[slot] = 1;
+            strcpy(dirfd_paths[slot], directory->path);
+            directory->pseudo_fd = DIRFD_BASE + slot;
+            break;
+        }
+    }
     return directory;
+}
+
+int dirfd(DIR *directory)
+{
+    if (!directory || directory->pseudo_fd < 0)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    return directory->pseudo_fd;
+}
+
+static int at_path(int dirfd_value, const char *path, char *out, size_t capacity)
+{
+    if (!path)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if (path[0] == '/' || dirfd_value == AT_FDCWD)
+    {
+        if (strlen(path) >= capacity)
+        {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        strcpy(out, path);
+        return 0;
+    }
+    int slot = dirfd_value - DIRFD_BASE;
+    if (slot < 0 || slot >= DIRFD_SLOTS || !dirfd_used[slot])
+    {
+        errno = EBADF;
+        return -1;
+    }
+    size_t base = strlen(dirfd_paths[slot]);
+    if (base + 1 + strlen(path) >= capacity)
+    {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strcpy(out, dirfd_paths[slot]);
+    if (base && out[base - 1] != '/')
+        out[base++] = '/';
+    strcpy(out + base, path);
+    return 0;
+}
+
+int fstatat(int dirfd_value, const char *path, struct stat *info, int flags)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return (flags & AT_SYMLINK_NOFOLLOW) ? lstat(full, info) : stat(full, info);
+}
+
+int unlinkat(int dirfd_value, const char *path, int flags)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return (flags & AT_REMOVEDIR) ? rmdir(full) : unlink(full);
+}
+
+int alphasort(const struct dirent **left, const struct dirent **right)
+{
+    return strcoll((*left)->d_name, (*right)->d_name);
+}
+
+int scandir(const char *path, struct dirent ***result,
+            int (*select)(const struct dirent *),
+            int (*compare)(const struct dirent **, const struct dirent **))
+{
+    DIR *directory = opendir(path);
+    if (!directory)
+        return -1;
+    struct dirent **list = 0;
+    int count = 0, capacity = 0;
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != 0)
+    {
+        if (select && !select(entry))
+            continue;
+        if (count == capacity)
+        {
+            int grown = capacity ? capacity * 2 : 32;
+            struct dirent **bigger = realloc(list, sizeof(*list) * grown);
+            if (!bigger)
+                goto fail;
+            list = bigger;
+            capacity = grown;
+        }
+        struct dirent *copy = malloc(sizeof(*copy));
+        if (!copy)
+            goto fail;
+        *copy = *entry;
+        list[count++] = copy;
+    }
+    closedir(directory);
+    if (compare && count > 1)
+        qsort(list, (size_t)count, sizeof(*list), (int (*)(const void *, const void *))compare);
+    *result = list;
+    return count;
+fail:
+    for (int i = 0; i < count; i++)
+        free(list[i]);
+    free(list);
+    closedir(directory);
+    errno = ENOMEM;
+    return -1;
 }
 
 struct dirent *readdir(DIR *directory)
@@ -341,6 +471,8 @@ int closedir(DIR *directory)
         errno = EBADF;
         return -1;
     }
+    if (directory->pseudo_fd >= DIRFD_BASE)
+        dirfd_used[directory->pseudo_fd - DIRFD_BASE] = 0;
     free(directory->entries);
     free(directory);
     return 0;
