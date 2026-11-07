@@ -25,10 +25,8 @@ struct purec_state {
     int queue_head;
     int queue_count;
     int mouse_buttons;
-    long long last_full_ms;
+    bool need_frame;
 };
-
-#define FULL_REPAINT_MS 150
 
 static struct purec_state *state_of(nsfb_t *nsfb)
 {
@@ -88,6 +86,7 @@ static int purec_initialise(nsfb_t *nsfb)
         return -1;
     }
     state->open = true;
+    state->need_frame = true;
     nsfb->surface_priv = state;
     if (state->window.client.width > 0 && state->window.client.height > 0) {
         nsfb->width = (int)state->window.client.width;
@@ -96,13 +95,14 @@ static int purec_initialise(nsfb_t *nsfb)
     nsfb->format = NSFB_FMT_XRGB8888;
     select_plotters(nsfb);
     size_t size = (size_t)nsfb->width * (size_t)nsfb->height * 4;
-    nsfb->ptr = calloc(1, size);
+    nsfb->ptr = malloc(size);
     if (nsfb->ptr == NULL) {
         pg_window_close(&state->window);
         free(state);
         nsfb->surface_priv = NULL;
         return -1;
     }
+    memset(nsfb->ptr, 0xff, size);
     nsfb->linelen = nsfb->width * 4;
     return 0;
 }
@@ -123,6 +123,7 @@ static int purec_set_geometry(nsfb_t *nsfb, int width, int height,
         if (bigger == NULL)
             return -1;
         nsfb->ptr = bigger;
+        memset(nsfb->ptr, 0xff, size);
     }
     nsfb->linelen = nsfb->width * 4;
     return 0;
@@ -142,7 +143,7 @@ static int purec_finalise(nsfb_t *nsfb)
     return 0;
 }
 
-static int purec_blit(nsfb_t *nsfb, int x0, int y0, int x1, int y1)
+static int purec_blit(nsfb_t *nsfb, int x0, int y0, int x1, int y1, bool frame)
 {
     struct purec_state *state = state_of(nsfb);
     if (state == NULL || !state->open || nsfb->ptr == NULL)
@@ -160,18 +161,25 @@ static int purec_blit(nsfb_t *nsfb, int x0, int y0, int x1, int y1)
     if (x1 <= x0 || y1 <= y0)
         return 0;
     const uint32_t *pixels = (const uint32_t *)nsfb->ptr;
-    pg_window_begin(&state->window);
+    if (frame)
+        pg_window_begin(&state->window);
     (void)pg_window_blit(&state->window, x0, y0, (uint32_t)(x1 - x0),
                          (uint32_t)(y1 - y0),
                          pixels + (size_t)y0 * (size_t)nsfb->width + (size_t)x0,
                          (uint32_t)nsfb->width);
-    pg_window_end(&state->window);
+    if (frame)
+        pg_window_end(&state->window);
     return 0;
 }
 
 static int purec_update(nsfb_t *nsfb, nsfb_bbox_t *box)
 {
-    return purec_blit(nsfb, box->x0, box->y0, box->x1, box->y1);
+    return purec_blit(nsfb, box->x0, box->y0, box->x1, box->y1, false);
+}
+
+static void purec_redraw_frame(nsfb_t *nsfb)
+{
+    purec_blit(nsfb, 0, 0, nsfb->width, nsfb->height, true);
 }
 
 static int purec_special_to_key(int code)
@@ -254,11 +262,15 @@ static void purec_poll_window(nsfb_t *nsfb, struct purec_state *state)
         case PG_EVENT_REPAINT:
         case PG_EVENT_MOVE:
         case PG_EVENT_FOCUS:
-            purec_blit(nsfb, 0, 0, nsfb->width, nsfb->height);
+            state->need_frame = true;
             break;
         default:
             break;
         }
+    }
+    if (state->need_frame) {
+        state->need_frame = false;
+        purec_redraw_frame(nsfb);
     }
     int32_t wheel = pg_window_take_wheel(&state->window);
     while (wheel != 0 && state->queue_count < QUEUE_SIZE - 2) {
@@ -276,15 +288,6 @@ static int64_t purec_now_ms(void)
     return (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-static void purec_maybe_repaint(nsfb_t *nsfb, struct purec_state *state)
-{
-    long long now = purec_now_ms();
-    if (now - state->last_full_ms < FULL_REPAINT_MS)
-        return;
-    state->last_full_ms = now;
-    purec_blit(nsfb, 0, 0, nsfb->width, nsfb->height);
-}
-
 static bool purec_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
 {
     struct purec_state *state = state_of(nsfb);
@@ -292,7 +295,6 @@ static bool purec_input(nsfb_t *nsfb, nsfb_event_t *event, int timeout)
         return false;
     int64_t deadline = timeout > 0 ? purec_now_ms() + timeout : 0;
     for (;;) {
-        purec_maybe_repaint(nsfb, state);
         if (queue_pop(state, event))
             return true;
         if (!pg_window_is_open(&state->window)) {
