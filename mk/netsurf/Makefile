@@ -104,3 +104,25 @@ $(SLIB)/libcurl.a: $(SLIB)/libz.a
 	cp $(ROOT_DIR)/curl/include/curl/*.h $(SINC)/curl/
 	cp $(BIN_DIR)/lib/libwolf.a $(SLIB)/libwolf.a
 	printf 'prefix=$(STAGE)\nName: libcurl\nDescription: libcurl\nVersion: 8.23.1\nLibs: -L$(SLIB) -lcurl -lwolf -lz\nCflags: -I$(SINC) -DCURL_STATICLIB\n' > $(SPC)/libcurl.pc
+
+BROWSER := $(BIN_DIR)/programs/netsurf
+NS_BUILD := $(ROOT_DIR)/netsurf/build/Linux-framebuffer
+NS_LINK_LIBS := $(addprefix $(SLIB)/,libcurl.a libwolf.a libnsfb.a libnsgif.a libnsbmp.a \
+	libcss.a libdom.a libhubbub.a libparserutils.a libwapcaplet.a libnsutils.a libnslog.a \
+	libutf8proc.a libpng.a libjpeg.a libexpat.a libz.a)
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
+
+.PHONY: browser nslibs nscore
+browser: $(BROWSER)
+
+nslibs: deps
+	NS_EXTRA_CFLAGS="-DWITHOUT_ICONV_FILTER" $(ROOT_DIR)/mk/netsurf/build-libs.sh
+
+nscore: nslibs
+	$(ROOT_DIR)/mk/netsurf/build-netsurf.sh
+
+$(BROWSER): nscore $(BIN_DIR)/lib/crt0.o $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a
+	@mkdir -p $(@D)
+	$(LD) -S -T $(ROOT_DIR)/linker-userspace.ld -o $@ $(BIN_DIR)/lib/crt0.o \
+		$$(find $(NS_BUILD) -name '*.o') --start-group $(NS_LINK_LIBS) \
+		$(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpurec.a $(LIBGCC) --end-group
