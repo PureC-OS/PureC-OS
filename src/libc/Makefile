@@ -14,7 +14,7 @@ LD_OBJ_DIR := $(OBJ_DIR)/ld
 LD_STUB := $(LIB_DIR)/pc-ld.o
 LD_STUB_OBJECTS := $(LD_OBJ_DIR)/ld.o $(LD_OBJ_DIR)/ld_entry.o
 LD_STUB_CFLAGS := -g -O2 -ffreestanding -fno-builtin -fno-stack-protector -fPIE \
-	-fvisibility=hidden -fno-plt -fno-tree-loop-distribute-patterns -m64 -mno-red-zone -mcmodel=small
+	-fvisibility=hidden -fno-plt -fno-tree-loop-distribute-patterns -Wa,--noexecstack -m64 -mno-red-zone -mcmodel=small
 
 .PHONY: all
 all: $(TARGET) $(SO_TARGET) $(CRT0) $(LD_STUB)
