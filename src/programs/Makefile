@@ -155,6 +155,7 @@ TARGETS := \
   	$(PROGRAM_DIR)/forktest \
   	$(PROGRAM_DIR)/sh \
   	$(PROGRAM_DIR)/proctest \
+  	$(PROGRAM_DIR)/journalctl \
   	$(PROGRAM_DIR)/fputest \
   	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/cd \
@@ -507,6 +508,14 @@ $(OBJ_DIR)/sh/main.o: $(ROOT_DIR)/src/programs/sh/main.c
 $(PROGRAM_DIR)/sh: $(OBJ_DIR)/sh/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/sh/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/journalctl/main.o: $(ROOT_DIR)/src/programs/journalctl/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/journalctl: $(OBJ_DIR)/journalctl/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/journalctl/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/proctest/main.o: $(ROOT_DIR)/src/programs/proctest/main.c
 	@mkdir -p $(@D)
