@@ -29,7 +29,7 @@ test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-
 test-wolfcrypt:
 	@test -f "$(WOLFSSL_DIR)/wolfcrypt/src/aes.c" || \
 	  { echo "ERROR: wolfssl/ not found. Run: ./purec.py setup"; exit 1; }
-	$(MAKE) -C $(WOLFSSL_DIR) HOST_CC="$(HOST_CC) -include stdio.h -include stdlib.h -include string.h" check-crypt
+	$(MAKE) -C $(WOLFSSL_DIR) HOST_CC="$(HOST_CC)" check-crypt
 
 test-ipc:
 	@mkdir -p $(BIN_DIR)/tests
