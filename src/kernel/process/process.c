@@ -12,6 +12,7 @@ static mutex_t process_mutex;
 #include "../../mm/oom/oom_slab.h"
 #include "../../mm/oom/oom_victim.h"
 #include "../../mm/pmm.h"
+#include "../../mm/shm.h"
 #include "../../mm/vmm.h"
 #include "../../net/transport/tcp.h"
 #include "../../userspace/window_manager.h"
@@ -1054,8 +1055,18 @@ static bool process_vmas_ensure(struct process *process)
   return process->vmas != NULL;
 }
 
-int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
-                     uint64_t flags)
+static int mmap_vma_insert(struct process *process, uint64_t base,
+                           uint64_t bytes, uint64_t prot, int32_t shm,
+                           uint64_t offset_pages)
+{
+  if (shm >= 0)
+    return vma_map_shm(process->vmas, base, base + bytes, (uint32_t)prot, shm,
+                       offset_pages);
+  return vma_map(process->vmas, base, base + bytes, (uint32_t)prot);
+}
+
+int64_t process_mmap_shared(uint64_t address, uint64_t length, uint64_t prot,
+                            uint64_t flags, int32_t shm, uint64_t offset_pages)
 {
   MUTEX_SCOPE(&process_mutex);
   struct process *process = process_current();
@@ -1073,7 +1084,7 @@ int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
     if (!mmap_range_ok(process, address, pages))
       return -KERR_INVAL;
     base = address;
-    int status = vma_map(process->vmas, base, base + bytes, (uint32_t)prot);
+    int status = mmap_vma_insert(process, base, bytes, prot, shm, offset_pages);
     if (status < 0)
       return status;
     uint64_t freed = vmm_unmap_range(process->address_space, base, pages);
@@ -1088,13 +1099,45 @@ int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
       base = vma_find_gap(process->vmas, bytes, MMAP_BASE, MMAP_END);
     if (!base)
       return -KERR_NOMEM;
-    int status = vma_map(process->vmas, base, base + bytes, (uint32_t)prot);
+    int status = mmap_vma_insert(process, base, bytes, prot, shm, offset_pages);
     if (status < 0)
       return status;
   }
   if (base >= MMAP_BASE && base + bytes <= MMAP_END)
     process->mmap_cursor = base + bytes;
   return (int64_t)base;
+}
+
+int64_t process_madvise(uint64_t address, uint64_t length, uint64_t advice)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return -KERR_PERM;
+  if (address & (PMM_PAGE_SIZE - 1))
+    return -KERR_INVAL;
+  if (!length)
+    return 0;
+  uint64_t pages;
+  if (!mmap_length_pages(length, &pages))
+    return -KERR_INVAL;
+  if (advice != KMADV_DONTNEED)
+    return 0;
+  if (!mmap_range_ok(process, address, pages))
+    return -KERR_INVAL;
+  uint64_t end = address + pages * PMM_PAGE_SIZE;
+  if (!process->vmas || vma_range_free(process->vmas, address, end))
+    return -KERR_NOMEM;
+  uint64_t freed = vmm_unmap_range(process->address_space, address, pages);
+  if (freed)
+    oom_gate_release_user(process->pid, freed);
+  return 0;
+}
+
+int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
+                     uint64_t flags)
+{
+  return process_mmap_shared(address, length, prot, flags, -1, 0);
 }
 
 int64_t process_munmap(uint64_t address, uint64_t length)
@@ -1165,6 +1208,8 @@ int64_t process_mremap(uint64_t address, uint64_t old_length,
   if (!process->vmas ||
       !vma_lookup(process->vmas, address, &prot, &area_start, &area_end) ||
       area_end < old_end)
+    return -KERR_INVAL;
+  if (vma_range_has_shm(process->vmas, address, old_end))
     return -KERR_INVAL;
   if (new_pages == old_pages)
     return (int64_t)address;
@@ -1293,8 +1338,27 @@ static int lazy_map_page(struct process *process, uint64_t page,
     if (!charged)
       return -1;
   }
-  int mapped = vmm_map_zero_page(process->address_space, page,
+  int mapped;
+  int32_t shm_id;
+  uint64_t shm_index;
+  if (vma_lookup_shm(table, page, &shm_id, &shm_index))
+  {
+    uint64_t frame = shm_page(shm_id, shm_index);
+    if (!frame)
+    {
+      oom_gate_release_user(process->pid, 1);
+      return 0;
+    }
+    mapped = vmm_map_shared_page(process->address_space, page, frame,
                                  mmap_prot_flags(prot));
+    if (mapped != 1)
+      pmm_free_page(frame);
+  }
+  else
+  {
+    mapped = vmm_map_zero_page(process->address_space, page,
+                               mmap_prot_flags(prot));
+  }
   if (mapped != 1)
   {
     oom_gate_release_user(process->pid, 1);
