@@ -14,3 +14,8 @@ extern void assert_fail(const char *expression, const char *file, int line);
 }
 #endif
 #endif
+
+#if !defined(__cplusplus) && !defined(static_assert) && \
+    (!defined(__STDC_VERSION__) || __STDC_VERSION__ < 202311L)
+#define static_assert _Static_assert
+#endif
