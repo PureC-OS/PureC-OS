@@ -30,6 +30,7 @@ struct epoll_watch
   int32_t ofd;
   uint32_t events;
   uint32_t last;
+  uint64_t last_generation;
   uint64_t data;
 };
 
@@ -42,6 +43,7 @@ struct evobj
   uint64_t interval_ms;
   uint64_t expire_ms;
   uint64_t pending;
+  uint64_t generation;
   int32_t slot;
 };
 
@@ -162,11 +164,13 @@ static void timer_update(struct evobj *timer)
   {
     uint64_t count = 1 + (now - timer->expire_ms) / timer->interval_ms;
     timer->pending += count;
+    timer->generation += count;
     timer->expire_ms += count * timer->interval_ms;
   }
   else
   {
     timer->pending++;
+    timer->generation++;
     timer->armed = false;
   }
 }
@@ -255,6 +259,7 @@ int32_t evfd_write(int32_t id, const void *buffer, uint32_t count,
     if (object->counter <= EVFD_COUNTER_MAX - value)
     {
       object->counter += value;
+      object->generation++;
       mutex_unlock(&ev_mutex);
       return (int32_t)sizeof(value);
     }
@@ -269,6 +274,20 @@ int32_t evfd_write(int32_t id, const void *buffer, uint32_t count,
 
 static int32_t epoll_scan(int32_t id, struct kernel_epoll_event *out,
                           int32_t max_events, bool commit);
+
+uint64_t evfd_generation(int32_t id)
+{
+  mutex_lock(&ev_mutex);
+  uint64_t value = 0;
+  if (id >= 0 && id < EVOBJ_MAX && objects[id].type != EVOBJ_FREE)
+  {
+    if (objects[id].type == EVOBJ_TIMER)
+      timer_update(&objects[id]);
+    value = objects[id].generation;
+  }
+  mutex_unlock(&ev_mutex);
+  return value;
+}
 
 int32_t evfd_poll(int32_t id)
 {
@@ -420,6 +439,7 @@ int32_t evfd_epoll_ctl(int32_t id, int32_t op, int32_t fd,
       spare->events = event->events;
       spare->data = event->data;
       spare->last = 0;
+      spare->last_generation = 0;
     }
     break;
   case EPOLL_OP_MOD:
@@ -431,6 +451,7 @@ int32_t evfd_epoll_ctl(int32_t id, int32_t op, int32_t fd,
       found->data = event->data;
       found->disabled = false;
       found->last = 0;
+      found->last_generation = 0;
     }
     break;
   case EPOLL_OP_DEL:
@@ -468,11 +489,13 @@ static int32_t epoll_scan(int32_t id, struct kernel_epoll_event *out,
 
   int32_t reported = 0;
   uint32_t ready_now[EPOLL_WATCH_MAX];
+  uint64_t generation_now[EPOLL_WATCH_MAX];
   bool dead[EPOLL_WATCH_MAX];
   bool fired[EPOLL_WATCH_MAX];
   for (int32_t i = 0; i < EPOLL_WATCH_MAX; i++)
   {
     ready_now[i] = 0;
+    generation_now[i] = 0;
     dead[i] = false;
     fired[i] = false;
     struct epoll_watch *watch = &snapshot[i];
@@ -496,11 +519,15 @@ static int32_t epoll_scan(int32_t id, struct kernel_epoll_event *out,
                     EPOLLERR_BIT | EPOLLHUP_BIT;
     uint32_t ready = revents & mask;
     ready_now[i] = ready;
+    generation_now[i] = ofd_poll_generation(watch->ofd);
     if (watch->disabled || !ready || reported >= max_events)
       continue;
     uint32_t report = ready;
     if (watch->events & EPOLLET_BIT)
       report = ready & ~watch->last;
+    if (!report && (watch->events & EPOLLET_BIT) &&
+        generation_now[i] != watch->last_generation)
+      report = ready;
     if (!report)
       continue;
     fired[i] = true;
@@ -527,6 +554,7 @@ static int32_t epoll_scan(int32_t id, struct kernel_epoll_event *out,
           continue;
         }
         live->last = ready_now[i];
+        live->last_generation = generation_now[i];
         if (fired[i] && (live->events & EPOLLONESHOT_BIT))
           live->disabled = true;
       }

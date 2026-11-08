@@ -44,6 +44,7 @@ int32_t evfd_read(int32_t id, void *buffer, uint32_t count, bool nonblock);
 int32_t evfd_write(int32_t id, const void *buffer, uint32_t count,
                    bool nonblock);
 int32_t evfd_poll(int32_t id);
+uint64_t evfd_generation(int32_t id);
 int32_t evfd_timerfd_settime(int32_t id, uint32_t flags,
                              const struct kernel_itimerspec *value,
                              struct kernel_itimerspec *old_value);
