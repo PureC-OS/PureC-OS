@@ -20,7 +20,7 @@ concurrency:
 
 env:
   CROSS_PREFIX: ${{ github.workspace }}/.cache/cross
-  ISO_SUBMODULES: acpi libxcrypt userspace purec-notepad-os SDL chocolate-doom freedoom curl vim wolfssl
+  ISO_SUBMODULES: acpi libxcrypt userspace purec-notepad-os SDL chocolate-doom freedoom curl vim wolfssl tcc
 
 jobs:
   host-tests:
@@ -97,7 +97,6 @@ jobs:
       - name: Fetch external components
         run: |
           git submodule update --init --recursive --depth 1 -- ${ISO_SUBMODULES}
-          git clone --depth 1 https://github.com/PureC-OS/PureC-TCC.git tcc
           mk/fetch-gnumake.sh
 
       - name: Install host dependencies
