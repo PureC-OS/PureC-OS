@@ -23,6 +23,7 @@ struct process_environment_entry
 
 struct ipc_mbox;
 struct process_signals;
+struct vma_table;
 
 enum process_state
 {
@@ -75,6 +76,7 @@ struct process
   int32_t exit_group;
   int32_t exit_tid;
   int32_t extra_threads;
+  struct vma_table *vmas;
 };
 
 void process_init(void);
@@ -95,6 +97,7 @@ int32_t process_resolve_path(const char *path, char *out, uint32_t capacity);
 int32_t process_chdir(const char *path);
 int32_t process_getcwd(char *buffer, uint32_t capacity);
 bool process_handle_stack_fault(uint64_t address);
+bool process_handle_lazy_fault(uint64_t address, uint64_t error);
 void process_exit_signal(int32_t signal) __attribute__((noreturn));
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
