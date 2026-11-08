@@ -39,7 +39,7 @@ bool QPurecWindow::openNative()
     if (int(fh) > screen.height()) fh = uint32_t(screen.height());
     QByteArray title = w->title().toUtf8();
     bool ok;
-    if (w->geometry().topLeft() == QPoint(0, 0) && w->flags().testFlag(Qt::MaximizeUsingFullscreenGeometryHint))
+    if (int(fw) >= screen.width() && int(fh) >= screen.height())
         ok = pg_window_init(&m_pg, title.constData(), 0, 0, fw, fh);
     else
         ok = pg_window_center(&m_pg, title.constData(), fw, fh);
@@ -228,14 +228,21 @@ bool QPurecWindow::pollOne()
     case PG_EVENT_MOUSE_UP: {
         QPoint local(ev.x - int(m_pg.client.x), ev.y - int(m_pg.client.y));
         QPoint global(ev.x, ev.y);
+        Qt::MouseButton changed = Qt::NoButton;
+        QEvent::Type type = QEvent::MouseMove;
         if (ev.type == PG_EVENT_MOUSE_DOWN || ev.type == PG_EVENT_MOUSE_UP) {
-            int bit = ev.button == 1 ? Qt::LeftButton : ev.button == 2 ? Qt::RightButton : Qt::MiddleButton;
-            if (ev.type == PG_EVENT_MOUSE_DOWN)
-                m_buttons |= bit;
-            else
-                m_buttons &= ~bit;
+            changed = ev.button == 1 ? Qt::LeftButton : ev.button == 2 ? Qt::RightButton : Qt::MiddleButton;
+            if (ev.type == PG_EVENT_MOUSE_DOWN) {
+                m_buttons |= changed;
+                type = QEvent::MouseButtonPress;
+            } else {
+                m_buttons &= ~int(changed);
+                type = QEvent::MouseButtonRelease;
+            }
         }
-        QWindowSystemInterface::handleMouseEvent(w, local, global, Qt::MouseButtons(m_buttons));
+        m_lastPos = local;
+        QWindowSystemInterface::handleMouseEvent(w, QPointF(local), QPointF(global),
+                                                 Qt::MouseButtons(m_buttons), changed, type);
         break;
     }
     default:

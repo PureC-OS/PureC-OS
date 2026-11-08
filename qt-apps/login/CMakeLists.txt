@@ -10,4 +10,4 @@ target_link_libraries(purecauth PUBLIC ${PUREC_BIN}/lib/libpurecrypt.a ${PUREC_B
 
 add_executable(qt-login main.cpp loginwindow.cpp)
 target_include_directories(qt-login PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(qt-login PRIVATE purecqt purecauth)
+target_link_libraries(qt-login PRIVATE purecqt purecauth Qt6::QPurecIntegrationPlugin)

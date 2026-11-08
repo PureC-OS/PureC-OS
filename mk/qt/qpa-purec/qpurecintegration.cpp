@@ -3,14 +3,9 @@
 #include "qpurecbackingstore.h"
 
 #include <QtGui/private/qgenericunixeventdispatcher_p.h>
-#include <QtGui/private/qgenericunixfontdatabase_p.h>
-#include <QtGui/private/qgenericunixservices_p.h>
-#include <QtGui/private/qunixeventdispatcher_qpa_p.h>
 #include <QtGui/private/qfreetypefontdatabase_p.h>
-#include <qpa/qplatforminputcontextfactory_p.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <QtGui/qguiapplication.h>
-#include <QtGui/qpa/qplatformtheme.h>
 
 extern "C" {
 #include "puregui.h"

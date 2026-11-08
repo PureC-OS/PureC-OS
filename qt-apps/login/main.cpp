@@ -3,6 +3,7 @@
 #include "theme.h"
 
 #include <QtGui/QFont>
+#include <QtGui/QScreen>
 #include <QtWidgets/QApplication>
 
 int main(int argc, char **argv)
@@ -16,7 +17,8 @@ int main(int argc, char **argv)
     app.setStyleSheet(purec::styleSheet());
 
     purec::LoginWindow window;
-    window.resize(1024, 700);
+    window.setWindowFlags(Qt::Window | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
+    window.resize(app.primaryScreen()->size());
     window.show();
     return app.exec();
 }

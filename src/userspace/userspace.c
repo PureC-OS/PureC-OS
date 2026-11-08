@@ -78,6 +78,7 @@ static char     persistent_log_buffer[PERSISTENT_LOG_CHUNK];
 static void redraw_scene(void);
 static void redraw_managed_scene(uint32_t excluded_pid);
 static int32_t userspace_run_detached(const char *path, const char *arguments);
+static int32_t qt_login_pid;
 static int32_t userspace_run_program_with_args(const char *path,const char *arguments);
 
 struct detach_chunk {
@@ -206,6 +207,19 @@ static bool installation_present(void){
     return true;
 }
 
+static void launch_login(void){
+    int64_t probe = userspace_syscall(SYS_OPEN, (uint64_t)"/usr/bin/qt-login", 0, 0);
+    if(probe >= 0){
+        (void)userspace_syscall(SYS_CLOSE, (uint64_t)probe, 0, 0);
+        int32_t pid = userspace_run_detached("/usr/bin/qt-login", 0);
+        if(pid > 0){
+            qt_login_pid = pid;
+            return;
+        }
+    }
+    (void)userspace_run_detached("/bin/program/login", 0);
+}
+
 static void launch_installer(void){
     (void)userspace_run_detached("/bin/installer", 0);
 }
@@ -242,7 +256,13 @@ static void reap_detached_programs(void){
                 klogf(KLOG_ERROR, "desktop: detached pid=%d exited status=%d",
                       *slot, status);
             }
+            bool qt_login_failed = *slot == qt_login_pid && status != 0;
+            if(*slot == qt_login_pid) qt_login_pid = 0;
             *slot = 0;
+            if(qt_login_failed){
+                klogf(KLOG_WARN, "desktop: qt-login failed, falling back to C login");
+                (void)userspace_run_detached("/bin/program/login", 0);
+            }
             desktop_entries_set_installer_visible(!installation_present());
         }
     }
@@ -614,7 +634,7 @@ void userspace_init(void){
     desktop_entries_set_installer_visible(!installation_present());
     personalization_poll();
     klog_set_screen_enabled(false);
-    (void)userspace_run_detached("/bin/program/login", 0);
+    launch_login();
     boot_diag_checkpoint(BOOT_STAGE_USERSPACE_INIT,
                          "userspace: initialization complete");
 }
