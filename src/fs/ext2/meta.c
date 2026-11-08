@@ -135,6 +135,21 @@ int32_t ext2_meta_set(const char *path, int32_t mode, uint32_t uid,
     return ext2_write_inode(ino, ib) ? 0 : -1;
 }
 
+int32_t ext2_meta_set_times(const char *path, uint32_t atime, uint32_t mtime)
+{
+    uint32_t ino;
+    int32_t status = ext2_dir_resolve(path, &ino);
+    if (status < 0)
+        return status;
+    uint8_t ib[256];
+    if (!ext2_inode_read(ino, ib))
+        return -1;
+    ext2_write_u32(ib + EXT2_INODE_ATIME, atime);
+    ext2_write_u32(ib + EXT2_INODE_MTIME, mtime);
+    ext2_write_u32(ib + EXT2_INODE_CTIME, ext2_now());
+    return ext2_write_inode(ino, ib) ? 0 : -1;
+}
+
 static int32_t dir_remove_entry(uint32_t dir_ino, const char *name)
 {
     uint8_t dib[256];

@@ -178,6 +178,7 @@
 #define SYS_DNS_RESOLVE 371  /* (name, timeout_ms, uint32_t *ipv4_be) */
 #define SYS_SOCK_SEND 372    /* (fd, buf, len, msg_flags) */
 #define SYS_SOCK_RECV 373    /* (fd, buf, len, msg_flags) */
+#define SYS_UTIMES 374       /* (path, atime, mtime), 0xFFFFFFFF = now */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
