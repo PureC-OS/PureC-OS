@@ -20,6 +20,7 @@ struct pipe
   uint32_t count;
   uint32_t readers;
   uint32_t writers;
+  uint64_t generation;
   int32_t read_waiters[PIPE_WAITERS];
   int32_t write_waiters[PIPE_WAITERS];
 };
@@ -233,6 +234,7 @@ int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
         pipe->buffer[(pipe->head + pipe->count + i) % PIPE_CAPACITY] =
             in[written + i];
       pipe->count += amount;
+      pipe->generation++;
       written += amount;
       wake_count = waiters_take(pipe->read_waiters, wake);
       mutex_unlock(&pipe_mutex);
@@ -284,4 +286,13 @@ int32_t pipe_poll(int32_t id, bool write_end)
   }
   mutex_unlock(&pipe_mutex);
   return revents;
+}
+
+uint64_t pipe_generation(int32_t id)
+{
+  mutex_lock(&pipe_mutex);
+  struct pipe *pipe = pipe_get(id);
+  uint64_t value = pipe ? pipe->generation : 0;
+  mutex_unlock(&pipe_mutex);
+  return value;
 }

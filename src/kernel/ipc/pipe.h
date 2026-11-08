@@ -10,3 +10,4 @@ int32_t pipe_read(int32_t id, void *buffer, uint32_t count, bool nonblock);
 int32_t pipe_write(int32_t id, const void *buffer, uint32_t count,
                    bool nonblock);
 int32_t pipe_poll(int32_t id, bool write_end);
+uint64_t pipe_generation(int32_t id);
