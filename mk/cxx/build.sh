@@ -67,4 +67,7 @@ cmake -G Ninja -S "$SRC/runtimes" -B "$BUILD" \
 
 cmake --build "$BUILD" --target $TARGETS
 cmake --install "$BUILD"
+if [ "$CXX_UNWIND" = "ON" ]; then
+  cp "$BUILD/lib/libunwind.a" "$STAGE/lib/libunwind.a"
+fi
 echo "libc++ staged in $STAGE"

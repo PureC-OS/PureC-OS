@@ -8,6 +8,8 @@ STAGE="${CXX_STAGE:-$BIN_DIR/cxx-stage}"
 OUT="$BIN_DIR/cxx-test"
 RESOURCE_INCLUDE="$(clang --print-resource-dir)/include"
 LIBGCC="$(x86_64-elf-gcc -print-libgcc-file-name 2>/dev/null || true)"
+UNWIND=""
+[ -f "$STAGE/lib/libunwind.a" ] && UNWIND="$STAGE/lib/libunwind.a"
 CXX_FLAGS="${CXX_FLAGS:--std=c++20 -O1 -fexceptions -frtti}"
 mkdir -p "$OUT"
 [ $# -gt 0 ] || set -- "$ROOT"/tests/cxx/*.cpp
@@ -18,7 +20,7 @@ for source in "$@"; do
     -isystem "$STAGE/include/c++/v1" -isystem "$RESOURCE_INCLUDE" -isystem "$ROOT/src/libc/include/hosted" \
     -c "$source" -o "$OUT/$name.o"
   x86_64-elf-ld --eh-frame-hdr -T "$ROOT/linker-userspace-cxx.ld" -o "$OUT/$name" "$BIN_DIR/lib/crt0.o" "$OUT/$name.o" \
-    "$STAGE/lib/libc++.a" "$STAGE/lib/libc++abi.a" "$BIN_DIR/lib/libpurefs.a" "$BIN_DIR/lib/libpurec.a" $LIBGCC \
+    "$STAGE/lib/libc++.a" "$STAGE/lib/libc++abi.a" $UNWIND "$BIN_DIR/lib/libpurefs.a" "$BIN_DIR/lib/libpurec.a" $LIBGCC \
     2>&1 | grep -v "GNU-stack\|deprecated" || true
   echo "built $OUT/$name"
 done

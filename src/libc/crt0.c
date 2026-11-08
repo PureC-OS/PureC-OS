@@ -86,6 +86,7 @@ __asm__(
 
 extern char __tdata_start[] __attribute__((weak));
 extern char __tdata_end[] __attribute__((weak));
+extern char __tbss_start[] __attribute__((weak));
 extern char __tbss_end[] __attribute__((weak));
 extern char __tls_align[] __attribute__((weak));
 void __tls_init_main(const void *image, size_t filesz, size_t memsz,
@@ -94,13 +95,13 @@ void __tls_init_main(const void *image, size_t filesz, size_t memsz,
 void __pc_note_stack_top(uintptr_t top);
 
 static void crt0_init_tls(void) {
-    if (!__tdata_start || !__tbss_end || __tbss_end <= __tdata_start)
+    if (!__tdata_start || !__tbss_start || !__tbss_end)
         return;
-    size_t filesz = (size_t)(__tdata_end - __tdata_start);
-    size_t memsz = (size_t)(__tbss_end - __tdata_start);
-    if (!memsz)
+    size_t filesz = __tdata_end > __tdata_start ? (size_t)(__tdata_end - __tdata_start) : 0;
+    char *start = filesz ? __tdata_start : __tbss_start;
+    if (__tbss_end <= start)
         return;
-    __tls_init_main(__tdata_start, filesz, memsz, (size_t)__tls_align);
+    __tls_init_main(start, filesz, (size_t)(__tbss_end - start), (size_t)__tls_align);
 }
 
 void crt0_main(uint64_t *frame) {

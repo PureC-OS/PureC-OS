@@ -16,12 +16,13 @@ SECTIONS
     .eh_frame : ALIGN(8) { KEEP(*(.eh_frame .eh_frame.*)) }
     .gcc_except_table : ALIGN(8) { *(.gcc_except_table .gcc_except_table.*) }
     .data : ALIGN(0x1000) { *(.data .data.*) }
-    .tdata : ALIGN(64) {
+    .tdata : {
         PROVIDE_HIDDEN(__tdata_start = .);
         *(.tdata .tdata.*)
         PROVIDE_HIDDEN(__tdata_end = .);
     }
     .tbss : {
+        PROVIDE_HIDDEN(__tbss_start = .);
         *(.tbss .tbss.*)
         *(.tcommon)
         PROVIDE_HIDDEN(__tbss_end = .);

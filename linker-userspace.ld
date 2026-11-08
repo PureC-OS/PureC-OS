@@ -5,12 +5,13 @@ SECTIONS
     .text : ALIGN(0x1000) { *(.text .text.*) }
     .rodata : ALIGN(0x1000) { *(.rodata .rodata.*) }
     .data : ALIGN(0x1000) { *(.data .data.*) }
-    .tdata : ALIGN(64) {
+    .tdata : {
         PROVIDE_HIDDEN(__tdata_start = .);
         *(.tdata .tdata.*)
         PROVIDE_HIDDEN(__tdata_end = .);
     }
     .tbss : {
+        PROVIDE_HIDDEN(__tbss_start = .);
         *(.tbss .tbss.*)
         *(.tcommon)
         PROVIDE_HIDDEN(__tbss_end = .);
