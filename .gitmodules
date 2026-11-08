@@ -34,3 +34,6 @@
 [submodule "wolfssl"]
 	path = wolfssl
 	url = https://github.com/PureC-OS/wolfssl.git
+[submodule "tcc"]
+	path = tcc
+	url = https://github.com/PureC-OS/PureC-TCC.git
