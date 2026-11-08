@@ -2,6 +2,7 @@
 #include "include/hosted/errno.h"
 #include "include/hosted/sys/epoll.h"
 #include "include/hosted/sys/eventfd.h"
+#include "include/hosted/sys/mman.h"
 #include "include/hosted/sys/timerfd.h"
 #include "include/hosted/unistd.h"
 #include <stdint.h>
@@ -133,4 +134,37 @@ int epoll_wait(int epfd, struct epoll_event *events, int max_events,
                                   (uint64_t)(uintptr_t)events,
                                   (uint64_t)(uint32_t)max_events,
                                   (uint64_t)(int64_t)timeout));
+}
+
+int memfd_create(const char *name, unsigned int flags)
+{
+    if (!name || (flags & ~(MFD_CLOEXEC | MFD_ALLOW_SEALING)))
+    {
+        errno = name ? EINVAL : EFAULT;
+        return -1;
+    }
+    return result_of(pc_syscall(SYS_MEMFD_CREATE, (uint64_t)(uintptr_t)name,
+                                (uint64_t)(flags & MFD_CLOEXEC), 0));
+}
+
+int shm_open(const char *name, int flags, unsigned int mode)
+{
+    (void)mode;
+    if (!name)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return result_of(pc_syscall(SYS_SHM_OPEN, (uint64_t)(uintptr_t)name,
+                                (uint64_t)(uint32_t)flags | 02000000U, 0));
+}
+
+int shm_unlink(const char *name)
+{
+    if (!name)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return result_of(pc_syscall(SYS_SHM_UNLINK, (uint64_t)(uintptr_t)name, 0, 0));
 }
