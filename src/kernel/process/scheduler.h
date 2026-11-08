@@ -64,6 +64,8 @@ struct thread {
   uint8_t *kstack;
   uint64_t fs_base;
   uint64_t clear_child_tid;
+  uint64_t altstack_sp;
+  uint64_t altstack_size;
   uint64_t user_frame[22];
   uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
