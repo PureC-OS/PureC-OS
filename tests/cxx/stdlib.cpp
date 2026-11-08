@@ -44,20 +44,21 @@ int main() {
     std::wstring wide = L"Привет, мир";
     std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
     std::string utf8 = converter.to_bytes(wide);
-    CHECK(utf8.size() == 21 && converter.from_bytes(utf8) == wide);
+    CHECK(utf8.size() == 20 && converter.from_bytes(utf8) == wide);
     std::wostringstream wout;
     wout << wide << L' ' << 12345;
     CHECK(wout.str() == L"Привет, мир 12345");
 
     std::locale classic = std::locale::classic();
     CHECK(std::use_facet<std::ctype<char>>(classic).is(std::ctype_base::alpha, 'q'));
-    CHECK(std::use_facet<std::ctype<wchar_t>>(classic).toupper(L'я') == L'Я');
+    CHECK(std::use_facet<std::ctype<wchar_t>>(classic).toupper(L'q') == L'Q');
     CHECK(std::use_facet<std::numpunct<char>>(classic).decimal_point() == '.');
     std::locale named("en_US.UTF-8");
     std::ostringstream localized;
     localized.imbue(named);
     localized << 1234567;
     CHECK(!localized.str().empty());
+    CHECK(std::use_facet<std::ctype<wchar_t>>(named).toupper(L'я') == L'Я');
     bool bad_locale = false;
     try { std::locale missing("xx_NOWHERE.nonsense"); } catch (const std::runtime_error &) { bad_locale = true; }
     CHECK(bad_locale);
@@ -73,9 +74,11 @@ int main() {
     CHECK(fs::exists(base / "a" / "data.txt"));
     CHECK(fs::is_directory(base / "a" / "b"));
     CHECK(fs::file_size(base / "a" / "data.txt") == 29);
-    std::ifstream reader(base / "a" / "data.txt");
     std::vector<std::string> lines;
-    for (std::string text; std::getline(reader, text);) lines.push_back(text);
+    {
+        std::ifstream reader(base / "a" / "data.txt");
+        for (std::string text; std::getline(reader, text);) lines.push_back(text);
+    }
     CHECK(lines.size() == 3 && lines[1] == "line two");
     std::size_t entries = 0;
     for (const auto &entry : fs::directory_iterator(base / "a")) { (void)entry; entries++; }

@@ -435,8 +435,12 @@ DIR *fdopendir(int fd)
     char path[512];
     strcpy(path, dirfd_paths[slot]);
     DIR *directory = opendir(path);
-    if (directory)
-        dirfd_used[slot] = 0;
+    if (!directory)
+        return 0;
+    int extra = directory->pseudo_fd - DIRFD_BASE;
+    if (extra >= 0 && extra < DIRFD_SLOTS && extra != slot)
+        dirfd_used[extra] = 0;
+    directory->pseudo_fd = fd;
     return directory;
 }
 

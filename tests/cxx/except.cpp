@@ -109,7 +109,8 @@ int main() {
     }
     CHECK(caught == 20000);
 
-    try { std::unique_ptr<int[]> big(new int[static_cast<std::size_t>(1) << 58]); CHECK(false); }
+    void *(*allocate)(std::size_t) = &::operator new;
+    try { void *block = allocate(static_cast<std::size_t>(1) << 60); CHECK(block == nullptr); }
     catch (const std::bad_alloc &) { CHECK(true); }
 
     std::printf("cxx except done failures=%d\n", failures);
