@@ -276,40 +276,6 @@ int ppoll(struct pollfd *fds, nfds_t count, const struct timespec *timeout,
     return result;
 }
 
-#define ATFORK_MAX 32
-static void (*atfork_prepare[ATFORK_MAX])(void);
-static void (*atfork_parent[ATFORK_MAX])(void);
-static void (*atfork_child[ATFORK_MAX])(void);
-static int atfork_count;
-
-int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void))
-{
-    if (atfork_count >= ATFORK_MAX)
-        return ENOMEM;
-    atfork_prepare[atfork_count] = prepare;
-    atfork_parent[atfork_count] = parent;
-    atfork_child[atfork_count] = child;
-    atfork_count++;
-    return 0;
-}
-
-void __pc_atfork_run(int stage)
-{
-    if (stage == 0)
-    {
-        for (int i = atfork_count - 1; i >= 0; i--)
-            if (atfork_prepare[i])
-                atfork_prepare[i]();
-        return;
-    }
-    for (int i = 0; i < atfork_count; i++)
-    {
-        void (*handler)(void) = stage == 1 ? atfork_parent[i] : atfork_child[i];
-        if (handler)
-            handler();
-    }
-}
-
 int pthread_spin_init(pthread_spinlock_t *lock, int shared)
 {
     (void)shared;
