@@ -194,6 +194,10 @@
 #define SYS_SOCKETPAIR 387       /* (domain, type|flags, protocol, int fds[2] in rsi) */
 #define SYS_SENDMSG 388          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
 #define SYS_RECVMSG 389          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
+#define SYS_MEMFD_CREATE 390     /* (name, flags) -> fd */
+#define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
+#define SYS_SHM_UNLINK 392       /* (name) */
+#define SYS_MADVISE 393          /* (address, length, advice) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -235,6 +239,8 @@ struct kernel_pollfd {
 #define KMAP_PROT_WRITE 2
 #define KMAP_PROT_EXEC 4
 #define KMAP_FIXED 1
+#define KMAP_SHARED 2
+#define KMADV_DONTNEED 4
 #define KMAP_REMAP_MAYMOVE 1
 
 struct kernel_msghdr {
@@ -274,6 +280,8 @@ struct kernel_mmap_args {
   uint64_t length;
   uint64_t prot;
   uint64_t flags;
+  int64_t fd;
+  uint64_t offset;
 };
 
 #define KERR_PERM 1
