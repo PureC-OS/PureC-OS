@@ -5,6 +5,18 @@
 typedef unsigned long fsblkcnt_t;
 typedef unsigned long fsfilcnt_t;
 
+#define ST_RDONLY 1
+#define ST_NOSUID 2
+#define ST_NODEV 4
+#define ST_NOEXEC 8
+#define ST_SYNCHRONOUS 16
+#define ST_NOATIME 1024
+#define ST_RELATIME 4096
+#define statvfs64 statvfs
+#define fstatvfs64 fstatvfs
+#define fsblkcnt64_t fsblkcnt_t
+#define fsfilcnt64_t fsfilcnt_t
+
 struct statvfs {
     unsigned long f_bsize;
     unsigned long f_frsize;

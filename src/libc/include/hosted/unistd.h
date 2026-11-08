@@ -85,7 +85,18 @@ long fpathconf(int fd, int name);
 #define _PC_PIPE_BUF 5
 int chown(const char *path, uid_t owner, gid_t group);
 char *ttyname(int fd);
+#define _SC_ARG_MAX 0
+#define _SC_CHILD_MAX 1
 #define _SC_CLK_TCK 2
+#define _SC_NGROUPS_MAX 3
+#define _SC_GETGR_R_SIZE_MAX 69
+#define _SC_GETPW_R_SIZE_MAX 70
+#define _SC_LOGIN_NAME_MAX 71
+#define _SC_TTY_NAME_MAX 72
+#define _SC_PHYS_PAGES 85
+#define _SC_AVPHYS_PAGES 86
+#define _SC_SYMLOOP_MAX 173
+#define _SC_HOST_NAME_MAX 180
 #define _SC_OPEN_MAX 4
 #define _SC_PAGESIZE 30
 #define _SC_PAGE_SIZE 30

@@ -10,6 +10,7 @@
 #include "include/hosted/string.h"
 #include "include/hosted/time.h"
 #include "include/hosted/unistd.h"
+#include "include/purec.h"
 #include "include/hosted/wchar.h"
 #include "include/purec.h"
 #include <stddef.h>
@@ -324,9 +325,39 @@ long sysconf(int name)
         return 100;
     case _SC_OPEN_MAX:
         return 1024;
+    case _SC_ARG_MAX:
+        return 131072;
+    case _SC_CHILD_MAX:
+        return 1024;
+    case _SC_NGROUPS_MAX:
+        return 32;
+    case _SC_GETGR_R_SIZE_MAX:
+    case _SC_GETPW_R_SIZE_MAX:
+        return 1024;
+    case _SC_LOGIN_NAME_MAX:
+    case _SC_TTY_NAME_MAX:
+        return 32;
+    case _SC_HOST_NAME_MAX:
+        return 64;
+    case _SC_SYMLOOP_MAX:
+        return 40;
+    case _SC_PHYS_PAGES:
+    case _SC_AVPHYS_PAGES:
+    {
+        struct memory_monitor_info memory;
+        if (!pc_memory_info(&memory))
+            return 0;
+        uint64_t bytes = name == _SC_PHYS_PAGES ? memory.total_bytes : memory.available_bytes;
+        return (long)(bytes / 4096);
+    }
     case _SC_NPROCESSORS_CONF:
     case _SC_NPROCESSORS_ONLN:
+    {
+        struct cpu_monitor_info cpu;
+        if (pc_cpu_info(&cpu) && cpu.logical_processors > 0)
+            return (long)cpu.logical_processors;
         return 1;
+    }
     default:
         errno = EINVAL;
         return -1;
