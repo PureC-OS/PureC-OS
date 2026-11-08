@@ -1136,6 +1136,21 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_MADVISE:
     return process_madvise(a1, a2, a3);
+  case SYS_SIGALTSTACK:
+  {
+    struct kernel_stack incoming;
+    struct kernel_stack outgoing;
+    if ((a1 && !readable((const void *)(uintptr_t)a1, sizeof(incoming))) ||
+        (a2 && !writable((void *)(uintptr_t)a2, sizeof(outgoing))))
+      return -KERR_FAULT;
+    if (a1)
+      memcpy(&incoming, (const void *)(uintptr_t)a1, sizeof(incoming));
+    int32_t changed = signal_altstack(a1 ? &incoming : 0, a2 ? &outgoing : 0,
+                                      r->rsp);
+    if (changed >= 0 && a2)
+      memcpy((void *)(uintptr_t)a2, &outgoing, sizeof(outgoing));
+    return changed;
+  }
   case SYS_MUNMAP:
     return process_munmap(a1, a2);
   case SYS_MPROTECT:

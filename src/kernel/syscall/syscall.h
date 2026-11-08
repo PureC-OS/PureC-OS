@@ -198,6 +198,7 @@
 #define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
 #define SYS_SHM_UNLINK 392       /* (name) */
 #define SYS_MADVISE 393          /* (address, length, advice) */
+#define SYS_SIGALTSTACK 394      /* (const struct kernel_stack *, struct kernel_stack *old) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -332,8 +333,20 @@ struct kernel_mmap_args {
 
 #define SIGNAL_ACTION_DEFAULT 0ULL
 #define SIGNAL_ACTION_IGNORE 1ULL
+#define SIGNAL_FLAG_ONSTACK 0x08000000U
 #define SIGNAL_FLAG_NODEFER 0x40000000U
 #define SIGNAL_FLAG_RESETHAND 0x80000000U
+
+#define KSS_ONSTACK 1
+#define KSS_DISABLE 2
+#define KMINSIGSTKSZ 2048
+
+struct kernel_stack {
+  uint64_t sp;
+  int32_t flags;
+  int32_t reserved;
+  uint64_t size;
+};
 
 struct ksigaction {
   uint64_t handler;
