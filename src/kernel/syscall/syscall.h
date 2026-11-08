@@ -179,6 +179,11 @@
 #define SYS_SOCK_SEND 372    /* (fd, buf, len, msg_flags) */
 #define SYS_SOCK_RECV 373    /* (fd, buf, len, msg_flags) */
 #define SYS_UTIMES 374       /* (path, atime, mtime), 0xFFFFFFFF = now */
+#define SYS_THREAD_CREATE 375 /* (struct kernel_thread_args *) -> tid */
+#define SYS_THREAD_EXIT 376   /* (unmap_address, unmap_length), no return */
+#define SYS_FUTEX 377         /* (FUTEX_*, uaddr, value, timeout_ms in rsi) */
+#define SYS_SET_FS_BASE 378   /* (base) -> 0 */
+#define SYS_GETTID 379        /* () -> tid */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -220,6 +225,14 @@ struct kernel_pollfd {
 #define KMAP_PROT_EXEC 4
 #define KMAP_FIXED 1
 #define KMAP_REMAP_MAYMOVE 1
+
+struct kernel_thread_args {
+  uint64_t entry;
+  uint64_t stack;
+  uint64_t argument;
+  uint64_t tls_base;
+  uint64_t clear_tid;
+};
 
 struct kernel_mmap_args {
   uint64_t address;

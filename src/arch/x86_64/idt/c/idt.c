@@ -62,7 +62,9 @@ struct isr_regs {
 static void deliver_timer_signals(struct isr_regs *regs, uint64_t cs){
     if((cs&3)!=3) return;
     struct process *p=process_current();
-    if(!p || !(p->sig_pending & ~p->sig_blocked)) return;
+    if(!p) return;
+    if(__atomic_load_n(&p->exit_group,__ATOMIC_ACQUIRE)) process_thread_checkpoint();
+    if(!(p->sig_pending & ~p->sig_blocked)) return;
     scheduler_enter_kernel();
     signal_deliver((struct syscall_regs*)regs);
     scheduler_leave_kernel();
@@ -190,6 +192,7 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         scheduler_enter_kernel();
         int64_t ret = syscall_handler((struct syscall_regs*)regs);
         regs->rax = (uint64_t)ret;
+        if((regs->cs&3)==3) process_thread_checkpoint();
         if((regs->cs&3)==3) signal_deliver((struct syscall_regs*)regs);
         scheduler_leave_kernel();
         return;

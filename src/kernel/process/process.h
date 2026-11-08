@@ -72,6 +72,9 @@ struct process
   uint64_t sig_blocked;
   struct process_signals *signals;
   uint64_t mmap_cursor;
+  int32_t exit_group;
+  int32_t exit_tid;
+  int32_t extra_threads;
 };
 
 void process_init(void);
@@ -113,6 +116,11 @@ int64_t process_mprotect(uint64_t address, uint64_t length, uint64_t prot);
 int64_t process_mremap(uint64_t address, uint64_t old_length,
                        uint64_t new_length, uint64_t flags);
 void process_exit_current(int32_t status) __attribute__((noreturn));
+int32_t process_thread_create(uint64_t entry, uint64_t stack, uint64_t argument,
+                              uint64_t tls_base, uint64_t clear_tid);
+int32_t process_thread_exit(uint64_t unmap_address, uint64_t unmap_length);
+void process_thread_checkpoint(void);
+bool process_exit_pending(void);
 int32_t process_fd_install(int32_t kernel_descriptor);
 int32_t process_fd_resolve(int32_t descriptor);
 int32_t process_fd_close(int32_t descriptor);

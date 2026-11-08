@@ -134,6 +134,8 @@ bool signal_pending_current(void) {
   struct process *process = process_current();
   if (!process)
     return false;
+  if (__atomic_load_n(&process->exit_group, __ATOMIC_ACQUIRE))
+    return true;
   uint64_t ready = deliverable(process);
   if (!ready)
     return false;

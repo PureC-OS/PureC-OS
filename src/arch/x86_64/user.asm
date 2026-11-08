@@ -10,7 +10,6 @@ arch_enter_user:
     mov ax,0x23
     mov ds,ax
     mov es,ax
-    mov fs,ax
     mov gs,ax
     push 0x23
     push rsi
@@ -29,7 +28,6 @@ arch_enter_user_frame:
     mov ax,0x23
     mov ds,ax
     mov es,ax
-    mov fs,ax
     mov gs,ax
     mov rsp,rdi
     pop r15

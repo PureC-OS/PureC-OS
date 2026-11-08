@@ -27,6 +27,7 @@ static mutex_t process_mutex;
 #include "signal.h"
 #include "fdtable.h"
 #include "ofd.h"
+#include "futex.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 
 #define USER_STACK_TOP 0x00007FFFFFF00000ULL
@@ -38,6 +39,7 @@ static mutex_t process_mutex;
 #define MMAP_MIN_FIXED 0x10000ULL
 #define MMAP_PROT_MASK 7ULL
 #define USER_PROCESS_PRIORITY 1
+#define USER_TOP_ADDRESS 0x0000800000000000ULL
 #define SPAWN_PATH_CAP 128
 #define SPAWN_FILE_LIMIT (64ULL * 1024ULL * 1024ULL)
 #define SPAWN_READ_CHUNK 1048576U
@@ -428,6 +430,16 @@ static void assign_pid(struct process *process)
   }
 }
 
+
+static bool process_threads_stopped(const struct process *process)
+{
+  if (!scheduler_thread_stopped(process->thread_id))
+    return false;
+  if (process->exit_tid > 0 && !scheduler_thread_stopped(process->exit_tid))
+    return false;
+  return __atomic_load_n(&process->extra_threads, __ATOMIC_ACQUIRE) <= 0;
+}
+
 extern void arch_enter_user_frame(const uint64_t *frame);
 
 static void fork_child_entry(void *argument)
@@ -470,7 +482,7 @@ static uint32_t oom_reap_zombie(uint32_t pid)
     return 0;
   if (target->state != PROCESS_EXITED)
     return 0;
-  if (!scheduler_thread_stopped(target->thread_id))
+  if (!process_threads_stopped(target))
     return 0;
   int exiting_tid = target->thread_id;
   vmm_destroy_address_space(target->address_space);
@@ -845,8 +857,7 @@ int32_t process_wait(uint32_t pid, int32_t *status, bool nohang)
       int32_t caller = process_current_pid();
       if (caller > 0 && target->parent_pid != (uint32_t)caller)
         return -1;
-      if (target->state == PROCESS_EXITED &&
-          scheduler_thread_stopped(target->thread_id))
+      if (target->state == PROCESS_EXITED && process_threads_stopped(target))
       {
         if (status)
           *status = target->exit_code;
@@ -1216,14 +1227,144 @@ int64_t process_mremap(uint64_t address, uint64_t old_length,
   return (int64_t)target;
 }
 
+static void sibling_entry(void *argument)
+{
+  (void)argument;
+  struct thread *self = scheduler_current_thread();
+  scheduler_leave_kernel();
+  arch_enter_user_frame(self->user_frame);
+}
+
+static void thread_die(struct process *process, struct thread *self)
+    __attribute__((noreturn));
+
+static void thread_die(struct process *process, struct thread *self)
+{
+  if (self && (int32_t)self->id != process->thread_id)
+    __atomic_fetch_sub(&process->extra_threads, 1, __ATOMIC_ACQ_REL);
+  scheduler_exit();
+  __builtin_unreachable();
+}
+
+bool process_exit_pending(void)
+{
+  struct process *process = process_current();
+  return process && __atomic_load_n(&process->exit_group, __ATOMIC_ACQUIRE);
+}
+
+void process_thread_checkpoint(void)
+{
+  struct process *process = process_current();
+  struct thread *self = scheduler_current_thread();
+  if (!process || !self || !self->user_mode)
+    return;
+  if (!__atomic_load_n(&process->exit_group, __ATOMIC_ACQUIRE))
+    return;
+  if ((int32_t)self->id == process->exit_tid)
+    return;
+  thread_die(process, self);
+}
+
+int32_t process_thread_create(uint64_t entry, uint64_t stack, uint64_t argument,
+                              uint64_t tls_base, uint64_t clear_tid)
+{
+  struct process *process = process_current();
+  struct thread *self = scheduler_current_thread();
+  if (!process || !self || !self->user_mode)
+    return -KERR_PERM;
+  if (!entry || entry >= USER_TOP_ADDRESS || !stack ||
+      stack >= USER_TOP_ADDRESS || tls_base >= USER_TOP_ADDRESS ||
+      clear_tid >= USER_TOP_ADDRESS || (stack & 7))
+    return -KERR_INVAL;
+  if (__atomic_load_n(&process->exit_group, __ATOMIC_ACQUIRE))
+    return -KERR_AGAIN;
+  struct syscall_regs frame;
+  memset(&frame, 0, sizeof(frame));
+  frame.rip = entry;
+  frame.cs = 0x1B;
+  frame.ss = 0x23;
+  frame.rflags = 0x202;
+  frame.rsp = stack;
+  frame.rdi = argument;
+  __atomic_fetch_add(&process->extra_threads, 1, __ATOMIC_ACQ_REL);
+  int tid = scheduler_create_sibling_thread(
+      sibling_entry, process, process->name, USER_PROCESS_PRIORITY,
+      process->address_space, process, (const uint64_t *)&frame, tls_base,
+      clear_tid);
+  if (tid < 0)
+  {
+    __atomic_fetch_sub(&process->extra_threads, 1, __ATOMIC_ACQ_REL);
+    return -KERR_AGAIN;
+  }
+  return tid;
+}
+
+int32_t process_thread_exit(uint64_t unmap_address, uint64_t unmap_length)
+{
+  struct process *process = process_current();
+  struct thread *self = scheduler_current_thread();
+  if (!process || !self || !self->user_mode)
+    return -KERR_PERM;
+  if ((int32_t)self->id == process->thread_id)
+    return -KERR_INVAL;
+  uint64_t clear_address = self->clear_child_tid;
+  self->clear_child_tid = 0;
+  if (unmap_length && !(unmap_address & (PMM_PAGE_SIZE - 1)) &&
+      unmap_address < USER_TOP_ADDRESS &&
+      unmap_length < USER_TOP_ADDRESS - unmap_address)
+    (void)process_munmap(unmap_address, unmap_length);
+  if (clear_address &&
+      process_user_buffer((const void *)(uintptr_t)clear_address,
+                          sizeof(uint32_t), true))
+  {
+    *(volatile uint32_t *)(uintptr_t)clear_address = 0;
+    (void)futex_wake(process->address_space, clear_address, INT32_MAX);
+  }
+  thread_die(process, self);
+}
+
+static void process_stop_siblings(struct process *process,
+                                  struct thread *self)
+{
+  int self_tid = self ? (int)self->id : -1;
+  int32_t others_extra = (self_tid != process->thread_id) ? 1 : 0;
+  for (;;)
+  {
+    bool main_gone = self_tid == process->thread_id ||
+                     scheduler_thread_stopped(process->thread_id);
+    int32_t extra = __atomic_load_n(&process->extra_threads, __ATOMIC_ACQUIRE);
+    if (main_gone && extra <= others_extra)
+      break;
+    scheduler_wake_process_threads(process, self_tid);
+    scheduler_sleep(1);
+  }
+}
+
+static void process_stop_siblings_begin(struct process *process,
+                                        struct thread *self)
+{
+  int32_t expected = 0;
+  if (!__atomic_compare_exchange_n(&process->exit_group, &expected, 1, false,
+                                   __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+    thread_die(process, self);
+  int self_tid = self ? (int)self->id : -1;
+  process->exit_tid = self_tid != process->thread_id ? self_tid : 0;
+  process_stop_siblings(process, self);
+}
+
 static void process_terminate(int32_t status, int32_t signal)
     __attribute__((noreturn));
 
 static void process_terminate(int32_t status, int32_t signal)
 {
+  struct process *exiting = process_current();
+  struct thread *exiting_thread = scheduler_current_thread();
+  if (exiting && exiting_thread && exiting_thread->user_mode)
+    process_stop_siblings_begin(exiting, exiting_thread);
   mutex_lock(&process_mutex);
   struct process *process = process_current();
   int32_t parent_waiter = -1;
+  int32_t parent_child_waiter = -1;
   if (process)
   {
     if (process->pid == 1)
@@ -1252,6 +1393,7 @@ static void process_terminate(int32_t status, int32_t signal)
     {
       signal_notify_child_exit(parent);
       parent_waiter = parent->thread_id;
+      parent_child_waiter = parent->child_waiter_tid;
     }
     if (process->waiter_thread_id >= 0)
       scheduler_unblock(process->waiter_thread_id);
@@ -1259,6 +1401,10 @@ static void process_terminate(int32_t status, int32_t signal)
   mutex_unlock(&process_mutex);
   if (parent_waiter >= 0)
     scheduler_unblock(parent_waiter);
+  if (parent_child_waiter >= 0 && parent_child_waiter != parent_waiter)
+    scheduler_unblock(parent_child_waiter);
+  if (exiting && exiting_thread && exiting_thread->user_mode)
+    thread_die(exiting, exiting_thread);
   scheduler_exit();
   __builtin_unreachable();
 }
@@ -1299,7 +1445,7 @@ int32_t process_waitpid(int32_t pid, int32_t *status, uint32_t options)
       have_child = true;
       if (p->state == PROCESS_EXITED)
       {
-        if (scheduler_thread_stopped(p->thread_id))
+        if (process_threads_stopped(p))
         {
           zombie = p;
           break;
@@ -1683,6 +1829,20 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
     return layout_ok ? -KERR_NOMEM : -KERR_2BIG;
   }
 
+  {
+    struct thread *caller = scheduler_current_thread();
+    if (__atomic_load_n(&process->extra_threads, __ATOMIC_ACQUIRE) > 0 ||
+        (int32_t)caller->id != process->thread_id)
+    {
+      mutex_unlock(&process_mutex);
+      process_stop_siblings_begin(process, caller);
+      mutex_lock(&process_mutex);
+      process->thread_id = (int32_t)caller->id;
+      process->exit_tid = 0;
+      __atomic_store_n(&process->extra_threads, 0, __ATOMIC_RELEASE);
+      __atomic_store_n(&process->exit_group, 0, __ATOMIC_RELEASE);
+    }
+  }
   uint64_t old_space = process->address_space;
   uint64_t old_pages = vmm_user_page_count(old_space);
   fd_close_on_exec(process);
@@ -1691,6 +1851,7 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   struct thread *thread = scheduler_current_thread();
   process->address_space = new_space;
   thread->address_space = new_space;
+  scheduler_set_fs_base(0);
   vmm_switch_address_space(new_space);
   vmm_destroy_address_space(old_space);
   oom_gate_release_user(process->pid, old_pages);

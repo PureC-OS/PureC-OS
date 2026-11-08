@@ -55,6 +55,7 @@ C_SOURCES := \
 	kernel/ipc/ipc.c \
 	kernel/ipc/pipe.c \
 	kernel/process/signal.c \
+	kernel/process/futex.c \
 	kernel/process/fdtable.c \
 	kernel/process/ofd.c \
 	kernel/tty/tty.c \
