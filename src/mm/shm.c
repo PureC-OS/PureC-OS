@@ -268,6 +268,8 @@ uint64_t shm_page(int32_t id, uint64_t page_index)
     leaf[slot] = page;
   }
   uint64_t result = leaf[slot];
+  if (!pmm_frame_ref(result))
+    result = 0;
   spin_unlock_irqrestore(&shm_lock, flags);
   return result;
 }
