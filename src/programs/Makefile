@@ -245,6 +245,28 @@ $(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(DYN
 $(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/echo/echo.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_SO_CFLAGS) -c $< -o $@
+
+TARGETS += $(PROGRAM_DIR)/dltest-dyn $(LIB_DIR)/libdltest.so $(LIB_DIR)/libdltest2.so
+
+$(OBJ_DIR)/dltest/%-pic.o: $(ROOT_DIR)/src/programs/dltest/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_SO_CFLAGS) -c $< -o $@
+
+$(LIB_DIR)/libdltest.so: $(OBJ_DIR)/dltest/libdltest-pic.o $(LIB_DIR)/libpurec.so
+	@mkdir -p $(@D)
+	$(LD) $(SO_LINK_FLAGS) -soname libdltest.so -o $@ $(OBJ_DIR)/dltest/libdltest-pic.o $(LIB_DIR)/libpurec.so
+
+$(LIB_DIR)/libdltest2.so: $(OBJ_DIR)/dltest/libdltest2-pic.o $(LIB_DIR)/libdltest.so
+	@mkdir -p $(@D)
+	$(LD) $(SO_LINK_FLAGS) -soname libdltest2.so -o $@ $(OBJ_DIR)/dltest/libdltest2-pic.o $(LIB_DIR)/libdltest.so
+
+$(OBJ_DIR)/dltest/crt0-pic.o: $(ROOT_DIR)/src/libc/crt0.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_SO_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/dltest-dyn: $(OBJ_DIR)/dltest/main-pic.o $(OBJ_DIR)/dltest/crt0-pic.o $(LIB_DIR)/libpurec.so $(DYN_LD_STUB) $(PIE_LD_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) $(DYN_LINK_FLAGS) -o $@ $(OBJ_DIR)/dltest/crt0-pic.o $(OBJ_DIR)/dltest/main-pic.o $(DYN_LD_STUB) $(LIB_DIR)/libpurec.so
 endif
 
 $(LIBPUREGUI) $(LIBPGUIW):
