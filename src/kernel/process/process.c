@@ -1695,8 +1695,8 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   vmm_destroy_address_space(old_space);
   oom_gate_release_user(process->pid, old_pages);
 
-  const char *base = path;
-  for (const char *cursor = path; *cursor; cursor++)
+  const char *base = resolved;
+  for (const char *cursor = resolved; *cursor; cursor++)
     if (*cursor == '/' && cursor[1])
       base = cursor + 1;
   memset(process->name, 0, sizeof(process->name));

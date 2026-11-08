@@ -40,5 +40,7 @@ struct vfs_fs_ops {
                       struct vfs_perm_meta *out);
   int32_t (*set_meta)(void *context, const char *path,
                       const struct vfs_perm_meta *meta);
+  int32_t (*set_times)(void *context, const char *path, uint32_t atime,
+                       uint32_t mtime);
   bool (*is_ready)(void *context);
 };

@@ -4,6 +4,7 @@ static mutex_t vfs_mutex;
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
 #include "../kernel/syscall/syscall.h"
+#include "../kernel/time/wallclock.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
 #include "./ext2/include/ext2.h"
@@ -1255,6 +1256,35 @@ int32_t vfs_chmod(const char *path, uint16_t mode) {
     return FS_ERROR_DENIED;
   meta.mode = mode & VFS_MODE_MASK;
   return store_meta(resolved.path, &meta);
+}
+
+int32_t vfs_utimes(const char *path, uint32_t atime, uint32_t mtime) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved resolved;
+  bool directory;
+  int32_t status = resolve_existing(path, &resolved, &directory);
+  if (status < 0)
+    return status;
+  if (resolved.mount->flags & VFS_MOUNT_READ_ONLY)
+    return FS_ERROR_READ_ONLY;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  if (!ops->set_times || !mount_ready(resolved.mount))
+    return FS_ERROR_UNSUPPORTED;
+  bool now = atime == 0xFFFFFFFFu && mtime == 0xFFFFFFFFu;
+  struct vfs_perm_meta meta;
+  effective_meta(resolved.path, directory, &meta);
+  uint32_t uid = process_current_uid();
+  if (uid != 0 && uid != meta.uid) {
+    if (!now)
+      return FS_ERROR_DENIED;
+    status = check_access(resolved.path, directory, VFS_PERM_W);
+    if (status < 0)
+      return status;
+  }
+  if (now)
+    atime = mtime = wallclock_unix_seconds();
+  return ops->set_times(resolved.mount->context, resolved.relative, atime,
+                        mtime);
 }
 
 int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid) {

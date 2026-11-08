@@ -304,6 +304,18 @@ static int32_t tmpfs_stat_ex(void *context, const char *path,
   return 0;
 }
 
+static int32_t tmpfs_set_times(void *context, const char *path,
+                                uint32_t atime, uint32_t mtime) {
+  struct tmpfs *fs = context;
+  int32_t node = lookup(fs, path);
+  if (node < 0)
+    return node;
+  fs->nodes[node].atime = atime;
+  fs->nodes[node].mtime = mtime;
+  fs->nodes[node].ctime = wallclock_unix_seconds();
+  return 0;
+}
+
 static int32_t tmpfs_list(void *context, const char *path,
                           struct fs_directory_entry *entries, uint32_t capacity) {
   struct tmpfs *fs = context;
@@ -481,6 +493,7 @@ const struct vfs_fs_ops vfs_tmpfs_ops = {
     .close = tmpfs_close,
     .stat = tmpfs_stat,
     .stat_ex = tmpfs_stat_ex,
+    .set_times = tmpfs_set_times,
     .list = tmpfs_list,
     .list_long = tmpfs_list_long,
     .create_file = tmpfs_create_file,

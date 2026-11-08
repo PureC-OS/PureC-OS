@@ -9,6 +9,23 @@
 #include "kernel/sync/mutex.h"
 #include "net/transport/tcp.h"
 
+uint64_t pmm_allocate_contiguous(uint64_t page_count)
+{
+    void *memory = calloc((size_t)page_count, 4096);
+    return (uint64_t)(uintptr_t)memory;
+}
+
+void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count)
+{
+    (void)page_count;
+    free((void *)(uintptr_t)physical_address);
+}
+
+void *pmm_physical_to_virtual(uint64_t physical_address)
+{
+    return (void *)(uintptr_t)physical_address;
+}
+
 #define ADDRESS 0x0A000001U
 #define QUEUE_CAPACITY 256
 #define TIME_WAIT_PAD_MS 130000U
@@ -349,8 +366,15 @@ static void test_backlog_and_port_reuse_checks(void) {
     CHECK(tcp_listen(b, 5000, 1) == TCP_ERR_IN_USE);
     CHECK(tcp_accept(a, TCP_TIMEOUT_NONE) == TCP_ERR_WOULD_BLOCK);
     CHECK(tcp_connect(b, 0, 80, 100) == TCP_ERR_INVALID);
-    for (int i = 0; i < TCP_SOCKET_CAPACITY; i++) (void)tcp_socket();
+    int32_t *fill = calloc(TCP_SOCKET_LIMIT, sizeof(*fill));
+    int filled = 0;
+    for (int i = 0; i < TCP_SOCKET_LIMIT; i++) {
+        int32_t handle = tcp_socket();
+        if (handle >= 0) fill[filled++] = handle;
+    }
     CHECK(tcp_socket() == TCP_ERR_NO_SOCKET);
+    for (int i = 0; i < filled; i++) (void)tcp_close(fill[i]);
+    free(fill);
 }
 
 static void test_owner_cleanup(void) {

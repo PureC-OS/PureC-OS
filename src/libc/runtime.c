@@ -329,6 +329,10 @@ int32_t pc_chmod(const char *path, uint32_t mode){
     return (int32_t)pc_syscall(SYS_CHMOD,(uint64_t)(uintptr_t)path,mode,0);
 }
 
+int32_t pc_utimes(const char *path, uint32_t atime, uint32_t mtime){
+    return (int32_t)pc_syscall(SYS_UTIMES,(uint64_t)(uintptr_t)path,atime,mtime);
+}
+
 int32_t pc_chown(const char *path, uint32_t uid, uint32_t gid){
     return (int32_t)pc_syscall(SYS_CHOWN,(uint64_t)(uintptr_t)path,uid,gid);
 }

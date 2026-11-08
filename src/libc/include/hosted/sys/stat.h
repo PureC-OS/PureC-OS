@@ -48,6 +48,13 @@ int stat(const char *path, struct stat *info);
 int fstat(int fd, struct stat *info);
 int lstat(const char *path, struct stat *info);
 int fstatat(int dirfd, const char *path, struct stat *info, int flags);
+
+#define UTIME_NOW ((1L << 30) - 1L)
+#define UTIME_OMIT ((1L << 30) - 2L)
+struct timespec;
+int utimensat(int dirfd, const char *path, const struct timespec times[2],
+              int flags);
+int futimens(int fd, const struct timespec times[2]);
 int mkdir(const char *path, unsigned int mode);
 int chmod(const char *path, unsigned int mode);
 int fchmod(int fd, unsigned int mode);

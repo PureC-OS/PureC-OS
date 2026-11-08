@@ -17,6 +17,7 @@ struct ext2_meta {
 };
 
 int32_t ext2_meta_get(const char *path, struct ext2_meta *out);
+int32_t ext2_meta_set_times(const char *path, uint32_t atime, uint32_t mtime);
 int32_t ext2_meta_set(const char *path, int32_t mode, uint32_t uid,
                       uint32_t gid);
 int32_t ext2_unlink_path(const char *path);

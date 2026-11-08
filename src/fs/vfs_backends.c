@@ -154,6 +154,15 @@ static int32_t ext2_op_set_meta(void *context, const char *path,
   return status;
 }
 
+static int32_t ext2_op_set_times(void *context, const char *path,
+                                 uint32_t atime, uint32_t mtime) {
+  (void)context;
+  int32_t status = ext2_meta_set_times(path, atime, mtime);
+  if (status >= 0)
+    block_device_flush();
+  return status;
+}
+
 const struct vfs_fs_ops vfs_ext2_ops = {
     .name = "ext2",
     .open = ext2_op_open,
@@ -173,6 +182,7 @@ const struct vfs_fs_ops vfs_ext2_ops = {
     .stat_ex = ext2_op_stat_ex,
     .get_meta = ext2_op_get_meta,
     .set_meta = ext2_op_set_meta,
+    .set_times = ext2_op_set_times,
     .is_ready = ext2_ready,
 };
 

@@ -1,0 +1,410 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "V*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  CROSS_PREFIX: ${{ github.workspace }}/.cache/cross
+  ISO_SUBMODULES: acpi libxcrypt userspace purec-notepad-os SDL chocolate-doom freedoom curl vim wolfssl
+
+jobs:
+  host-tests:
+    name: Host unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Every gitlink must be mapped in .gitmodules
+        run: |
+          missing=0
+          mapped="$(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' | awk '{print $2}')"
+          for path in $(git ls-files -s | awk '$1 == "160000" {print $4}'); do
+            if ! printf '%s\n' "${mapped}" | grep -qx "${path}"; then
+              echo "gitlink '${path}' has no entry in .gitmodules"
+              missing=1
+            fi
+          done
+          exit "${missing}"
+
+      - name: Fetch submodules used by the host tests
+        run: git submodule update --init --depth 1 -- wolfssl libxcrypt
+
+      - name: Run host unit tests
+        run: make test
+
+      - name: Validate scripts
+        run: |
+          python3 -m py_compile purec.py tests/qemu_smoke.py tests/qemu_network.py \
+            tests/qemu_panic_test.py tests/qemu_toolchain_test.py tests/qr_decode_test.py \
+            mk/build_db.py mk/ksyms.py mk/gen_assets.py
+          bash -n .github/scripts/build-cross-toolchain.sh
+          bash -n .github/scripts/install-limine.sh
+          bash -n mk/fetch-gnumake.sh
+          sh -n tests/box_test.sh
+          sh -n tests/guest/selftest.sh
+
+  panic-qr-tests:
+    name: Panic and QR tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run kernel symbol resolver tests
+        run: make test-ksym
+
+      - name: Run QR encoder unit tests
+        run: make test-qr-encode
+
+      - name: Install QR decode test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends zbar-tools
+          python3 -m pip install --quiet --break-system-packages pillow
+
+      - name: Run QR decode round-trip test
+        run: make test-qr-decode QR_DECODE_ARGS=--strict
+
+  build-iso:
+    name: Build bootable ISO
+    needs:
+      - host-tests
+      - panic-qr-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Fetch external components
+        run: |
+          git submodule update --init --recursive --depth 1 -- ${ISO_SUBMODULES}
+          git clone --depth 1 https://github.com/PureC-OS/PureC-TCC.git tcc
+          mk/fetch-gnumake.sh
+
+      - name: Install host dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            bison build-essential curl file flex libgmp-dev libmpc-dev \
+            libmpfr-dev mtools nasm python3 texinfo xorriso
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-none
+
+      - name: Cache x86_64-elf cross toolchain
+        id: cache-cross
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CROSS_PREFIX }}
+          key: ${{ runner.os }}-${{ runner.arch }}-x86_64-elf-gcc-14.1.0-binutils-2.42-${{ hashFiles('.github/scripts/build-cross-toolchain.sh') }}
+
+      - name: Build x86_64-elf cross toolchain
+        if: steps.cache-cross.outputs.cache-hit != 'true'
+        run: .github/scripts/build-cross-toolchain.sh
+
+      - name: Verify cross toolchain
+        run: |
+          echo "${CROSS_PREFIX}/bin" >> "${GITHUB_PATH}"
+          "${CROSS_PREFIX}/bin/x86_64-elf-gcc" --version
+          "${CROSS_PREFIX}/bin/x86_64-elf-ld" --version
+
+      - name: Cache Rust dependencies and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            userspace/target
+            lang/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('userspace/Cargo.lock', 'userspace/rust-toolchain.toml', 'lang/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Prepare Limine
+        run: .github/scripts/install-limine.sh
+
+      - name: Build PureC OS
+        run: make iso
+
+      - name: Validate and stage artifacts
+        run: |
+          test -s bin/purec_limine.iso
+          test -s bin/kernel/kernel-limine.elf
+          test -s bin/kernel/kernel.map
+          test -s db/builds.db
+          for program in make box tcc curl vim sh touch; do
+            test -s "bin/programs/${program}" || { echo "missing program: ${program}"; exit 1; }
+          done
+          file bin/purec_limine.iso bin/kernel/kernel-limine.elf
+          x86_64-elf-readelf -h bin/kernel/kernel-limine.elf
+          head -n 2 bin/kernel/kernel.map
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="dev-${GITHUB_SHA::7}"
+          fi
+          mkdir -p release_assets
+          cp bin/purec_limine.iso release_assets/PureC-OS.iso
+          cp bin/kernel/kernel-limine.elf release_assets/kernel-limine.elf
+          cp bin/kernel/kernel.map release_assets/kernel.map
+          cp db/builds.db release_assets/builds.db
+          printf '%s\n' \
+            "version=${version}" \
+            "commit=${GITHUB_SHA}" \
+            "workflow_run=${GITHUB_RUN_ID}" \
+            "toolchain=x86_64-elf-gcc-14.1.0 binutils-2.42" \
+            > release_assets/build-info.txt
+          cd release_assets
+          sha256sum PureC-OS.iso kernel-limine.elf kernel.map builds.db build-info.txt > SHA256SUMS.txt
+
+      - name: Upload boot artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: purec-os-build
+          path: release_assets/
+          if-no-files-found: error
+          retention-days: 14
+
+  qemu-smoke:
+    name: QEMU smoke test (${{ matrix.cpus }} CPU)
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        cpus: [1, 2, 4]
+    steps:
+      - name: Checkout test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86
+
+      - name: Boot and validate serial log
+        run: |
+          python3 tests/qemu_smoke.py \
+            --iso dist/PureC-OS.iso \
+            --cpus ${{ matrix.cpus }} \
+            --timeout 240 \
+            --log qemu-${{ matrix.cpus }}-cpu.log
+
+      - name: Upload QEMU logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-${{ matrix.cpus }}-cpu-logs
+          path: qemu-${{ matrix.cpus }}-cpu*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  qemu-network:
+    name: QEMU network test (${{ matrix.driver }})
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: [e1000, 8254xgc, pcnet]
+    steps:
+      - name: Checkout network test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86
+          sudo sysctl -w net.ipv4.ping_group_range="0 2147483647"
+
+      - name: Test wired driver, DHCP, ping and DNS
+        run: |
+          python3 tests/qemu_network.py \
+            --iso dist/PureC-OS.iso \
+            --driver "${{ matrix.driver }}" \
+            --timeout 180 \
+            --log "qemu-network-${{ matrix.driver }}.log" \
+            --pcap "qemu-network-${{ matrix.driver }}.pcap"
+
+      - name: Upload QEMU network logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-network-${{ matrix.driver }}-logs
+          path: qemu-network-${{ matrix.driver }}*
+          if-no-files-found: warn
+          retention-days: 14
+
+  qemu-panic:
+    name: QEMU panic test (serial + QR)
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout panic test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU and QR decode tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86 zbar-tools
+          python3 -m pip install --quiet --break-system-packages pillow
+
+      - name: Type panic into the shell and verify serial + QR issue URL
+        run: |
+          python3 tests/qemu_panic_test.py \
+            --iso dist/PureC-OS.iso \
+            --timeout 300 \
+            --log "qemu-panic.log" \
+            --shot "qemu-panic-shot.ppm"
+
+      - name: Upload QEMU panic logs and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-panic-logs
+          path: |
+            qemu-panic.log
+            qemu-panic-shot.ppm
+            qemu-panic-shot.png
+          if-no-files-found: warn
+          retention-days: 14
+
+  qemu-toolchain:
+    name: QEMU toolchain test (sh, make, tcc)
+    needs: build-iso
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout test runner
+        uses: actions/checkout@v4
+
+      - name: Download boot artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Install QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends qemu-system-x86
+
+      - name: Build and run a C program with make and tcc inside the guest
+        run: |
+          python3 tests/qemu_toolchain_test.py \
+            --iso dist/PureC-OS.iso \
+            --timeout 900 \
+            --log qemu-toolchain.log
+
+      - name: Upload QEMU toolchain logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qemu-toolchain-logs
+          path: qemu-toolchain*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  release:
+    name: Publish release
+    needs:
+      - host-tests
+      - panic-qr-tests
+      - build-iso
+      - qemu-smoke
+      - qemu-network
+      - qemu-panic
+      - qemu-toolchain
+    if: startsWith(github.ref, 'refs/tags/V')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout (for the changelog)
+        uses: actions/checkout@v4
+
+      - name: Download verified artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: purec-os-build
+          path: dist
+
+      - name: Extract release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          awk -v version="${VERSION}" '
+            index($0, "## " version " ") == 1 || $0 == "## " version { found = 1; next }
+            found && /^## V[0-9]/ { exit }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+          if [[ ! -s release_notes.md ]]; then
+            echo "No CHANGELOG.md section for ${VERSION}; using generated notes only." > release_notes.md
+          fi
+          {
+            echo
+            echo "---"
+            echo "Built from \`${GITHUB_SHA}\`. The ISO passed host unit tests, QEMU boot tests with 1, 2 and 4 CPUs,"
+            echo "isolated e1000, 8254xGC and PCnet network tests, the kernel panic test, and the in-guest"
+            echo "toolchain test (sh, make, tcc). Verify downloads with \`SHA256SUMS.txt\`."
+          } >> release_notes.md
+
+      - name: Publish PureC OS release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: PureC OS ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: |
+            dist/PureC-OS.iso
+            dist/kernel-limine.elf
+            dist/kernel.map
+            dist/builds.db
+            dist/build-info.txt
+            dist/SHA256SUMS.txt
+          draft: false
+          prerelease: false
+          make_latest: true
