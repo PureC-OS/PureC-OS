@@ -13,7 +13,7 @@ mkdir -p "$OUT"
 [ $# -gt 0 ] || set -- "$ROOT"/tests/cxx/*.cpp
 for source in "$@"; do
   name="$(basename "$source" .cpp)"
-  clang++ --target=x86_64-unknown-elf $CXX_FLAGS -m64 -mno-red-zone \
+  clang++ --target=x86_64-unknown-elf -D__purec__=1 $CXX_FLAGS -m64 -mno-red-zone \
     -fno-stack-protector -fno-pic -mcmodel=small -nostdinc -nostdinc++ \
     -isystem "$STAGE/include/c++/v1" -isystem "$RESOURCE_INCLUDE" -isystem "$ROOT/src/libc/include/hosted" \
     -c "$source" -o "$OUT/$name.o"

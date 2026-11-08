@@ -18,11 +18,12 @@ CXX_RANDOM_DEVICE="${CXX_RANDOM_DEVICE:-OFF}"
 CXX_UNWIND="${CXX_UNWIND:-$CXX_EXCEPTIONS}"
 
 [ -d "$SRC/runtimes" ] || { echo "LLVM sources missing: run mk/cxx/fetch.sh" >&2; exit 1; }
+sh "$ROOT/mk/cxx/patch.sh"
 
 RESOURCE_INCLUDE="$(clang --print-resource-dir)/include"
 LIBC_INCLUDE="$ROOT/src/libc/include/hosted"
 TARGET="x86_64-unknown-elf"
-COMMON="--target=$TARGET -m64 -mno-red-zone -fno-stack-protector -fno-pic -mcmodel=small -nostdinc -isystem $RESOURCE_INCLUDE -isystem $LIBC_INCLUDE"
+COMMON="--target=$TARGET -D__purec__=1 -m64 -mno-red-zone -fno-stack-protector -fno-pic -mcmodel=small -nostdinc -isystem $RESOURCE_INCLUDE -isystem $LIBC_INCLUDE"
 
 RUNTIMES="libcxx;libcxxabi"
 TARGETS="cxx cxxabi"
