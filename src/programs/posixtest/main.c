@@ -7,6 +7,9 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <sys/uio.h>
 #include <sys/timerfd.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -228,12 +231,316 @@ static void test_epoll_wakeup_across_fork(void)
     close(ev);
 }
 
+
+static int send_fds(int sock, const int *fds, int count, char marker)
+{
+    char control[CMSG_SPACE(sizeof(int) * 8)];
+    memset(control, 0, sizeof(control));
+    struct iovec iov = {&marker, 1};
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = control;
+    msg.msg_controllen = CMSG_SPACE(sizeof(int) * count);
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    cmsg->cmsg_level = SOL_SOCKET;
+    cmsg->cmsg_type = SCM_RIGHTS;
+    cmsg->cmsg_len = CMSG_LEN(sizeof(int) * count);
+    memcpy(CMSG_DATA(cmsg), fds, sizeof(int) * count);
+    return (int)sendmsg(sock, &msg, 0);
+}
+
+static int recv_fds(int sock, int *fds, int capacity, char *marker, int *flags)
+{
+    char control[CMSG_SPACE(sizeof(int) * 8)];
+    memset(control, 0, sizeof(control));
+    struct iovec iov = {marker, 1};
+    struct msghdr msg;
+    memset(&msg, 0, sizeof(msg));
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    msg.msg_control = control;
+    msg.msg_controllen = CMSG_SPACE(sizeof(int) * capacity);
+    ssize_t got = recvmsg(sock, &msg, 0);
+    if (flags)
+        *flags = msg.msg_flags;
+    if (got < 0)
+        return -1;
+    struct cmsghdr *cmsg = CMSG_FIRSTHDR(&msg);
+    if (!cmsg || cmsg->cmsg_level != SOL_SOCKET || cmsg->cmsg_type != SCM_RIGHTS)
+        return 0;
+    int count = (int)((cmsg->cmsg_len - CMSG_LEN(0)) / sizeof(int));
+    memcpy(fds, CMSG_DATA(cmsg), sizeof(int) * count);
+    return count;
+}
+
+static void test_socketpair(void)
+{
+    int sv[2];
+    check("socketpair create", socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == 0);
+    char buffer[16];
+    check("socketpair a->b", write(sv[0], "hello", 5) == 5 &&
+                                 read(sv[1], buffer, sizeof(buffer)) == 5 &&
+                                 memcmp(buffer, "hello", 5) == 0);
+    check("socketpair b->a", write(sv[1], "back", 4) == 4 &&
+                                 read(sv[0], buffer, sizeof(buffer)) == 4 &&
+                                 memcmp(buffer, "back", 4) == 0);
+    int flags = fcntl(sv[0], F_GETFL);
+    fcntl(sv[0], F_SETFL, flags | O_NONBLOCK);
+    check("socketpair EAGAIN",
+          read(sv[0], buffer, sizeof(buffer)) < 0 && errno == EAGAIN);
+    struct pollfd pfd = {sv[0], POLLIN | POLLOUT, 0};
+    poll(&pfd, 1, 0);
+    check("socketpair poll OUT only", pfd.revents == POLLOUT);
+    write(sv[1], "x", 1);
+    poll(&pfd, 1, 0);
+    check("socketpair poll IN", (pfd.revents & POLLIN) != 0);
+    read(sv[0], buffer, 1);
+    check("socketpair peek", write(sv[1], "peek", 4) == 4 &&
+                                 recv(sv[0], buffer, 4, MSG_PEEK) == 4 &&
+                                 recv(sv[0], buffer, 4, 0) == 4);
+    check("socketpair SO_TYPE", ({
+              int type = 0;
+              socklen_t length = sizeof(type);
+              getsockopt(sv[0], SOL_SOCKET, SO_TYPE, &type, &length) == 0 &&
+                  type == SOCK_STREAM;
+          }));
+    write(sv[1], "tail", 4);
+    shutdown(sv[1], SHUT_WR);
+    check("socketpair data before EOF", read(sv[0], buffer, 16) == 4);
+    check("socketpair shutdown EOF", read(sv[0], buffer, 16) == 0);
+    check("socketpair other dir alive", write(sv[0], "z", 1) == 1);
+    close(sv[1]);
+    check("socketpair peer close EOF", ({
+              read(sv[0], buffer, 1);
+              read(sv[0], buffer, 1) == 0;
+          }));
+    check("socketpair EPIPE", send(sv[0], "q", 1, MSG_NOSIGNAL) < 0 && errno == EPIPE);
+    pfd.events = POLLIN;
+    poll(&pfd, 1, 0);
+    check("socketpair HUP", (pfd.revents & POLLHUP) != 0);
+    close(sv[0]);
+
+    socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        close(sv[0]);
+        char got[8];
+        ssize_t n = read(sv[1], got, sizeof(got));
+        for (ssize_t i = 0; i < n; i++)
+            got[i] = (char)(got[i] + 1);
+        write(sv[1], got, (size_t)n);
+        _exit(0);
+    }
+    close(sv[1]);
+    write(sv[0], "abc", 3);
+    ssize_t n = read(sv[0], buffer, sizeof(buffer));
+    check("socketpair across fork", n == 3 && memcmp(buffer, "bcd", 3) == 0);
+    int status;
+    waitpid(child, &status, 0);
+    close(sv[0]);
+
+    int big[2];
+    socketpair(AF_UNIX, SOCK_STREAM, 0, big);
+    static char chunk[8192];
+    memset(chunk, 'k', sizeof(chunk));
+    child = fork();
+    if (child == 0)
+    {
+        close(big[0]);
+        for (int i = 0; i < 16; i++)
+            write(big[1], chunk, sizeof(chunk));
+        _exit(0);
+    }
+    close(big[1]);
+    long total = 0;
+    ssize_t got;
+    static char sink[4096];
+    while ((got = read(big[0], sink, sizeof(sink))) > 0)
+        total += got;
+    check("socketpair 128K blocking", total == 16 * 8192);
+    waitpid(child, &status, 0);
+    close(big[0]);
+}
+
+static void test_unix_named(void)
+{
+    struct sockaddr_un address;
+    memset(&address, 0, sizeof(address));
+    address.sun_family = AF_UNIX;
+    strcpy(address.sun_path, "/tmp/posixtest.sock");
+    unlink(address.sun_path);
+
+    int server = socket(AF_UNIX, SOCK_STREAM, 0);
+    check("unix socket create", server >= 0);
+    check("unix bind path", bind(server, (struct sockaddr *)&address,
+                                 sizeof(address)) == 0);
+    int dup = socket(AF_UNIX, SOCK_STREAM, 0);
+    check("unix bind EADDRINUSE", bind(dup, (struct sockaddr *)&address,
+                                       sizeof(address)) < 0 &&
+                                      errno == EADDRINUSE);
+    close(dup);
+    check("unix listen", listen(server, 4) == 0);
+    int flags = fcntl(server, F_GETFL);
+    fcntl(server, F_SETFL, flags | O_NONBLOCK);
+    check("unix accept EAGAIN", accept(server, 0, 0) < 0 && errno == EAGAIN);
+    fcntl(server, F_SETFL, flags);
+
+    int client = socket(AF_UNIX, SOCK_STREAM, 0);
+    check("unix connect", connect(client, (struct sockaddr *)&address,
+                                  sizeof(address)) == 0);
+    struct pollfd pfd = {server, POLLIN, 0};
+    check("unix listener POLLIN", poll(&pfd, 1, 100) == 1 && (pfd.revents & POLLIN));
+    struct sockaddr_un peer;
+    socklen_t peer_length = sizeof(peer);
+    int accepted = accept(server, (struct sockaddr *)&peer, &peer_length);
+    check("unix accept", accepted >= 0);
+    char buffer[32];
+    check("unix client->server", write(client, "ping", 4) == 4 &&
+                                     read(accepted, buffer, sizeof(buffer)) == 4 &&
+                                     memcmp(buffer, "ping", 4) == 0);
+    check("unix server->client", write(accepted, "pong", 4) == 4 &&
+                                     read(client, buffer, sizeof(buffer)) == 4 &&
+                                     memcmp(buffer, "pong", 4) == 0);
+
+    struct sockaddr_un name;
+    socklen_t name_length = sizeof(name);
+    memset(&name, 0, sizeof(name));
+    check("unix getsockname", getsockname(server, (struct sockaddr *)&name,
+                                          &name_length) == 0 &&
+                                  name.sun_family == AF_UNIX &&
+                                  strcmp(name.sun_path, "/tmp/posixtest.sock") == 0);
+    name_length = sizeof(name);
+    check("unix getpeername", getpeername(client, (struct sockaddr *)&name,
+                                          &name_length) == 0 &&
+                                  strcmp(name.sun_path, "/tmp/posixtest.sock") == 0);
+    struct ucred cred;
+    socklen_t cred_length = sizeof(cred);
+    check("unix SO_PEERCRED", getsockopt(accepted, SOL_SOCKET, SO_PEERCRED, &cred,
+                                         &cred_length) == 0 &&
+                                  cred.pid == (int)getpid());
+
+    close(client);
+    check("unix peer close EOF", read(accepted, buffer, sizeof(buffer)) == 0);
+    close(accepted);
+    close(server);
+    unlink(address.sun_path);
+
+    int orphan = socket(AF_UNIX, SOCK_STREAM, 0);
+    check("unix connect ENOENT", connect(orphan, (struct sockaddr *)&address,
+                                         sizeof(address)) < 0 &&
+                                     (errno == ENOENT || errno == ECONNREFUSED));
+    close(orphan);
+
+    struct sockaddr_un abstract_address;
+    memset(&abstract_address, 0, sizeof(abstract_address));
+    abstract_address.sun_family = AF_UNIX;
+    memcpy(abstract_address.sun_path + 1, "pc-abstract", 11);
+    socklen_t abstract_length = (socklen_t)(2 + 1 + 11);
+    int abstract_server = socket(AF_UNIX, SOCK_STREAM, 0);
+    check("unix abstract bind", bind(abstract_server, (struct sockaddr *)&abstract_address,
+                                     abstract_length) == 0 &&
+                                    listen(abstract_server, 1) == 0);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        int c = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (connect(c, (struct sockaddr *)&abstract_address, abstract_length) != 0)
+            _exit(2);
+        write(c, "from-child", 10);
+        _exit(0);
+    }
+    int connection = accept(abstract_server, 0, 0);
+    ssize_t got = connection >= 0 ? read(connection, buffer, sizeof(buffer)) : -1;
+    check("unix abstract across fork", got == 10 && memcmp(buffer, "from-child", 10) == 0);
+    int status;
+    waitpid(child, &status, 0);
+    close(connection);
+    close(abstract_server);
+
+    int autobound = socket(AF_UNIX, SOCK_STREAM, 0);
+    struct sockaddr_un auto_address;
+    memset(&auto_address, 0, sizeof(auto_address));
+    auto_address.sun_family = AF_UNIX;
+    check("unix autobind", bind(autobound, (struct sockaddr *)&auto_address,
+                                sizeof(sa_family_t)) == 0);
+    close(autobound);
+}
+
+static void test_scm_rights(void)
+{
+    int sv[2];
+    socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    int p[2];
+    pipe(p);
+    int pass[1] = {p[0]};
+    check("scm send one fd", send_fds(sv[0], pass, 1, 'A') == 1);
+    int received[8];
+    char marker = 0;
+    int mflags = 0;
+    int count = recv_fds(sv[1], received, 8, &marker, &mflags);
+    check("scm recv one fd", count == 1 && marker == 'A' && received[0] != p[0]);
+    write(p[1], "through", 7);
+    char buffer[16];
+    check("scm fd works", count == 1 && read(received[0], buffer, sizeof(buffer)) == 7 &&
+                              memcmp(buffer, "through", 7) == 0);
+    close(received[0]);
+    close(p[0]);
+
+    int ev = eventfd(7, 0);
+    int u2[2];
+    socketpair(AF_UNIX, SOCK_STREAM, 0, u2);
+    int triple[3] = {ev, u2[0], p[1]};
+    check("scm send three", send_fds(sv[0], triple, 3, 'B') == 1);
+    count = recv_fds(sv[1], received, 8, &marker, &mflags);
+    check("scm recv three", count == 3 && marker == 'B');
+    uint64_t value = 0;
+    check("scm eventfd passed", count == 3 && read(received[0], &value, 8) == 8 && value == 7);
+    check("scm socket passed", count == 3 && write(received[1], "S", 1) == 1 &&
+                                   read(u2[1], buffer, 1) == 1 && buffer[0] == 'S');
+    check("scm pipe write end passed", count == 3 && write(received[2], "W", 1) == 1);
+    for (int i = 0; i < count; i++)
+        close(received[i]);
+
+    send_fds(sv[0], triple, 3, 'C');
+    count = recv_fds(sv[1], received, 1, &marker, &mflags);
+    check("scm CTRUNC", count == 1 && (mflags & MSG_CTRUNC));
+    if (count == 1)
+        close(received[0]);
+
+    write(sv[0], "plain", 5);
+    count = recv_fds(sv[1], received, 8, &marker, &mflags);
+    check("scm no fds on plain", count == 0 && marker == 'p');
+    read(sv[1], buffer, 4);
+
+    int dup_sent = dup(p[1]);
+    send_fds(sv[0], &dup_sent, 1, 'D');
+    close(dup_sent);
+    close(p[1]);
+    count = recv_fds(sv[1], received, 8, &marker, &mflags);
+    check("scm survives sender close", count == 1 && write(received[0], "Z", 1) == 1);
+    if (count == 1)
+        close(received[0]);
+
+    send_fds(sv[0], triple, 3, 'E');
+    close(sv[1]);
+    close(sv[0]);
+    close(ev);
+    close(u2[0]);
+    close(u2[1]);
+}
+
 int main(void)
 {
     test_eventfd();
     test_timerfd();
     test_epoll();
     test_epoll_wakeup_across_fork();
+    test_socketpair();
+    test_unix_named();
+    test_scm_rights();
     printf("posixtest done failures=%d\n", failures);
     return failures ? 1 : 0;
 }
