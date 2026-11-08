@@ -43,6 +43,7 @@ struct pthread
     void *stack_addr;
     size_t stack_size;
     struct pc_thread_atexit *atexit_list;
+    char name[16];
     void *keys[PC_PTHREAD_KEYS_MAX];
 };
 

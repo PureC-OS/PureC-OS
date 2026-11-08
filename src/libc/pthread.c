@@ -385,16 +385,29 @@ int pthread_equal(pthread_t a, pthread_t b) { return a == b; }
 
 int pthread_setname_np(pthread_t thread, const char *name)
 {
-    (void)thread;
-    (void)name;
+    struct pthread *target = (struct pthread *)thread;
+    if (!target || !name)
+        return EINVAL;
+    size_t length = 0;
+    while (name[length])
+        length++;
+    if (length >= sizeof(target->name))
+        return ERANGE;
+    memcpy(target->name, name, length + 1);
     return 0;
 }
 
 int pthread_getname_np(pthread_t thread, char *name, size_t size)
 {
-    (void)thread;
-    if (name && size)
-        name[0] = '\0';
+    struct pthread *target = (struct pthread *)thread;
+    if (!target || !name)
+        return EINVAL;
+    size_t length = 0;
+    while (target->name[length])
+        length++;
+    if (length >= size)
+        return ERANGE;
+    memcpy(name, target->name, length + 1);
     return 0;
 }
 

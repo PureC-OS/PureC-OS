@@ -79,13 +79,14 @@ static void test_timerfd(void)
     struct itimerspec spec;
     memset(&spec, 0, sizeof(spec));
     spec.it_value.tv_nsec = 50 * 1000000L;
-    check("timerfd settime", timerfd_settime(fd, 0, &spec, 0) == 0);
-    check("timerfd not yet",
-          read(fd, &expirations, sizeof(expirations)) < 0 && errno == EAGAIN);
-    struct pollfd pfd = {fd, POLLIN, 0};
     long start = now_ms();
+    int armed = timerfd_settime(fd, 0, &spec, 0);
+    int early = read(fd, &expirations, sizeof(expirations)) < 0 && errno == EAGAIN;
+    struct pollfd pfd = {fd, POLLIN, 0};
     int ready = poll(&pfd, 1, 1000);
     long elapsed = now_ms() - start;
+    check("timerfd settime", armed == 0);
+    check("timerfd not yet", early);
     check("timerfd poll fires", ready == 1 && (pfd.revents & POLLIN));
     check("timerfd delay", elapsed >= 40 && elapsed < 400);
     if (!(elapsed >= 40 && elapsed < 400))
