@@ -81,6 +81,8 @@ static void test_timerfd(void)
     long elapsed = now_ms() - start;
     check("timerfd poll fires", ready == 1 && (pfd.revents & POLLIN));
     check("timerfd delay", elapsed >= 40 && elapsed < 400);
+    if (!(elapsed >= 40 && elapsed < 400))
+        printf("posixtest   timerfd delay elapsed=%ldms\n", elapsed);
     check("timerfd read one",
           read(fd, &expirations, sizeof(expirations)) == 8 && expirations == 1);
 
@@ -112,6 +114,8 @@ static void test_timerfd(void)
           read(fd, &expirations, sizeof(expirations)) == 8 && expirations == 1);
     elapsed = now_ms() - start;
     check("timerfd blocking delay", elapsed >= 20 && elapsed < 400);
+    if (!(elapsed >= 20 && elapsed < 400))
+        printf("posixtest   timerfd blocking elapsed=%ldms\n", elapsed);
     close(fd);
 }
 
