@@ -3,6 +3,7 @@
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
@@ -675,6 +676,122 @@ static void test_shared_memory(void)
     munmap(keep, 4096);
 }
 
+static volatile char *alt_probe_low;
+static volatile char *alt_probe_high;
+static volatile int handler_on_alt;
+static volatile int handler_flag_seen;
+static volatile int handler_nested_ok;
+static volatile int handler_ran;
+
+static void usr1_alt_handler(int sig)
+{
+    char marker;
+    (void)sig;
+    handler_ran++;
+    handler_on_alt = (&marker >= alt_probe_low && &marker < alt_probe_high);
+    stack_t current;
+    sigaltstack(0, &current);
+    handler_flag_seen = current.ss_flags;
+    stack_t other;
+    other.ss_sp = (void *)alt_probe_low;
+    other.ss_size = 16384;
+    other.ss_flags = 0;
+    handler_nested_ok = sigaltstack(&other, 0) < 0 && errno == EPERM;
+}
+
+static void usr1_plain_handler(int sig)
+{
+    char marker;
+    (void)sig;
+    handler_ran++;
+    handler_on_alt = (&marker >= alt_probe_low && &marker < alt_probe_high);
+}
+
+static void overflow_handler(int sig)
+{
+    (void)sig;
+    _exit(42);
+}
+
+static int recurse_forever(volatile char *seed, int depth)
+{
+    volatile char pad[512];
+    pad[0] = (char)depth;
+    pad[511] = seed[0];
+    return recurse_forever(pad, depth + 1) + pad[0];
+}
+
+static void test_sigaltstack(void)
+{
+    size_t size = 32768;
+    char *stack = mmap(0, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    alt_probe_low = stack;
+    alt_probe_high = stack + size;
+    stack_t request;
+    request.ss_sp = stack;
+    request.ss_size = size;
+    request.ss_flags = 0;
+    check("sigaltstack set", sigaltstack(&request, 0) == 0);
+    stack_t readback;
+    memset(&readback, 0, sizeof(readback));
+    check("sigaltstack get", sigaltstack(0, &readback) == 0 && readback.ss_sp == stack &&
+                                 readback.ss_size == size && !(readback.ss_flags & SS_DISABLE));
+    request.ss_size = 512;
+    check("sigaltstack too small", sigaltstack(&request, 0) < 0 && errno == ENOMEM);
+    request.ss_size = size;
+
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = usr1_alt_handler;
+    action.sa_flags = SA_ONSTACK;
+    sigaction(SIGUSR1, &action, 0);
+    handler_ran = 0;
+    kill(getpid(), SIGUSR1);
+    check("sigaltstack handler ran", handler_ran == 1);
+    check("sigaltstack handler on alt stack", handler_on_alt == 1);
+    check("sigaltstack SS_ONSTACK reported", (handler_flag_seen & SS_ONSTACK) != 0);
+    check("sigaltstack EPERM while on stack", handler_nested_ok == 1);
+
+    action.sa_handler = usr1_plain_handler;
+    action.sa_flags = 0;
+    sigaction(SIGUSR1, &action, 0);
+    handler_ran = 0;
+    handler_on_alt = -1;
+    kill(getpid(), SIGUSR1);
+    check("sigaltstack ignored without SA_ONSTACK", handler_ran == 1 && handler_on_alt == 0);
+
+    memset(&readback, 0, sizeof(readback));
+    sigaltstack(0, &readback);
+    check("sigaltstack not on stack outside handler", !(readback.ss_flags & SS_ONSTACK));
+    request.ss_flags = SS_DISABLE;
+    check("sigaltstack disable", sigaltstack(&request, 0) == 0);
+    sigaltstack(0, &readback);
+    check("sigaltstack disabled state", (readback.ss_flags & SS_DISABLE) != 0);
+    signal(SIGUSR1, SIG_DFL);
+
+    pid_t child = fork();
+    if (child == 0)
+    {
+        stack_t child_stack;
+        child_stack.ss_sp = stack;
+        child_stack.ss_size = size;
+        child_stack.ss_flags = 0;
+        sigaltstack(&child_stack, 0);
+        struct sigaction segv;
+        memset(&segv, 0, sizeof(segv));
+        segv.sa_handler = overflow_handler;
+        segv.sa_flags = SA_ONSTACK;
+        sigaction(SIGSEGV, &segv, 0);
+        volatile char seed[1] = {1};
+        recurse_forever(seed, 0);
+        _exit(1);
+    }
+    int status = 0;
+    waitpid(child, &status, 0);
+    check("sigaltstack catches stack overflow", WIFEXITED(status) && WEXITSTATUS(status) == 42);
+    munmap(stack, size);
+}
+
 int main(void)
 {
     test_eventfd();
@@ -685,6 +802,7 @@ int main(void)
     test_unix_named();
     test_scm_rights();
     test_shared_memory();
+    test_sigaltstack();
     printf("posixtest done failures=%d\n", failures);
     return failures ? 1 : 0;
 }
