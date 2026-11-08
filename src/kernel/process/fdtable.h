@@ -24,6 +24,7 @@ int32_t fd_install_socket(int32_t sock_id, uint32_t flags);
 int32_t fd_install_event(int32_t event_id, uint32_t flags);
 int32_t fd_install_unix(int32_t unix_id, uint32_t flags);
 int32_t fd_install_ofd(int32_t object, uint32_t flags);
+int32_t fd_install_shm(int32_t shm_id, uint32_t flags);
 int32_t fd_object(int32_t fd);
 int32_t fd_socket_id(int32_t fd);
 bool fd_nonblocking(int32_t fd);

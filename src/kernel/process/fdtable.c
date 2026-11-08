@@ -4,6 +4,7 @@
 #include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
 #include "../ipc/unix.h"
+#include "../../mm/shm.h"
 #include "../syscall/syscall.h"
 #include "ofd.h"
 #include "process.h"
@@ -105,6 +106,17 @@ int32_t fd_install_event(int32_t event_id, uint32_t flags)
   if (object < 0)
   {
     evfd_release(event_id);
+    return -KERR_NFILE;
+  }
+  return fd_install_ofd(object, flags);
+}
+
+int32_t fd_install_shm(int32_t shm_id, uint32_t flags)
+{
+  int32_t object = ofd_create_shm(shm_id, flags);
+  if (object < 0)
+  {
+    shm_unref(shm_id);
     return -KERR_NFILE;
   }
   return fd_install_ofd(object, flags);
