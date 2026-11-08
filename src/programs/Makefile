@@ -580,6 +580,8 @@ $(LIB_DIR)/libz.a:
 endif
 LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 TARGETS += $(PROGRAM_DIR)/curl
+# "all: $(TARGETS)" above already expanded its list, so curl must be added to it here.
+all: $(PROGRAM_DIR)/curl
 -include $(CURL_OBJECTS:.o=.d)
 
 $(CURL_OBJ_DIR)/lib/%.o: $(CURL_DIR)/lib/%.c $(LIBWOLF)
