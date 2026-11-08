@@ -3,6 +3,8 @@
 #include "../src/fs/vfs_backends.h"
 #include "../src/kernel/process/process.h"
 #include "../src/kernel/smp/cpu.h"
+#include "../src/kernel/process/scheduler.h"
+#include "../src/io/swap.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -23,6 +25,18 @@ uint64_t idt_vector_count(uint8_t vector) {
   return vector == 32 ? 99 : vector == 0xF1 ? 5 : 0;
 }
 uint32_t cpufreq_measure_mhz(void) { return 2400; }
+void swap_info_get(struct swap_info *out) { memset(out, 0, sizeof(*out)); }
+bool scheduler_cpu_ticks(uint32_t id, uint64_t *total, uint64_t *idle) {
+  (void)id;
+  *total = 0;
+  *idle = 0;
+  return false;
+}
+bool process_proc_info_get(uint32_t pid, struct process_proc_info *out) {
+  (void)pid;
+  (void)out;
+  return false;
+}
 uint32_t cpu_registered_count(void) { return 2; }
 static struct cpu_info cpus[2] = {{0, 0, 0, true, true}, {1, 1, 2, true, false}};
 const struct cpu_info *cpu_get_info(uint32_t id) { return id < 2 ? &cpus[id] : 0; }
@@ -90,6 +104,8 @@ int main(void) {
   CHECK(read_file("/cpuinfo", text, sizeof(text)) > 0);
   CHECK(strstr(text, "processor\t: 1\n") && strstr(text, "cpu MHz\t\t: 2400"));
   CHECK(strstr(text, "online\t\t: no"));
+  CHECK(read_file("/stat", text, sizeof(text)) > 0);
+  CHECK(read_file("/filesystems", text, sizeof(text)) > 0);
   CHECK(read_file("/partitions", text, sizeof(text)) > 0);
   CHECK(strstr(text, "sda") && strstr(text, "TestDisk"));
   CHECK(read_file("/12/status", text, sizeof(text)) > 0);
@@ -122,12 +138,12 @@ int main(void) {
 
   struct fs_directory_entry_long entries[32];
   int32_t count = ops->list_long(0, "/", entries, 32);
-  CHECK(count == 10);
+  CHECK(count == 11);
   CHECK(strcmp(entries[0].name, "version") == 0);
-  CHECK(strcmp(entries[8].name, "1") == 0 && entries[8].attributes == FS_ATTRIBUTE_DIRECTORY);
-  CHECK(strcmp(entries[9].name, "12") == 0);
+  CHECK(strcmp(entries[9].name, "1") == 0 && entries[9].attributes == FS_ATTRIBUTE_DIRECTORY);
+  CHECK(strcmp(entries[10].name, "12") == 0);
   count = ops->list_long(0, "/12", entries, 32);
-  CHECK(count == 2 && strcmp(entries[0].name, "status") == 0);
+  CHECK(count == 4 && strcmp(entries[0].name, "status") == 0);
   CHECK(ops->list_long(0, "/uptime", entries, 32) == FS_ERROR_NOT_DIR);
   struct fs_directory_entry shorts[4];
   CHECK(ops->list(0, "/", shorts, 4) == 4);
