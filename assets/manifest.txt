@@ -70,6 +70,7 @@
 /bin/sh /bin/sh - 0 bin/programs/sh
 /usr/bin/proctest /usr/bin/proctest - 0 bin/programs/proctest
 /usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
+/usr/bin/posixtest /usr/bin/posixtest - 0 bin/programs/posixtest
 /usr/bin/memhog /usr/bin/memhog - 0 bin/programs/memhog
 /usr/bin/memtest /usr/bin/memtest - 0 bin/programs/memtest
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
