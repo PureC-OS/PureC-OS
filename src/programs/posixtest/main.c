@@ -264,7 +264,7 @@ static int recv_fds(int sock, int *fds, int capacity, char *marker, int *flags)
     msg.msg_iov = &iov;
     msg.msg_iovlen = 1;
     msg.msg_control = control;
-    msg.msg_controllen = CMSG_SPACE(sizeof(int) * capacity);
+    msg.msg_controllen = CMSG_LEN(sizeof(int) * capacity);
     ssize_t got = recvmsg(sock, &msg, 0);
     if (flags)
         *flags = msg.msg_flags;
