@@ -31,6 +31,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#ifndef O_LARGEFILE
+#define O_LARGEFILE 0
+#endif
 int open(const char *path, int flags, ...);
 int openat(int dirfd, const char *path, int flags, ...);
 int creat(const char *path, int mode);

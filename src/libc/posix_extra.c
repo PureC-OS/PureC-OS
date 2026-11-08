@@ -14,6 +14,7 @@
 #include "include/hosted/sys/prctl.h"
 #include "include/hosted/sys/random.h"
 #include "include/hosted/sys/stat.h"
+#include "include/hosted/sys/times.h"
 #include "include/hosted/time.h"
 #include "include/hosted/unistd.h"
 #include <stdarg.h>
@@ -439,4 +440,20 @@ int pthread_getaffinity_np(pthread_t thread, size_t size, cpu_set_t *set)
 {
     (void)thread;
     return sched_getaffinity(0, size, set) == 0 ? 0 : errno;
+}
+
+clock_t times(struct tms *buffer)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
+        return (clock_t)-1;
+    clock_t ticks = (clock_t)(now.tv_sec * 100L + now.tv_nsec / 10000000L);
+    if (buffer)
+    {
+        buffer->tms_utime = clock() / (CLOCKS_PER_SEC / 100);
+        buffer->tms_stime = 0;
+        buffer->tms_cutime = 0;
+        buffer->tms_cstime = 0;
+    }
+    return ticks;
 }

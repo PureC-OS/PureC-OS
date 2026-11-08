@@ -1081,3 +1081,63 @@ char *realpath(const char *path, char *resolved)
     memcpy(fresh, out, w + 1);
     return fresh;
 }
+
+int mkdirat(int dirfd_value, const char *path, unsigned int mode)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return mkdir(full, mode);
+}
+
+int renameat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path)
+{
+    char from[1024];
+    char to[1024];
+    if (at_path(old_dirfd, old_path, from, sizeof(from)) < 0 ||
+        at_path(new_dirfd, new_path, to, sizeof(to)) < 0)
+        return -1;
+    return rename(from, to);
+}
+
+int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path,
+           int flags)
+{
+    (void)flags;
+    char from[1024];
+    char to[1024];
+    if (at_path(old_dirfd, old_path, from, sizeof(from)) < 0 ||
+        at_path(new_dirfd, new_path, to, sizeof(to)) < 0)
+        return -1;
+    return link(from, to);
+}
+
+int symlinkat(const char *target, int dirfd_value, const char *path)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return symlink(target, full);
+}
+
+ssize_t readlinkat(int dirfd_value, const char *path, char *buffer, size_t size)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return readlink(full, buffer, size);
+}
+
+int faccessat(int dirfd_value, const char *path, int mode, int flags)
+{
+    (void)flags;
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return access(full, mode);
+}
+
+int getpagesize(void)
+{
+    return 4096;
+}

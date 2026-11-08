@@ -18,4 +18,5 @@ cmake -G Ninja -S "$SRC" -B "$BUILD" \
   -DFEATURE_system_zlib=OFF -DFEATURE_system_pcre2=OFF -DFEATURE_system_doubleconversion=OFF \
   -DFEATURE_intelcet=OFF -DFEATURE_stack_protector=OFF -DFEATURE_trivial_auto_var_init_pattern=OFF \
   -DFEATURE_libcpp_hardening=OFF -DFEATURE_relro_now_linker=OFF -DFEATURE_reduce_relocations=OFF \
+  -DFEATURE_process=OFF -DFEATURE_library=OFF -DFEATURE_storageinfo=OFF \
   "$@"

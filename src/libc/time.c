@@ -257,3 +257,12 @@ size_t strftime(char *buffer, size_t capacity, const char *format,
     buffer[length] = '\0';
     return length;
 }
+
+static char tz_utc_name[] = "UTC";
+char *tzname[2] = {tz_utc_name, tz_utc_name};
+long timezone = 0;
+int daylight = 0;
+
+void tzset(void)
+{
+}

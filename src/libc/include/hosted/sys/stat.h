@@ -71,6 +71,7 @@ int utimensat(int dirfd, const char *path, const struct timespec times[2],
               int flags);
 int futimens(int fd, const struct timespec times[2]);
 int mkdir(const char *path, unsigned int mode);
+int mkdirat(int dirfd, const char *path, unsigned int mode);
 int chmod(const char *path, unsigned int mode);
 int fchmod(int fd, unsigned int mode);
 int fchmodat(int dirfd, const char *path, unsigned int mode, int flags);

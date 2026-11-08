@@ -44,6 +44,10 @@ struct itimerspec {
 int clock_gettime(int clock_id, struct timespec *out);
 int nanosleep(const struct timespec *request, struct timespec *remaining);
 #define TIMER_ABSTIME 1
+extern char *tzname[2];
+extern long timezone;
+extern int daylight;
+void tzset(void);
 int clock_nanosleep(int clock_id, int flags, const struct timespec *request,
                     struct timespec *remaining);
 struct tm *gmtime_r(const time_t *value, struct tm *result);
