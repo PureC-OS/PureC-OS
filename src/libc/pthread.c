@@ -225,6 +225,11 @@ int __cxa_thread_atexit_impl(void (*function)(void *), void *argument,
     return 0;
 }
 
+int __cxa_thread_atexit(void (*function)(void *), void *argument, void *dso)
+{
+    return __cxa_thread_atexit_impl(function, argument, dso);
+}
+
 void pthread_exit(void *result)
 {
     struct pthread *thread = __pc_self();
