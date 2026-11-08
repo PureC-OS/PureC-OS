@@ -110,8 +110,7 @@ extern "C"
     int pthread_attr_getdetachstate(const pthread_attr_t *attr, int *state);
     int pthread_setname_np(pthread_t thread, const char *name);
     int pthread_getname_np(pthread_t thread, char *name, size_t size);
-    int pthread_sigmask(int how, const void *set, void *previous);
-
+    
 #ifdef __cplusplus
 }
 #endif

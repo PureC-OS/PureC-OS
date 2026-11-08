@@ -5,6 +5,17 @@ SECTIONS
     .text : ALIGN(0x1000) { *(.text .text.*) }
     .rodata : ALIGN(0x1000) { *(.rodata .rodata.*) }
     .data : ALIGN(0x1000) { *(.data .data.*) }
+    .tdata : ALIGN(64) {
+        PROVIDE_HIDDEN(__tdata_start = .);
+        *(.tdata .tdata.*)
+        PROVIDE_HIDDEN(__tdata_end = .);
+    }
+    .tbss : {
+        *(.tbss .tbss.*)
+        *(.tcommon)
+        PROVIDE_HIDDEN(__tbss_end = .);
+    }
+    PROVIDE_HIDDEN(__tls_align = MAX(ALIGNOF(.tdata), ALIGNOF(.tbss)));
     .init_array : ALIGN(16) {
         PROVIDE_HIDDEN(__init_array_start = .);
         KEEP(*(SORT_BY_INIT_PRIORITY(.init_array.*) .init_array))

@@ -56,4 +56,5 @@ int64_t __pc_futex(int operation, volatile void *address, uint32_t value,
 struct pthread *__pc_self(void);
 void __pc_rlock_lock(struct pc_rlock *lock);
 void __pc_rlock_unlock(struct pc_rlock *lock);
-void __tls_init_main(void);
+void __tls_init_main(const void *image, size_t filesz, size_t memsz,
+                     size_t alignment);

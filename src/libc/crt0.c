@@ -84,8 +84,26 @@ __asm__(
     "    call crt0_main\n"
     "    hlt\n");
 
+extern char __tdata_start[] __attribute__((weak));
+extern char __tdata_end[] __attribute__((weak));
+extern char __tbss_end[] __attribute__((weak));
+extern char __tls_align[] __attribute__((weak));
+void __tls_init_main(const void *image, size_t filesz, size_t memsz,
+                     size_t alignment);
+
+static void crt0_init_tls(void) {
+    if (!__tdata_start || !__tbss_end)
+        return;
+    size_t filesz = (size_t)(__tdata_end - __tdata_start);
+    size_t memsz = (size_t)(__tbss_end - __tdata_start);
+    if (!memsz)
+        return;
+    __tls_init_main(__tdata_start, filesz, memsz, (size_t)__tls_align);
+}
+
 void crt0_main(uint64_t *frame) {
     int argc = 0;
+    crt0_init_tls();
     if (frame[0] > 0) {
         char **vector = (char **)(frame + 1);
         int count = (int)frame[0];
