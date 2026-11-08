@@ -63,6 +63,7 @@ C_SOURCES := \
 	kernel/process/ofd.c \
 	kernel/tty/tty.c \
 	mm/pmm.c \
+	mm/shm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \
 	mm/oom/oom_account.c \
