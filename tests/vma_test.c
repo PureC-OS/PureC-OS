@@ -14,6 +14,13 @@ _Bool vma_lookup(struct vma_table *table, uint64_t address, uint32_t *prot, uint
 _Bool vma_range_free(struct vma_table *table, uint64_t start, uint64_t end);
 uint64_t vma_find_gap(struct vma_table *table, uint64_t length, uint64_t low, uint64_t high);
 uint32_t vma_count(struct vma_table *table);
+int vma_map_shm(struct vma_table *table, uint64_t start, uint64_t end, uint32_t prot, int32_t shm, uint64_t offset_pages);
+_Bool vma_lookup_shm(struct vma_table *table, uint64_t address, int32_t *shm, uint64_t *page_offset);
+_Bool vma_range_has_shm(struct vma_table *table, uint64_t start, uint64_t end);
+
+static int shm_refs[8];
+void shm_ref(int32_t id) { shm_refs[id]++; }
+void shm_unref(int32_t id) { shm_refs[id]--; }
 
 void *oom_slab_alloc(size_t size) { return calloc(1, size); }
 void oom_slab_free(void *pointer, size_t size) { (void)size; free(pointer); }
@@ -98,6 +105,84 @@ static void gap_check(struct vma_table *table, int pages)
         }                                                                 \
     } while (0)
 
+
+static int shm_check_at(struct vma_table *table, uint64_t page, int32_t want_id, uint64_t want_offset)
+{
+    int32_t id = -9;
+    uint64_t offset = 0;
+    if (!vma_lookup_shm(table, page * 4096 + 5, &id, &offset))
+        return 0;
+    return id == want_id && offset == want_offset;
+}
+
+static void shm_scenarios(void)
+{
+    memset(shm_refs, 0, sizeof(shm_refs));
+    shm_refs[3] = 1;
+    struct vma_table *t = vma_table_create();
+    CHECK(vma_map_shm(t, 0x100000, 0x108000, 3, 3, 10) == 0);
+    CHECK(shm_refs[3] == 2);
+    CHECK(vma_count(t) == 1);
+    CHECK(shm_check_at(t, 0x102, 3, 12));
+    CHECK(vma_range_has_shm(t, 0x100000, 0x101000));
+    CHECK(!vma_range_has_shm(t, 0x200000, 0x201000));
+
+    CHECK(vma_set_prot(t, 0x102000, 0x104000, 1) == 0);
+    CHECK(vma_count(t) == 3);
+    CHECK(shm_refs[3] == 4);
+    CHECK(shm_check_at(t, 0x100, 3, 10));
+    CHECK(shm_check_at(t, 0x102, 3, 12));
+    CHECK(shm_check_at(t, 0x103, 3, 13));
+    CHECK(shm_check_at(t, 0x105, 3, 15));
+    CHECK(shm_check_at(t, 0x107, 3, 17));
+    uint32_t prot = 0;
+    CHECK(vma_lookup(t, 0x102000, &prot, 0, 0) && prot == 1);
+    CHECK(vma_lookup(t, 0x105000, &prot, 0, 0) && prot == 3);
+
+    CHECK(vma_set_prot(t, 0x102000, 0x104000, 3) == 0);
+    CHECK(vma_count(t) == 1);
+    CHECK(shm_refs[3] == 2);
+    CHECK(shm_check_at(t, 0x106, 3, 16));
+
+    CHECK(vma_unmap(t, 0x103000, 0x105000) == 0);
+    CHECK(vma_count(t) == 2);
+    CHECK(shm_refs[3] == 3);
+    CHECK(shm_check_at(t, 0x102, 3, 12));
+    CHECK(shm_check_at(t, 0x105, 3, 15));
+    CHECK(shm_check_at(t, 0x107, 3, 17));
+    CHECK(!vma_lookup_shm(t, 0x103000, &(int32_t){0}, &(uint64_t){0}));
+
+    struct vma_table *copy = vma_table_clone(t);
+    CHECK(copy != NULL);
+    CHECK(shm_refs[3] == 5);
+    CHECK(shm_check_at(copy, 0x106, 3, 16));
+    vma_table_destroy(copy);
+    CHECK(shm_refs[3] == 3);
+
+    CHECK(vma_map(t, 0x100000, 0x102000, 3) == 0);
+    CHECK(shm_refs[3] == 2);
+    CHECK(!vma_lookup_shm(t, 0x100000, &(int32_t){0}, &(uint64_t){0}));
+    CHECK(shm_check_at(t, 0x102, 3, 12));
+
+    CHECK(vma_map_shm(t, 0x200000, 0x201000, 3, 3, 0) == 0);
+    CHECK(vma_map_shm(t, 0x201000, 0x202000, 3, 3, 5) == 0);
+    CHECK(vma_lookup(t, 0x200000, &prot, 0, 0));
+    uint64_t run_start = 0, run_end = 0;
+    CHECK(vma_lookup(t, 0x200000, &prot, &run_start, &run_end) && run_end == 0x201000);
+    CHECK(vma_map_shm(t, 0x202000, 0x203000, 3, 3, 6) == 0);
+    CHECK(vma_lookup(t, 0x201000, &prot, &run_start, &run_end) && run_end == 0x203000);
+    CHECK(shm_check_at(t, 0x202, 3, 6));
+
+    CHECK(vma_set_prot(t, 0x200000, 0x203000, 1) == 0);
+    CHECK(shm_check_at(t, 0x200, 3, 0));
+    CHECK(shm_check_at(t, 0x201, 3, 5));
+    CHECK(shm_check_at(t, 0x202, 3, 6));
+    CHECK(vma_lookup(t, 0x202000, &prot, 0, 0) && prot == 1);
+
+    vma_table_destroy(t);
+    CHECK(shm_refs[3] == 1);
+}
+
 int main(void)
 {
     srand(12345);
@@ -138,6 +223,7 @@ int main(void)
         }
     }
     compare(table);
+    shm_scenarios();
     struct vma_table *copy = vma_table_clone(table);
     CHECK_MAIN(copy != NULL);
     compare(copy);
