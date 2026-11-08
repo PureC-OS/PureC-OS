@@ -15,7 +15,7 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
@@ -527,3 +527,11 @@ help:
 	@echo "  NOTE: external repos must be fetched first:"
 	@echo "        ./purec.py setup"
 	@echo ""
+
+qt-core-test:
+	cmake -G Ninja -S tests/qt-core -B $(BIN_DIR)/qt-core-test \
+		-DCMAKE_TOOLCHAIN_FILE=$(ROOT_DIR)/mk/sysroot/toolchain.cmake \
+		-DQT_HOST_PATH=/usr -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake
+	cmake --build $(BIN_DIR)/qt-core-test
+	@mkdir -p $(BIN_DIR)/programs
+	cp $(BIN_DIR)/qt-core-test/qtcoretest $(BIN_DIR)/programs/qtcoretest

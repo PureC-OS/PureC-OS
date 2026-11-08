@@ -71,6 +71,7 @@
 /usr/bin/proctest /usr/bin/proctest - 0 bin/programs/proctest
 /usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
 /usr/bin/cmaketest /usr/bin/cmaketest - 0 bin/programs/cmaketest
+/usr/bin/qtcoretest /usr/bin/qtcoretest - 0 bin/programs/qtcoretest
 /usr/bin/posixtest /usr/bin/posixtest - 0 bin/programs/posixtest
 /usr/bin/memhog /usr/bin/memhog - 0 bin/programs/memhog
 /usr/bin/memtest /usr/bin/memtest - 0 bin/programs/memtest
