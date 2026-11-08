@@ -236,6 +236,7 @@ $(LIB_DIR)/libpurec.so $(DYN_LD_STUB):
 
 ifdef PUREC_DYNAMIC
 TARGETS += $(PROGRAM_DIR)/echo-dyn
+all: $(PROGRAM_DIR)/echo-dyn $(PROGRAM_DIR)/dltest-dyn $(LIB_DIR)/libdltest.so $(LIB_DIR)/libdltest2.so
 PIE_LD_SCRIPT := $(ROOT_DIR)/linker-userspace-pie.ld
 
 $(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(DYN_LD_STUB) $(PIE_LD_SCRIPT)
