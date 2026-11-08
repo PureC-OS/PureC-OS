@@ -22,4 +22,6 @@ old/
 netsurf-libs/unifont.hex
 */netsurf-libs/*
 netsurf-libs/libnsfb
-cxx-libs//qt-src/
+cxx-libs/
+/qt-src/
+cxx-libs/llvm-project
