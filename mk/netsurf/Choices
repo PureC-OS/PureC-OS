@@ -1,3 +1,4 @@
 ca_bundle:/etc/ssl/cert.pem
 window_width:900
 window_height:650
+enable_javascript:1
