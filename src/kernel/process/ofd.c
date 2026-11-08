@@ -4,6 +4,7 @@
 #include "../tty/tty.h"
 #include "../../fs/vfs.h"
 #include "../../lib/string.h"
+#include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
 #include "../../net/api/socket.h"
 #include "../sync/mutex.h"
@@ -100,6 +101,11 @@ int32_t ofd_create_socket(int32_t sock_id, uint32_t flags)
   return allocate(OFD_SOCKET, flags & OFD_O_NONBLOCK, sock_id, false);
 }
 
+int32_t ofd_create_event(int32_t event_id, uint32_t flags)
+{
+  return allocate(OFD_EVENT, flags & OFD_O_NONBLOCK, event_id, false);
+}
+
 static bool valid(int32_t index)
 {
   return index >= 0 && index < OFD_MAX && table[index].kind != OFD_FREE;
@@ -132,6 +138,8 @@ void ofd_release(int32_t index)
     pipe_release(dropped.object, dropped.write_end);
   else if (dropped.kind == OFD_SOCKET)
     sock_release(dropped.object);
+  else if (dropped.kind == OFD_EVENT)
+    evfd_release(dropped.object);
 }
 
 static bool snapshot(int32_t index, struct ofd *out)
@@ -161,7 +169,17 @@ int32_t ofd_kind_of(int32_t index)
     return FD_KIND_CONSOLE;
   if (o.kind == OFD_SOCKET)
     return FD_KIND_SOCKET;
+  if (o.kind == OFD_EVENT)
+    return FD_KIND_EVENT;
   return o.kind == OFD_PIPE ? FD_KIND_PIPE : FD_KIND_FILE;
+}
+
+int32_t ofd_event_id(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o) || o.kind != OFD_EVENT)
+    return -1;
+  return o.object;
 }
 
 int32_t ofd_socket_id(int32_t index)
@@ -209,6 +227,8 @@ int32_t ofd_read(int32_t index, void *buffer, uint32_t count)
     return pipe_read(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_SOCKET:
     return sock_read(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0, 0);
+  case OFD_EVENT:
+    return evfd_read(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_FILE:
   {
     if ((o.flags & OFD_O_ACCMODE) == OFD_O_WRONLY)
@@ -240,6 +260,8 @@ int32_t ofd_write(int32_t index, const void *buffer, uint32_t count)
     return pipe_write(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_SOCKET:
     return sock_write(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0, 0);
+  case OFD_EVENT:
+    return evfd_write(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_FILE:
   {
     if ((o.flags & OFD_O_ACCMODE) == OFD_O_RDONLY)
@@ -343,6 +365,8 @@ int32_t ofd_poll(int32_t index)
     return pipe_poll(o.object, o.write_end);
   case OFD_SOCKET:
     return sock_poll(o.object);
+  case OFD_EVENT:
+    return evfd_poll(o.object);
   case OFD_FILE:
     return KPOLLIN | KPOLLOUT;
   default:

@@ -12,7 +12,8 @@ enum ofd_kind
   OFD_CONSOLE_OUT,
   OFD_FILE,
   OFD_PIPE,
-  OFD_SOCKET
+  OFD_SOCKET,
+  OFD_EVENT
 };
 
 #define OFD_STATUS_MASK 03003U
@@ -22,6 +23,8 @@ void ofd_init(void);
 int32_t ofd_create_file(int32_t handle, uint32_t flags);
 int32_t ofd_create_pipe(int32_t pipe_id, bool write_end);
 int32_t ofd_create_socket(int32_t sock_id, uint32_t flags);
+int32_t ofd_create_event(int32_t event_id, uint32_t flags);
+int32_t ofd_event_id(int32_t ofd);
 void ofd_ref(int32_t ofd);
 void ofd_release(int32_t ofd);
 int32_t ofd_vfs_handle(int32_t ofd);

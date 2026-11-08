@@ -54,6 +54,7 @@ C_SOURCES := \
 	kernel/time/wallclock.c \
 	kernel/ipc/ipc.c \
 	kernel/ipc/pipe.c \
+	kernel/ipc/evfd.c \
 	kernel/process/signal.c \
 	kernel/process/futex.c \
 	kernel/process/vma.c \

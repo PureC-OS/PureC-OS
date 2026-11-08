@@ -1,6 +1,7 @@
 #include "fdtable.h"
 #include "../../fs/vfs.h"
 #include "../../lib/string.h"
+#include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
 #include "../syscall/syscall.h"
 #include "ofd.h"
@@ -73,6 +74,39 @@ int32_t fd_install_socket(int32_t sock_id, uint32_t flags)
   process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
   process_table_unlock();
   return fd;
+}
+
+int32_t fd_install_event(int32_t event_id, uint32_t flags)
+{
+  struct process *process = process_current();
+  if (!process)
+  {
+    evfd_release(event_id);
+    return -KERR_BADF;
+  }
+  int32_t object = ofd_create_event(event_id, flags);
+  if (object < 0)
+  {
+    evfd_release(event_id);
+    return -KERR_NFILE;
+  }
+  process_table_lock();
+  int32_t fd = slot_find(process, 0);
+  if (fd < 0)
+  {
+    process_table_unlock();
+    ofd_release(object);
+    return -KERR_MFILE;
+  }
+  process->descriptors[fd] = object;
+  process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
+  process_table_unlock();
+  return fd;
+}
+
+int32_t fd_object(int32_t fd)
+{
+  return object_get(fd);
 }
 
 int32_t fd_socket_id(int32_t fd)

@@ -184,6 +184,13 @@
 #define SYS_FUTEX 377         /* (FUTEX_*, uaddr, value, timeout_ms in rsi) */
 #define SYS_SET_FS_BASE 378   /* (base) -> 0 */
 #define SYS_GETTID 379        /* () -> tid */
+#define SYS_EVENTFD 380          /* (initial, EFD_* flags) -> fd */
+#define SYS_TIMERFD_CREATE 381   /* (clock_id, TFD_* flags) -> fd */
+#define SYS_TIMERFD_SETTIME 382  /* (fd, flags, new itimerspec *, old itimerspec * in rsi) */
+#define SYS_TIMERFD_GETTIME 383  /* (fd, itimerspec *) */
+#define SYS_EPOLL_CREATE 384     /* (EPOLL_CLOEXEC flag) -> fd */
+#define SYS_EPOLL_CTL 385        /* (epfd, op, fd, struct epoll_event * in rsi) */
+#define SYS_EPOLL_WAIT 386       /* (epfd, events *, max, timeout_ms in rsi) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -197,6 +204,7 @@
 #define FD_KIND_FILE 1
 #define FD_KIND_PIPE 2
 #define FD_KIND_SOCKET 3
+#define FD_KIND_EVENT 4
 
 #define TTY_TCGETS 0x5401u
 #define TTY_TCSETS 0x5402u

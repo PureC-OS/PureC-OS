@@ -21,6 +21,8 @@ int32_t fd_path(int32_t fd, char *out, uint32_t capacity);
 int32_t fd_stat(int32_t fd, struct file_stat_info *out);
 int32_t fd_install_handle(int32_t handle);
 int32_t fd_install_socket(int32_t sock_id, uint32_t flags);
+int32_t fd_install_event(int32_t event_id, uint32_t flags);
+int32_t fd_object(int32_t fd);
 int32_t fd_socket_id(int32_t fd);
 bool fd_nonblocking(int32_t fd);
 int32_t fd_vfs_handle(int32_t fd);
