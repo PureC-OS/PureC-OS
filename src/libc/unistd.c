@@ -832,6 +832,24 @@ void *mmap(void *address, size_t length, int prot, int flags, int fd, long offse
     struct kernel_mmap_args request;
     request.address = fixed ? (uint64_t)(uintptr_t)address : 0;
     request.length = length;
+    request.fd = -1;
+    request.offset = 0;
+    if (sharing == MAP_SHARED && (anonymous || fd >= 0))
+    {
+        request.prot = (uint64_t)prot;
+        request.flags = KMAP_SHARED | (fixed ? KMAP_FIXED : 0);
+        if (!anonymous)
+        {
+            request.fd = fd;
+            request.offset = (uint64_t)offset;
+        }
+        void *shared = mmap_address_result(
+            pc_syscall(SYS_MMAP, (uint64_t)(uintptr_t)&request, 0, 0));
+        if (shared != MAP_FAILED || anonymous || errno != ENODEV)
+            return shared;
+        request.fd = -1;
+        request.offset = 0;
+    }
     request.prot = backed ? (uint64_t)(PROT_READ | PROT_WRITE) : (uint64_t)prot;
     request.flags = fixed ? KMAP_FIXED : 0;
     void *base = mmap_address_result(
