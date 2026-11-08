@@ -29,6 +29,7 @@ private:
     void showPrompt();
     void redrawInput();
     void submit();
+    void execute(const QString &trimmed);
     void builtinCd(const QString &arg);
     void print(const QString &text);
     QString prompt() const;
@@ -46,6 +47,8 @@ private:
     QString m_input;
     int m_cursor = 0;
     int m_promptLen = 0;
+    int m_drawnCursor = 0;
+    QString m_promptText;
     QStringList m_history;
     int m_historyPos = -1;
     bool m_blink = true;
