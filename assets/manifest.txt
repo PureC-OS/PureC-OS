@@ -70,6 +70,7 @@
 /usr/bin/proctest /usr/bin/proctest - 0 bin/programs/proctest
 /usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
 /usr/bin/memhog /usr/bin/memhog - 0 bin/programs/memhog
+/usr/bin/memtest /usr/bin/memtest - 0 bin/programs/memtest
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
 /usr/bin/httpget /usr/bin/httpget - 0 bin/programs/httpget
 /usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
