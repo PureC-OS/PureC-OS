@@ -13,6 +13,8 @@
 #define O_BINARY 0
 #define O_NONBLOCK 04000
 #define O_CLOEXEC 02000000
+#define O_DIRECTORY 0200000
+#define O_NOFOLLOW 0400000
 
 #define AT_FDCWD (-100)
 #define AT_SYMLINK_NOFOLLOW 0x100
@@ -30,6 +32,7 @@
 extern "C" {
 #endif
 int open(const char *path, int flags, ...);
+int openat(int dirfd, const char *path, int flags, ...);
 int creat(const char *path, int mode);
 int fcntl(int fd, int command, ...);
 #ifdef __cplusplus

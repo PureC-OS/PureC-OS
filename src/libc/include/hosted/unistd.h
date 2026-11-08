@@ -68,6 +68,15 @@ long sysconf(int name);
 int usleep(unsigned int microseconds);
 ssize_t readlink(const char *path, char *buffer, size_t size);
 int symlink(const char *target, const char *path);
+int link(const char *existing, const char *path);
+long pathconf(const char *path, int name);
+long fpathconf(int fd, int name);
+#define _PC_LINK_MAX 0
+#define _PC_MAX_CANON 1
+#define _PC_MAX_INPUT 2
+#define _PC_NAME_MAX 3
+#define _PC_PATH_MAX 4
+#define _PC_PIPE_BUF 5
 int chown(const char *path, uid_t owner, gid_t group);
 char *ttyname(int fd);
 #define _SC_CLK_TCK 2

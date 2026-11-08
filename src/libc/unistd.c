@@ -390,6 +390,101 @@ int unlinkat(int dirfd_value, const char *path, int flags)
     return (flags & AT_REMOVEDIR) ? rmdir(full) : unlink(full);
 }
 
+int openat(int dirfd_value, const char *path, int flags, ...)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    va_list arguments;
+    va_start(arguments, flags);
+    unsigned int mode = (flags & O_CREAT) ? va_arg(arguments, unsigned int) : 0;
+    va_end(arguments);
+    if (flags & O_DIRECTORY)
+    {
+        struct stat info;
+        if (stat(full, &info) < 0)
+            return -1;
+        if (!S_ISDIR(info.st_mode))
+        {
+            errno = ENOTDIR;
+            return -1;
+        }
+        for (int slot = 0; slot < DIRFD_SLOTS; slot++)
+        {
+            if (!dirfd_used[slot])
+            {
+                dirfd_used[slot] = 1;
+                strcpy(dirfd_paths[slot], full);
+                return DIRFD_BASE + slot;
+            }
+        }
+        errno = EMFILE;
+        return -1;
+    }
+    return open(full, flags & ~(O_NOFOLLOW | O_DIRECTORY), mode);
+}
+
+DIR *fdopendir(int fd)
+{
+    int slot = fd - DIRFD_BASE;
+    if (slot < 0 || slot >= DIRFD_SLOTS || !dirfd_used[slot])
+    {
+        errno = EBADF;
+        return 0;
+    }
+    char path[512];
+    strcpy(path, dirfd_paths[slot]);
+    DIR *directory = opendir(path);
+    if (directory)
+        dirfd_used[slot] = 0;
+    return directory;
+}
+
+int fchmodat(int dirfd_value, const char *path, unsigned int mode, int flags)
+{
+    (void)flags;
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return chmod(full, mode);
+}
+
+int link(const char *existing, const char *path)
+{
+    (void)existing;
+    (void)path;
+    errno = EPERM;
+    return -1;
+}
+
+long pathconf(const char *path, int name)
+{
+    (void)path;
+    return fpathconf(-1, name);
+}
+
+long fpathconf(int fd, int name)
+{
+    (void)fd;
+    switch (name)
+    {
+    case _PC_LINK_MAX:
+        return 1;
+    case _PC_MAX_CANON:
+    case _PC_MAX_INPUT:
+        return 255;
+    case _PC_NAME_MAX:
+        return 255;
+    case _PC_PATH_MAX:
+        return 4096;
+    case _PC_PIPE_BUF:
+        return 4096;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
+}
+
 int alphasort(const struct dirent **left, const struct dirent **right)
 {
     return strcoll((*left)->d_name, (*right)->d_name);

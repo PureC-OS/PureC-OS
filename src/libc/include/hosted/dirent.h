@@ -4,6 +4,8 @@
 #include <stddef.h>
 
 #define DT_UNKNOWN 0
+#define DT_FIFO 1
+#define DT_SOCK 12
 #define DT_CHR 2
 #define DT_LNK 10
 #define DT_DIR 4
@@ -23,6 +25,7 @@ struct dirent {
 typedef struct dir_impl DIR;
 
 DIR *opendir(const char *path);
+DIR *fdopendir(int fd);
 struct dirent *readdir(DIR *directory);
 int closedir(DIR *directory);
 void rewinddir(DIR *directory);
