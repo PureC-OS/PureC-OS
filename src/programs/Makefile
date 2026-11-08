@@ -155,6 +155,7 @@ TARGETS := \
   	$(PROGRAM_DIR)/sh \
   	$(PROGRAM_DIR)/box \
   	$(PROGRAM_DIR)/proctest \
+  	$(PROGRAM_DIR)/thrtest \
   	$(PROGRAM_DIR)/journalctl \
   	$(PROGRAM_DIR)/httpget \
   	$(PROGRAM_DIR)/httpsget \
@@ -604,6 +605,14 @@ $(OBJ_DIR)/proctest/main.o: $(ROOT_DIR)/src/programs/proctest/main.c
 $(PROGRAM_DIR)/proctest: $(OBJ_DIR)/proctest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/proctest/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/thrtest/main.o: $(ROOT_DIR)/src/programs/thrtest/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/thrtest: $(OBJ_DIR)/thrtest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/thrtest/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(PROGRAM_DIR)/lua: $(LUA_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

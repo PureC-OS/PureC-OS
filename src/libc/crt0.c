@@ -92,7 +92,7 @@ void __tls_init_main(const void *image, size_t filesz, size_t memsz,
                      size_t alignment);
 
 static void crt0_init_tls(void) {
-    if (!__tdata_start || !__tbss_end)
+    if (!__tdata_start || !__tbss_end || __tbss_end <= __tdata_start)
         return;
     size_t filesz = (size_t)(__tdata_end - __tdata_start);
     size_t memsz = (size_t)(__tbss_end - __tdata_start);

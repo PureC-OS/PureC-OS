@@ -68,6 +68,7 @@
 /usr/bin/sh /usr/bin/sh - 0 bin/programs/sh
 /bin/sh /bin/sh - 0 bin/programs/sh
 /usr/bin/proctest /usr/bin/proctest - 0 bin/programs/proctest
+/usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
 /usr/bin/httpget /usr/bin/httpget - 0 bin/programs/httpget
 /usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
