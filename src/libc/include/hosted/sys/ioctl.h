@@ -1,6 +1,9 @@
 #pragma once
 // PureC hosted libc: ioctl on the kernel console tty.
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct winsize {
     unsigned short ws_row;
     unsigned short ws_col;
@@ -18,3 +21,6 @@ struct winsize {
 #define FIONREAD 0x541B
 
 int ioctl(int fd, unsigned long request, ...);
+#ifdef __cplusplus
+}
+#endif

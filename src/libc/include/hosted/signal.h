@@ -2,6 +2,9 @@
 // PureC hosted libc: signal. Kernel-backed: handlers run on return to
 // user mode (syscall exit or timer tick); siginfo is not populated.
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef void (*sighandler_t)(int);
 typedef unsigned long sigset_t;
 typedef int sig_atomic_t;
@@ -77,3 +80,6 @@ int sigdelset(sigset_t *set, int signum);
 int sigismember(const sigset_t *set, int signum);
 int raise(int signum);
 int kill(int pid, int signum);
+#ifdef __cplusplus
+}
+#endif

@@ -26,6 +26,12 @@
 #define F_DUPFD_CLOEXEC 1030
 #define FD_CLOEXEC 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 int open(const char *path, int flags, ...);
 int creat(const char *path, int mode);
 int fcntl(int fd, int command, ...);
+#ifdef __cplusplus
+}
+#endif

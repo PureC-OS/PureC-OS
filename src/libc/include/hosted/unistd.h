@@ -16,6 +16,9 @@
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef long off_t;
 typedef long ssize_t;
 
@@ -85,3 +88,6 @@ unsigned int alarm(unsigned int seconds);
 #define R_OK 4
 #define W_OK 2
 #define X_OK 1
+#ifdef __cplusplus
+}
+#endif

@@ -29,6 +29,9 @@
 #define MADV_WILLNEED 3
 #define MADV_DONTNEED 4
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void *mmap(void *address, size_t length, int prot, int flags, int fd,
            long offset);
 int mprotect(void *address, size_t length, int prot);
@@ -39,3 +42,6 @@ int msync(void *address, size_t length, int flags);
 int madvise(void *address, size_t length, int advice);
 int mlock(const void *address, size_t length);
 int munlock(const void *address, size_t length);
+#ifdef __cplusplus
+}
+#endif

@@ -10,6 +10,9 @@
 #define LC_NUMERIC 4
 #define LC_TIME 5
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct lconv {
     char *decimal_point;
     char *thousands_sep;
@@ -18,3 +21,6 @@ struct lconv {
 
 struct lconv *localeconv(void);
 char *setlocale(int category, const char *locale);
+#ifdef __cplusplus
+}
+#endif

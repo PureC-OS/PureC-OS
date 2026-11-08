@@ -16,6 +16,9 @@
 #define REG_BADPAT 2
 #define REG_ESPACE 12
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef long regoff_t;
 
 typedef struct {
@@ -32,4 +35,7 @@ int regexec(const regex_t *preg, const char *string, size_t nmatch, regmatch_t p
 size_t regerror(int errcode, const regex_t *preg, char *errbuf, size_t errbuf_size);
 void regfree(regex_t *preg);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

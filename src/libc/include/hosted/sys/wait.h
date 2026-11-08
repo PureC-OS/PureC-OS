@@ -11,5 +11,11 @@
 #define WIFSTOPPED(status) 0
 #define WIFCONTINUED(status) 0
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 pid_t waitpid(pid_t pid, int *status, int options);
 pid_t wait(int *status);
+#ifdef __cplusplus
+}
+#endif

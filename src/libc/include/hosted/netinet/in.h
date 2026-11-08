@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include "../sys/socket.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef uint16_t in_port_t;
 typedef uint32_t in_addr_t;
 
@@ -57,4 +60,7 @@ struct sockaddr_in6 {
     (((a)->s6_addr[0] == 0xfe) && (((a)->s6_addr[1] & 0xc0) == 0xc0))
 #endif
 
+#ifdef __cplusplus
+}
+#endif
 #endif

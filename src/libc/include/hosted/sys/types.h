@@ -3,6 +3,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef long off_t;
 typedef long ssize_t;
 typedef int pid_t;
@@ -16,3 +19,6 @@ typedef long blksize_t;
 typedef long blkcnt_t;
 
 #include "select.h"
+#ifdef __cplusplus
+}
+#endif

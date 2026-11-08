@@ -39,6 +39,9 @@
 #define signbit(x) __builtin_signbit(x)
 #define fpclassify(x) __builtin_fpclassify(FP_NAN, FP_INFINITE, FP_NORMAL, FP_SUBNORMAL, FP_ZERO, x)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 double fabs(double value);
 double floor(double value);
 double ceil(double value);
@@ -125,3 +128,6 @@ float atan2f(float y, float x);
 float sinhf(float value);
 float coshf(float value);
 float tanhf(float value);
+#ifdef __cplusplus
+}
+#endif

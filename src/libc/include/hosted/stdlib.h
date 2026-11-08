@@ -9,6 +9,9 @@
 #define EXIT_FAILURE 1
 #define RAND_MAX 32767
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void *malloc(size_t size);
 void *calloc(size_t count, size_t size);
 void *realloc(void *pointer, size_t size);
@@ -72,3 +75,6 @@ int __cxa_atexit(void (*function)(void *), void *argument, void *dso);
 void __cxa_finalize(void *dso);
 void _exit(int status) __attribute__((noreturn));
 void abort(void);
+#ifdef __cplusplus
+}
+#endif

@@ -11,6 +11,9 @@
 #define DT_REG 8
 #define _DIRENT_HAVE_D_TYPE 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct dirent {
     unsigned long d_ino;
     unsigned char d_type;
@@ -29,3 +32,6 @@ int alphasort(const struct dirent **left, const struct dirent **right);
 int scandir(const char *path, struct dirent ***result,
             int (*select)(const struct dirent *),
             int (*compare)(const struct dirent **, const struct dirent **));
+#ifdef __cplusplus
+}
+#endif

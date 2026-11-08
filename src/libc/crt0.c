@@ -27,6 +27,27 @@ void exit(int status) __attribute__((noreturn));
 
 extern char **environ;
 
+extern void (*__init_array_start[])(void) __attribute__((weak));
+extern void (*__init_array_end[])(void) __attribute__((weak));
+
+/* Identifies this executable to __cxa_atexit (C++ static destructors). */
+void *__dso_handle __attribute__((visibility("hidden")));
+
+/* Set once the .init_array constructors have run, so wrappers can skip a second run. */
+int __purec_init_array_done;
+
+static void crt0_run_constructors(void) {
+    if (__purec_init_array_done)
+        return;
+    __purec_init_array_done = 1;
+    void (**entry)(void) = __init_array_start;
+    void (**end)(void) = __init_array_end;
+    if (!entry || !end)
+        return;
+    for (; entry < end; entry++)
+        (*entry)();
+}
+
 static char crt0_cmdline[CRT0_CMDLINE];
 static char *crt0_argv[CRT0_MAX_ARGS];
 static char crt0_program[64];
@@ -69,6 +90,7 @@ void crt0_main(uint64_t *frame) {
         char **vector = (char **)(frame + 1);
         int count = (int)frame[0];
         environ = vector + count + 1;
+        crt0_run_constructors();
         int status = main(count, vector);
         exit(status);
     }
@@ -98,6 +120,7 @@ void crt0_main(uint64_t *frame) {
         }
     }
     crt0_argv[argc] = 0;
+    crt0_run_constructors();
     int status = main(argc, crt0_argv);
     exit(status);
 }

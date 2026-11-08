@@ -2,6 +2,9 @@
 // PureC hosted libc: errno, phase 1 of the TCC migration foundation.
 // Backed by a plain global (single-threaded processes for now).
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 extern int errno;
 
 #define EPERM           1
@@ -69,3 +72,6 @@ extern int errno;
 #define EALREADY        114
 #define EINPROGRESS     115
 #define EWOULDBLOCK     EAGAIN
+#ifdef __cplusplus
+}
+#endif

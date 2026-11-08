@@ -3,6 +3,9 @@
 // backtrace sources to compile. No kernel context delivery exists;
 // these structures are never populated on PureC OS (phase 3+).
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef long greg_t;
 #define NGREG 23
 #define REG_R8 0
@@ -63,3 +66,6 @@ typedef struct ucontext_t {
 } ucontext_t;
 
 int getcontext(ucontext_t *context);
+#ifdef __cplusplus
+}
+#endif

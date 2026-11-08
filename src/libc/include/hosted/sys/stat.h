@@ -30,6 +30,9 @@
 #define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
 #define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct stat {
     unsigned long long st_dev;
     unsigned long long st_ino;
@@ -59,3 +62,6 @@ int mkdir(const char *path, unsigned int mode);
 int chmod(const char *path, unsigned int mode);
 int fchmod(int fd, unsigned int mode);
 mode_t umask(mode_t mask);
+#ifdef __cplusplus
+}
+#endif

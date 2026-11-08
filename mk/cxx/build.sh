@@ -52,5 +52,5 @@ cmake -G Ninja -S "$SRC/runtimes" -B "$BUILD" \
   -DLIBCXX_HARDENING_MODE=none
 
 cmake --build "$BUILD" --target cxx cxxabi
-cmake --install "$BUILD" --component cxx --component cxxabi 2>/dev/null || cmake --install "$BUILD"
+cmake --install "$BUILD"
 echo "libc++ staged in $STAGE"

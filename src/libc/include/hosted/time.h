@@ -6,6 +6,9 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef long time_t;
 typedef long clock_t;
 
@@ -48,4 +51,7 @@ char *ctime(const time_t *value);
 size_t strftime(char *buffer, size_t capacity, const char *format,
                 const struct tm *parts);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

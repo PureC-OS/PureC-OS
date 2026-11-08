@@ -3,6 +3,9 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef int64_t intmax_t;
 typedef uint64_t uintmax_t;
 
@@ -55,3 +58,6 @@ typedef uint64_t uintmax_t;
 intmax_t imaxabs(intmax_t value);
 intmax_t strtoimax(const char *text, char **end, int base);
 uintmax_t strtoumax(const char *text, char **end, int base);
+#ifdef __cplusplus
+}
+#endif
