@@ -38,6 +38,7 @@ private:
 
     struct pg_window m_pg;
     bool m_native = false;
+    bool m_gate = false;
     QImage m_last;
     QRect m_requested;
     int m_buttons = 0;

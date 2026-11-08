@@ -39,7 +39,8 @@ bool QPurecWindow::openNative()
     if (int(fh) > screen.height()) fh = uint32_t(screen.height());
     QByteArray title = w->title().toUtf8();
     bool ok;
-    if (int(fw) >= screen.width() && int(fh) >= screen.height())
+    m_gate = qEnvironmentVariableIntValue("PUREC_GATE") != 0;
+    if (m_gate || (int(fw) >= screen.width() && int(fh) >= screen.height()))
         ok = pg_window_init(&m_pg, title.constData(), 0, 0, fw, fh);
     else
         ok = pg_window_center(&m_pg, title.constData(), fw, fh);
@@ -47,7 +48,7 @@ bool QPurecWindow::openNative()
         qWarning("purec: pg_window_init failed (%ux%u)", fw, fh);
         return false;
     }
-    if (w->flags().testFlag(Qt::CustomizeWindowHint) && !w->flags().testFlag(Qt::WindowCloseButtonHint))
+    if (m_gate)
         pg_window_set_closable(&m_pg, false);
     pg_window_set_esc_closes(&m_pg, false);
     m_native = true;
@@ -191,6 +192,12 @@ bool QPurecWindow::pollOne()
 {
     if (!m_native || !pg_window_is_open(&m_pg))
         return false;
+    if (m_gate) {
+        if (m_pg.frame.x != 0 || m_pg.frame.y != 0)
+            (void)pg_window_move(&m_pg, 0, 0);
+        if (m_pg.minimized)
+            pg_window_restore(&m_pg);
+    }
     struct pg_event ev;
     if (!pg_window_poll_event(&m_pg, &ev))
         return false;

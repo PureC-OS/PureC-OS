@@ -8,6 +8,7 @@
 
 int main(int argc, char **argv)
 {
+    qputenv("PUREC_GATE", "1");
     purec::preparePlatform(argc, argv);
     QApplication app(argc, argv);
     purec::installFonts();
