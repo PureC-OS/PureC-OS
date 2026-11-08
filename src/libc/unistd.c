@@ -1,7 +1,3 @@
-// PureC hosted libc: POSIX fd layer over the FILE preload model.
-// fds 0/1/2 are the console; 3..31 map onto FILE* slots. All positioning
-// goes through fseek, so lseek works on every regular file.
-
 #include "include/hosted/unistd.h"
 #include "include/hosted/fcntl.h"
 #include "include/hosted/stdlib.h"
@@ -19,11 +15,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-// FILE layout (path field) is internal to stdio.c; fstat reaches it
-// through this accessor to avoid a header cycle.
-
-// No kernel cwd: resolve relative paths against logical $PWD so ported
-// programs (tcc, etc.) work with "file.c" instead of only "/abs/path".
 static const char *resolve_user_path(const char *path, char *buf, size_t cap)
 {
     (void)cap;
@@ -278,7 +269,14 @@ struct dir_impl
     int count;
     int index;
     struct dirent current;
+    int pseudo_fd;
+    char path[512];
 };
+
+#define DIRFD_BASE 1000000
+#define DIRFD_SLOTS 64
+static char dirfd_paths[DIRFD_SLOTS][512];
+static int dirfd_used[DIRFD_SLOTS];
 
 #define DIR_CAPACITY 1024
 
@@ -314,7 +312,130 @@ DIR *opendir(const char *path)
     }
     directory->count = count;
     directory->index = 0;
+    directory->pseudo_fd = -1;
+    strncpy(directory->path, path, sizeof(directory->path) - 1);
+    directory->path[sizeof(directory->path) - 1] = 0;
+    for (int slot = 0; slot < DIRFD_SLOTS; slot++)
+    {
+        if (!dirfd_used[slot])
+        {
+            dirfd_used[slot] = 1;
+            strcpy(dirfd_paths[slot], directory->path);
+            directory->pseudo_fd = DIRFD_BASE + slot;
+            break;
+        }
+    }
     return directory;
+}
+
+int dirfd(DIR *directory)
+{
+    if (!directory || directory->pseudo_fd < 0)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    return directory->pseudo_fd;
+}
+
+static int at_path(int dirfd_value, const char *path, char *out, size_t capacity)
+{
+    if (!path)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if (path[0] == '/' || dirfd_value == AT_FDCWD)
+    {
+        if (strlen(path) >= capacity)
+        {
+            errno = ENAMETOOLONG;
+            return -1;
+        }
+        strcpy(out, path);
+        return 0;
+    }
+    int slot = dirfd_value - DIRFD_BASE;
+    if (slot < 0 || slot >= DIRFD_SLOTS || !dirfd_used[slot])
+    {
+        errno = EBADF;
+        return -1;
+    }
+    size_t base = strlen(dirfd_paths[slot]);
+    if (base + 1 + strlen(path) >= capacity)
+    {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strcpy(out, dirfd_paths[slot]);
+    if (base && out[base - 1] != '/')
+        out[base++] = '/';
+    strcpy(out + base, path);
+    return 0;
+}
+
+int fstatat(int dirfd_value, const char *path, struct stat *info, int flags)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return (flags & AT_SYMLINK_NOFOLLOW) ? lstat(full, info) : stat(full, info);
+}
+
+int unlinkat(int dirfd_value, const char *path, int flags)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return (flags & AT_REMOVEDIR) ? rmdir(full) : unlink(full);
+}
+
+int alphasort(const struct dirent **left, const struct dirent **right)
+{
+    return strcoll((*left)->d_name, (*right)->d_name);
+}
+
+int scandir(const char *path, struct dirent ***result,
+            int (*select)(const struct dirent *),
+            int (*compare)(const struct dirent **, const struct dirent **))
+{
+    DIR *directory = opendir(path);
+    if (!directory)
+        return -1;
+    struct dirent **list = 0;
+    int count = 0, capacity = 0;
+    struct dirent *entry;
+    while ((entry = readdir(directory)) != 0)
+    {
+        if (select && !select(entry))
+            continue;
+        if (count == capacity)
+        {
+            int grown = capacity ? capacity * 2 : 32;
+            struct dirent **bigger = realloc(list, sizeof(*list) * grown);
+            if (!bigger)
+                goto fail;
+            list = bigger;
+            capacity = grown;
+        }
+        struct dirent *copy = malloc(sizeof(*copy));
+        if (!copy)
+            goto fail;
+        *copy = *entry;
+        list[count++] = copy;
+    }
+    closedir(directory);
+    if (compare && count > 1)
+        qsort(list, (size_t)count, sizeof(*list), (int (*)(const void *, const void *))compare);
+    *result = list;
+    return count;
+fail:
+    for (int i = 0; i < count; i++)
+        free(list[i]);
+    free(list);
+    closedir(directory);
+    errno = ENOMEM;
+    return -1;
 }
 
 struct dirent *readdir(DIR *directory)
@@ -350,6 +471,8 @@ int closedir(DIR *directory)
         errno = EBADF;
         return -1;
     }
+    if (directory->pseudo_fd >= DIRFD_BASE)
+        dirfd_used[directory->pseudo_fd - DIRFD_BASE] = 0;
     free(directory->entries);
     free(directory);
     return 0;
@@ -426,7 +549,7 @@ int fstat(int fd, struct stat *info)
 
 int lstat(const char *path, struct stat *info)
 {
-    return stat(path, info); // no symlinks on PureC filesystems
+    return stat(path, info);
 }
 
 int unlink(const char *path)
@@ -464,8 +587,6 @@ int access(const char *path, int mode)
     }
     if ((mode & X_OK) && raw.is_directory == 0)
     {
-        // No execute-bit model; regular files are treated as executable
-        // when opened through the loader, so report success for exists.
     }
     return 0;
 }
@@ -520,35 +641,192 @@ int chdir(const char *path)
     return syscall_result(pc_syscall(SYS_CHDIR, (uint64_t)(uintptr_t)path, 0, 0));
 }
 
-// ---- mmap family: ENOSYS until the executable-memory syscall lands ----
+static int64_t syscall_four(uint64_t number, uint64_t argument1,
+                            uint64_t argument2, uint64_t argument3,
+                            uint64_t argument4)
+{
+    int64_t result;
+    __asm__ volatile("int $0x80"
+                     : "=a"(result)
+                     : "a"(number), "b"(argument1), "c"(argument2),
+                       "d"(argument3), "S"(argument4)
+                     : "r10", "r8", "memory");
+    return result;
+}
+
+static void *mmap_address_result(int64_t result)
+{
+    if (result < 0)
+    {
+        errno = (int)-result;
+        return MAP_FAILED;
+    }
+    return (void *)(uintptr_t)result;
+}
+
+static int mmap_fill_from_file(char *base, size_t length, int fd, long offset)
+{
+    off_t saved = lseek(fd, 0, SEEK_CUR);
+    if (saved < 0)
+        return -1;
+    if (lseek(fd, (off_t)offset, SEEK_SET) < 0)
+        return -1;
+    size_t done = 0;
+    int failed = 0;
+    while (done < length)
+    {
+        ssize_t got = read(fd, base + done, length - done);
+        if (got < 0)
+        {
+            failed = 1;
+            break;
+        }
+        if (got == 0)
+            break;
+        done += (size_t)got;
+    }
+    int saved_errno = errno;
+    lseek(fd, saved, SEEK_SET);
+    errno = saved_errno;
+    return failed ? -1 : 0;
+}
 
 void *mmap(void *address, size_t length, int prot, int flags, int fd, long offset)
 {
-    (void)address;
-    (void)length;
-    (void)prot;
-    (void)flags;
-    (void)fd;
-    (void)offset;
-    errno = ENOSYS;
-    return MAP_FAILED;
+    if (!length || (prot & ~(PROT_READ | PROT_WRITE | PROT_EXEC)))
+    {
+        errno = EINVAL;
+        return MAP_FAILED;
+    }
+    int sharing = flags & (MAP_SHARED | MAP_PRIVATE);
+    if (sharing != MAP_SHARED && sharing != MAP_PRIVATE)
+    {
+        errno = EINVAL;
+        return MAP_FAILED;
+    }
+    int anonymous = (flags & MAP_ANONYMOUS) != 0;
+    int fixed = (flags & MAP_FIXED) != 0;
+    if (fixed && ((uintptr_t)address & 4095u))
+    {
+        errno = EINVAL;
+        return MAP_FAILED;
+    }
+    int backed = !anonymous && prot != PROT_NONE;
+    if (!anonymous)
+    {
+        if (fd < 0)
+        {
+            errno = EBADF;
+            return MAP_FAILED;
+        }
+        if (offset < 0 || (offset & 4095))
+        {
+            errno = EINVAL;
+            return MAP_FAILED;
+        }
+        if (sharing == MAP_SHARED && (prot & PROT_WRITE))
+        {
+            errno = ENODEV;
+            return MAP_FAILED;
+        }
+    }
+    struct kernel_mmap_args request;
+    request.address = fixed ? (uint64_t)(uintptr_t)address : 0;
+    request.length = length;
+    request.prot = backed ? (uint64_t)(PROT_READ | PROT_WRITE) : (uint64_t)prot;
+    request.flags = fixed ? KMAP_FIXED : 0;
+    void *base = mmap_address_result(
+        pc_syscall(SYS_MMAP, (uint64_t)(uintptr_t)&request, 0, 0));
+    if (base == MAP_FAILED || !backed)
+        return base;
+    if (mmap_fill_from_file((char *)base, length, fd, offset) < 0)
+    {
+        int saved_errno = errno;
+        munmap(base, length);
+        errno = saved_errno;
+        return MAP_FAILED;
+    }
+    if (prot != (PROT_READ | PROT_WRITE) && mprotect(base, length, prot) < 0)
+    {
+        int saved_errno = errno;
+        munmap(base, length);
+        errno = saved_errno;
+        return MAP_FAILED;
+    }
+    return base;
 }
 
 int mprotect(void *address, size_t length, int prot)
 {
-    (void)address;
-    (void)length;
-    (void)prot;
-    errno = ENOSYS;
-    return -1;
+    if (prot & ~(PROT_READ | PROT_WRITE | PROT_EXEC))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if (!length)
+        return 0;
+    return syscall_result(pc_syscall(SYS_MPROTECT, (uint64_t)(uintptr_t)address,
+                                     length, (uint64_t)prot));
 }
 
 int munmap(void *address, size_t length)
 {
+    return syscall_result(pc_syscall(SYS_MUNMAP, (uint64_t)(uintptr_t)address,
+                                     length, 0));
+}
+
+void *mremap(void *address, size_t old_length, size_t new_length, int flags, ...)
+{
+    if (flags & ~MREMAP_MAYMOVE)
+    {
+        errno = EINVAL;
+        return MAP_FAILED;
+    }
+    return mmap_address_result(syscall_four(
+        SYS_MREMAP, (uint64_t)(uintptr_t)address, old_length, new_length,
+        (flags & MREMAP_MAYMOVE) ? KMAP_REMAP_MAYMOVE : 0));
+}
+
+int msync(void *address, size_t length, int flags)
+{
+    (void)length;
+    if (((uintptr_t)address & 4095u) ||
+        ((flags & MS_ASYNC) && (flags & MS_SYNC)))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    return 0;
+}
+
+int madvise(void *address, size_t length, int advice)
+{
+    (void)length;
+    if ((uintptr_t)address & 4095u)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    if (advice < MADV_NORMAL || advice > MADV_DONTNEED)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    return 0;
+}
+
+int mlock(const void *address, size_t length)
+{
     (void)address;
     (void)length;
-    errno = ENOSYS;
-    return -1;
+    return 0;
+}
+
+int munlock(const void *address, size_t length)
+{
+    (void)address;
+    (void)length;
+    return 0;
 }
 
 void assert_fail(const char *expression, const char *file, int line)
@@ -558,7 +836,6 @@ void assert_fail(const char *expression, const char *file, int line)
     pc_write(" at ");
     pc_write(file ? file : "?");
     pc_write(":");
-    // itoa without stdio (assert may fire before stdio is usable).
     char number[16];
     uint32_t n = 0;
     int value = line < 0 ? -line : line;
@@ -581,9 +858,6 @@ void assert_fail(const char *expression, const char *file, int line)
     pc_exit(134);
 }
 
-// No symlinks exist on PureC filesystems, so lexical normalization is
-// exact: prepend $PWD for relative paths, collapse // and /./, resolve
-// /../ by popping, strip the trailing slash (root kept).
 char *realpath(const char *path, char *resolved)
 {
     if (!path || !path[0])
@@ -626,7 +900,6 @@ char *realpath(const char *path, char *resolved)
         return 0;
     }
     combined[n] = '\0';
-    // In-place collapse into out.
     char out[512];
     size_t w = 0;
     for (size_t r = 0; combined[r];)
@@ -648,7 +921,7 @@ char *realpath(const char *path, char *resolved)
                 while (w > 1 && out[w - 1] != '/')
                     w--; // pop one level
                 if (w > 1)
-                    w--; // drop the slash too (keep root)
+                    w--;
                 continue;
             }
             out[w++] = '/';
@@ -666,7 +939,6 @@ char *realpath(const char *path, char *resolved)
     out[w] = '\0';
     if (resolved)
     {
-        // Sized caller buffer (assumed big enough, like PATH_MAX users).
         memcpy(resolved, out, w + 1);
         return resolved;
     }

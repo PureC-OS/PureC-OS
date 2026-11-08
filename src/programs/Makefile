@@ -91,7 +91,6 @@ GENERAL_SOURCES := \
   	settings/pages/appearance.c \
   	settings/pages/display.c \
 	login/main.c \
- 	monitor/main.c \
 	disks/main.c \
 	devmgr/main.c \
 	logview/main.c \
@@ -155,6 +154,9 @@ TARGETS := \
   	$(PROGRAM_DIR)/forktest \
   	$(PROGRAM_DIR)/sh \
   	$(PROGRAM_DIR)/proctest \
+  	$(PROGRAM_DIR)/journalctl \
+  	$(PROGRAM_DIR)/httpget \
+  	$(PROGRAM_DIR)/httpsget \
   	$(PROGRAM_DIR)/fputest \
   	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/cd \
@@ -224,16 +226,16 @@ $(LUA_OBJECTS): PRIVATE_CFLAGS := -DLUA_ANSI -I$(ROOT_DIR)/src/libc/include/host
 $(LIBPUREC):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
 
-$(LIB_DIR)/libpurec.so:
+$(LIB_DIR)/libpurec.so $(DYN_LD_STUB):
 	$(MAKE) -C $(ROOT_DIR)/src/libc
 
 ifdef PUREC_DYNAMIC
 TARGETS += $(PROGRAM_DIR)/echo-dyn
 PIE_LD_SCRIPT := $(ROOT_DIR)/linker-userspace-pie.ld
 
-$(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(PIE_LD_SCRIPT)
+$(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(DYN_LD_STUB) $(PIE_LD_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) $(PIE_LINK_FLAGS) -T $(PIE_LD_SCRIPT) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so
+	$(LD) $(DYN_LINK_FLAGS) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(DYN_LD_STUB) $(LIB_DIR)/libpurec.so
 
 $(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/echo/echo.c
 	@mkdir -p $(@D)
@@ -299,9 +301,17 @@ $(PROGRAM_DIR)/settings: $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/mod
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/monitor: $(OBJ_DIR)/monitor/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+MONITOR_OBJECTS := $(OBJ_DIR)/monitor/main.o $(OBJ_DIR)/monitor/model.o $(OBJ_DIR)/monitor/ui.o
+
+$(OBJ_DIR)/monitor/%.o: $(ROOT_DIR)/src/programs/monitor/%.c
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/monitor: $(MONITOR_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(MONITOR_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC)
+
+-include $(MONITOR_OBJECTS:.o=.d)
 
 $(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -507,6 +517,74 @@ $(OBJ_DIR)/sh/main.o: $(ROOT_DIR)/src/programs/sh/main.c
 $(PROGRAM_DIR)/sh: $(OBJ_DIR)/sh/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/sh/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/journalctl/main.o: $(ROOT_DIR)/src/programs/journalctl/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/journalctl: $(OBJ_DIR)/journalctl/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/journalctl/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/httpget/main.o: $(ROOT_DIR)/src/programs/httpget/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/httpget: $(OBJ_DIR)/httpget/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpget/main.o $(LIBPUREFS) $(LIBPUREC)
+
+LIBWOLF := $(LIB_DIR)/libwolf.a
+
+$(LIBWOLF):
+	$(MAKE) -C $(ROOT_DIR)/wolfssl lib
+
+$(OBJ_DIR)/httpsget/main.o: $(ROOT_DIR)/src/programs/httpsget/main.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec -DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/httpsget/main.o $(LIB_DIR)/crt0.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
+
+CURL_DIR := $(ROOT_DIR)/curl
+CURL_PRESENT := $(wildcard $(CURL_DIR)/lib/curl_setup.h)
+ifneq ($(CURL_PRESENT),)
+CURL_LIB_EXCLUDE := schannel sspi amigaos rustls mbedtls gtls vtls/apple openssl winapi multibyte \
+	version_win32 gsasl krb5 spnego asyn-ares ngtcp2 quiche vquic-tls capsule vssh/libssh rtsp \
+	win32_threads bearssl sectransp
+CURL_LIB_ALL := $(sort $(shell cd $(CURL_DIR)/lib && $(MAKE) -s -f $(ROOT_DIR)/mk/curl/list.mk VAR=CSOURCES 2>/dev/null))
+CURL_LIB_SOURCES := $(foreach f,$(filter %.c,$(CURL_LIB_ALL)),$(if $(strip $(foreach x,$(CURL_LIB_EXCLUDE),$(findstring $(x),$(f)))),,$(f)))
+CURL_TOOL_SOURCES := $(filter %.c,$(shell cd $(CURL_DIR)/src && $(MAKE) -s -f $(ROOT_DIR)/mk/curl/list.mk VAR=CURL_CFILES 2>/dev/null))
+CURL_OBJ_DIR := $(BIN_DIR)/obj/curl
+CURL_OBJECTS := $(CURL_LIB_SOURCES:%.c=$(CURL_OBJ_DIR)/lib/%.o) $(CURL_TOOL_SOURCES:%.c=$(CURL_OBJ_DIR)/src/%.o)
+CURL_CFLAGS := -I$(ROOT_DIR)/mk/curl -I$(CURL_DIR)/include -I$(CURL_DIR)/lib -I$(CURL_DIR)/src \
+	-I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec \
+	-DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS -DHAVE_CONFIG_H -DBUILDING_LIBCURL -DCURL_STATICLIB \
+	-include sys/select.h -w
+ifneq ($(wildcard $(ROOT_DIR)/netsurf-libs/zlib/zlib.h),)
+CURL_CFLAGS += -DHAVE_LIBZ -DHAVE_ZLIB_H -I$(ROOT_DIR)/netsurf-libs/zlib
+CURL_ZLIB := $(LIB_DIR)/libz.a
+
+$(LIB_DIR)/libz.a:
+	$(MAKE) -C $(ROOT_DIR)/mk/netsurf zlib
+endif
+LIBGCC := $(shell $(CC) -print-libgcc-file-name)
+TARGETS += $(PROGRAM_DIR)/curl
+-include $(CURL_OBJECTS:.o=.d)
+
+$(CURL_OBJ_DIR)/lib/%.o: $(CURL_DIR)/lib/%.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CURL_CFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(CURL_OBJ_DIR)/src/%.o: $(CURL_DIR)/src/%.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(CURL_CFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/curl: $(CURL_OBJECTS) $(LIB_DIR)/crt0.o $(LIBWOLF) $(CURL_ZLIB) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(CURL_OBJECTS) $(LIBWOLF) $(CURL_ZLIB) $(LIBPUREFS) $(LIBPUREC) $(LIBGCC)
+endif
 
 $(OBJ_DIR)/proctest/main.o: $(ROOT_DIR)/src/programs/proctest/main.c
 	@mkdir -p $(@D)

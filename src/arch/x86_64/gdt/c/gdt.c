@@ -1,5 +1,6 @@
 #include "../include/gdt.h"
 #include "../../../../kernel/smp/cpu.h"
+#include "../../../../kernel/smp/percpu.h"
 #include <stdint.h>
 
 struct gdt_entry {
@@ -94,7 +95,7 @@ bool gdt_init_cpu(uint32_t cpu_id, uint64_t stack_top) {
     cpu->gp.base  = (uint64_t)gdt;
     gdt_flush((uint64_t)&cpu->gp);
     __asm__ volatile("mov $0x28, %%ax; ltr %%ax" ::: "rax", "memory");
-    return true;
+    return percpu_install(cpu_id);
 }
 void gdt_init(void) {
     (void)gdt_init_cpu(0, 0);

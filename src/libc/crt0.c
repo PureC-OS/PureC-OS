@@ -23,6 +23,7 @@
 #define CRT0_ENV_VALUE 128
 
 int main(int argc, char *argv[]);
+void exit(int status) __attribute__((noreturn));
 
 extern char **environ;
 
@@ -69,8 +70,7 @@ void crt0_main(uint64_t *frame) {
         int count = (int)frame[0];
         environ = vector + count + 1;
         int status = main(count, vector);
-        fflush(0);
-        pc_exit(status);
+        exit(status);
     }
     crt0_build_environ();
     if (pc_get_process_name(crt0_program, 32) >= 0
@@ -99,8 +99,5 @@ void crt0_main(uint64_t *frame) {
     }
     crt0_argv[argc] = 0;
     int status = main(argc, crt0_argv);
-    // Like hosted exit(): flush stdio buffers (stdout is line-buffered,
-    // so a printf without trailing '\n' would otherwise be lost).
-    fflush(0);
-    pc_exit(status);
+    exit(status);
 }

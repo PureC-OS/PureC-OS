@@ -22,6 +22,7 @@ CFLAGS += $(INC) -Wall -std=gnu99 -g -O1 -ffreestanding -fno-stack-protector -fn
 SRC_C = \
 	main.c \
 	mphalport.c \
+	modposix.c \
 	shared/runtime/pyexec.c \
 	shared/runtime/stdout_helpers.c \
 	shared/readline/readline.c \

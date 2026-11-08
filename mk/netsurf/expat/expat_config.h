@@ -1,0 +1,10 @@
+#define BYTEORDER 1234
+#define HAVE_MEMMOVE 1
+#define HAVE_BCOPY 0
+#define XML_CONTEXT_BYTES 1024
+#define XML_DTD 1
+#define XML_NS 1
+#define XML_DEV_URANDOM 1
+#define XML_GE 1
+#define PACKAGE_NAME "expat"
+#define PACKAGE_VERSION "2.6.4"

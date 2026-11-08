@@ -24,6 +24,7 @@
 #include "../random/krandom.h"
 #include "../time/wallclock.h"
 #include "../../net/api/ping.h"
+#include "../../net/api/socket.h"
 #include "../../net/config/dhcp.h"
 #include "../../net/core/net_device.h"
 #include "../../net/name/dns.h"
@@ -237,7 +238,7 @@ static int64_t tty_ioctl_request(uint32_t request, uint64_t argument)
   }
 }
 
-#define POLL_MAX_DESCRIPTORS 256
+#define POLL_MAX_DESCRIPTORS 1024
 static uint32_t poll_overshoot_reports;
 
 static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,
@@ -278,6 +279,174 @@ static int64_t poll_descriptors(struct kernel_pollfd *fds, uint64_t count,
     if (signal_pending_current())
       return -KERR_INTR;
     scheduler_sleep(1);
+  }
+}
+
+static int32_t socket_of_fd(int32_t fd)
+{
+  int32_t id = fd_socket_id(fd);
+  if (id >= 0)
+    return id;
+  return fd_ctl(fd, FD_CTL_KIND, 0) < 0 ? -KERR_BADF : -KERR_NOTSOCK;
+}
+
+static int64_t socket_copy_address(uint64_t address_pointer,
+                                   uint64_t length_pointer,
+                                   const struct sock_addr_in *address)
+{
+  if (!address_pointer || !length_pointer)
+    return 0;
+  if (!writable((void *)(uintptr_t)length_pointer, sizeof(uint32_t)))
+    return -KERR_FAULT;
+  uint32_t capacity = *(uint32_t *)(uintptr_t)length_pointer;
+  uint32_t copy = capacity < sizeof(*address) ? capacity : (uint32_t)sizeof(*address);
+  if (copy && !writable((void *)(uintptr_t)address_pointer, copy))
+    return -KERR_FAULT;
+  if (copy)
+    memcpy((void *)(uintptr_t)address_pointer, address, copy);
+  *(uint32_t *)(uintptr_t)length_pointer = sizeof(*address);
+  return 0;
+}
+
+static int64_t socket_read_address(uint64_t pointer, uint64_t length,
+                                   struct sock_addr_in *out)
+{
+  if (length < 8 || !readable((const void *)(uintptr_t)pointer, length > sizeof(*out) ? sizeof(*out) : length))
+    return -KERR_FAULT;
+  memset(out, 0, sizeof(*out));
+  memcpy(out, (const void *)(uintptr_t)pointer, length > sizeof(*out) ? sizeof(*out) : length);
+  return 0;
+}
+
+static int64_t socket_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3,
+                              uint64_t a4)
+{
+  int32_t fd = (int32_t)a1;
+  switch (n)
+  {
+  case SYS_SOCKET:
+  {
+    uint32_t type_flags = (uint32_t)a2;
+    int32_t id = sock_create((int32_t)a1, (int32_t)(type_flags & SOCK_TYPE_MASK),
+                             (int32_t)a3);
+    if (id < 0)
+      return id;
+    int32_t opened = fd_install_socket(
+        id, type_flags & (SOCK_FLAG_NONBLOCK | SOCK_FLAG_CLOEXEC));
+    if (opened < 0)
+      sock_release(id);
+    return opened;
+  }
+  case SYS_CONNECT:
+  case SYS_BIND:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    struct sock_addr_in address;
+    int64_t copied = socket_read_address(a2, a3, &address);
+    if (copied < 0)
+      return copied;
+    if (n == SYS_BIND)
+      return sock_bind(id, &address);
+    return sock_connect(id, &address, fd_nonblocking(fd));
+  }
+  case SYS_LISTEN:
+  {
+    int32_t id = socket_of_fd(fd);
+    return id < 0 ? id : sock_listen(id, (int32_t)a2);
+  }
+  case SYS_ACCEPT:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    uint32_t flags = (uint32_t)a4;
+    struct sock_addr_in peer;
+    int32_t child;
+    int32_t result = sock_accept(id, fd_nonblocking(fd), &child, &peer);
+    if (result < 0)
+      return result;
+    int32_t opened = fd_install_socket(
+        child, flags & (SOCK_FLAG_NONBLOCK | SOCK_FLAG_CLOEXEC));
+    if (opened < 0)
+    {
+      sock_release(child);
+      return opened;
+    }
+    (void)socket_copy_address(a2, a3, &peer);
+    return opened;
+  }
+  case SYS_SOCK_SHUTDOWN:
+  {
+    int32_t id = socket_of_fd(fd);
+    return id < 0 ? id : sock_shutdown(id, (int32_t)a2);
+  }
+  case SYS_SOCKNAME:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    struct sock_addr_in address;
+    int32_t result = sock_name(id, a4 != 0, &address);
+    if (result < 0)
+      return result;
+    return socket_copy_address(a2, a3, &address);
+  }
+  case SYS_SETSOCKOPT:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    if (a4 > 64 || (a4 && !readable((const void *)(uintptr_t)a3, a4)))
+      return -KERR_FAULT;
+    uint8_t value[64];
+    if (a4)
+      memcpy(value, (const void *)(uintptr_t)a3, a4);
+    return sock_setopt(id, (int32_t)(a2 >> 32), (int32_t)(uint32_t)a2, value,
+                       (uint32_t)a4);
+  }
+  case SYS_GETSOCKOPT:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    if (!writable((void *)(uintptr_t)a4, sizeof(uint32_t)))
+      return -KERR_FAULT;
+    uint32_t length = *(uint32_t *)(uintptr_t)a4;
+    if (length > 64 || (length && !writable((void *)(uintptr_t)a3, length)))
+      return -KERR_FAULT;
+    uint8_t value[64] = {0};
+    int32_t result = sock_getopt(id, (int32_t)(a2 >> 32), (int32_t)(uint32_t)a2,
+                                 value, &length);
+    if (result < 0)
+      return result;
+    memcpy((void *)(uintptr_t)a3, value, length);
+    *(uint32_t *)(uintptr_t)a4 = length;
+    return 0;
+  }
+  case SYS_SOCK_SEND:
+  case SYS_SOCK_RECV:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    if (a3 > 0x7FFFFFFFULL)
+      return -KERR_INVAL;
+    if (n == SYS_SOCK_SEND)
+    {
+      if (!readable((const void *)(uintptr_t)a2, a3))
+        return -KERR_FAULT;
+      return sock_write(id, (const void *)(uintptr_t)a2, (uint32_t)a3,
+                        fd_nonblocking(fd), (uint32_t)a4);
+    }
+    if (!writable((void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    return sock_read(id, (void *)(uintptr_t)a2, (uint32_t)a3,
+                     fd_nonblocking(fd), (uint32_t)a4);
+  }
+  default:
+    return -KERR_NOSYS;
   }
 }
 
@@ -780,9 +949,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     return process_spawn_module((const char *)(uintptr_t)a1,
                                 (const char *)(uintptr_t)a2);
   case SYS_GET_COMMAND_LINE:
-    if (a2 > PROCESS_COMMAND_LINE_CAPACITY)
-      return -1;
-    if (!writable((void *)(uintptr_t)a1, (uint32_t)a2))
+    if (a2 > 0x7FFFFFFFULL ||
+        !writable((void *)(uintptr_t)a1, (uint32_t)a2))
       return -1;
     return process_command_line((char *)(uintptr_t)a1, (uint32_t)a2);
   case SYS_GET_PROCESS_NAME:
@@ -1742,6 +1910,30 @@ int64_t syscall_handler(struct syscall_regs *r)
       return 0;
     }
     }
+  }
+  case SYS_SOCKET:
+  case SYS_CONNECT:
+  case SYS_BIND:
+  case SYS_LISTEN:
+  case SYS_ACCEPT:
+  case SYS_SOCK_SHUTDOWN:
+  case SYS_SOCKNAME:
+  case SYS_SETSOCKOPT:
+  case SYS_GETSOCKOPT:
+  case SYS_SOCK_SEND:
+  case SYS_SOCK_RECV:
+    return socket_syscall(n, a1, a2, a3, r->rsi);
+  case SYS_DNS_RESOLVE:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a3, sizeof(uint32_t)))
+      return -KERR_FAULT;
+    uint32_t address = 0;
+    int32_t result = sock_resolve((const char *)(uintptr_t)a1, (uint32_t)a2, &address);
+    if (result < 0)
+      return result;
+    *(uint32_t *)(uintptr_t)a3 = address;
+    return 0;
   }
   case SYS_NET_IF_LIST:
   {

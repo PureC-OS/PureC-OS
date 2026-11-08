@@ -17,6 +17,9 @@ SECTIONS
     .rela.dyn : ALIGN(0x1000) { *(.rela.dyn .rela.dyn.*) }
     .rel.plt : ALIGN(0x1000) { *(.rel.plt .rel.plt.*) }
     .rela.plt : ALIGN(0x1000) { *(.rela.plt .rela.plt.*) }
+    .data.rel.ro : ALIGN(0x1000) { *(.data.rel.ro .data.rel.ro.*) }
+    .init_array : ALIGN(16) { *(.init_array .init_array.*) }
+    .fini_array : ALIGN(16) { *(.fini_array .fini_array.*) }
     .data : ALIGN(0x1000) { *(.data .data.*) }
     .bss : ALIGN(0x1000) { *(COMMON) *(.bss .bss.*) }
     /DISCARD/ : { *(.comment) *(.note*) }

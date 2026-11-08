@@ -25,14 +25,22 @@ the build system.
 | Lua | 5.4.8 | MIT | `src/programs/lua/` | Userspace | `/usr/bin/lua` (optional) | Working (REPL); `math` lib planned |
 | Vim | 9.2 (patch 1252) | Vim license | `vim/` (external checkout), `mk/vim/` | Userspace | `/usr/bin/vim`, `/etc/vimrc` (optional) | Builds and links (tiny features); **not run on PureC OS yet** |
 | MicroPython | ~1.30-preview | MIT | `src/programs/micropython/` | Userspace | `/usr/bin/micropython` (optional) | Working (REPL); no floats |
-| TinyCC (PureC-TCC) | 0.9.28rc | LGPL-2.1 | `tcc/` | Userspace | `/usr/bin/tcc`, `/lib/tcc/*` (optional) | Working (compile & run) |
+| TinyCC (PureC-TCC) | 0.9.28rc | LGPL-2.1 | `tcc/` | Userspace | `/usr/bin/tcc`, `/lib/tcc/*` (optional) | Working (compile & run); self-hosting: rebuilds itself inside the OS from sources fetched with curl |
 | SDL2 | 2.33.0 | zlib | `SDL/` | Userspace (lib) | `/usr/bin/sdltest` (optional) | Working; software rendering only |
 | SDL2_mixer | n/a — in-house shim | n/a | `src/libsdl2_mixer/` | Userspace (lib) | via consumers | Working (channels + OPL hook) |
 | Chocolate Doom | 3.1.1 | GPL-2.0 | `chocolate-doom/`, `src/chocolate/` | Userspace | `/usr/bin/doom` (optional) | Working; Doom only, no netplay |
 | GNU Make | 4.4.1 | GPL-3.0-or-later | `gnumake/`, `src/make/` | Userspace | `/usr/bin/make` (optional) | Ported and starts (`make --version`); Makefile runs not yet verified; `-j1` only |
 | Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | `/usr/share/doom/freedoom1.wad` (optional) | Working (Phase 1) |
 | doomgeneric | unspecified | GPL-2.0 | `src/doom/` (+ external clone) | Userspace | Not shipped | Fallback driver; build skipped without sources |
-| wolfSSL | 5.9.4 | GPLv2/3 or commercial | `wolfssl/` | Kernel module + lib | `/lib/modules/wolf.*` | Buildable; **no consumer yet** |
+| wolfSSL | 5.9.4 | GPLv2/3 or commercial | `wolfssl/` | Kernel module + lib | `/lib/modules/wolf.*` | Userspace TLS in use by `httpsget`, curl and NetSurf (verified in the VM); kernel module buildable, no kernel consumer |
+| curl | 8.23.1-DEV | curl (MIT-style) | `curl/`, `mk/curl/` | Userspace | `/usr/bin/curl` (optional) | Working: HTTP and HTTPS (wolfSSL), gzip; IPv4 only |
+| NetSurf | submodule `netsurf/` (no release tag) | GPL-2.0 | `netsurf/`, `mk/netsurf/` | Userspace | `/usr/bin/netsurf` + `/usr/local/share/netsurf/*` (optional) | Working: framebuffer frontend in a PureC window, HTTPS, images, Cyrillic; no JavaScript, no SVG |
+| NetSurf libraries (libcss, libdom, libhubbub, libparserutils, libwapcaplet, libnsgif, libnsbmp, libnsutils, libnslog, libnsfb, libutf8proc) | pinned in `mk/netsurf/versions.txt` | MIT | `netsurf-libs/` (fetched, git-ignored) | Userspace (static libs) | linked into `/usr/bin/netsurf` | Working (built by their own buildsystem into `bin/ns-stage`) |
+| zlib | 1.3.1 | zlib | `netsurf-libs/zlib/` | Userspace (static lib) | linked into curl and NetSurf | Working |
+| libpng | 1.6.47 | libpng | `netsurf-libs/libpng/` | Userspace (static lib) | linked into NetSurf | Working |
+| libjpeg-turbo | 2.1.5.1 (no SIMD) | BSD / IJG / zlib | `netsurf-libs/libjpeg-turbo/`, `mk/netsurf/jpeg/` | Userspace (static lib) | linked into NetSurf | Working |
+| expat | 2.6.4 | MIT | `netsurf-libs/libexpat/`, `mk/netsurf/expat/` | Userspace (static lib) | linked into NetSurf (libdom XML binding) | Working |
+| GNU Unifont (glyph data only) | 16.0.01 | GPL-2.0+ with font exception / OFL-1.1 | `netsurf-libs/unifont.hex` | Data (compiled into NetSurf) | inside `/usr/bin/netsurf` | Cyrillic block U+0400–U+04FF of the NetSurf built-in font |
 | uACPI (via PureC-OS-ACPI) | 6.1.0 (interpreter) | Apache-2.0 / MIT-class | `acpi/AML/uACPI/` | Kernel (`acpi.ko`) | `/lib/modules/acpi.*` | Interpreter integrated; AML executor path WIP |
 
 ---
@@ -132,6 +140,18 @@ the build system.
 - **Verification**: compiles files without errors; compile-and-run from the OS
   shell works (CHANGELOG: "TCC finally works", and the `libtcc1.a` runtime fix
   in V1.2.24/26).
+- **Self-hosting (verified in the VM)**: curl downloaded 21 TinyCC source files
+  (1,208,412 bytes) from the `PureC-OS/PureC-TCC` fork over HTTPS into
+  `/work/tcc`; the OS's own `tcc` built them into `/work/tcc2`
+  (`tcc version 0.9.28rc`); `tcc2` compiled `ex1.c` ("Hello World") and
+  rebuilt `tcc.c` into `/work/tcc3` of the same size. The command is
+  `tcc -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -I/work/tcc -o /work/tcc2 /work/tcc/tcc.c`
+  with `mk/tcc/config.h` next to the sources. Not yet done inside the OS:
+  building `libtcc1.a` and `/lib/tcc/include` from the downloaded sources
+  (they still come from the host build), and driving the build with `make`.
+  Requirements this exposed in the hosted libc headers: `stdint.h` must exist,
+  and headers included through `../` need classic include guards (TinyCC
+  compares `#pragma once` files by path string).
 
 ## SDL2
 
@@ -234,10 +254,122 @@ the build system.
   (dedicated `make wolf` target; host self-test via `make test-wolfcrypt`).
 - **Outputs**: `bin/lib/libwolf.a` (Ring 3) and the kernel-module triple
   `bin/modules/wolf.{elf,ko,so}`. The module is staged into `/lib/modules`.
-- **Status**: builds cleanly, but **nothing in the kernel or userland consumes
-  it yet** (`src/` contains no references to wolf). Treat the integration as
-  WIP; potential consumers include TLS enablement in the network stack and
-  stronger cryptography alongside libpurecrypt.
+- **Userspace TLS build** (`WOLF_PUREC_TLS` block in `user_settings.h`, not
+  used by the kernel module): TLS 1.2/1.3 client (`ssl.c`, `internal.c`,
+  `keys.c`, `tls.c`, `tls13.c`, `wolfio.c`), ECDHE and RSA, AES-GCM,
+  ChaCha20-Poly1305, SNI, ALPN, plus what curl's wolfSSL backend needs:
+  `OPENSSL_EXTRA`, `HAVE_EX_DATA`, session cache, file system access (CA
+  bundle loading), built-in socket I/O, `logging.c` and `pkcs12.c`.
+  `wc_port.c` is built with renamed `gmtime`/`gmtime_r` so the hosted libc
+  versions are used.
+- **Status**: the kernel module still builds but has no consumer. The
+  userspace library is used by `/usr/bin/httpsget` (the first consumer, which
+  installs its own I/O callbacks), by curl (TLS backend) and, through curl, by
+  NetSurf. Verified in the VM: TLS 1.3 handshakes with certificate chain
+  verification against `/etc/ssl/cert.pem` (118 root certificates).
+
+## curl
+
+- **Location**: `curl/` (git submodule, `https://curl.se/` tree); PureC build
+  configuration in `mk/curl/` (`curl_config.h`, `list.mk`).
+- **Upstream**: curl **8.23.1-DEV** (`curl/include/curl/curlver.h`), curl
+  license (MIT-style).
+- **Scope**: the full `curl` tool and `libcurl` for HTTP, HTTPS and `file:`
+  with proxy support, cookies, MIME/form API, IPv4 only. TLS backend:
+  wolfSSL (`USE_WOLFSSL`), CA bundle `/etc/ssl/cert.pem`. FTP, SMTP, IMAP,
+  POP3, LDAP, DICT, GOPHER, TELNET, TFTP, RTSP, SMB, MQTT, NTLM, Kerberos and
+  HTTP/3 are disabled in `curl_config.h`. gzip decoding uses zlib
+  (`-DHAVE_LIBZ`) when `netsurf-libs/zlib` has been fetched.
+- **Build**: `src/programs/Makefile` builds `bin/programs/curl` (skipped when
+  `curl/lib/curl_setup.h` is absent). Source lists come from curl's own
+  `Makefile.inc` through `mk/curl/list.mk`, minus the Windows/OpenSSL/other-
+  backend files. The library objects are also archived as
+  `bin/ns-stage/lib/libcurl.a` for NetSurf (`make -C mk/netsurf curl`).
+- **Ships as**: optional `/usr/bin/curl` (manifest); the CA bundle is
+  `/etc/ssl/cert.pem`.
+- **Verification (VM)**: `curl https://google.com`, `curl -I` and plain HTTP
+  work; curl was used inside the OS to download the TinyCC sources (see
+  TinyCC). Name resolution goes through `getaddrinfo` (one IPv4 address) and the
+  `SYS_DNS_RESOLVE` syscall; the threaded resolver is not usable because
+  `pthread_create` is a stub returning `EAGAIN`.
+- **Configuration pitfalls**: do not define `CURL_CA_PATH` (curl treats it as
+  a directory and certificate loading fails with error 77), do not define
+  `CURL_DISABLE_PROXY` (NetSurf calls `CURLOPT_PROXY` with NULL on every
+  request and the request fails before it is sent), and define feature macros
+  only when enabled (curl tests them with `#ifdef`).
+
+## NetSurf
+
+- **Location**: `netsurf/` (git submodule, upstream NetSurf tree); PureC glue
+  in `mk/netsurf/`.
+- **Upstream**: NetSurf from the upstream git head (no release tag); GPL-2.0.
+- **Scope**: the **framebuffer** frontend (internal bitmap font, no FreeType),
+  JavaScript (Duktape) disabled, libcurl as the fetcher, PNG/JPEG/GIF/BMP
+  decoders, libdom with the expat XML binding. SVG, WebP, JPEG XL, PDF export
+  and libnspsl are off.
+- **PureC glue** (`mk/netsurf/`):
+  - `libnsfb/purec.c` — a new `libnsfb` surface that draws into a PureC GUI
+    window (`pg_window_center`, `pg_window_blit`, `pg_window_poll_event`) and
+    translates keys, mouse, wheel, close and window resize into `libnsfb`
+    events. `patch-libnsfb.sh` copies it into `netsurf-libs/libnsfb` and adds
+    `NSFB_SURFACE_PUREC`.
+  - `netsurf.ld`, `ns_start.c` — linker script with `__init_array_*` and a
+    `main` wrapper that runs constructors (`libnsfb` registers surfaces from
+    constructors); `libnsfb` is linked with `--whole-archive`.
+  - `gen-glyph-data.py` — extends the built-in NetSurf font with the Cyrillic
+    block from GNU Unifont without modifying the submodule.
+  - `Choices` — default options (`ca_bundle:/etc/ssl/cert.pem`, 900x650
+    window).
+- **Build**: `./mk/netsurf/fetch.sh` once (downloads the libraries into
+  `netsurf-libs/`), then `make -C mk/netsurf browser`. This runs, in order:
+  `deps` (zlib, libpng, libjpeg, expat, libcurl into `bin/ns-stage`),
+  `build-libs.sh` (NetSurf libraries through their buildsystem),
+  `build-netsurf.sh` (NetSurf core with its own Makefile and our
+  cross-compiler; its final link step is not used) and a manual `ld` link into
+  `bin/programs/netsurf` (about 4.5 MB).
+- **Ships as**: optional `/usr/bin/netsurf` plus `/usr/local/share/netsurf/`
+  (`Messages`, `default.css`, `internal.css`, `quirks.css`, `adblock.css`,
+  `welcome.html`, `credits.html`, `licence.html`, `netsurf.png`,
+  `favicon.png`, `Choices`). Resource files reach the system through the
+  installer, so a changed manifest needs a reinstall.
+- **Verification (VM)**: HTTPS pages load; `en.wikipedia.org/wiki/Main_Page`
+  in about 1.7 s with a JPEG, tables, colors and links; Cyrillic text renders
+  (regular, bold, italic); the window can be maximized and the page re-lays
+  out. Exit with `Esc` while the window has focus.
+- **Known limitations**: no JavaScript; no SVG (`libsvgtiny` is fetched but
+  not built), so logos and icons on many sites are empty boxes; glyphs only
+  for Latin and Cyrillic (other scripts show boxes; CJK would need FreeType);
+  `libcss` has no CSS custom properties (`var(--x)`), so sites built on them
+  such as GitHub lose their layout; `regcomp`/`regexec` in the libc are
+  stubs (only "save page complete" uses regex). A URL must be typed after
+  clicking the address bar (keys go to the focused widget); `netsurf <url>`
+  from a shell avoids that.
+- **Performance note**: the first run was unusable because the old hosted
+  `malloc`/`free` were O(n) and O(n^2); the allocator in `src/libc/malloc.c`
+  replaced them (this speeds up every program).
+
+## NetSurf support libraries
+
+- **Location**: sources are fetched, not committed: `mk/netsurf/fetch.sh`
+  clones them into `netsurf-libs/` (listed in `.gitignore`); revisions are
+  recorded in `mk/netsurf/versions.txt`. Build outputs go to `bin/ns-stage`
+  (`lib/`, `include/`, `lib/pkgconfig/`), the same layout the NetSurf build
+  expects from an installed prefix.
+- **NetSurf's own libraries** (git://git.netsurf-browser.org, MIT): libwapcaplet,
+  libparserutils (built with `-DWITHOUT_ICONV_FILTER`), libhubbub, libcss,
+  libdom, libnsgif, libnsbmp, libnsutils, libnslog, libnsfb, libutf8proc,
+  built by `mk/netsurf/build-libs.sh` with their `netsurf-buildsystem`.
+  `libnspsl` and `libsvgtiny` are fetched but not built.
+- **Third-party libraries** built by `mk/netsurf/Makefile`: zlib 1.3.1,
+  libpng 1.6.47 (`PNG_INTEL_SSE_OPT=0`, prebuilt `pnglibconf.h`),
+  libjpeg-turbo **2.1.5.1** (single 8-bit precision, no SIMD; the 3.x series
+  builds 8/12/16-bit variants through CMake and was not used), expat 2.6.4
+  (`mk/netsurf/expat/expat_config.h`, configured to read entropy from
+  `/dev/urandom`).
+- **libc support added for these ports**: `iconv`, `pread`/`pwrite`,
+  `scandir`/`alphasort`, `dirfd`, `fstatat`, `unlinkat`, `strchrnul`, regex
+  stubs and the headers `iconv.h`, `stdint.h`, `limits.h`, `endian.h`,
+  `regex.h`, `sys/param.h`, `sys/un.h` (see `CHANGELOG.md`).
 
 ## ACPI (PureC-OS-ACPI with the uACPI Interpreter)
 
@@ -301,11 +433,19 @@ The top-level `Makefile` includes `mk/main.mk`. Relevant targets:
 | SDL2 | `make sdl2` | `SDL/src/SDL.c` absent |
 | doomgeneric | `make doomgeneric` | `doomgeneric/` (external clone) absent |
 | wolfSSL | `make wolf` / `kernel` | `wolfssl/` absent |
+| curl | `make programs` (`src/programs/Makefile`) | `curl/lib/curl_setup.h` absent |
+| NetSurf and its libraries | `./mk/netsurf/fetch.sh`, then `make -C mk/netsurf browser` | `netsurf-libs/` not fetched (not part of `make all`) |
 | ACPI | `kernel` | Subproject absent |
 | Host tests | `test-wolfcrypt`, `test-accounts`, `test-hdrbg` | — |
 
 Sources fetched by `./purec.py setup` (see `purec.py`, `REPOS` list):
 wolfssl, libxcrypt, ACPI, uACPI, PureC-TCC, Userspace, Notepad.
+
+The NetSurf libraries, zlib, libpng, libjpeg-turbo, expat and the Unifont data
+are fetched by `mk/netsurf/fetch.sh` (git:// for the NetSurf libraries,
+GitHub for the rest), not by `purec.py`; the clones are git-ignored and their
+revisions are recorded in `mk/netsurf/versions.txt`. `curl/` and `netsurf/`
+are submodules.
 
 **SDL, Chocolate Doom, Freedoom, and doomgeneric are not currently in the
 `purec.py` fetch list** — they are organization forks expected as plain git
@@ -322,6 +462,10 @@ the installer in `src/fs/fat/fat32.c`):
 - `/usr/bin/lua` — Lua 5.4.8 interpreter
 - `/usr/bin/micropython` — MicroPython REPL
 - `/usr/bin/tcc` — TinyCC driver; `/lib/tcc/libtcc1.a` + headers
+- `/usr/bin/curl` — curl tool (HTTP/HTTPS through wolfSSL); `/etc/ssl/cert.pem`
+  is the CA bundle it uses
+- `/usr/bin/netsurf` — NetSurf browser; `/usr/local/share/netsurf/*` —
+  messages, stylesheets, welcome page and the default `Choices`
 - `/usr/bin/sdltest` — SDL2 test program
 - `/usr/bin/doom` — Chocolate Doom; `/usr/share/doom/freedoom1.wad`
 - `/usr/bin/pl` — PureL (`lang/`, in-house Rust scripting language, upstream

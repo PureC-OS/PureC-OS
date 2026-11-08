@@ -1,4 +1,5 @@
-#pragma once
+#ifndef PUREC_HOSTED_TIME_H
+#define PUREC_HOSTED_TIME_H
 // PureC hosted libc: time. time()/gettimeofday()/clock_gettime() return
 // real calendar time from the kernel wall clock (RTC, UTC epoch 1970).
 // localtime() applies the kernel time zone offset; no DST.
@@ -31,6 +32,11 @@ struct timespec {
 };
 
 int clock_gettime(int clock_id, struct timespec *out);
+int nanosleep(const struct timespec *request, struct timespec *remaining);
+struct tm *gmtime_r(const time_t *value, struct tm *result);
+struct tm *localtime_r(const time_t *value, struct tm *result);
+time_t timegm(struct tm *parts);
+
 time_t time(time_t *result);
 clock_t clock(void);
 double difftime(time_t end, time_t start);
@@ -41,3 +47,5 @@ char *asctime(const struct tm *parts);
 char *ctime(const time_t *value);
 size_t strftime(char *buffer, size_t capacity, const char *format,
                 const struct tm *parts);
+
+#endif

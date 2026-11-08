@@ -59,6 +59,27 @@ isr_common:
     push r13
     push r14
     push r15
+    xor r12d, r12d
+    mov rax, [rsp + 15*8]
+    cmp rax, 2
+    je .paranoid
+    cmp rax, 8
+    je .paranoid
+    cmp rax, 18
+    je .paranoid
+    test qword [rsp + 18*8], 3
+    jz .gs_done
+    swapgs
+    mov r12d, 1
+    jmp .gs_done
+.paranoid:
+    mov ecx, 0xC0000101
+    rdmsr
+    test edx, edx
+    js .gs_done
+    swapgs
+    mov r12d, 1
+.gs_done:
     mov rdi, [rsp + 15*8]      ; vector
     mov rsi, [rsp + 16*8]      ; err
     mov rdx, [rsp + 17*8]      ; rip
@@ -72,6 +93,10 @@ isr_common:
     cld
     call isr_handler
     mov rsp, rbx
+    test r12d, r12d
+    jz .gs_exit
+    swapgs
+.gs_exit:
     pop r15
     pop r14
     pop r13

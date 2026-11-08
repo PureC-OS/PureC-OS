@@ -28,6 +28,16 @@ char *strsep(char **cursor, const char *delimiters);
 char *strndup(const char *text, size_t count);
 char *strerror(int code);
 char *strtok(char *text, const char *delimiters);
+char *strtok_r(char *text, const char *delimiters, char **saved);
+int strerror_r(int code, char *buffer, size_t size);
+char *strcasestr(const char *haystack, const char *needle);
+char *strchrnul(const char *text, int ch);
+size_t strlcpy(char *destination, const char *source, size_t size);
+size_t strlcat(char *destination, const char *source, size_t size);
+void *memrchr(const void *buffer, int value, size_t count);
+int strcoll(const char *a, const char *b);
+size_t strxfrm(char *destination, const char *source, size_t count);
+
 size_t strspn(const char *text, const char *accept);
 size_t strcspn(const char *text, const char *reject);
 char *strpbrk(const char *text, const char *accept);

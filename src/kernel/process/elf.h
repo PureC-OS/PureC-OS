@@ -40,7 +40,6 @@
 #define ELF_STB_WEAK 2
 #define ELF_SHN_UNDEF 0
 #define ELF_SHN_ABS 0xFFF1
-#define ELF_MAX_NEEDED 8
 #define ELF_NAME_CAP 64
 
 struct elf_load_result
@@ -67,12 +66,6 @@ struct elf_dynamic_info
   bool has_dynamic;
 };
 
-struct elf_object
-{
-  struct elf_dynamic_info dyn;
-  uint64_t top;
-};
-
 uint16_t elf_image_type(const void *image, uint64_t image_size);
 
 bool elf_load_user_image(const void *image, uint64_t image_size,
@@ -84,13 +77,3 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
                                 struct elf_dynamic_info *dynamic);
 bool elf_apply_relative_relocs(uint64_t address_space,
                                const struct elf_dynamic_info *dynamic);
-bool elf_apply_relocs_with_scope(uint64_t address_space,
-                                 const struct elf_object *scope,
-                                 uint64_t scope_count, uint64_t self_index);
-bool elf_resolve_symbol(uint64_t address_space,
-                        const struct elf_object *scope, uint64_t scope_count,
-                        const char *name, uint64_t *value);
-uint64_t elf_needed_count(const void *image, uint64_t image_size);
-bool elf_needed_name(const void *image, uint64_t image_size, uint64_t index,
-                     char *out, uint64_t capacity);
-uint64_t elf_dyn_base_for_index(uint64_t index);

@@ -1,5 +1,6 @@
 #include "power.h"
 #include "../../boot/limine.h"
+#include "../../kernel/diagnostics/journal.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
 #include <acpi/acpi.h>
@@ -26,6 +27,7 @@ void power_init(void)
 
 void power_reboot(void)
 {
+    journal_mark_clean_shutdown();
     acpi_reboot();
     for (;;)
         __asm__ volatile("cli; hlt");
@@ -33,6 +35,7 @@ void power_reboot(void)
 
 void power_shutdown(void)
 {
+    journal_mark_clean_shutdown();
     acpi_shutdown();
     for (;;)
         __asm__ volatile("cli; hlt");

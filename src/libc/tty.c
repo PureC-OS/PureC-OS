@@ -14,7 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define POLL_LIMIT 256
+#define POLL_LIMIT 1024
 #define POLL_TIMEOUT_MAX 2147483647L
 
 _Static_assert(sizeof(struct termios) == 56, "termios must match the kernel tty ABI");

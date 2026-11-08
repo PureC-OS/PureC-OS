@@ -4,6 +4,7 @@
 #include "../../kernel/process/scheduler.h"
 #include "../../kernel/sync/mutex.h"
 #include "../../lib/string.h"
+#include "../../mm/pmm.h"
 
 #define TCP_FLAG_FIN 0x01
 #define TCP_FLAG_SYN 0x02
@@ -42,9 +43,10 @@ struct tcp_socket
     struct net_device *device;
     uint32_t local_address, remote_address;
     uint16_t local_port, remote_port;
-    int8_t parent;
+    int32_t index;
+    int32_t parent;
     uint8_t backlog;
-    int8_t accept_queue[TCP_ACCEPT_BACKLOG_MAX];
+    int32_t accept_queue[TCP_ACCEPT_BACKLOG_MAX];
     uint8_t accept_count;
 
     uint32_t iss, snd_una, snd_nxt, snd_max, snd_wnd, snd_wl1, snd_wl2;
@@ -71,7 +73,8 @@ struct tcp_socket
     uint8_t rx_buffer[TCP_BUFFER_SIZE];
 };
 
-static struct tcp_socket sockets[TCP_SOCKET_CAPACITY];
+static struct tcp_socket *slots[TCP_SOCKET_LIMIT];
+static uint32_t socket_count;
 static mutex_t tcp_lock;
 static struct tcp_stats stats;
 static uint16_t next_ephemeral = TCP_EPHEMERAL_FIRST;
@@ -146,32 +149,48 @@ static void ring_read(const uint8_t *ring, uint32_t start, uint32_t offset,
 
 static void socket_reset(struct tcp_socket *s)
 {
+    int32_t index = s->index;
     memset(s, 0, sizeof(*s));
+    s->index = index;
     s->parent = -1;
 }
 
-static int32_t socket_index(const struct tcp_socket *s) { return (int32_t)(s - sockets); }
+static int32_t socket_index(const struct tcp_socket *s) { return s->index; }
 
 static struct tcp_socket *socket_from_handle(int32_t handle)
 {
-    if (handle < 0 || handle >= TCP_SOCKET_CAPACITY || !sockets[handle].used)
+    if (handle < 0 || (uint32_t)handle >= socket_count || !slots[handle]->used)
         return 0;
-    return &sockets[handle];
+    return slots[handle];
+}
+
+static struct tcp_socket *socket_claim(uint32_t index)
+{
+    struct tcp_socket *s = slots[index];
+    socket_reset(s);
+    s->index = (int32_t)index;
+    s->used = true;
+    s->state = TCP_STATE_CLOSED;
+    s->rto_ms = TCP_INITIAL_RTO_MS;
+    return s;
 }
 
 static struct tcp_socket *socket_allocate(void)
 {
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        if (sockets[index].used)
-            continue;
-        socket_reset(&sockets[index]);
-        sockets[index].used = true;
-        sockets[index].state = TCP_STATE_CLOSED;
-        sockets[index].rto_ms = TCP_INITIAL_RTO_MS;
-        return &sockets[index];
+        if (!slots[index]->used)
+            return socket_claim(index);
     }
-    return 0;
+    if (socket_count >= TCP_SOCKET_LIMIT)
+        return 0;
+    uint64_t pages = (sizeof(struct tcp_socket) + 4095U) / 4096U;
+    uint64_t physical = pmm_allocate_contiguous(pages);
+    if (!physical)
+        return 0;
+    slots[socket_count] = (struct tcp_socket *)pmm_physical_to_virtual(physical);
+    memset(slots[socket_count], 0, sizeof(struct tcp_socket));
+    return socket_claim(socket_count++);
 }
 
 static void socket_release(struct tcp_socket *s)
@@ -390,9 +409,9 @@ static void retransmit_head(struct tcp_socket *s)
 static uint8_t parent_pending_children(int32_t parent)
 {
     uint8_t count = 0;
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        if (sockets[index].used && sockets[index].parent == parent && sockets[index].state == TCP_STATE_SYN_RECEIVED)
+        if ((*slots[index]).used && (*slots[index]).parent == parent && (*slots[index]).state == TCP_STATE_SYN_RECEIVED)
             count++;
     }
     return count;
@@ -409,10 +428,10 @@ static void become_established(struct tcp_socket *s)
     stats.connections_established++;
     if (s->parent >= 0)
     {
-        struct tcp_socket *parent = &sockets[s->parent];
+        struct tcp_socket *parent = &(*slots[s->parent]);
         if (parent->used && parent->state == TCP_STATE_LISTEN && parent->accept_count < TCP_ACCEPT_BACKLOG_MAX)
         {
-            parent->accept_queue[parent->accept_count++] = (int8_t)socket_index(s);
+            parent->accept_queue[parent->accept_count++] = socket_index(s);
         }
     }
 }
@@ -458,9 +477,9 @@ static struct tcp_socket *find_socket(uint32_t local_address,
                                       uint16_t remote_port)
 {
     struct tcp_socket *listener = 0;
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        struct tcp_socket *s = &sockets[index];
+        struct tcp_socket *s = &(*slots[index]);
         if (!s->used || s->state == TCP_STATE_CLOSED || s->local_port != local_port)
             continue;
         if (s->state == TCP_STATE_LISTEN)
@@ -819,11 +838,8 @@ static void receive_segment(const struct ipv4_packet *packet)
 
 bool tcp_init(void)
 {
-    memset(sockets, 0, sizeof(sockets));
     memset(&stats, 0, sizeof(stats));
     memset(&tcp_lock, 0, sizeof(tcp_lock));
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
-        sockets[index].parent = -1;
     next_ephemeral = TCP_EPHEMERAL_FIRST;
     isn_counter = 0;
     return ipv4_register_handler(IPV4_PROTOCOL_TCP, receive_segment);
@@ -876,9 +892,9 @@ static void handle_timeout(struct tcp_socket *s)
 void tcp_poll(uint64_t now)
 {
     MUTEX_SCOPE(&tcp_lock);
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        struct tcp_socket *s = &sockets[index];
+        struct tcp_socket *s = &(*slots[index]);
         if (!s->used)
             continue;
         if ((s->state == TCP_STATE_TIME_WAIT || (s->state == TCP_STATE_FIN_WAIT_2 && s->app_closed)) && now >= s->time_wait_deadline)
@@ -918,9 +934,9 @@ static void abort_children(int32_t parent);
 void tcp_release_owner(uint32_t owner)
 {
     MUTEX_SCOPE(&tcp_lock);
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        struct tcp_socket *s = &sockets[index];
+        struct tcp_socket *s = &(*slots[index]);
         if (!s->used || s->owner != owner)
             continue;
         if (s->state == TCP_STATE_LISTEN)
@@ -935,9 +951,9 @@ void tcp_release_owner(uint32_t owner)
 
 static bool port_in_use(uint16_t port)
 {
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        if (sockets[index].used && sockets[index].local_port == port && sockets[index].state != TCP_STATE_CLOSED)
+        if ((*slots[index]).used && (*slots[index]).local_port == port && (*slots[index]).state != TCP_STATE_CLOSED)
             return true;
     }
     return false;
@@ -1111,7 +1127,7 @@ int32_t tcp_accept(int32_t handle, uint32_t timeout_ms)
             for (uint8_t index = 1; index < s->accept_count; index++)
                 s->accept_queue[index - 1] = s->accept_queue[index];
             s->accept_count--;
-            sockets[result].parent = -1;
+            (*slots[result]).parent = -1;
             break;
         }
         if (timeout_ms == TCP_TIMEOUT_NONE || deadline_passed(deadline))
@@ -1262,9 +1278,9 @@ int32_t tcp_receive(int32_t handle, void *data, uint32_t length,
 
 static void abort_children(int32_t parent)
 {
-    for (uint32_t index = 0; index < TCP_SOCKET_CAPACITY; index++)
+    for (uint32_t index = 0; index < socket_count; index++)
     {
-        struct tcp_socket *child = &sockets[index];
+        struct tcp_socket *child = &(*slots[index]);
         if (!child->used || child->parent != parent)
             continue;
         if (child->state != TCP_STATE_CLOSED && child->state != TCP_STATE_LISTEN)
@@ -1273,6 +1289,71 @@ static void abort_children(int32_t parent)
                        TCP_FLAG_RST);
         socket_release(child);
     }
+}
+
+int32_t tcp_bind(int32_t handle, uint16_t port)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s || s->state != TCP_STATE_CLOSED || s->app_closed || s->local_port)
+        return TCP_ERR_INVALID;
+    if (port)
+    {
+        if (port_in_use(port))
+            return TCP_ERR_IN_USE;
+        s->local_port = port;
+    }
+    return TCP_OK;
+}
+
+int32_t tcp_shutdown_write(int32_t handle)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s || s->app_closed)
+        return TCP_ERR_INVALID;
+    if (s->fin_queued)
+        return TCP_OK;
+    if (s->state != TCP_STATE_ESTABLISHED && s->state != TCP_STATE_CLOSE_WAIT &&
+        s->state != TCP_STATE_SYN_RECEIVED)
+        return TCP_ERR_NOT_CONNECTED;
+    s->fin_queued = true;
+    tcp_output(s);
+    return TCP_OK;
+}
+
+uint32_t tcp_readiness(int32_t handle)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s)
+        return TCP_READY_ERR | TCP_READY_HUP;
+    uint32_t ready = 0;
+    if (s->state == TCP_STATE_LISTEN)
+        return s->accept_count ? TCP_READY_IN : 0;
+    if (s->rx_length || s->fin_received)
+        ready |= TCP_READY_IN;
+    if (s->error)
+        ready |= TCP_READY_ERR | TCP_READY_IN;
+    if (s->state == TCP_STATE_CLOSED || s->state == TCP_STATE_TIME_WAIT ||
+        s->state == TCP_STATE_LAST_ACK || s->state == TCP_STATE_CLOSING)
+        ready |= TCP_READY_HUP | TCP_READY_IN;
+    if (!s->fin_queued && (s->state == TCP_STATE_ESTABLISHED || s->state == TCP_STATE_CLOSE_WAIT) &&
+        s->tx_length < TCP_BUFFER_SIZE)
+        ready |= TCP_READY_OUT;
+    return ready;
+}
+
+int32_t tcp_pending_error(int32_t handle)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    struct tcp_socket *s = socket_from_handle(handle);
+    if (!s)
+        return TCP_ERR_INVALID;
+    int32_t error = s->error;
+    if (s->state != TCP_STATE_CLOSED)
+        return 0;
+    return error;
 }
 
 int32_t tcp_close(int32_t handle)

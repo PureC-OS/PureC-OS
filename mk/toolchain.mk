@@ -17,6 +17,8 @@ USER_SO_CFLAGS := -g -O2 -ffreestanding -fno-stack-protector -fPIC \
 	-m64 -mno-red-zone -mcmodel=small -fno-plt
 SO_LINK_FLAGS := -shared --hash-style=sysv -z noexecstack
 PIE_LINK_FLAGS := -pie --hash-style=sysv -z noexecstack
+DYN_LINK_FLAGS := $(PIE_LINK_FLAGS) --export-dynamic -e _pc_dl_entry -T $(ROOT_DIR)/linker-userspace-pie.ld
+DYN_LD_STUB := $(BIN_DIR)/lib/pc-ld.o
 KMOD_SO_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fPIC \
 	-m64 -mno-red-zone -mcmodel=small -mgeneral-regs-only -fno-plt
 KMOD_SO_LDSCRIPT := $(ROOT_DIR)/mk/kmod-so.ld

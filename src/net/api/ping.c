@@ -31,17 +31,7 @@ enum net_ping_status net_ping_target(const char *target, uint16_t sequence,
     if(!reply || timeout_ms<100) return NET_PING_INVALID;
     char host[DNS_HOSTNAME_CAPACITY];
     if(!extract_host(target,host)) return NET_PING_INVALID;
-    struct net_device *device=0;
-    for(uint32_t index=0;index<net_device_count();index++){
-        struct net_device *candidate=net_device_get(index);
-        if(candidate && candidate->cached_link_up){ device=candidate; break; }
-    }
-    if(!device){
-        for(uint32_t index=0;index<net_device_count();index++){
-            struct net_device *candidate=net_device_get(index);
-            if(candidate){ device=candidate; break; }
-        }
-    }
+    struct net_device *device=net_device_default();
     if(!device) return NET_PING_NO_INTERFACE;
     struct ipv4_interface_config config;
     if(!ipv4_get_config(device,&config) || !dhcp_is_bound(device))

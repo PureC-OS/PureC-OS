@@ -39,6 +39,7 @@ C_SOURCES := \
 	kernel/core/init.c \
 	kernel/core/system_info.c \
 	kernel/smp/cpu.c \
+	kernel/smp/percpu.c \
 	kernel/smp/smp.c \
 	kernel/smp/lapic.c \
 	kernel/smp/cpufreq.c \
@@ -120,6 +121,7 @@ C_SOURCES := \
 	net/config/dhcp.c \
 	net/diagnostics/icmp.c \
 	net/api/ping.c \
+	net/api/socket.c \
 	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
 	drivers/usb/xhci.c \
@@ -145,6 +147,8 @@ C_SOURCES := \
 	fs/procfs.c \
 	fs/sysfs.c \
 	fs/tmpfs.c \
+	fs/vfs_fat32.c \
+	kernel/diagnostics/journal.c \
 	lib/format.c \
 	fs/initramfs.c \
 	userspace/display.c \

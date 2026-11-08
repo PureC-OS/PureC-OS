@@ -1,6 +1,4 @@
-// PureC hosted libc: errno, heap allocator, conversions, qsort, rand.
-// Heap is a free-list over pc_heap_grow arenas (bump-only kernel side):
-// freed blocks coalesce, arenas never shrink. Single-threaded processes.
+// PureC hosted libc: errno, conversions, qsort, rand (heap allocator: malloc.c).
 
 #include "include/hosted/stdlib.h"
 #include "include/hosted/string.h"
@@ -13,129 +11,6 @@
 #include <stdint.h>
 
 int errno = 0;
-
-// ---- heap allocator ----
-
-#define MALLOC_ARENA 65536
-#define MALLOC_ALIGN 16
-
-struct malloc_block {
-    size_t size; // usable payload bytes after this header
-    struct malloc_block *next;
-    bool free;
-};
-
-static struct malloc_block *malloc_head = 0;
-
-static size_t malloc_align_up(size_t value) {
-    return (value + MALLOC_ALIGN - 1) & ~(size_t)(MALLOC_ALIGN - 1);
-}
-
-static void malloc_coalesce(void) {
-    struct malloc_block *block = malloc_head;
-    while (block && block->next) {
-        uint8_t *end = (uint8_t *)block + sizeof(*block) + block->size;
-        if (block->free && block->next->free && end == (uint8_t *)block->next) {
-            block->size += sizeof(*block) + block->next->size;
-            block->next = block->next->next;
-            continue;
-        }
-        block = block->next;
-    }
-}
-
-static struct malloc_block *malloc_extend(size_t need) {
-    size_t request = need + sizeof(struct malloc_block);
-    if (request < MALLOC_ARENA) request = MALLOC_ARENA;
-    request = malloc_align_up(request);
-    uint8_t *arena = (uint8_t *)pc_heap_grow(request);
-    if (!arena) { errno = ENOMEM; return 0; }
-    struct malloc_block *block = (struct malloc_block *)arena;
-    block->size = request - sizeof(*block);
-    block->next = 0;
-    block->free = true;
-    if (!malloc_head) {
-        malloc_head = block;
-    } else {
-        struct malloc_block *tail = malloc_head;
-        while (tail->next) tail = tail->next;
-        tail->next = block;
-    }
-    return block;
-}
-
-void *malloc(size_t size) {
-    if (!size) size = 1;
-    size = malloc_align_up(size);
-    struct malloc_block *block = malloc_head;
-    while (block) {
-        if (block->free && block->size >= size) break;
-        block = block->next;
-    }
-    if (!block) {
-        block = malloc_extend(size);
-        if (!block) return 0;
-    }
-    // Split if the remainder fits another block plus minimal payload.
-    if (block->size >= size + sizeof(*block) + MALLOC_ALIGN) {
-        struct malloc_block *rest =
-            (struct malloc_block *)((uint8_t *)block + sizeof(*block) + size);
-        rest->size = block->size - size - sizeof(*block);
-        rest->next = block->next;
-        rest->free = true;
-        block->size = size;
-        block->next = rest;
-    }
-    block->free = false;
-    return (uint8_t *)block + sizeof(*block);
-}
-
-void free(void *pointer) {
-    if (!pointer) return;
-    struct malloc_block *block =
-        (struct malloc_block *)((uint8_t *)pointer - sizeof(*block));
-    block->free = true;
-    malloc_coalesce();
-}
-
-void *calloc(size_t count, size_t size) {
-    if (count && size > (size_t)-1 / count) { errno = ENOMEM; return 0; }
-    size_t total = count * size;
-    void *pointer = malloc(total);
-    if (pointer) memset(pointer, 0, total);
-    return pointer;
-}
-
-void *realloc(void *pointer, size_t size) {
-    if (!pointer) return malloc(size);
-    if (!size) { free(pointer); return 0; }
-    struct malloc_block *block =
-        (struct malloc_block *)((uint8_t *)pointer - sizeof(*block));
-    size_t aligned = malloc_align_up(size);
-    if (block->size >= aligned) return pointer;
-    // Try growing into an adjacent free block before relocating.
-    uint8_t *end = (uint8_t *)block + sizeof(*block) + block->size;
-    if (block->next && block->next->free && end == (uint8_t *)block->next
-        && block->size + sizeof(*block) + block->next->size >= aligned) {
-        block->size += sizeof(*block) + block->next->size;
-        block->next = block->next->next;
-        if (block->size >= aligned + sizeof(*block) + MALLOC_ALIGN) {
-            struct malloc_block *rest = (struct malloc_block *)((uint8_t *)block + sizeof(*block) + aligned);
-            rest->size = block->size - aligned - sizeof(*block);
-            rest->next = block->next;
-            rest->free = true;
-            block->size = aligned;
-            block->next = rest;
-        }
-        return pointer;
-    }
-    void *fresh = malloc(size);
-    if (!fresh) return 0;
-    size_t copy = block->size < size ? block->size : size;
-    memcpy(fresh, pointer, copy);
-    free(pointer);
-    return fresh;
-}
 
 // ---- integer conversions ----
 
@@ -531,8 +406,60 @@ int clearenv(void) {
     return 0;
 }
 
+struct exit_handler {
+    struct exit_handler *next;
+    void (*function)(void *);
+    void *argument;
+    void *dso;
+};
+
+extern void __pc_dl_fini(void) __attribute__((weak));
+
+static struct exit_handler *exit_handlers;
+static int exit_running;
+
+int __cxa_atexit(void (*function)(void *), void *argument, void *dso) {
+    struct exit_handler *entry = (struct exit_handler *)malloc(sizeof(*entry));
+    if (!entry) return -1;
+    entry->function = function;
+    entry->argument = argument;
+    entry->dso = dso;
+    entry->next = exit_handlers;
+    exit_handlers = entry;
+    return 0;
+}
+
+static void atexit_thunk(void *function) {
+    ((void (*)(void))function)();
+}
+
+int atexit(void (*function)(void)) {
+    if (!function) return -1;
+    return __cxa_atexit(atexit_thunk, (void *)function, 0);
+}
+
+void __cxa_finalize(void *dso) {
+    struct exit_handler **link = &exit_handlers;
+    while (*link) {
+        struct exit_handler *entry = *link;
+        if (dso && entry->dso != dso) {
+            link = &entry->next;
+            continue;
+        }
+        *link = entry->next;
+        entry->function(entry->argument);
+        free(entry);
+        link = &exit_handlers;
+    }
+}
+
 void exit(int status) {
     extern int fflush(void *stream);
+    if (!exit_running) {
+        exit_running = 1;
+        __cxa_finalize(0);
+        if (__pc_dl_fini) __pc_dl_fini();
+    }
     fflush(0);
     pc_exit(status);
 }

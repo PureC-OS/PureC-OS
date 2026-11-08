@@ -12,6 +12,7 @@
 
 #include <stddef.h>
 #include <stdarg.h>
+#include "sys/types.h"
 
 #define EOF (-1)
 #define BUFSIZ 4096
@@ -49,6 +50,11 @@ size_t fread(void *buffer, size_t size, size_t count, FILE *stream);
 size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream);
 int fseek(FILE *stream, long offset, int origin);
 long ftell(FILE *stream);
+int fseeko(FILE *stream, off_t offset, int origin);
+off_t ftello(FILE *stream);
+ssize_t getline(char **line, size_t *capacity, FILE *stream);
+ssize_t getdelim(char **line, size_t *capacity, int delimiter, FILE *stream);
+
 void rewind(FILE *stream);
 int fgetc(FILE *stream);
 int getc(FILE *stream);

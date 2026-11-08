@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define TCP_HEADER_LENGTH 20
-#define TCP_SOCKET_CAPACITY 16
+#define TCP_SOCKET_LIMIT 16384
 #define TCP_BUFFER_SIZE 16384
 #define TCP_MAX_MSS (IPV4_PAYLOAD_MAX_LENGTH-TCP_HEADER_LENGTH)
 #define TCP_ACCEPT_BACKLOG_MAX 4
@@ -21,6 +21,11 @@
 #define TCP_ERR_NO_ROUTE (-6)
 #define TCP_ERR_IN_USE (-7)
 #define TCP_ERR_WOULD_BLOCK (-8)
+
+#define TCP_READY_IN 1U
+#define TCP_READY_OUT 2U
+#define TCP_READY_ERR 4U
+#define TCP_READY_HUP 8U
 
 enum tcp_state {
     TCP_STATE_CLOSED,
@@ -73,6 +78,10 @@ int32_t tcp_send(int32_t handle, const void *data, uint32_t length,
                  uint32_t timeout_ms);
 int32_t tcp_receive(int32_t handle, void *data, uint32_t length,
                     uint32_t timeout_ms);
+int32_t tcp_bind(int32_t handle, uint16_t port);
+int32_t tcp_shutdown_write(int32_t handle);
+uint32_t tcp_readiness(int32_t handle);
+int32_t tcp_pending_error(int32_t handle);
 int32_t tcp_close(int32_t handle);
 int32_t tcp_abort(int32_t handle);
 bool tcp_get_info(int32_t handle, struct tcp_socket_info *info);

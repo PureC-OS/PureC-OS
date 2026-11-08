@@ -54,3 +54,4 @@ void net_device_poll_all(uint32_t budget_per_device);
 bool net_device_receive(struct net_device *device,
                         const uint8_t *frame, uint16_t length);
 bool net_device_dequeue(struct net_device *device, struct net_frame *frame);
+struct net_device *net_device_default(void);

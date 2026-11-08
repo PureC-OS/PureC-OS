@@ -23,9 +23,12 @@ extern char **environ;
 
 ssize_t read(int fd, void *buffer, size_t count);
 ssize_t write(int fd, const void *buffer, size_t count);
+ssize_t pread(int fd, void *buffer, size_t count, off_t offset);
+ssize_t pwrite(int fd, const void *buffer, size_t count, off_t offset);
 int close(int fd);
 off_t lseek(int fd, off_t offset, int origin);
 int unlink(const char *path);
+int unlinkat(int dirfd, const char *path, int flags);
 int rmdir(const char *path);
 int access(const char *path, int mode);
 int isatty(int fd);
@@ -48,6 +51,23 @@ pid_t getpid(void);
 pid_t getppid(void);
 int dup(int fd);
 int ftruncate(int fd, off_t length);
+int truncate(const char *path, off_t length);
+int fsync(int fd);
+int fdatasync(int fd);
+int gethostname(char *name, size_t length);
+long sysconf(int name);
+int usleep(unsigned int microseconds);
+ssize_t readlink(const char *path, char *buffer, size_t size);
+int symlink(const char *target, const char *path);
+int chown(const char *path, uid_t owner, gid_t group);
+char *ttyname(int fd);
+#define _SC_CLK_TCK 2
+#define _SC_OPEN_MAX 4
+#define _SC_PAGESIZE 30
+#define _SC_PAGE_SIZE 30
+#define _SC_NPROCESSORS_CONF 83
+#define _SC_NPROCESSORS_ONLN 84
+
 int dup2(int old_fd, int new_fd);
 int pipe(int fds[2]);
 int pipe2(int fds[2], int flags);

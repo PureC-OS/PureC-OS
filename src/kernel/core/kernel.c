@@ -23,8 +23,10 @@
 #include "../syscall/syscall.h"
 #include "init.h"
 #include "../random/krandom.h"
+#include "../../fs/vfs_fat32.h"
 #include "../time/wallclock.h"
 #include "system_info.h"
+
 extern struct limine_memmap_response *memmap_response_ptr;
 extern struct limine_smp_response *smp_response_ptr;
 extern uint64_t hhdm_offset_global;
@@ -137,6 +139,7 @@ void kernel_main(struct limine_framebuffer *fb)
   devman_register_builtin_drivers();
   devman_autoload();
   krandom_init();
+  vfs_fat32_mount_boot();
   klogf(KLOG_INFO, "random: %s backend",
         krandom_hardened() ? "purecrypt hash-drbg" : "fallback");
   devman_dump();

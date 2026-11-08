@@ -47,6 +47,7 @@ struct stat {
 int stat(const char *path, struct stat *info);
 int fstat(int fd, struct stat *info);
 int lstat(const char *path, struct stat *info);
+int fstatat(int dirfd, const char *path, struct stat *info, int flags);
 int mkdir(const char *path, unsigned int mode);
 int chmod(const char *path, unsigned int mode);
 int fchmod(int fd, unsigned int mode);

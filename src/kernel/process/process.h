@@ -3,7 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define PROCESS_FD_COUNT 64
+#define PROCESS_FD_COUNT 1024
 #define PROCESS_CWD_CAPACITY 256
 #define PROCESS_FD_CLOEXEC 1
 #define FD_PIPE_BASE 0x40000000
@@ -134,5 +134,16 @@ int32_t process_monitor_list_page(struct process_monitor_info *entries,
 
 bool process_set_affinity(uint32_t pid, int16_t core);
 struct process *process_lookup_by_pid(uint32_t pid);
+struct process_proc_info {
+  uint32_t uid;
+  uint32_t gid;
+  int32_t exit_code;
+  uint64_t heap_bytes;
+  uint64_t stack_bytes;
+  char command_line[PROCESS_COMMAND_LINE_CAPACITY];
+  char cwd[PROCESS_CWD_CAPACITY];
+};
+
+bool process_proc_info_get(uint32_t pid, struct process_proc_info *out);
 void process_table_lock(void);
 void process_table_unlock(void);
