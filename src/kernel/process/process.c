@@ -1321,7 +1321,14 @@ bool process_handle_lazy_fault(uint64_t address, uint64_t error)
     return false;
   if (!process_current_is_user() && !(error & 4))
     return false;
-  return lazy_map_page(process, address & ~(PMM_PAGE_SIZE - 1), error) == 1;
+  int status = lazy_map_page(process, address & ~(PMM_PAGE_SIZE - 1), error);
+  if (status == -1 && (error & 4))
+  {
+    klogf(KLOG_WARN, "oom: pid=%u got no page for 0x%llx, killed",
+          process->pid, (unsigned long long)address);
+    process_exit_signal(SIGKILL);
+  }
+  return status == 1;
 }
 
 static void sibling_entry(void *argument)
