@@ -157,6 +157,12 @@ int main(void) {
     CHECK(ops->stat_ex(fs, "/clock.txt", &ex) == 0);
     CHECK(ex.size == 5 && ex.mtime == 1700000200u);
     CHECK(ops->stat_ex(fs, "/absent", &ex) == FS_ERROR_NOT_FOUND);
+    fake_clock = 1700000300u;
+    CHECK(ops->set_times(fs, "/clock.txt", 1600000000u, 1600000050u) == 0);
+    CHECK(ops->stat_ex(fs, "/clock.txt", &ex) == 0);
+    CHECK(ex.atime == 1600000000u && ex.mtime == 1600000050u);
+    CHECK(ex.ctime == 1700000300u && ex.size == 5);
+    CHECK(ops->set_times(fs, "/absent", 1u, 2u) == FS_ERROR_NOT_FOUND);
   }
 
   if (failures) {

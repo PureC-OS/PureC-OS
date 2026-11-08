@@ -213,6 +213,13 @@ int main(void) {
   CHECK(!exists("/home/sub/deep.txt"));
   CHECK(ext2_delete("/home/sub") == 0);
   CHECK(!exists("/home/sub"));
+  fake_clock = 1000000300u;
+  CHECK(ext2_meta_set_times("/home/ann/c.txt", 1000000010u, 1000000020u) == 0);
+  CHECK(ext2_meta_get("/home/ann/c.txt", &meta) == 0);
+  CHECK(meta.atime == 1000000010u && meta.mtime == 1000000020u);
+  CHECK(meta.ctime == 1000000300u && meta.size == 7);
+  CHECK(ext2_meta_set_times("/nope", 1u, 2u) < 0);
+
   CHECK(ext2_delete("/") < 0);
   CHECK(ext2_delete("/missing") < 0);
 
