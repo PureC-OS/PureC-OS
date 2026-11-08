@@ -278,6 +278,7 @@ struct kernel_mmap_args {
 
 #define KERR_PERM 1
 #define KERR_NOENT 2
+#define KERR_NODEV 19
 #define KERR_SRCH 3
 #define KERR_INTR 4
 #define KERR_IO 5
