@@ -7,6 +7,7 @@
 #include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
 #include "../ipc/unix.h"
+#include "../../mm/shm.h"
 #include "../../net/api/socket.h"
 #include "../sync/mutex.h"
 #include "../syscall/syscall.h"
@@ -112,6 +113,11 @@ int32_t ofd_create_unix(int32_t unix_id, uint32_t flags)
   return allocate(OFD_UNIX, flags & OFD_O_NONBLOCK, unix_id, false);
 }
 
+int32_t ofd_create_shm(int32_t shm_id, uint32_t flags)
+{
+  return allocate(OFD_SHM, flags & OFD_O_NONBLOCK, shm_id, false);
+}
+
 static bool valid(int32_t index)
 {
   return index >= 0 && index < OFD_MAX && table[index].kind != OFD_FREE;
@@ -148,6 +154,8 @@ void ofd_release(int32_t index)
     evfd_release(dropped.object);
   else if (dropped.kind == OFD_UNIX)
     unix_release(dropped.object);
+  else if (dropped.kind == OFD_SHM)
+    shm_unref(dropped.object);
 }
 
 static bool snapshot(int32_t index, struct ofd *out)
@@ -194,6 +202,14 @@ int32_t ofd_unix_id(int32_t index)
 {
   struct ofd o;
   if (!snapshot(index, &o) || o.kind != OFD_UNIX)
+    return -1;
+  return o.object;
+}
+
+int32_t ofd_shm_id(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o) || o.kind != OFD_SHM)
     return -1;
   return o.object;
 }
@@ -321,6 +337,8 @@ int64_t ofd_seek(int32_t index, int64_t offset, uint32_t whence)
 int32_t ofd_truncate(int32_t index, uint64_t length)
 {
   struct ofd o;
+  if (snapshot(index, &o) && o.kind == OFD_SHM)
+    return shm_truncate(o.object, length);
   if (!snapshot(index, &o) || o.kind != OFD_FILE)
     return -KERR_BADF;
   if ((o.flags & OFD_O_ACCMODE) == OFD_O_RDONLY)
@@ -337,6 +355,12 @@ int32_t ofd_stat(int32_t index, struct file_stat_info *out)
   struct ofd o;
   if (!snapshot(index, &o))
     return -KERR_BADF;
+  if (o.kind == OFD_SHM)
+  {
+    memset(out, 0, sizeof(*out));
+    out->size = shm_size(o.object);
+    return 0;
+  }
   if (o.kind != OFD_FILE)
   {
     memset(out, 0, sizeof(*out));
@@ -397,6 +421,7 @@ int32_t ofd_poll(int32_t index)
   case OFD_UNIX:
     return unix_poll(o.object);
   case OFD_FILE:
+  case OFD_SHM:
     return KPOLLIN | KPOLLOUT;
   default:
     return KPOLLNVAL;

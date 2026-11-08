@@ -14,7 +14,8 @@ enum ofd_kind
   OFD_PIPE,
   OFD_SOCKET,
   OFD_EVENT,
-  OFD_UNIX
+  OFD_UNIX,
+  OFD_SHM
 };
 
 #define OFD_STATUS_MASK 03003U
@@ -28,6 +29,8 @@ int32_t ofd_create_event(int32_t event_id, uint32_t flags);
 int32_t ofd_event_id(int32_t ofd);
 int32_t ofd_create_unix(int32_t unix_id, uint32_t flags);
 int32_t ofd_unix_id(int32_t ofd);
+int32_t ofd_create_shm(int32_t shm_id, uint32_t flags);
+int32_t ofd_shm_id(int32_t ofd);
 void ofd_ref(int32_t ofd);
 void ofd_release(int32_t ofd);
 int32_t ofd_vfs_handle(int32_t ofd);
