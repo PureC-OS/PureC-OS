@@ -14,8 +14,6 @@ typedef struct file_impl FILE;
 struct tm;
 
 #define WEOF ((wint_t)0xFFFFFFFFu)
-#define WCHAR_MIN (-2147483647 - 1)
-#define WCHAR_MAX 2147483647
 
 #ifdef __cplusplus
 extern "C" {

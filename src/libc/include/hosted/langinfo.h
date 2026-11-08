@@ -1,5 +1,5 @@
 #pragma once
-#include <locale.h>
+#include "locale.h"
 
 #ifdef __cplusplus
 extern "C" {

@@ -1,5 +1,5 @@
 #pragma once
-#include <wchar.h>
+#include "wchar.h"
 
 typedef unsigned long wctype_t;
 typedef const int *wctrans_t;
