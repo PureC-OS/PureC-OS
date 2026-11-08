@@ -3,7 +3,7 @@ set -e
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DEST="$ROOT/netsurf-libs"
 BASE="git://git.netsurf-browser.org"
-LIBS="libwapcaplet libparserutils libhubbub libcss libdom libnsgif libnsbmp libnsutils libnslog libnspsl libnsfb libutf8proc libsvgtiny"
+LIBS="buildsystem libwapcaplet libparserutils libhubbub libcss libdom libnsgif libnsbmp libnsutils libnslog libnspsl libnsfb libutf8proc libsvgtiny"
 mkdir -p "$DEST"
 for lib in $LIBS; do
   if [ -d "$DEST/$lib" ]; then continue; fi

@@ -26,3 +26,4 @@ cxx-libs/
 /qt-src/
 cxx-libs/llvm-project
 /ladybird-src/
+*netsurf-libs/

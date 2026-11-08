@@ -1,3 +1,4 @@
+buildsystem b38fe7146aa3af08881ba9d6817f19ee7abe4a86
 libwapcaplet c7c128d3eb3223b216c974471f82e9337fbcf4ba
 libparserutils 6b0cbf086ca8eb8fe74b69f0c9ecf274eb2397ca
 libhubbub 6651b8cf87a4aa87bcdb2ff024a02659cd3f9402
