@@ -6,6 +6,9 @@
 #include "include/hosted/string.h"
 #include "include/hosted/sys/resource.h"
 #include "include/hosted/sys/stat.h"
+#include "include/hosted/sys/time.h"
+#include "include/hosted/time.h"
+#include "include/hosted/utime.h"
 #include "include/hosted/sys/utsname.h"
 #include "include/hosted/unistd.h"
 #include "include/purec.h"
@@ -53,6 +56,81 @@ int fchmod(int fd, unsigned int mode)
         return -1;
     }
     return 0;
+}
+
+static int utimes_apply(const char *path, uint32_t atime, uint32_t mtime)
+{
+    if (!path)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    int32_t result = pc_utimes(path, atime, mtime);
+    if (result < 0)
+    {
+        errno = (int)-result;
+        return -1;
+    }
+    return 0;
+}
+
+int utime(const char *path, const struct utimbuf *times)
+{
+    if (!times)
+        return utimes_apply(path, 0xFFFFFFFFu, 0xFFFFFFFFu);
+    return utimes_apply(path, (uint32_t)times->actime, (uint32_t)times->modtime);
+}
+
+int utimes(const char *path, const struct timeval times[2])
+{
+    if (!times)
+        return utimes_apply(path, 0xFFFFFFFFu, 0xFFFFFFFFu);
+    return utimes_apply(path, (uint32_t)times[0].tv_sec,
+                        (uint32_t)times[1].tv_sec);
+}
+
+int utimensat(int dirfd, const char *path, const struct timespec times[2],
+              int flags)
+{
+    (void)flags;
+    if (!path || (path[0] != '/' && dirfd != AT_FDCWD))
+    {
+        errno = path ? ENOSYS : EFAULT;
+        return -1;
+    }
+    if (!times || (times[0].tv_nsec == UTIME_NOW && times[1].tv_nsec == UTIME_NOW))
+        return utimes_apply(path, 0xFFFFFFFFu, 0xFFFFFFFFu);
+    struct stat info;
+    bool need_stat = times[0].tv_nsec == UTIME_OMIT ||
+                     times[1].tv_nsec == UTIME_OMIT ||
+                     times[0].tv_nsec == UTIME_NOW ||
+                     times[1].tv_nsec == UTIME_NOW;
+    if (need_stat && stat(path, &info) < 0)
+        return -1;
+    uint32_t now = (uint32_t)time(0);
+    uint32_t values[2];
+    for (int i = 0; i < 2; i++)
+    {
+        if (times[i].tv_nsec == UTIME_OMIT)
+            values[i] = (uint32_t)(i == 0 ? info.st_atime : info.st_mtime);
+        else if (times[i].tv_nsec == UTIME_NOW)
+            values[i] = now;
+        else
+            values[i] = (uint32_t)times[i].tv_sec;
+    }
+    return utimes_apply(path, values[0], values[1]);
+}
+
+int futimens(int fd, const struct timespec times[2])
+{
+    char path[512];
+    int64_t status = pc_syscall(SYS_FD_PATH, (uint64_t)fd, (uint64_t)(uintptr_t)path, sizeof(path));
+    if (status < 0)
+    {
+        errno = EBADF;
+        return -1;
+    }
+    return utimensat(AT_FDCWD, path, times, 0);
 }
 
 int rmdir(const char *path)

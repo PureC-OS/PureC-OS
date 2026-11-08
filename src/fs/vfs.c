@@ -4,6 +4,7 @@ static mutex_t vfs_mutex;
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
 #include "../kernel/syscall/syscall.h"
+#include "../kernel/time/wallclock.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
 #include "./ext2/include/ext2.h"

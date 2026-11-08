@@ -780,6 +780,37 @@ int64_t syscall_handler(struct syscall_regs *r)
     filesystem_syscall_unlock();
     return result;
   }
+  case SYS_UTIMES:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -1;
+    char absolute[512];
+    int32_t resolved = process_resolve_path((const char *)(uintptr_t)a1,
+                                            absolute, sizeof(absolute));
+    if (resolved < 0)
+      return resolved;
+    if (!filesystem_syscall_acquire())
+      return -1;
+    int32_t result = vfs_utimes(absolute, (uint32_t)a2, (uint32_t)a3);
+    filesystem_syscall_unlock();
+    if (result >= 0)
+      return 0;
+    switch (result)
+    {
+    case FS_ERROR_NOT_FOUND:
+      return -KERR_NOENT;
+    case FS_ERROR_DENIED:
+      return -KERR_ACCES;
+    case FS_ERROR_READ_ONLY:
+      return -30;
+    case FS_ERROR_UNSUPPORTED:
+      return -KERR_NOSYS;
+    case FS_ERROR_INVALID:
+      return -KERR_INVAL;
+    default:
+      return -KERR_IO;
+    }
+  }
   case SYS_FILE_PERM:
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||

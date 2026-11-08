@@ -85,6 +85,7 @@ int32_t pc_getgid(void);
 int32_t pc_setuid(uint32_t uid);
 int32_t pc_setgid(uint32_t gid);
 int32_t pc_chmod(const char *path, uint32_t mode);
+int32_t pc_utimes(const char *path, uint32_t atime, uint32_t mtime);
 int32_t pc_chown(const char *path, uint32_t uid, uint32_t gid);
 int32_t pc_file_perm(const char *path, struct file_perm_info *out);
 int32_t pc_user_lookup(const char *name, uint32_t uid, struct user_info *out);
