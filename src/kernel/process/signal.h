@@ -33,6 +33,7 @@
 struct process;
 struct syscall_regs;
 struct ksigaction;
+struct kernel_stack;
 
 int32_t signal_send(uint32_t pid, int32_t sig);
 int32_t signal_send_kernel(uint32_t pid, int32_t sig);
@@ -50,3 +51,5 @@ void signal_exec_reset(struct process *process);
 bool signal_clone(struct process *child, const struct process *parent);
 void signal_free(struct process *process);
 int32_t signal_pause(void);
+int32_t signal_altstack(const struct kernel_stack *stack, struct kernel_stack *old,
+                        uint64_t rsp);

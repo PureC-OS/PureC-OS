@@ -36,6 +36,7 @@ typedef int sig_atomic_t;
 #define SIG_ERR ((sighandler_t)-1)
 
 #define SA_SIGINFO 4
+#define SA_ONSTACK 0x08000000
 #define SA_RESTART 0x10000000
 #define SA_NODEFER 0x40000000
 #define SA_RESETHAND 0x80000000
@@ -67,6 +68,18 @@ struct sigaction {
     void (*sa_sigaction)(int, siginfo_t *, void *);
 };
 
+#define SS_ONSTACK 1
+#define SS_DISABLE 2
+#define MINSIGSTKSZ 2048
+#define SIGSTKSZ 8192
+
+typedef struct {
+    void *ss_sp;
+    int ss_flags;
+    unsigned long ss_size;
+} stack_t;
+
+int sigaltstack(const stack_t *stack, stack_t *previous);
 int sigprocmask(int how, const sigset_t *set, sigset_t *previous);
 
 sighandler_t signal(int signum, sighandler_t handler);
