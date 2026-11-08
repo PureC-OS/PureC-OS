@@ -1,13 +1,20 @@
 #include "include/hosted/pthread.h"
+#include "include/hosted/semaphore.h"
 #include "include/hosted/errno.h"
 #include "include/hosted/stdlib.h"
 #include "include/hosted/string.h"
 #include "include/hosted/sys/mman.h"
 #include "include/purec.h"
 #include "pthread_impl.h"
+#include "include/hosted/signal.h"
+#include "include/hosted/unistd.h"
 #include <stdint.h>
 
+#undef errno
+extern int errno;
+extern void stdio_prepare(void) __attribute__((weak));
 int __pc_threaded;
+static uintptr_t main_stack_top;
 
 static int tls_ready;
 static const void *tls_image;
@@ -106,6 +113,18 @@ void __tls_init_main(const void *image, size_t filesz, size_t memsz,
     if (pc_syscall(SYS_SET_FS_BASE, (uint64_t)(uintptr_t)thread, 0, 0) < 0)
         return;
     tls_ready = 1;
+}
+
+int *__errno_location(void)
+{
+    if (tls_ready)
+        return &thread_pointer()->error_number;
+    return &errno;
+}
+
+void __pc_note_stack_top(uintptr_t top)
+{
+    main_stack_top = top;
 }
 
 struct pthread *__pc_self(void)
@@ -258,6 +277,8 @@ int pthread_create(pthread_t *out, const pthread_attr_t *attr,
     __pc_self();
     if (!tls_ready)
         return EAGAIN;
+    if (stdio_prepare)
+        stdio_prepare();
     size_t stack_size = PC_THREAD_STACK_DEFAULT;
     size_t guard_size = PC_THREAD_GUARD_SIZE;
     int detached = 0;
@@ -287,6 +308,8 @@ int pthread_create(pthread_t *out, const pthread_attr_t *attr,
     thread->argument = argument;
     thread->map_base = base;
     thread->map_size = total;
+    thread->stack_addr = base + guard_size;
+    thread->stack_size = stack_size;
     thread->detach_state = detached ? PC_DETACH_DETACHED : PC_DETACH_JOINABLE;
     uint64_t *stack_top = (uint64_t *)tls_base;
     *--stack_top = 0;
@@ -375,6 +398,7 @@ int pthread_attr_init(pthread_attr_t *attr)
     attr->stack_size = 0;
     attr->guard_size = PC_THREAD_GUARD_SIZE;
     attr->detach_state = PTHREAD_CREATE_JOINABLE;
+    attr->stack_addr = 0;
     return 0;
 }
 
@@ -775,5 +799,177 @@ int pthread_rwlock_unlock(pthread_rwlock_t *lock)
     if (state > 0 &&
         __atomic_sub_fetch(&lock->state, 1, __ATOMIC_RELEASE) == 0)
         futex_wake_all(&lock->state);
+    return 0;
+}
+
+int pthread_attr_getstack(const pthread_attr_t *attr, void **address, size_t *size)
+{
+    *address = attr->stack_addr;
+    *size = attr->stack_size ? attr->stack_size : PC_THREAD_STACK_DEFAULT;
+    return 0;
+}
+
+int pthread_getattr_np(pthread_t handle, pthread_attr_t *attr)
+{
+    struct pthread *thread = (struct pthread *)(uintptr_t)handle;
+    if (!thread || !attr)
+        return EINVAL;
+    pthread_attr_init(attr);
+    if (thread->map_base)
+    {
+        attr->stack_addr = thread->stack_addr;
+        attr->stack_size = thread->stack_size;
+        attr->detach_state = thread->detach_state == PC_DETACH_DETACHED
+                                 ? PTHREAD_CREATE_DETACHED
+                                 : PTHREAD_CREATE_JOINABLE;
+        return 0;
+    }
+    size_t size = 8u * 1024u * 1024u;
+    attr->stack_size = size;
+    attr->stack_addr = main_stack_top ? (void *)(main_stack_top - size) : 0;
+    return 0;
+}
+
+int pthread_sigmask(int how, const sigset_t *set, sigset_t *previous)
+{
+    return sigprocmask(how, set, previous) == 0 ? 0 : errno;
+}
+
+int pthread_kill(pthread_t handle, int number)
+{
+    if (number == 0)
+        return handle ? 0 : ESRCH;
+    if (handle == pthread_self())
+        return raise(number) == 0 ? 0 : errno;
+    return kill(getpid(), number) == 0 ? 0 : errno;
+}
+
+int pthread_cancel(pthread_t handle)
+{
+    (void)handle;
+    return ENOSYS;
+}
+
+int pthread_setcancelstate(int state, int *previous)
+{
+    if (previous)
+        *previous = PTHREAD_CANCEL_ENABLE;
+    (void)state;
+    return 0;
+}
+
+int pthread_setcanceltype(int type, int *previous)
+{
+    if (previous)
+        *previous = PTHREAD_CANCEL_DEFERRED;
+    (void)type;
+    return 0;
+}
+
+void pthread_testcancel(void) {}
+
+int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *deadline)
+{
+    for (;;)
+    {
+        int status = pthread_mutex_trylock(mutex);
+        if (status != EBUSY)
+            return status;
+        struct timespec now;
+        if (clock_gettime(CLOCK_REALTIME, &now) != 0)
+            return EINVAL;
+        if (now.tv_sec > deadline->tv_sec ||
+            (now.tv_sec == deadline->tv_sec && now.tv_nsec >= deadline->tv_nsec))
+            return ETIMEDOUT;
+        sched_yield();
+    }
+}
+
+int sem_init(sem_t *semaphore, int shared, unsigned int value)
+{
+    (void)shared;
+    if (value > SEM_VALUE_MAX)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    semaphore->value = (int)value;
+    semaphore->waiters = 0;
+    return 0;
+}
+
+int sem_destroy(sem_t *semaphore)
+{
+    (void)semaphore;
+    return 0;
+}
+
+int sem_trywait(sem_t *semaphore)
+{
+    int current = __atomic_load_n(&semaphore->value, __ATOMIC_ACQUIRE);
+    while (current > 0)
+    {
+        if (__atomic_compare_exchange_n(&semaphore->value, &current, current - 1,
+                                        0, __ATOMIC_ACQUIRE, __ATOMIC_ACQUIRE))
+            return 0;
+    }
+    errno = EAGAIN;
+    return -1;
+}
+
+static int sem_wait_ms(sem_t *semaphore, uint32_t timeout_ms)
+{
+    for (;;)
+    {
+        int current = __atomic_load_n(&semaphore->value, __ATOMIC_ACQUIRE);
+        if (current > 0)
+        {
+            if (__atomic_compare_exchange_n(&semaphore->value, &current,
+                                            current - 1, 0, __ATOMIC_ACQUIRE,
+                                            __ATOMIC_ACQUIRE))
+                return 0;
+            continue;
+        }
+        int64_t status =
+            __pc_futex(PC_FUTEX_WAIT, &semaphore->value, 0, timeout_ms);
+        if (status == -ETIMEDOUT)
+        {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+    }
+}
+
+int sem_wait(sem_t *semaphore)
+{
+    return sem_wait_ms(semaphore, PC_FUTEX_NO_TIMEOUT);
+}
+
+int sem_timedwait(sem_t *semaphore, const struct timespec *deadline)
+{
+    struct timespec now;
+    if (clock_gettime(CLOCK_REALTIME, &now) != 0)
+        return -1;
+    long long remaining =
+        ((long long)deadline->tv_sec - (long long)now.tv_sec) * 1000LL +
+        ((long long)deadline->tv_nsec - (long long)now.tv_nsec + 999999LL) /
+            1000000LL;
+    if (remaining <= 0)
+        return sem_trywait(semaphore) == 0 ? 0 : (errno = ETIMEDOUT, -1);
+    if (remaining > 0xFFFFFFF0LL)
+        remaining = 0xFFFFFFF0LL;
+    return sem_wait_ms(semaphore, (uint32_t)remaining);
+}
+
+int sem_post(sem_t *semaphore)
+{
+    __atomic_fetch_add(&semaphore->value, 1, __ATOMIC_RELEASE);
+    __pc_futex(PC_FUTEX_WAKE, &semaphore->value, 1, 0);
+    return 0;
+}
+
+int sem_getvalue(sem_t *semaphore, int *value)
+{
+    *value = __atomic_load_n(&semaphore->value, __ATOMIC_ACQUIRE);
     return 0;
 }

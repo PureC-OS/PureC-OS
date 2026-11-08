@@ -475,13 +475,14 @@ void process_init(void)
 
 static uint32_t oom_reap_zombie(uint32_t pid)
 {
+  MUTEX_SCOPE(&process_mutex);
   struct process *target = process_find_by_pid(pid);
   if (!target)
     return 0;
   if (target->pid == 1)
     return 0;
   if (target->state != PROCESS_EXITED)
-    return 0;
+    return signal_send_kernel(pid, SIGKILL) == 0 ? pid : 0;
   if (!process_threads_stopped(target))
     return 0;
   int exiting_tid = target->thread_id;
@@ -490,6 +491,25 @@ static uint32_t oom_reap_zombie(uint32_t pid)
   scheduler_free_thread_by_id(exiting_tid);
   process_node_free(target);
   return pid;
+}
+
+uint32_t process_oom_candidates(struct oom_candidate *out, uint32_t capacity)
+{
+  MUTEX_SCOPE(&process_mutex);
+  uint32_t count = 0;
+  for (struct process *p = process_list; p && count < capacity; p = p->next)
+  {
+    if (p->state == PROCESS_FREE || p->state == PROCESS_EXITED)
+      continue;
+    out[count].pid = p->pid;
+    out[count].user_pages = oom_account_used(p->pid);
+    out[count].runtime_ms = scheduler_thread_runtime_ticks(p->thread_id);
+    out[count].is_system =
+        p->pid == 1 || p->address_space == vmm_kernel_address_space() ||
+        __atomic_load_n(&p->exit_group, __ATOMIC_ACQUIRE);
+    count++;
+  }
+  return count;
 }
 
 static bool session_active;

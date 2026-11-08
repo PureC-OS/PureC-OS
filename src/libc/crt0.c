@@ -91,6 +91,8 @@ extern char __tls_align[] __attribute__((weak));
 void __tls_init_main(const void *image, size_t filesz, size_t memsz,
                      size_t alignment);
 
+void __pc_note_stack_top(uintptr_t top);
+
 static void crt0_init_tls(void) {
     if (!__tdata_start || !__tbss_end || __tbss_end <= __tdata_start)
         return;
@@ -103,6 +105,7 @@ static void crt0_init_tls(void) {
 
 void crt0_main(uint64_t *frame) {
     int argc = 0;
+    __pc_note_stack_top(((uintptr_t)frame + 4095u) & ~(uintptr_t)4095u);
     crt0_init_tls();
     if (frame[0] > 0) {
         char **vector = (char **)(frame + 1);

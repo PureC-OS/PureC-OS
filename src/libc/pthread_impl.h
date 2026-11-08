@@ -38,6 +38,10 @@ struct pthread
     void *result;
     void *map_base;
     size_t map_size;
+    int error_number;
+    int reserved2;
+    void *stack_addr;
+    size_t stack_size;
     struct pc_thread_atexit *atexit_list;
     void *keys[PC_PTHREAD_KEYS_MAX];
 };

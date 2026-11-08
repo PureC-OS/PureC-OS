@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#undef errno
 int errno = 0;
 
 // ---- integer conversions ----

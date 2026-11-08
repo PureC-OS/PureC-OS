@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include "time.h"
 #include "sched.h"
+#include "signal.h"
 
 typedef unsigned long pthread_t;
 typedef struct
@@ -20,6 +21,7 @@ typedef struct
     size_t stack_size;
     size_t guard_size;
     int detach_state;
+    void *stack_addr;
 } pthread_attr_t;
 typedef struct
 {
@@ -54,6 +56,11 @@ typedef struct
 #define PTHREAD_CREATE_JOINABLE 0
 #define PTHREAD_CREATE_DETACHED 1
 #define PTHREAD_STACK_MIN 16384
+#define PTHREAD_CANCEL_ENABLE 0
+#define PTHREAD_CANCEL_DISABLE 1
+#define PTHREAD_CANCEL_DEFERRED 0
+#define PTHREAD_CANCEL_ASYNCHRONOUS 1
+#define PTHREAD_CANCELED ((void *)-1)
 #define PTHREAD_KEYS_MAX 128
 #define PTHREAD_DESTRUCTOR_ITERATIONS 4
 
@@ -108,7 +115,16 @@ extern "C"
     int pthread_attr_getguardsize(const pthread_attr_t *attr, size_t *size);
     int pthread_attr_setdetachstate(pthread_attr_t *attr, int state);
     int pthread_attr_getdetachstate(const pthread_attr_t *attr, int *state);
-    int pthread_setname_np(pthread_t thread, const char *name);
+    int pthread_attr_getstack(const pthread_attr_t *attr, void **address, size_t *size);
+int pthread_getattr_np(pthread_t thread, pthread_attr_t *attr);
+int pthread_sigmask(int how, const sigset_t *set, sigset_t *previous);
+int pthread_kill(pthread_t thread, int signal);
+int pthread_cancel(pthread_t thread);
+int pthread_setcancelstate(int state, int *previous);
+int pthread_setcanceltype(int type, int *previous);
+void pthread_testcancel(void);
+int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *deadline);
+int pthread_setname_np(pthread_t thread, const char *name);
     int pthread_getname_np(pthread_t thread, char *name, size_t size);
     
 #ifdef __cplusplus

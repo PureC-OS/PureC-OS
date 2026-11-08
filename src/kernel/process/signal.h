@@ -35,6 +35,7 @@ struct syscall_regs;
 struct ksigaction;
 
 int32_t signal_send(uint32_t pid, int32_t sig);
+int32_t signal_send_kernel(uint32_t pid, int32_t sig);
 void signal_raise_current(int32_t sig);
 void signal_notify_child_exit(struct process *parent);
 bool signal_pending_current(void);

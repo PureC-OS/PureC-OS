@@ -142,6 +142,8 @@ int32_t process_monitor_list_page(struct process_monitor_info *entries,
 
 bool process_set_affinity(uint32_t pid, int16_t core);
 struct process *process_lookup_by_pid(uint32_t pid);
+struct oom_candidate;
+uint32_t process_oom_candidates(struct oom_candidate *out, uint32_t capacity);
 struct process_proc_info {
   uint32_t uid;
   uint32_t gid;

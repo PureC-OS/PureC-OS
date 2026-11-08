@@ -5,7 +5,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#ifndef errno
+int *__errno_location(void);
+#define errno (*__errno_location())
+#else
 extern int errno;
+#endif
 
 #define EPERM           1
 #define ENOENT          2

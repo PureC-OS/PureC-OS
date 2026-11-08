@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
+#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,6 +103,49 @@ static void *malloc_worker(void *argument) {
         }
     }
     return (void *)(long)ok;
+}
+
+
+static void *errno_worker(void *argument) {
+    long id = (long)argument;
+    errno = 100 + (int)id;
+    for (int i = 0; i < 200; i++)
+        sched_yield();
+    return (void *)(long)(errno == 100 + (int)id);
+}
+
+static FILE *shared_file;
+
+static void *stdio_worker(void *argument) {
+    long id = (long)argument;
+    for (int i = 0; i < 200; i++)
+        fprintf(shared_file, "T%ld L%d payload-payload-payload\n", id, i);
+    return 0;
+}
+
+static sem_t semaphore;
+static volatile int sem_consumed;
+
+static void *sem_consumer(void *argument) {
+    (void)argument;
+    for (int i = 0; i < 50; i++) {
+        sem_wait(&semaphore);
+        sem_consumed++;
+    }
+    return 0;
+}
+
+static void *stack_probe(void *argument) {
+    (void)argument;
+    pthread_attr_t attr;
+    void *low = 0;
+    size_t size = 0;
+    int local = 0;
+    if (pthread_getattr_np(pthread_self(), &attr) != 0) return 0;
+    pthread_attr_getstack(&attr, &low, &size);
+    char *address = (char *)&local;
+    return (void *)(long)(low && size >= 16384 && address >= (char *)low &&
+                          address < (char *)low + size);
 }
 
 static void *spin_forever(void *argument) {
@@ -213,6 +257,51 @@ int main(void) {
         if (!result) all_ok = 0;
     }
     check("malloc from threads", all_ok);
+
+    errno = 7;
+    for (long i = 0; i < WORKERS; i++)
+        pthread_create(&workers[i], 0, errno_worker, (void *)(i + 1));
+    all_ok = 1;
+    for (int i = 0; i < WORKERS; i++) {
+        pthread_join(workers[i], &result);
+        if (!result) all_ok = 0;
+    }
+    check("errno per thread", all_ok && errno == 7);
+
+    shared_file = fopen("/tmp/thrtest.out", "w");
+    for (long i = 0; i < WORKERS; i++)
+        pthread_create(&workers[i], 0, stdio_worker, (void *)(i + 1));
+    for (int i = 0; i < WORKERS; i++)
+        pthread_join(workers[i], 0);
+    fclose(shared_file);
+    shared_file = fopen("/tmp/thrtest.out", "r");
+    int lines = 0, intact = 1;
+    char text[128];
+    while (shared_file && fgets(text, sizeof(text), shared_file)) {
+        int t, l;
+        char tail[64];
+        if (sscanf(text, "T%d L%d %63s", &t, &l, tail) != 3 ||
+            strcmp(tail, "payload-payload-payload") != 0)
+            intact = 0;
+        lines++;
+    }
+    if (shared_file) fclose(shared_file);
+    check("stdio from threads", lines == WORKERS * 200 && intact);
+
+    sem_init(&semaphore, 0, 0);
+    pthread_t consumer;
+    pthread_create(&consumer, 0, sem_consumer, 0);
+    for (int i = 0; i < 50; i++) {
+        sem_post(&semaphore);
+        if (i % 10 == 0) sched_yield();
+    }
+    pthread_join(consumer, 0);
+    check("semaphore", sem_consumed == 50);
+
+    pthread_t prober;
+    pthread_create(&prober, 0, stack_probe, 0);
+    pthread_join(prober, &result);
+    check("pthread_getattr_np", (long)result == 1);
 
     pid_t child = fork();
     if (child == 0) {

@@ -108,6 +108,24 @@ int32_t signal_send(uint32_t pid, int32_t sig) {
   return 0;
 }
 
+int32_t signal_send_kernel(uint32_t pid, int32_t sig) {
+  if (sig <= 0 || sig > SIGNAL_COUNT)
+    return -KERR_INVAL;
+  process_table_lock();
+  struct process *target = process_lookup_by_pid(pid);
+  if (!target || target->state == PROCESS_EXITED ||
+      target->state == PROCESS_FREE) {
+    process_table_unlock();
+    return -KERR_SRCH;
+  }
+  int32_t tid = target->thread_id;
+  __atomic_fetch_or(&target->sig_pending, SIG_BIT(sig), __ATOMIC_SEQ_CST);
+  process_table_unlock();
+  scheduler_unblock(tid);
+  scheduler_wake_process_threads(target, -1);
+  return 0;
+}
+
 void signal_notify_child_exit(struct process *parent) {
   if (!action_ignored(parent, SIGCHLD) ||
       (parent->signals &&
