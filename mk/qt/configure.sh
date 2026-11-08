@@ -7,7 +7,7 @@ BUILD="${QT_BUILD_DIR:-$BIN_DIR/qt-build}"
 PREFIX="${QT_PREFIX:-$BIN_DIR/sysroot}"
 sh "$ROOT/mk/qt/patch.sh"
 if [ "${QT_GUI:-ON}" = "ON" ]; then
-  QT_GUI_FLAGS="-DFEATURE_gui=ON -DFEATURE_widgets=ON -DFEATURE_system_freetype=OFF -DFEATURE_system_harfbuzz=OFF -DFEATURE_system_png=OFF -DFEATURE_system_jpeg=OFF -DFEATURE_fontconfig=OFF -DFEATURE_xkbcommon=OFF -DFEATURE_vulkan=OFF -DFEATURE_printsupport=OFF -DFEATURE_sessionmanager=OFF -DFEATURE_accessibility=OFF -DFEATURE_linuxfb=OFF -DFEATURE_evdev=OFF -DFEATURE_libinput=OFF -DFEATURE_tslib=OFF -DFEATURE_kms=OFF -DFEATURE_eglfs=OFF -DFEATURE_vnc=OFF -DFEATURE_xcb=OFF -DFEATURE_cups=OFF -DFEATURE_dbus=OFF -DQT_QPA_PLATFORMS=minimal;offscreen"
+  QT_GUI_FLAGS="-DFEATURE_gui=ON -DFEATURE_widgets=ON -DFEATURE_system_freetype=OFF -DFEATURE_system_harfbuzz=OFF -DFEATURE_system_png=OFF -DFEATURE_system_jpeg=OFF -DFEATURE_fontconfig=OFF -DFEATURE_xkbcommon=OFF -DFEATURE_vulkan=OFF -DFEATURE_printsupport=OFF -DFEATURE_sessionmanager=OFF -DFEATURE_accessibility=OFF -DFEATURE_linuxfb=OFF -DFEATURE_evdev=OFF -DFEATURE_libinput=OFF -DFEATURE_tslib=OFF -DFEATURE_kms=OFF -DFEATURE_eglfs=OFF -DFEATURE_vnc=OFF -DFEATURE_xcb=OFF -DFEATURE_cups=OFF -DFEATURE_dbus=OFF -DQT_QPA_PLATFORMS=minimal;offscreen;purec"
 else
   QT_GUI_FLAGS="-DFEATURE_gui=OFF -DFEATURE_widgets=OFF"
 fi

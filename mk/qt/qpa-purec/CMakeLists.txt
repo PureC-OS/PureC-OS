@@ -8,15 +8,15 @@ qt_internal_add_plugin(QPurecIntegrationPlugin
         qpurecwindow.cpp qpurecwindow.h
         qpurecbackingstore.cpp qpurecbackingstore.h
     INCLUDE_DIRECTORIES
-        ${PUREC_ROOT_DIR}/src/libgui/include
-        ${PUREC_ROOT_DIR}/src/libc/include
+        ${PUREC_ROOT}/src/libgui/include
+        ${PUREC_ROOT}/src/libc/include
     LIBRARIES
         Qt::Core
         Qt::CorePrivate
         Qt::Gui
         Qt::GuiPrivate
-        ${PUREC_BIN_DIR}/lib/libpuregui.a
-        ${PUREC_BIN_DIR}/lib/libpurec.a
+        ${PUREC_BIN}/lib/libpuregui.a
+        ${PUREC_BIN}/lib/libpurec.a
 )
 
 qt_internal_extend_target(QPurecIntegrationPlugin CONDITION QT_FEATURE_freetype

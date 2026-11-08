@@ -45,5 +45,16 @@ patch("src/corelib/global/qsystemdetection.h", "Q_OS_PUREC", """#elif defined(__
 """, """#elif defined(__purec__)
 #  define Q_OS_PUREC
 """)
+
+patch("src/plugins/platforms/CMakeLists.txt", "add_subdirectory(purec)", """if(NOT WASM)
+    add_subdirectory(minimal)
+endif()
+""", """if(PUREC)
+    add_subdirectory(purec)
+endif()
+""")
 PY
+rm -rf "$QT/src/plugins/platforms/purec"
+mkdir -p "$QT/src/plugins/platforms/purec"
+cp "$ROOT/mk/qt/qpa-purec/"* "$QT/src/plugins/platforms/purec/"
 echo "qtbase patched for PureC"
