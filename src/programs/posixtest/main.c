@@ -3,11 +3,18 @@
 #include <poll.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <grp.h>
+#include <pthread.h>
+#include <pwd.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/file.h>
+#include <sys/prctl.h>
+#include <sys/random.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <sys/socket.h>
@@ -813,9 +820,141 @@ static void test_realpath(void)
     chdir(saved);
 }
 
+static int atfork_prepare_runs;
+static int atfork_parent_runs;
+static int atfork_child_runs;
+static pthread_barrier_t test_barrier;
+static pthread_spinlock_t test_spin;
+static volatile int barrier_serial;
+static volatile int barrier_passed;
+static volatile long spin_counter;
+
+static void atfork_prepare(void) { atfork_prepare_runs++; }
+static void atfork_parent(void) { atfork_parent_runs++; }
+static void atfork_child(void) { atfork_child_runs++; }
+
+static void *barrier_worker(void *argument)
+{
+    (void)argument;
+    for (int i = 0; i < 1000; i++)
+    {
+        pthread_spin_lock(&test_spin);
+        spin_counter++;
+        pthread_spin_unlock(&test_spin);
+    }
+    int result = pthread_barrier_wait(&test_barrier);
+    if (result == PTHREAD_BARRIER_SERIAL_THREAD)
+        __atomic_add_fetch(&barrier_serial, 1, __ATOMIC_SEQ_CST);
+    __atomic_add_fetch(&barrier_passed, 1, __ATOMIC_SEQ_CST);
+    return 0;
+}
+
+static void test_libc_extra(void)
+{
+    char buffer[256];
+    struct passwd entry;
+    struct passwd *found = 0;
+    check("getpwuid_r root", getpwuid_r(0, &entry, buffer, sizeof(buffer), &found) == 0 &&
+                                 found && strcmp(found->pw_name, "root") == 0);
+    check("getpwuid_r ERANGE", getpwuid_r(0, &entry, buffer, 4, &found) == ERANGE);
+    check("getpwnam_r unknown", getpwnam_r("no-such-user-xyz", &entry, buffer, sizeof(buffer), &found) == 0 &&
+                                    found == 0);
+    struct group group;
+    struct group *group_found = 0;
+    int group_status = getgrgid_r(0, &group, buffer, sizeof(buffer), &group_found);
+    check("getgrgid_r gid 0", group_status == 0 && group_found != 0);
+
+    unsigned char first[32], second[32];
+    memset(first, 0, sizeof(first));
+    memset(second, 0, sizeof(second));
+    check("getrandom length", getrandom(first, sizeof(first), 0) == (ssize_t)sizeof(first));
+    getentropy(second, sizeof(second));
+    check("getrandom differs", memcmp(first, second, sizeof(first)) != 0);
+
+    struct timespec request = {0, 30 * 1000000L};
+    long start = now_ms();
+    check("clock_nanosleep relative", clock_nanosleep(CLOCK_MONOTONIC, 0, &request, 0) == 0 &&
+                                          now_ms() - start >= 25);
+    struct timespec absolute;
+    clock_gettime(CLOCK_MONOTONIC, &absolute);
+    absolute.tv_nsec += 30 * 1000000L;
+    if (absolute.tv_nsec >= 1000000000L)
+    {
+        absolute.tv_sec++;
+        absolute.tv_nsec -= 1000000000L;
+    }
+    start = now_ms();
+    check("clock_nanosleep TIMER_ABSTIME", clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &absolute, 0) == 0 &&
+                                               now_ms() - start >= 20);
+
+    int pipefd[2];
+    pipe(pipefd);
+    struct pollfd pfd = {pipefd[0], POLLIN, 0};
+    struct timespec poll_timeout = {0, 40 * 1000000L};
+    start = now_ms();
+    int ready = ppoll(&pfd, 1, &poll_timeout, 0);
+    check("ppoll timeout", ready == 0 && now_ms() - start >= 30);
+    write(pipefd[1], "x", 1);
+    check("ppoll ready", ppoll(&pfd, 1, &poll_timeout, 0) == 1);
+    close(pipefd[0]);
+    close(pipefd[1]);
+
+    pthread_atfork(atfork_prepare, atfork_parent, atfork_child);
+    int fork_pipe[2];
+    pipe(fork_pipe);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        char ok = (atfork_prepare_runs == 1 && atfork_child_runs == 1 && atfork_parent_runs == 0) ? 'Y' : 'N';
+        write(fork_pipe[1], &ok, 1);
+        _exit(0);
+    }
+    char verdict = 0;
+    read(fork_pipe[0], &verdict, 1);
+    int status = 0;
+    waitpid(child, &status, 0);
+    check("pthread_atfork child ran", verdict == 'Y');
+    check("pthread_atfork parent ran", atfork_prepare_runs == 1 && atfork_parent_runs == 1 &&
+                                           atfork_child_runs == 0);
+    close(fork_pipe[0]);
+    close(fork_pipe[1]);
+
+    pthread_spin_init(&test_spin, 0);
+    pthread_barrier_init(&test_barrier, 0, 4);
+    pthread_t threads[3];
+    for (int i = 0; i < 3; i++)
+        pthread_create(&threads[i], 0, barrier_worker, 0);
+    barrier_worker(0);
+    for (int i = 0; i < 3; i++)
+        pthread_join(threads[i], 0);
+    check("pthread_barrier all passed", barrier_passed == 4);
+    check("pthread_barrier one serial", barrier_serial == 1);
+    check("pthread_spin mutual exclusion", spin_counter == 4000);
+    pthread_barrier_destroy(&test_barrier);
+
+    char name[32];
+    check("prctl PR_SET_NAME", prctl(PR_SET_NAME, "ptest-name") == 0);
+    memset(name, 0, sizeof(name));
+    check("prctl PR_GET_NAME", prctl(PR_GET_NAME, name) == 0 && strcmp(name, "ptest-name") == 0);
+
+    cpu_set_t cpus;
+    CPU_ZERO(&cpus);
+    check("sched_getaffinity", sched_getaffinity(0, sizeof(cpus), &cpus) == 0 && CPU_ISSET(0, &cpus));
+
+    int fd = open("/tmp/posixtest.fa", O_CREAT | O_RDWR | O_TRUNC, 0600);
+    struct stat info;
+    check("posix_fallocate grows", fd >= 0 && posix_fallocate(fd, 0, 8192) == 0 &&
+                                       fstat(fd, &info) == 0 && info.st_size == 8192);
+    check("flock lock+unlock", flock(fd, LOCK_EX | LOCK_NB) == 0 && flock(fd, LOCK_UN) == 0);
+    check("flock bad fd", flock(9999, LOCK_EX) < 0 && errno == EBADF);
+    close(fd);
+    unlink("/tmp/posixtest.fa");
+}
+
 int main(void)
 {
     test_realpath();
+    test_libc_extra();
     test_eventfd();
     test_timerfd();
     test_epoll();
