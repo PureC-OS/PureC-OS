@@ -10,6 +10,16 @@
 #define PT_NOTE 4
 #define PT_PHDR 6
 #define PT_TLS 7
+#define PT_GNU_EH_FRAME 0x6474e550
+
+typedef uint16_t Elf64_Half;
+typedef uint32_t Elf64_Word;
+typedef int32_t Elf64_Sword;
+typedef uint64_t Elf64_Xword;
+typedef int64_t Elf64_Sxword;
+typedef uint64_t Elf64_Addr;
+typedef uint64_t Elf64_Off;
+#define ElfW(type) Elf64_##type
 
 typedef struct {
     uint32_t p_type;
@@ -26,7 +36,7 @@ struct dl_phdr_info {
     uint64_t dlpi_addr;
     const char *dlpi_name;
     const Elf64_Phdr *dlpi_phdr;
-    uint16_t dlpi_phnum;
+    Elf64_Half dlpi_phnum;
     uint64_t dlpi_adds;
     uint64_t dlpi_subs;
     size_t dlpi_tls_modid;

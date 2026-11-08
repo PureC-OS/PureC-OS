@@ -69,12 +69,12 @@ int putenv(char *entry);
 int putenv(char *entry);
 char *realpath(const char *path, char *resolved);
 int system(const char *cmd);
-void exit(int status);
+void exit(int status) __attribute__((noreturn));
 int atexit(void (*function)(void));
 int __cxa_atexit(void (*function)(void *), void *argument, void *dso);
 void __cxa_finalize(void *dso);
 void _exit(int status) __attribute__((noreturn));
-void abort(void);
+void abort(void) __attribute__((noreturn));
 #ifdef __cplusplus
 }
 #endif

@@ -9,6 +9,18 @@ extern "C" {
 typedef int64_t intmax_t;
 typedef uint64_t uintmax_t;
 
+#define PRIdPTR "ld"
+#define PRIiPTR "li"
+#define PRIoPTR "lo"
+#define PRIuPTR "lu"
+#define PRIxPTR "lx"
+#define PRIXPTR "lX"
+#define PRIdMAX "ld"
+#define PRIiMAX "li"
+#define PRIoMAX "lo"
+#define PRIuMAX "lu"
+#define PRIxMAX "lx"
+#define PRIXMAX "lX"
 #define PRId8 "d"
 #define PRId16 "d"
 #define PRId32 "d"
