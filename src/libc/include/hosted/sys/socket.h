@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "types.h"
+#include "uio.h"
 
 typedef unsigned int socklen_t;
 typedef unsigned short sa_family_t;
@@ -28,6 +29,9 @@ typedef unsigned short sa_family_t;
 #define SOMAXCONN 4
 
 #define SO_DEBUG 1
+#define SO_PASSCRED 16
+#define SO_PEERCRED 17
+#define SO_ACCEPTCONN 30
 #define SO_REUSEADDR 2
 #define SO_TYPE 3
 #define SO_ERROR 4
@@ -50,6 +54,12 @@ typedef unsigned short sa_family_t;
 #define MSG_WAITALL 0x100
 #define MSG_DONTWAIT 0x40
 #define MSG_NOSIGNAL 0x4000
+#define MSG_TRUNC 0x20
+#define MSG_CTRUNC 0x8
+#define MSG_CMSG_CLOEXEC 0x40000000
+
+#define SCM_RIGHTS 1
+#define SCM_CREDENTIALS 2
 
 #define SHUT_RD 0
 #define SHUT_WR 1
@@ -64,6 +74,36 @@ struct sockaddr_storage {
     sa_family_t ss_family;
     char ss_pad[126];
 };
+
+struct msghdr {
+    void *msg_name;
+    socklen_t msg_namelen;
+    struct iovec *msg_iov;
+    size_t msg_iovlen;
+    void *msg_control;
+    size_t msg_controllen;
+    int msg_flags;
+};
+
+struct cmsghdr {
+    size_t cmsg_len;
+    int cmsg_level;
+    int cmsg_type;
+};
+
+struct ucred {
+    int pid;
+    unsigned int uid;
+    unsigned int gid;
+};
+
+#define CMSG_ALIGN(length) (((length) + sizeof(size_t) - 1) & ~(sizeof(size_t) - 1))
+#define CMSG_DATA(cmsg) ((unsigned char *)((struct cmsghdr *)(cmsg) + 1))
+#define CMSG_LEN(length) (CMSG_ALIGN(sizeof(struct cmsghdr)) + (length))
+#define CMSG_SPACE(length) (CMSG_ALIGN(sizeof(struct cmsghdr)) + CMSG_ALIGN(length))
+#define CMSG_FIRSTHDR(msg) \
+    ((msg)->msg_controllen >= sizeof(struct cmsghdr) ? (struct cmsghdr *)(msg)->msg_control : (struct cmsghdr *)0)
+#define CMSG_NXTHDR(msg, cmsg) __cmsg_nxthdr((msg), (cmsg))
 
 struct linger {
     int l_onoff;
@@ -92,6 +132,19 @@ int getpeername(int fd, struct sockaddr *address, socklen_t *length);
 int setsockopt(int fd, int level, int name, const void *value, socklen_t length);
 int getsockopt(int fd, int level, int name, void *value, socklen_t *length);
 int socketpair(int domain, int type, int protocol, int fds[2]);
+ssize_t sendmsg(int fd, const struct msghdr *message, int flags);
+ssize_t recvmsg(int fd, struct msghdr *message, int flags);
+
+static inline struct cmsghdr *__cmsg_nxthdr(struct msghdr *message, struct cmsghdr *cmsg)
+{
+    if (cmsg->cmsg_len < sizeof(struct cmsghdr))
+        return (struct cmsghdr *)0;
+    unsigned char *next = (unsigned char *)cmsg + CMSG_ALIGN(cmsg->cmsg_len);
+    unsigned char *end = (unsigned char *)message->msg_control + message->msg_controllen;
+    if (next + sizeof(struct cmsghdr) > end)
+        return (struct cmsghdr *)0;
+    return (struct cmsghdr *)next;
+}
 
 #ifdef __cplusplus
 }

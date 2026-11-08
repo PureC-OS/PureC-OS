@@ -8,6 +8,8 @@
 #include "include/hosted/stdlib.h"
 #include "include/hosted/string.h"
 #include "include/hosted/sys/socket.h"
+#include "include/hosted/sys/uio.h"
+#include "include/hosted/unistd.h"
 
 int64_t pc_syscall(uint64_t number, uint64_t argument1, uint64_t argument2,
                    uint64_t argument3);
@@ -163,12 +165,83 @@ int getsockopt(int fd, int level, int name, void *value, socklen_t *length)
 
 int socketpair(int domain, int type, int protocol, int fds[2])
 {
-    (void)domain;
-    (void)type;
-    (void)protocol;
-    (void)fds;
-    errno = EOPNOTSUPP;
-    return -1;
+    if (!fds)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return result_of(syscall_four(SYS_SOCKETPAIR, (uint64_t)(uint32_t)domain,
+                                  (uint64_t)(uint32_t)type,
+                                  (uint64_t)(uint32_t)protocol,
+                                  (uint64_t)(uintptr_t)fds));
+}
+
+ssize_t sendmsg(int fd, const struct msghdr *message, int flags)
+{
+    if (!message)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return size_result_of(pc_syscall(SYS_SENDMSG, (uint64_t)(uint32_t)fd,
+                                     (uint64_t)(uintptr_t)message,
+                                     (uint64_t)(uint32_t)flags));
+}
+
+ssize_t recvmsg(int fd, struct msghdr *message, int flags)
+{
+    if (!message)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return size_result_of(pc_syscall(SYS_RECVMSG, (uint64_t)(uint32_t)fd,
+                                     (uint64_t)(uintptr_t)message,
+                                     (uint64_t)(uint32_t)flags));
+}
+
+ssize_t readv(int fd, const struct iovec *iov, int count)
+{
+    if (count < 0 || count > UIO_MAXIOV)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    ssize_t total = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (!iov[i].iov_len)
+            continue;
+        ssize_t got = read(fd, iov[i].iov_base, iov[i].iov_len);
+        if (got < 0)
+            return total ? total : -1;
+        total += got;
+        if ((size_t)got < iov[i].iov_len)
+            break;
+    }
+    return total;
+}
+
+ssize_t writev(int fd, const struct iovec *iov, int count)
+{
+    if (count < 0 || count > UIO_MAXIOV)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    ssize_t total = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (!iov[i].iov_len)
+            continue;
+        ssize_t put = write(fd, iov[i].iov_base, iov[i].iov_len);
+        if (put < 0)
+            return total ? total : -1;
+        total += put;
+        if ((size_t)put < iov[i].iov_len)
+            break;
+    }
+    return total;
 }
 
 int inet_aton(const char *text, struct in_addr *address)
