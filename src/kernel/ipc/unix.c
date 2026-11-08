@@ -846,3 +846,12 @@ int32_t unix_poll(int32_t id)
   mutex_unlock(&unix_mutex);
   return revents;
 }
+
+uint64_t unix_generation(int32_t id)
+{
+  mutex_lock(&unix_mutex);
+  struct usock *s = sock_get(id);
+  uint64_t value = s ? s->in_total : 0;
+  mutex_unlock(&unix_mutex);
+  return value;
+}
