@@ -7,6 +7,8 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
@@ -532,6 +534,147 @@ static void test_scm_rights(void)
     close(u2[1]);
 }
 
+static void test_shared_memory(void)
+{
+    volatile char *shared = mmap(0, 8192, PROT_READ | PROT_WRITE,
+                                 MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    check("shm anon mmap", shared != MAP_FAILED);
+    if (shared == MAP_FAILED)
+        return;
+    shared[0] = 'p';
+    shared[4096] = 'q';
+    int to_child[2], to_parent[2];
+    pipe(to_child);
+    pipe(to_parent);
+    pid_t child = fork();
+    if (child == 0)
+    {
+        char token;
+        int ok = shared[0] == 'p' && shared[4096] == 'q';
+        shared[1] = 'c';
+        shared[4097] = ok ? 'k' : 'x';
+        write(to_parent[1], "1", 1);
+        read(to_child[0], &token, 1);
+        ok = ok && shared[2] == 'P';
+        shared[3] = ok ? 'Y' : 'N';
+        _exit(0);
+    }
+    char token;
+    read(to_parent[0], &token, 1);
+    check("shm anon child write visible", shared[1] == 'c' && shared[4097] == 'k');
+    shared[2] = 'P';
+    write(to_child[1], "1", 1);
+    int status = 0;
+    waitpid(child, &status, 0);
+    check("shm anon parent write visible", shared[3] == 'Y');
+
+    volatile char *private_map = mmap(0, 4096, PROT_READ | PROT_WRITE,
+                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    private_map[0] = 'a';
+    child = fork();
+    if (child == 0)
+    {
+        private_map[0] = 'z';
+        _exit(0);
+    }
+    waitpid(child, &status, 0);
+    check("shm private stays COW", private_map[0] == 'a');
+
+    check("shm munmap shared", munmap((void *)shared, 8192) == 0);
+    munmap((void *)private_map, 4096);
+
+    int fd = memfd_create("posixtest", MFD_CLOEXEC);
+    check("memfd create", fd >= 0);
+    check("memfd ftruncate", ftruncate(fd, 8192) == 0);
+    struct stat info;
+    check("memfd fstat size", fstat(fd, &info) == 0 && info.st_size == 8192);
+    char *first = mmap(0, 8192, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    char *second = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 4096);
+    check("memfd mmap", first != MAP_FAILED && second != MAP_FAILED);
+    if (first != MAP_FAILED && second != MAP_FAILED)
+    {
+        memcpy(first + 4096, "second-page", 12);
+        check("memfd offset maps same page", memcmp(second, "second-page", 12) == 0);
+        second[100] = 'S';
+        check("memfd aliasing write", first[4096 + 100] == 'S');
+        close(fd);
+        first[0] = 'f';
+        check("memfd survives close", first[0] == 'f' && memcmp(second, "second-page", 12) == 0);
+        munmap(first, 8192);
+        check("memfd partial unmap keeps rest", second[100] == 'S');
+        munmap(second, 4096);
+    }
+
+    int sv[2];
+    socketpair(AF_UNIX, SOCK_STREAM, 0, sv);
+    fd = memfd_create("wl_shm", MFD_CLOEXEC);
+    ftruncate(fd, 4096);
+    char *buffer = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    memcpy(buffer, "pixels", 7);
+    child = fork();
+    if (child == 0)
+    {
+        close(sv[0]);
+        int received[2];
+        char marker;
+        int mflags;
+        int n = recv_fds(sv[1], received, 2, &marker, &mflags);
+        int ok = n == 1;
+        if (ok)
+        {
+            char *view = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, received[0], 0);
+            ok = view != MAP_FAILED && memcmp(view, "pixels", 7) == 0;
+            if (ok)
+                memcpy(view + 16, "drawn", 6);
+        }
+        write(sv[1], ok ? "K" : "X", 1);
+        _exit(0);
+    }
+    close(sv[1]);
+    int pass[1] = {fd};
+    send_fds(sv[0], pass, 1, 'M');
+    char verdict = 0;
+    read(sv[0], &verdict, 1);
+    waitpid(child, &status, 0);
+    check("memfd passed over SCM_RIGHTS", verdict == 'K' && memcmp(buffer + 16, "drawn", 6) == 0);
+    munmap(buffer, 4096);
+    close(fd);
+    close(sv[0]);
+
+    shm_unlink("/posixtest-seg");
+    int named = shm_open("/posixtest-seg", O_CREAT | O_EXCL | O_RDWR, 0600);
+    check("shm_open create", named >= 0);
+    check("shm_open EEXIST", shm_open("/posixtest-seg", O_CREAT | O_EXCL | O_RDWR, 0600) < 0 &&
+                                 errno == EEXIST);
+    ftruncate(named, 4096);
+    char *segment = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, named, 0);
+    memcpy(segment, "named", 6);
+    int again = shm_open("/posixtest-seg", O_RDWR, 0);
+    char *view = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED, again, 0);
+    check("shm_open second opener sees data", view != MAP_FAILED && memcmp(view, "named", 6) == 0);
+    check("shm_unlink", shm_unlink("/posixtest-seg") == 0);
+    check("shm_open after unlink ENOENT",
+          shm_open("/posixtest-seg", O_RDWR, 0) < 0 && errno == ENOENT);
+    check("shm mapping survives unlink", memcmp(segment, "named", 6) == 0);
+    munmap(segment, 4096);
+    munmap(view, 4096);
+    close(named);
+    close(again);
+
+    char *anon = mmap(0, 8192, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    memset(anon, 0x5A, 8192);
+    check("madvise DONTNEED", madvise(anon, 4096, MADV_DONTNEED) == 0);
+    check("madvise zeroes private page", anon[0] == 0 && anon[4095] == 0 && anon[4096] == 0x5A);
+    check("madvise unaligned EINVAL", madvise(anon + 1, 4096, MADV_DONTNEED) < 0 && errno == EINVAL);
+    munmap(anon, 8192);
+
+    char *keep = mmap(0, 4096, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    keep[10] = 'K';
+    madvise(keep, 4096, MADV_DONTNEED);
+    check("madvise keeps shared data", keep[10] == 'K');
+    munmap(keep, 4096);
+}
+
 int main(void)
 {
     test_eventfd();
@@ -541,6 +684,7 @@ int main(void)
     test_socketpair();
     test_unix_named();
     test_scm_rights();
+    test_shared_memory();
     printf("posixtest done failures=%d\n", failures);
     return failures ? 1 : 0;
 }
