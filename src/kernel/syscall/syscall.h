@@ -191,6 +191,9 @@
 #define SYS_EPOLL_CREATE 384     /* (EPOLL_CLOEXEC flag) -> fd */
 #define SYS_EPOLL_CTL 385        /* (epfd, op, fd, struct epoll_event * in rsi) */
 #define SYS_EPOLL_WAIT 386       /* (epfd, events *, max, timeout_ms in rsi) */
+#define SYS_SOCKETPAIR 387       /* (domain, type|flags, protocol, int fds[2] in rsi) */
+#define SYS_SENDMSG 388          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
+#define SYS_RECVMSG 389          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -233,6 +236,30 @@ struct kernel_pollfd {
 #define KMAP_PROT_EXEC 4
 #define KMAP_FIXED 1
 #define KMAP_REMAP_MAYMOVE 1
+
+struct kernel_msghdr {
+  uint64_t name;
+  uint32_t name_length;
+  uint32_t reserved0;
+  uint64_t iov;
+  uint64_t iov_count;
+  uint64_t control;
+  uint64_t control_length;
+  int32_t flags;
+  int32_t reserved1;
+};
+
+struct kernel_cmsghdr {
+  uint64_t length;
+  int32_t level;
+  int32_t type;
+};
+
+#define KMSG_CTRUNC 0x8
+#define KMSG_CMSG_CLOEXEC 0x40000000
+#define KSCM_RIGHTS 1
+#define KSOL_SOCKET 1
+#define KSO_PEERCRED 17
 
 struct kernel_thread_args {
   uint64_t entry;
