@@ -6,6 +6,7 @@
 #include <stddef.h>
 
 #define EXIT_SUCCESS 0
+#define MB_CUR_MAX ((size_t)4)
 #define EXIT_FAILURE 1
 #define RAND_MAX 32767
 
@@ -75,6 +76,9 @@ int __cxa_atexit(void (*function)(void *), void *argument, void *dso);
 void __cxa_finalize(void *dso);
 void _exit(int status) __attribute__((noreturn));
 void abort(void) __attribute__((noreturn));
+int mblen(const char *text, size_t count);
+int mbtowc(wchar_t *out, const char *text, size_t count);
+int wctomb(char *out, wchar_t value);
 #ifdef __cplusplus
 }
 #endif
