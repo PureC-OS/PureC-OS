@@ -26,6 +26,8 @@ struct tm {
     int tm_isdst;
 };
 
+typedef int clockid_t;
+typedef void *timer_t;
 #define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
 

@@ -142,6 +142,17 @@ int pthread_setcanceltype(int type, int *previous);
 void pthread_testcancel(void);
 int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *deadline);
 int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
+
+#define pthread_cleanup_push(routine, argument) \
+    do { \
+        void (*pc_cleanup_routine_)(void *) = (routine); \
+        void *pc_cleanup_argument_ = (argument); \
+        int pc_cleanup_armed_ = 1; \
+        (void)pc_cleanup_armed_;
+#define pthread_cleanup_pop(execute) \
+        if (execute) \
+            pc_cleanup_routine_(pc_cleanup_argument_); \
+    } while (0)
 int pthread_spin_init(pthread_spinlock_t *lock, int shared);
 int pthread_spin_destroy(pthread_spinlock_t *lock);
 int pthread_spin_lock(pthread_spinlock_t *lock);

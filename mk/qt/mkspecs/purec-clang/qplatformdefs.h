@@ -24,7 +24,6 @@
 #include <sys/wait.h>
 #include <netinet/in.h>
 
-#define QT_USE_XOPEN_LFS_EXTENSIONS
 #include "../common/posix/qplatformdefs.h"
 
 #define QT_SNPRINTF             ::snprintf
