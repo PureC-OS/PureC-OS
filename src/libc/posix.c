@@ -472,3 +472,21 @@ int getloadavg(double loadavg[], int count)
     (void)count;
     return -1;
 }
+
+#include "include/hosted/sys/statvfs.h"
+
+int statvfs(const char *path, struct statvfs *info)
+{
+    (void)path;
+    (void)info;
+    errno = ENOSYS;
+    return -1;
+}
+
+int fstatvfs(int fd, struct statvfs *info)
+{
+    (void)fd;
+    (void)info;
+    errno = ENOSYS;
+    return -1;
+}
