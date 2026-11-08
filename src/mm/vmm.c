@@ -635,6 +635,24 @@ bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
   return result;
 }
 
+int vmm_map_zero_page(uint64_t address_space, uint64_t virtual_address,
+                      uint64_t flags)
+{
+  if (!address_space || address_space == kernel_address_space ||
+      virtual_address >= USER_TOP || (virtual_address & (PMM_PAGE_SIZE - 1)))
+    return -1;
+  uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
+  uint64_t *slot = user_slot_locked(address_space, virtual_address);
+  if (slot && (*slot & (VMM_PAGE_PRESENT | VMM_PAGE_SWAPENT)))
+  {
+    spin_unlock_irqrestore(&vmm_lock, irq_flags);
+    return 0;
+  }
+  bool ok = vmm_map_new_pages_locked(address_space, virtual_address, 1, flags);
+  spin_unlock_irqrestore(&vmm_lock, irq_flags);
+  return ok ? 1 : -1;
+}
+
 static uint64_t *user_slot_skip_locked(uint64_t address_space,
                                        uint64_t virtual_address,
                                        uint64_t *next)
