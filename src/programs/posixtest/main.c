@@ -490,7 +490,6 @@ static void test_scm_rights(void)
     check("scm fd works", count == 1 && read(received[0], buffer, sizeof(buffer)) == 7 &&
                               memcmp(buffer, "through", 7) == 0);
     close(received[0]);
-    close(p[0]);
 
     int ev = eventfd(7, 0);
     int u2[2];
@@ -533,6 +532,7 @@ static void test_scm_rights(void)
     close(ev);
     close(u2[0]);
     close(u2[1]);
+    close(p[0]);
 }
 
 static void test_shared_memory(void)
