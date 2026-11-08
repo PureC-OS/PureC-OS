@@ -1045,12 +1045,12 @@ char *realpath(const char *path, char *resolved)
                 break; // trailing slash, drop it
             if (combined[r] == '.' && (combined[r + 1] == '/' || !combined[r + 1]))
             {
-                r += combined[r + 1] ? 2 : 1;
+                r += 1;
                 continue;
             }
             if (combined[r] == '.' && combined[r + 1] == '.' && (combined[r + 2] == '/' || !combined[r + 2]))
             {
-                r += combined[r + 2] ? 3 : 2;
+                r += 2;
                 while (w > 1 && out[w - 1] != '/')
                     w--; // pop one level
                 if (w > 1)
