@@ -15,7 +15,7 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
@@ -42,6 +42,13 @@ test-vma:
 	cc -std=gnu11 -O1 -Wall -Wextra -g -fsanitize=address,undefined -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
 		tests/vma_test.c src/kernel/process/vma.c -o $(BIN_DIR)/tests/vma_test
 	$(BIN_DIR)/tests/vma_test
+
+cmake-test:
+	cmake -G Ninja -S tests/cmake -B $(BIN_DIR)/cmake-test \
+		-DCMAKE_TOOLCHAIN_FILE=$(ROOT_DIR)/mk/sysroot/toolchain.cmake
+	cmake --build $(BIN_DIR)/cmake-test
+	@mkdir -p $(BIN_DIR)/programs
+	cp $(BIN_DIR)/cmake-test/ctest $(BIN_DIR)/programs/cmaketest
 
 test-fenv:
 	@mkdir -p $(BIN_DIR)/tests
