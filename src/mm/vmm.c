@@ -205,8 +205,9 @@ static uint64_t clone_table_level(uint64_t source_physical, unsigned level)
         vmm_destroy_table_level(physical, level);
         return 0;
       }
-      if ((entry & (VMM_PAGE_WRITABLE | VMM_PAGE_USER)) ==
-          (VMM_PAGE_WRITABLE | VMM_PAGE_USER))
+      if (!(entry & VMM_PAGE_SHARED) &&
+          (entry & (VMM_PAGE_WRITABLE | VMM_PAGE_USER)) ==
+              (VMM_PAGE_WRITABLE | VMM_PAGE_USER))
       {
         entry = (entry & ~VMM_PAGE_WRITABLE) | VMM_PAGE_COW;
         source[index] = entry;
@@ -327,7 +328,8 @@ static bool vmm_map_page_locked(uint64_t address_space,
   if (pt[index] & (VMM_PAGE_PRESENT | VMM_PAGE_SWAPENT))
     return false;
   pt[index] = (physical_address & PAGE_ADDRESS_MASK) | VMM_PAGE_PRESENT |
-              (flags & (VMM_PAGE_WRITABLE | VMM_PAGE_USER | VMM_PAGE_ANON)) |
+              (flags & (VMM_PAGE_WRITABLE | VMM_PAGE_USER | VMM_PAGE_ANON |
+                        VMM_PAGE_SHARED)) |
               (nx_enabled ? flags & VMM_PAGE_NX : 0);
   return true;
 }
@@ -379,7 +381,7 @@ static bool vmm_protect_page_locked(uint64_t address_space,
   if (!(entry & VMM_PAGE_PRESENT))
     return false;
   pt[index] = (entry & PAGE_ADDRESS_MASK) | VMM_PAGE_PRESENT |
-              (entry & VMM_PAGE_ANON) |
+              (entry & (VMM_PAGE_ANON | VMM_PAGE_SHARED)) |
               (flags & (VMM_PAGE_WRITABLE | VMM_PAGE_USER)) |
               (nx_enabled ? flags & VMM_PAGE_NX : 0);
   return true;
@@ -633,6 +635,25 @@ bool vmm_map_new_pages_lazy(uint64_t address_space, uint64_t virtual_address,
                                          page_count, flags);
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return result;
+}
+
+int vmm_map_shared_page(uint64_t address_space, uint64_t virtual_address,
+                        uint64_t physical_address, uint64_t flags)
+{
+  if (!address_space || address_space == kernel_address_space ||
+      virtual_address >= USER_TOP || (virtual_address & (PMM_PAGE_SIZE - 1)))
+    return -1;
+  uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
+  uint64_t *slot = user_slot_locked(address_space, virtual_address);
+  if (slot && (*slot & (VMM_PAGE_PRESENT | VMM_PAGE_SWAPENT)))
+  {
+    spin_unlock_irqrestore(&vmm_lock, irq_flags);
+    return 0;
+  }
+  bool ok = vmm_map_page_locked(address_space, virtual_address, physical_address,
+                                (flags & ~VMM_PAGE_ANON) | VMM_PAGE_SHARED);
+  spin_unlock_irqrestore(&vmm_lock, irq_flags);
+  return ok ? 1 : -1;
 }
 
 int vmm_map_zero_page(uint64_t address_space, uint64_t virtual_address,
