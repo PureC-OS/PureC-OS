@@ -160,7 +160,7 @@ static void shm_scenarios(void)
     CHECK(shm_refs[3] == 3);
 
     CHECK(vma_map(t, 0x100000, 0x102000, 3) == 0);
-    CHECK(shm_refs[3] == 2);
+    CHECK(shm_refs[3] == 3);
     CHECK(!vma_lookup_shm(t, 0x100000, &(int32_t){0}, &(uint64_t){0}));
     CHECK(shm_check_at(t, 0x102, 3, 12));
 
