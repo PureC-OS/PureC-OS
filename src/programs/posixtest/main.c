@@ -792,8 +792,26 @@ static void test_sigaltstack(void)
     munmap(stack, size);
 }
 
+static void test_realpath(void)
+{
+    char resolved[512];
+    check("realpath dot segments",
+          realpath("/usr/./bin/../bin/posixtest", resolved) &&
+              strcmp(resolved, "/usr/bin/posixtest") == 0);
+    char saved[512];
+    getcwd(saved, sizeof(saved));
+    chdir("/usr/bin");
+    check("realpath ./relative",
+          realpath("./posixtest", resolved) && strcmp(resolved, "/usr/bin/posixtest") == 0);
+    check("realpath ../relative",
+          realpath("../bin/posixtest", resolved) && strcmp(resolved, "/usr/bin/posixtest") == 0);
+    check("access ./relative", access("./posixtest", F_OK) == 0);
+    chdir(saved);
+}
+
 int main(void)
 {
+    test_realpath();
     test_eventfd();
     test_timerfd();
     test_epoll();
