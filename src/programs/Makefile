@@ -156,6 +156,7 @@ TARGETS := \
   	$(PROGRAM_DIR)/box \
   	$(PROGRAM_DIR)/proctest \
   	$(PROGRAM_DIR)/thrtest \
+  	$(PROGRAM_DIR)/posixtest \
   	$(PROGRAM_DIR)/memhog \
   	$(PROGRAM_DIR)/memtest \
   	$(PROGRAM_DIR)/journalctl \
@@ -615,6 +616,14 @@ $(OBJ_DIR)/thrtest/main.o: $(ROOT_DIR)/src/programs/thrtest/main.c
 $(PROGRAM_DIR)/thrtest: $(OBJ_DIR)/thrtest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/thrtest/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/posixtest/main.o: $(ROOT_DIR)/src/programs/posixtest/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/posixtest: $(OBJ_DIR)/posixtest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/posixtest/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/memhog/main.o: $(ROOT_DIR)/src/programs/memhog/main.c
 	@mkdir -p $(@D)
