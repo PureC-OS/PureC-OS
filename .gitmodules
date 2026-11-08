@@ -10,3 +10,27 @@
 [submodule "userspace"]
 	path = userspace
 	url = https://github.com/PureC-OS/PureC-OS-Userspace.git
+[submodule "SDL"]
+	path = SDL
+	url = https://github.com/PureC-OS/SDL.git
+[submodule "chocolate-doom"]
+	path = chocolate-doom
+	url = https://github.com/PureC-OS/chocolate-doom.git
+[submodule "curl"]
+	path = curl
+	url = https://github.com/curl/curl.git
+[submodule "freedoom"]
+	path = freedoom
+	url = https://github.com/PureC-OS/freedoom.git
+[submodule "netsurf"]
+	path = netsurf
+	url = https://github.com/netsurf-browser/netsurf.git
+[submodule "site"]
+	path = site
+	url = https://github.com/PureC-OS/site.git
+[submodule "vim"]
+	path = vim
+	url = https://github.com/PureC-OS/vim.git
+[submodule "wolfssl"]
+	path = wolfssl
+	url = https://github.com/PureC-OS/wolfssl.git
