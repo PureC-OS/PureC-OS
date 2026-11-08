@@ -22,7 +22,7 @@
 #define CRT0_ENV_NAME 32
 #define CRT0_ENV_VALUE 128
 
-int main(int argc, char *argv[]);
+int main(int argc, char *argv[], char *envp[]);
 void exit(int status) __attribute__((noreturn));
 
 extern char **environ;
@@ -113,7 +113,7 @@ void crt0_main(uint64_t *frame) {
         int count = (int)frame[0];
         environ = vector + count + 1;
         crt0_run_constructors();
-        int status = main(count, vector);
+        int status = main(count, vector, environ);
         exit(status);
     }
     crt0_build_environ();
@@ -143,6 +143,6 @@ void crt0_main(uint64_t *frame) {
     }
     crt0_argv[argc] = 0;
     crt0_run_constructors();
-    int status = main(argc, crt0_argv);
+    int status = main(argc, crt0_argv, environ);
     exit(status);
 }
