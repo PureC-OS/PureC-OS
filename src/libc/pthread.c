@@ -603,11 +603,19 @@ int pthread_condattr_setclock(pthread_condattr_t *attr, int clock)
     return 0;
 }
 
+#define COND_MONOTONIC_FLAG 0x40000000
+#define COND_WAITER_MASK 0x3FFFFFFF
+
+int pthread_condattr_getclock(const pthread_condattr_t *attr, int *clock)
+{
+    *clock = attr->clock;
+    return 0;
+}
+
 int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
 {
-    (void)attr;
     cond->seq = 0;
-    cond->waiters = 0;
+    cond->waiters = (attr && attr->clock == CLOCK_MONOTONIC) ? COND_MONOTONIC_FLAG : 0;
     return 0;
 }
 
@@ -619,7 +627,7 @@ int pthread_cond_destroy(pthread_cond_t *cond)
 
 int pthread_cond_signal(pthread_cond_t *cond)
 {
-    if (!__atomic_load_n(&cond->waiters, __ATOMIC_ACQUIRE))
+    if (!(__atomic_load_n(&cond->waiters, __ATOMIC_ACQUIRE) & COND_WAITER_MASK))
         return 0;
     __atomic_fetch_add(&cond->seq, 1, __ATOMIC_ACQ_REL);
     __pc_futex(PC_FUTEX_WAKE, &cond->seq, 1, 0);
@@ -628,7 +636,7 @@ int pthread_cond_signal(pthread_cond_t *cond)
 
 int pthread_cond_broadcast(pthread_cond_t *cond)
 {
-    if (!__atomic_load_n(&cond->waiters, __ATOMIC_ACQUIRE))
+    if (!(__atomic_load_n(&cond->waiters, __ATOMIC_ACQUIRE) & COND_WAITER_MASK))
         return 0;
     __atomic_fetch_add(&cond->seq, 1, __ATOMIC_ACQ_REL);
     futex_wake_all(&cond->seq);
@@ -657,7 +665,10 @@ int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
                            const struct timespec *deadline)
 {
     struct timespec now;
-    if (clock_gettime(CLOCK_REALTIME, &now) != 0)
+    int clock = (__atomic_load_n(&cond->waiters, __ATOMIC_ACQUIRE) & COND_MONOTONIC_FLAG)
+                    ? CLOCK_MONOTONIC
+                    : CLOCK_REALTIME;
+    if (clock_gettime(clock, &now) != 0)
         return EINVAL;
     long long remaining =
         ((long long)deadline->tv_sec - (long long)now.tv_sec) * 1000LL +

@@ -141,6 +141,7 @@ int pthread_setcancelstate(int state, int *previous);
 int pthread_setcanceltype(int type, int *previous);
 void pthread_testcancel(void);
 int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *deadline);
+int pthread_condattr_getclock(const pthread_condattr_t *attr, int *clock);
 int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
 
 #define pthread_cleanup_push(routine, argument) \

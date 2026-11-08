@@ -900,6 +900,29 @@ static void test_libc_extra(void)
     close(pipefd[0]);
     close(pipefd[1]);
 
+    pthread_mutex_t cond_lock = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t monotonic_cond;
+    pthread_condattr_t cond_attr;
+    pthread_condattr_init(&cond_attr);
+    pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+    pthread_cond_init(&monotonic_cond, &cond_attr);
+    struct timespec cond_deadline;
+    clock_gettime(CLOCK_MONOTONIC, &cond_deadline);
+    cond_deadline.tv_nsec += 60 * 1000000L;
+    if (cond_deadline.tv_nsec >= 1000000000L)
+    {
+        cond_deadline.tv_sec++;
+        cond_deadline.tv_nsec -= 1000000000L;
+    }
+    start = now_ms();
+    pthread_mutex_lock(&cond_lock);
+    int cond_status = pthread_cond_timedwait(&monotonic_cond, &cond_lock, &cond_deadline);
+    pthread_mutex_unlock(&cond_lock);
+    long cond_elapsed = now_ms() - start;
+    check("pthread_cond monotonic timedwait", cond_status == ETIMEDOUT && cond_elapsed >= 45 && cond_elapsed < 1000);
+    if (!(cond_status == ETIMEDOUT && cond_elapsed >= 45 && cond_elapsed < 1000))
+        printf("posixtest   cond status=%d elapsed=%ldms\n", cond_status, cond_elapsed);
+
     pthread_atfork(atfork_prepare, atfork_parent, atfork_child);
     int fork_pipe[2];
     pipe(fork_pipe);
