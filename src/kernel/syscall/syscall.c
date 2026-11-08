@@ -39,11 +39,13 @@
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
+#include "../ipc/evfd.h"
 #include "../ipc/ipc.h"
 #include "../process/process.h"
 #include "../process/signal.h"
 #include "../process/futex.h"
 #include "../process/fdtable.h"
+#include "../process/ofd.h"
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
 #include "../tty/tty.h"
@@ -654,6 +656,90 @@ int64_t syscall_handler(struct syscall_regs *r)
   case SYS_POLL:
     return poll_descriptors((struct kernel_pollfd *)(uintptr_t)a1, a2,
                             (int64_t)(int32_t)a3);
+  case SYS_EVENTFD:
+  {
+    int32_t id = evfd_eventfd_create(a1, (uint32_t)a2);
+    return id < 0 ? id : fd_install_event(id, (uint32_t)a2);
+  }
+  case SYS_TIMERFD_CREATE:
+  {
+    int32_t id = evfd_timerfd_create((int32_t)a1);
+    return id < 0 ? id : fd_install_event(id, (uint32_t)a2);
+  }
+  case SYS_TIMERFD_SETTIME:
+  {
+    struct kernel_itimerspec value;
+    struct kernel_itimerspec old;
+    struct kernel_itimerspec *old_user = (struct kernel_itimerspec *)(uintptr_t)r->rsi;
+    if (!readable((const void *)(uintptr_t)a3, sizeof(value)) ||
+        (old_user && !writable(old_user, sizeof(old))))
+      return -KERR_FAULT;
+    memcpy(&value, (const void *)(uintptr_t)a3, sizeof(value));
+    int32_t object = fd_object((int32_t)a1);
+    if (object < 0 || ofd_kind_of(object) != FD_KIND_EVENT)
+      return -KERR_BADF;
+    int32_t result = evfd_timerfd_settime(ofd_event_id(object), (uint32_t)a2,
+                                          &value, old_user ? &old : 0);
+    if (result == 0 && old_user)
+      memcpy(old_user, &old, sizeof(old));
+    return result;
+  }
+  case SYS_TIMERFD_GETTIME:
+  {
+    struct kernel_itimerspec value;
+    if (!writable((void *)(uintptr_t)a2, sizeof(value)))
+      return -KERR_FAULT;
+    int32_t object = fd_object((int32_t)a1);
+    if (object < 0 || ofd_kind_of(object) != FD_KIND_EVENT)
+      return -KERR_BADF;
+    int32_t result = evfd_timerfd_gettime(ofd_event_id(object), &value);
+    if (result == 0)
+      memcpy((void *)(uintptr_t)a2, &value, sizeof(value));
+    return result;
+  }
+  case SYS_EPOLL_CREATE:
+  {
+    int32_t id = evfd_epoll_create();
+    return id < 0 ? id : fd_install_event(id, (uint32_t)a1);
+  }
+  case SYS_EPOLL_CTL:
+  {
+    struct kernel_epoll_event event;
+    memset(&event, 0, sizeof(event));
+    if (a2 != EPOLL_OP_DEL)
+    {
+      if (!readable((const void *)(uintptr_t)r->rsi, sizeof(event)))
+        return -KERR_FAULT;
+      memcpy(&event, (const void *)(uintptr_t)r->rsi, sizeof(event));
+    }
+    int32_t object = fd_object((int32_t)a1);
+    if (object < 0)
+      return -KERR_BADF;
+    if (ofd_kind_of(object) != FD_KIND_EVENT)
+      return -KERR_INVAL;
+    return evfd_epoll_ctl(ofd_event_id(object), (int32_t)a2, (int32_t)a3,
+                          &event);
+  }
+  case SYS_EPOLL_WAIT:
+  {
+    int32_t max = (int32_t)a3;
+    struct kernel_epoll_event ready[64];
+    if (max <= 0)
+      return -KERR_INVAL;
+    uint32_t bounded = max > 64 ? 64U : (uint32_t)max;
+    if (!writable((void *)(uintptr_t)a2, bounded * sizeof(ready[0])))
+      return -KERR_FAULT;
+    int32_t object = fd_object((int32_t)a1);
+    if (object < 0)
+      return -KERR_BADF;
+    if (ofd_kind_of(object) != FD_KIND_EVENT)
+      return -KERR_INVAL;
+    int32_t count = evfd_epoll_wait(ofd_event_id(object), ready, (int32_t)bounded,
+                                    (int64_t)(int32_t)r->rsi);
+    if (count > 0)
+      memcpy((void *)(uintptr_t)a2, ready, (uint32_t)count * sizeof(ready[0]));
+    return count;
+  }
   case SYS_GUI_WINDOW_TITLE:
   {
     if (!readable_string((const char *)(uintptr_t)a1))
