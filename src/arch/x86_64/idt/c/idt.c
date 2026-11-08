@@ -230,6 +230,7 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
     uint64_t cr2 = 0;
     if(vector == 14) __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
     if(vector == 14 && vmm_handle_cow_fault(process_current_address_space(), cr2, err)) return;
+    if(vector == 14 && !(err & 1) && process_handle_lazy_fault(cr2, err)) return;
     if(vector == 14 && !(err & 1) && process_handle_stack_fault(cr2)) return;
     if((cs&3)==3 && process_current_is_user()){
         scheduler_enter_kernel();
