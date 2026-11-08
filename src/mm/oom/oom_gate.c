@@ -86,6 +86,15 @@ bool oom_gate_try_charge_user(uint32_t pid, uint64_t pages) {
   }
   return oom_account_charge(pid, pages);
 }
+bool oom_gate_try_charge_user_quiet(uint32_t pid, uint64_t pages) {
+  if (!pid || !pages) {
+    return false;
+  }
+  if (!oom_pressure_user_can_alloc(pages)) {
+    return false;
+  }
+  return oom_account_charge(pid, pages);
+}
 void oom_gate_release_user(uint32_t pid, uint64_t pages) {
   oom_account_uncharge(pid, pages);
 }
