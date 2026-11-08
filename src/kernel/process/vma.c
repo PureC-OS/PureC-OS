@@ -2,6 +2,7 @@
 #include "../../lib/string.h"
 #include "../../mm/oom/oom_slab.h"
 #include "../../mm/pmm.h"
+#include "../../mm/shm.h"
 #include "../sync/spinlock.h"
 #include "../syscall/syscall.h"
 
@@ -10,7 +11,8 @@ struct vma_entry
   uint64_t start;
   uint64_t end;
   uint32_t prot;
-  uint32_t reserved;
+  uint32_t shm_tag;
+  uint64_t shm_offset;
 };
 
 struct vma_table
@@ -40,6 +42,9 @@ void vma_table_destroy(struct vma_table *table)
 {
   if (!table)
     return;
+  for (uint32_t i = 0; i < table->count; i++)
+    if (table->entries[i].shm_tag)
+      shm_unref((int32_t)table->entries[i].shm_tag - 1);
   if (table->entries_phys)
     pmm_free_contiguous(table->entries_phys, table->entries_pages);
   oom_slab_free(table, sizeof(struct vma_table));
@@ -98,6 +103,9 @@ struct vma_table *vma_table_clone(const struct vma_table *source)
       table->count = source->count;
       memcpy(table->entries, source->entries,
              source->count * sizeof(struct vma_entry));
+      for (uint32_t i = 0; i < table->count; i++)
+        if (table->entries[i].shm_tag)
+          shm_ref((int32_t)table->entries[i].shm_tag - 1);
     }
   }
   spin_unlock_irqrestore(&locked->lock, flags);
@@ -125,6 +133,24 @@ static uint32_t vma_first_ending_after(const struct vma_table *table,
   return low;
 }
 
+static bool vma_mergeable(const struct vma_entry *first,
+                          const struct vma_entry *second)
+{
+  if (first->end != second->start || first->prot != second->prot ||
+      first->shm_tag != second->shm_tag)
+    return false;
+  if (!first->shm_tag)
+    return true;
+  return first->shm_offset + (first->end - first->start) / PMM_PAGE_SIZE ==
+         second->shm_offset;
+}
+
+static void vma_entry_release(const struct vma_entry *entry)
+{
+  if (entry->shm_tag)
+    shm_unref((int32_t)entry->shm_tag - 1);
+}
+
 static void vma_splice_locked(struct vma_table *table, uint64_t start,
                               uint64_t end, const struct vma_entry *inserted)
 {
@@ -149,9 +175,17 @@ static void vma_splice_locked(struct vma_table *table, uint64_t start,
   if (high > low && table->entries[high - 1].end > end)
   {
     pieces[kept] = table->entries[high - 1];
+    if (pieces[kept].shm_tag)
+      pieces[kept].shm_offset +=
+          (end - table->entries[high - 1].start) / PMM_PAGE_SIZE;
     pieces[kept].start = end;
     kept++;
   }
+  for (uint32_t i = 0; i < kept; i++)
+    if (pieces[i].shm_tag)
+      shm_ref((int32_t)pieces[i].shm_tag - 1);
+  for (uint32_t i = low; i < high; i++)
+    vma_entry_release(&table->entries[i]);
   uint32_t removed = high - low;
   if (kept != removed)
     memmove(&table->entries[low + kept], &table->entries[high],
@@ -163,17 +197,17 @@ static void vma_splice_locked(struct vma_table *table, uint64_t start,
     return;
   uint32_t at = low + inserted_index;
   if (at + 1 < table->count &&
-      table->entries[at].end == table->entries[at + 1].start &&
-      table->entries[at].prot == table->entries[at + 1].prot)
+      vma_mergeable(&table->entries[at], &table->entries[at + 1]))
   {
+    vma_entry_release(&table->entries[at + 1]);
     table->entries[at].end = table->entries[at + 1].end;
     memmove(&table->entries[at + 1], &table->entries[at + 2],
             (table->count - at - 2) * sizeof(struct vma_entry));
     table->count--;
   }
-  if (at > 0 && table->entries[at - 1].end == table->entries[at].start &&
-      table->entries[at - 1].prot == table->entries[at].prot)
+  if (at > 0 && vma_mergeable(&table->entries[at - 1], &table->entries[at]))
   {
+    vma_entry_release(&table->entries[at]);
     table->entries[at - 1].end = table->entries[at].end;
     memmove(&table->entries[at], &table->entries[at + 1],
             (table->count - at - 1) * sizeof(struct vma_entry));
@@ -193,6 +227,27 @@ int vma_map(struct vma_table *table, uint64_t start, uint64_t end,
     return -KERR_NOMEM;
   }
   struct vma_entry entry = {.start = start, .end = end, .prot = prot};
+  vma_splice_locked(table, start, end, &entry);
+  spin_unlock_irqrestore(&table->lock, flags);
+  return 0;
+}
+
+int vma_map_shm(struct vma_table *table, uint64_t start, uint64_t end,
+                uint32_t prot, int32_t shm, uint64_t offset_pages)
+{
+  if (!table || start >= end || shm < 0)
+    return -KERR_INVAL;
+  uint64_t flags = spin_lock_irqsave(&table->lock);
+  if (!vma_reserve_locked(table, VMA_SPLICE_MAX))
+  {
+    spin_unlock_irqrestore(&table->lock, flags);
+    return -KERR_NOMEM;
+  }
+  struct vma_entry entry = {.start = start,
+                            .end = end,
+                            .prot = prot,
+                            .shm_tag = (uint32_t)shm + 1,
+                            .shm_offset = offset_pages};
   vma_splice_locked(table, start, end, &entry);
   spin_unlock_irqrestore(&table->lock, flags);
   return 0;
@@ -239,15 +294,63 @@ int vma_set_prot(struct vma_table *table, uint64_t start, uint64_t end,
     spin_unlock_irqrestore(&table->lock, flags);
     return -KERR_NOMEM;
   }
-  if (!vma_reserve_locked(table, VMA_SPLICE_MAX))
+  uint64_t cursor = start;
+  while (cursor < end)
   {
-    spin_unlock_irqrestore(&table->lock, flags);
-    return -KERR_NOMEM;
+    if (!vma_reserve_locked(table, VMA_SPLICE_MAX))
+    {
+      spin_unlock_irqrestore(&table->lock, flags);
+      return -KERR_NOMEM;
+    }
+    uint32_t index = vma_first_ending_after(table, cursor);
+    struct vma_entry original = table->entries[index];
+    uint64_t segment_end = original.end < end ? original.end : end;
+    struct vma_entry entry = original;
+    entry.start = cursor;
+    entry.end = segment_end;
+    entry.prot = prot;
+    if (original.shm_tag)
+      entry.shm_offset += (cursor - original.start) / PMM_PAGE_SIZE;
+    vma_splice_locked(table, cursor, segment_end, &entry);
+    cursor = segment_end;
   }
-  struct vma_entry entry = {.start = start, .end = end, .prot = prot};
-  vma_splice_locked(table, start, end, &entry);
   spin_unlock_irqrestore(&table->lock, flags);
   return 0;
+}
+
+bool vma_lookup_shm(struct vma_table *table, uint64_t address, int32_t *shm,
+                    uint64_t *page_offset)
+{
+  if (!table)
+    return false;
+  uint64_t flags = spin_lock_irqsave(&table->lock);
+  uint32_t index = vma_first_ending_after(table, address);
+  bool found = index < table->count && table->entries[index].start <= address &&
+               table->entries[index].shm_tag;
+  if (found)
+  {
+    const struct vma_entry *entry = &table->entries[index];
+    *shm = (int32_t)entry->shm_tag - 1;
+    *page_offset = entry->shm_offset +
+                   ((address & ~(PMM_PAGE_SIZE - 1)) - entry->start) /
+                       PMM_PAGE_SIZE;
+  }
+  spin_unlock_irqrestore(&table->lock, flags);
+  return found;
+}
+
+bool vma_range_has_shm(struct vma_table *table, uint64_t start, uint64_t end)
+{
+  if (!table)
+    return false;
+  uint64_t flags = spin_lock_irqsave(&table->lock);
+  bool found = false;
+  for (uint32_t i = vma_first_ending_after(table, start);
+       i < table->count && table->entries[i].start < end; i++)
+    if (table->entries[i].shm_tag)
+      found = true;
+  spin_unlock_irqrestore(&table->lock, flags);
+  return found;
 }
 
 bool vma_lookup(struct vma_table *table, uint64_t address, uint32_t *prot,
