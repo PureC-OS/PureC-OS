@@ -35,6 +35,7 @@ int open(const char *path, int flags, ...);
 int openat(int dirfd, const char *path, int flags, ...);
 int creat(const char *path, int mode);
 int fcntl(int fd, int command, ...);
+int posix_fallocate(int fd, long offset, long length);
 #ifdef __cplusplus
 }
 #endif

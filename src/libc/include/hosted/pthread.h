@@ -43,6 +43,23 @@ typedef struct
 {
     int dummy;
 } pthread_rwlockattr_t;
+typedef volatile int pthread_spinlock_t;
+typedef struct
+{
+    int dummy;
+} pthread_barrierattr_t;
+typedef struct
+{
+    unsigned count;
+    unsigned waiting;
+    unsigned generation;
+    pthread_mutex_t lock;
+    pthread_cond_t wake;
+} pthread_barrier_t;
+
+#define PTHREAD_BARRIER_SERIAL_THREAD (-1)
+#define PTHREAD_PROCESS_PRIVATE 0
+#define PTHREAD_PROCESS_SHARED 1
 
 #define PTHREAD_MUTEX_INITIALIZER {0, 0, 0, 0}
 #define PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP {0, 1, 0, 0}
@@ -124,6 +141,18 @@ int pthread_setcancelstate(int state, int *previous);
 int pthread_setcanceltype(int type, int *previous);
 void pthread_testcancel(void);
 int pthread_mutex_timedlock(pthread_mutex_t *mutex, const struct timespec *deadline);
+int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void));
+int pthread_spin_init(pthread_spinlock_t *lock, int shared);
+int pthread_spin_destroy(pthread_spinlock_t *lock);
+int pthread_spin_lock(pthread_spinlock_t *lock);
+int pthread_spin_trylock(pthread_spinlock_t *lock);
+int pthread_spin_unlock(pthread_spinlock_t *lock);
+int pthread_barrier_init(pthread_barrier_t *barrier, const pthread_barrierattr_t *attr,
+                         unsigned count);
+int pthread_barrier_destroy(pthread_barrier_t *barrier);
+int pthread_barrier_wait(pthread_barrier_t *barrier);
+int pthread_setaffinity_np(pthread_t thread, size_t size, const cpu_set_t *set);
+int pthread_getaffinity_np(pthread_t thread, size_t size, cpu_set_t *set);
 int pthread_setname_np(pthread_t thread, const char *name);
     int pthread_getname_np(pthread_t thread, char *name, size_t size);
     

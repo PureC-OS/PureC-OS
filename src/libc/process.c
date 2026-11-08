@@ -26,13 +26,18 @@ static int result_errno(int64_t result) {
     return (int)result;
 }
 
+void __pc_atfork_run(int stage);
+
 pid_t fork(void) {
     fflush(0);
+    __pc_atfork_run(0);
     int64_t result = pc_syscall(SYS_FORK, 0, 0, 0);
     if (result < 0) {
+        __pc_atfork_run(1);
         errno = result == -1 ? EAGAIN : (int)-result;
         return -1;
     }
+    __pc_atfork_run(result == 0 ? 2 : 1);
     return (pid_t)result;
 }
 

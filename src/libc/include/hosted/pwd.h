@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stddef.h>
 #include "sys/types.h"
 
 #ifdef __cplusplus
@@ -17,6 +18,10 @@ struct passwd {
 
 struct passwd *getpwnam(const char *name);
 struct passwd *getpwuid(uid_t uid);
+int getpwnam_r(const char *name, struct passwd *entry, char *buffer, size_t size,
+               struct passwd **result);
+int getpwuid_r(uid_t uid, struct passwd *entry, char *buffer, size_t size,
+               struct passwd **result);
 #ifdef __cplusplus
 }
 #endif
