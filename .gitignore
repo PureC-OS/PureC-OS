@@ -10,7 +10,6 @@
 *repair-backups/
 *old-core/
 test.txt
-*tcc/
 *212/
 lang/Cargo.lock
 *target/
