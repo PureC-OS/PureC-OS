@@ -170,7 +170,8 @@ static bool frame_writable(uint64_t address, uint64_t size) {
     return false;
   for (uint64_t page = address & ~4095ULL; page < address + size;
        page += 4096)
-    (void)process_handle_stack_fault(page);
+    if (!process_handle_stack_fault(page))
+      (void)process_handle_lazy_fault(page, 6);
   return process_user_buffer((const void *)(uintptr_t)address, size, true);
 }
 
@@ -178,6 +179,13 @@ static void deliver_handler(struct process *process, struct syscall_regs *regs,
                             int32_t sig, const struct ksigaction *action) {
   uint64_t frame_size = (sizeof(struct signal_frame) + 15) & ~15ULL;
   uint64_t top = (regs->rsp - USER_RED_ZONE) & ~15ULL;
+  struct thread *thread = scheduler_current_thread();
+  if ((action->flags & SIGNAL_FLAG_ONSTACK) && thread && thread->altstack_size) {
+    uint64_t low = thread->altstack_sp;
+    uint64_t high = low + thread->altstack_size;
+    if (!(regs->rsp > low && regs->rsp <= high))
+      top = high & ~15ULL;
+  }
   uint64_t sp = top - frame_size - 8;
   if (!frame_writable(sp, sizeof(struct signal_frame)) ||
       action->restorer >= USER_TOP_ADDRESS || !action->restorer) {
@@ -359,4 +367,38 @@ int32_t signal_pause(void) {
       return -KERR_INTR;
     scheduler_sleep(10);
   }
+}
+
+int32_t signal_altstack(const struct kernel_stack *stack, struct kernel_stack *old,
+                        uint64_t rsp) {
+  struct thread *thread = scheduler_current_thread();
+  if (!thread)
+    return -KERR_INVAL;
+  bool on_stack = thread->altstack_size && rsp > thread->altstack_sp &&
+                  rsp <= thread->altstack_sp + thread->altstack_size;
+  if (old) {
+    old->sp = thread->altstack_sp;
+    old->size = thread->altstack_size;
+    old->reserved = 0;
+    old->flags = (thread->altstack_size ? 0 : KSS_DISABLE) |
+                 (on_stack ? KSS_ONSTACK : 0);
+  }
+  if (!stack)
+    return 0;
+  if (on_stack)
+    return -KERR_PERM;
+  if (stack->flags & ~KSS_DISABLE)
+    return -KERR_INVAL;
+  if (stack->flags & KSS_DISABLE) {
+    thread->altstack_sp = 0;
+    thread->altstack_size = 0;
+    return 0;
+  }
+  if (stack->size < KMINSIGSTKSZ)
+    return -KERR_NOMEM;
+  if (stack->sp >= USER_TOP_ADDRESS || stack->size > USER_TOP_ADDRESS - stack->sp)
+    return -KERR_FAULT;
+  thread->altstack_sp = stack->sp;
+  thread->altstack_size = stack->size;
+  return 0;
 }
