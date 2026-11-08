@@ -103,6 +103,8 @@
 /usr/bin/box /usr/bin/uname - 0 bin/programs/box
 /usr/bin/box /usr/bin/true - 0 bin/programs/box
 /usr/bin/box /usr/bin/false - 0 bin/programs/box
+/usr/bin/box /usr/bin/sleep - 0 bin/programs/box
+/usr/share/purec/selftest.sh /usr/share/purec/selftest.sh - 0 tests/guest/selftest.sh
 /bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest

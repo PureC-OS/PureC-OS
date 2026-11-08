@@ -6,7 +6,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 failures=0
 
-for applet in cp mv mkdir rmdir chmod install basename dirname head tail wc tee cmp env uname true false; do
+for applet in cp mv mkdir rmdir chmod install basename dirname head tail wc tee cmp env uname true false sleep; do
     ln -s "$BOX_BIN" "$WORK/$applet"
 done
 cd "$WORK" || exit 1
@@ -69,6 +69,8 @@ check "tee" "hi hi" "$(cat t1 t2 | tr '\n' ' ' | sed 's/ $//')"
 ../rmdir d1/d2; check "rmdir" 0 $?
 ../rmdir d1/d2 2>/dev/null; check "rmdir missing fails" 1 $?
 
+../sleep 0.1; check "sleep fraction" 0 $?
+../sleep abc 2>/dev/null; check "sleep invalid fails" 1 $?
 ../true; check "true" 0 $?
 ../false; check "false" 1 $?
 

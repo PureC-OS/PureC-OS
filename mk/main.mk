@@ -18,7 +18,7 @@ export ROOT_DIR BIN_DIR
 .PHONY: all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
-	test-qemu-network-8254xgc test-qemu-network-pcnet test-box
+	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-qemu-toolchain
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
@@ -321,6 +321,11 @@ test-qemu-panic:
 	python3 tests/qemu_panic_test.py --iso "$(ISO_IMAGE)" \
 		--log "$(BIN_DIR)/tests/qemu-panic.log" \
 		--shot "$(BIN_DIR)/tests/qemu-panic-shot.ppm"
+
+test-qemu-toolchain:
+	@test -f "$(ISO_IMAGE)" || { echo "Missing $(ISO_IMAGE); run: make iso"; exit 1; }
+	python3 tests/qemu_toolchain_test.py --iso "$(ISO_IMAGE)" \
+		--log "$(BIN_DIR)/tests/qemu-toolchain.log"
 
 all: iso
 

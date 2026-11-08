@@ -956,6 +956,32 @@ static int applet_uname(int argc, char **argv)
     return 0;
 }
 
+static int applet_sleep(int argc, char **argv)
+{
+    if (argc < 2)
+    {
+        fprintf(stderr, "usage: sleep seconds\n");
+        return 1;
+    }
+    for (int i = 1; i < argc; i++)
+    {
+        char *end;
+        double seconds = strtod(argv[i], &end);
+        if (*end || seconds < 0)
+        {
+            fprintf(stderr, "sleep: invalid time interval '%s'\n", argv[i]);
+            return 1;
+        }
+        unsigned long whole = (unsigned long)seconds;
+        if (whole)
+            sleep((unsigned int)whole);
+        unsigned long micros = (unsigned long)((seconds - (double)whole) * 1000000.0);
+        if (micros)
+            usleep((unsigned int)micros);
+    }
+    return 0;
+}
+
 static int applet_true(int argc, char **argv)
 {
     (void)argc;
@@ -985,7 +1011,7 @@ static const struct applet applets[] = {
     {"wc", applet_wc},         {"tee", applet_tee},
     {"cmp", applet_cmp},       {"env", applet_env},
     {"uname", applet_uname},   {"true", applet_true},
-    {"false", applet_false},
+    {"false", applet_false},   {"sleep", applet_sleep},
 };
 
 int main(int argc, char **argv)
