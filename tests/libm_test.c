@@ -120,7 +120,16 @@ static void expect_same(const char *label, double got, double want) {
   }
 }
 
+/* C allows fmax/fmin(+0, -0) to return either zero, and host libm versions disagree. */
+static void expect_same_any_zero(const char *label, double got, double want) {
+  if (got == 0.0 && want == 0.0)
+    return;
+  expect_same(label, got, want);
+}
+
 #define SPECIAL1(fn, x) expect_same(#fn "(" #x ")", purec_##fn(x), fn(x))
+#define SPECIAL2_ANY_ZERO(fn, x, y) \
+  expect_same_any_zero(#fn "(" #x "," #y ")", purec_##fn(x, y), fn(x, y))
 #define SPECIAL2(fn, x, y) \
   expect_same(#fn "(" #x "," #y ")", purec_##fn(x, y), fn(x, y))
 
@@ -145,7 +154,7 @@ static void specials(void) {
       double y = values[j];
       SPECIAL2(pow, x, y); SPECIAL2(atan2, x, y); SPECIAL2(fmod, x, y);
       SPECIAL2(hypot, x, y); SPECIAL2(copysign, x, y);
-      SPECIAL2(fmax, x, y); SPECIAL2(fmin, x, y);
+      SPECIAL2_ANY_ZERO(fmax, x, y); SPECIAL2_ANY_ZERO(fmin, x, y);
     }
   }
 }
