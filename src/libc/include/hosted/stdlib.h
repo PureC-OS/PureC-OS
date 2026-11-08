@@ -13,6 +13,9 @@ void *malloc(size_t size);
 void *calloc(size_t count, size_t size);
 void *realloc(void *pointer, size_t size);
 void free(void *pointer);
+void *aligned_alloc(size_t alignment, size_t size);
+int posix_memalign(void **memptr, size_t alignment, size_t size);
+void *memalign(size_t alignment, size_t size);
 
 int atoi(const char *text);
 long atol(const char *text);
@@ -44,8 +47,10 @@ void srand48(long seed);
 long long llabs(long long value);
 typedef struct { int quot; int rem; } div_t;
 typedef struct { long quot; long rem; } ldiv_t;
+typedef struct { long long quot; long long rem; } lldiv_t;
 div_t div(int numerator, int denominator);
 ldiv_t ldiv(long numerator, long denominator);
+lldiv_t lldiv(long long numerator, long long denominator);
 void qsort_r(void *base, size_t count, size_t size,
              int (*compare)(const void *, const void *, void *), void *context);
 

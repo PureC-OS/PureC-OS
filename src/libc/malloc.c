@@ -269,6 +269,56 @@ void *realloc(void *pointer, size_t size)
     return fresh;
 }
 
+void *aligned_alloc(size_t alignment, size_t size)
+{
+    if (alignment == 0 || (alignment & (alignment - 1))) {
+        errno = EINVAL;
+        return 0;
+    }
+    if (!size)
+        size = 1;
+    if (alignment <= HDR)
+        return malloc(size);
+    if (size > MAX_REQUEST || alignment > MAX_REQUEST) {
+        errno = ENOMEM;
+        return 0;
+    }
+    uint8_t *raw = (uint8_t *)malloc(size + alignment + MIN_CHUNK);
+    if (!raw)
+        return 0;
+    uintptr_t aligned = ((uintptr_t)raw + alignment - 1) & ~(uintptr_t)(alignment - 1);
+    if (aligned != (uintptr_t)raw && aligned - (uintptr_t)raw < MIN_CHUNK)
+        aligned += alignment;
+    uint8_t *pointer = (uint8_t *)aligned;
+    if (pointer != raw) {
+        struct chunk *head = (struct chunk *)(raw - HDR);
+        struct chunk *body = (struct chunk *)(pointer - HDR);
+        size_t total = chunk_size(head);
+        size_t lead = (size_t)(pointer - raw);
+        size_t prev_flag = head->size & F_PREV;
+        head->size = lead | prev_flag | F_INUSE;
+        body->size = (total - lead) | F_PREV | F_INUSE;
+        free(raw);
+    }
+    return realloc(pointer, size);
+}
+
+void *memalign(size_t alignment, size_t size)
+{
+    return aligned_alloc(alignment, size);
+}
+
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+    if (alignment < sizeof(void *) || (alignment & (alignment - 1)))
+        return EINVAL;
+    void *pointer = aligned_alloc(alignment, size);
+    if (!pointer)
+        return ENOMEM;
+    *memptr = pointer;
+    return 0;
+}
+
 size_t malloc_usable_size(void *pointer)
 {
     if (!pointer)

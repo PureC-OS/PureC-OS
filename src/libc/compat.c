@@ -579,6 +579,12 @@ ldiv_t ldiv(long numerator, long denominator)
     return r;
 }
 
+lldiv_t lldiv(long long numerator, long long denominator)
+{
+    lldiv_t r = {numerator / denominator, numerator % denominator};
+    return r;
+}
+
 static void swap_bytes(unsigned char *a, unsigned char *b, size_t size)
 {
     while (size--)
