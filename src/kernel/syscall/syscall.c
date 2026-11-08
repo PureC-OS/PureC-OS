@@ -41,6 +41,7 @@
 #include "../diagnostics/panic.h"
 #include "../ipc/evfd.h"
 #include "../ipc/ipc.h"
+#include "../ipc/unix.h"
 #include "../process/process.h"
 #include "../process/signal.h"
 #include "../process/futex.h"
@@ -321,15 +322,433 @@ static int64_t socket_read_address(uint64_t pointer, uint64_t length,
   return 0;
 }
 
+
+#define MSG_IOV_MAX 32
+#define UNIX_ADDRESS_FAMILY 1
+
+static int32_t unix_of_fd(int32_t fd)
+{
+  int32_t object = fd_object(fd);
+  return object < 0 ? -1 : ofd_unix_id(object);
+}
+
+static int64_t unix_copy_address(uint64_t address_pointer,
+                                 uint64_t length_pointer, const uint8_t *name,
+                                 uint32_t length)
+{
+  if (!address_pointer || !length_pointer)
+    return 0;
+  if (!writable((void *)(uintptr_t)length_pointer, sizeof(uint32_t)))
+    return -KERR_FAULT;
+  uint32_t capacity = *(uint32_t *)(uintptr_t)length_pointer;
+  uint8_t buffer[2 + UNIX_PATH_MAX + 1] = {UNIX_ADDRESS_FAMILY, 0};
+  if (length > UNIX_PATH_MAX + 1)
+    length = UNIX_PATH_MAX + 1;
+  memcpy(buffer + 2, name, length);
+  uint32_t total = 2 + length;
+  uint32_t copy = capacity < total ? capacity : total;
+  if (copy && !writable((void *)(uintptr_t)address_pointer, copy))
+    return -KERR_FAULT;
+  if (copy)
+    memcpy((void *)(uintptr_t)address_pointer, buffer, copy);
+  *(uint32_t *)(uintptr_t)length_pointer = total;
+  return 0;
+}
+
+static int64_t unix_read_address(uint64_t pointer, uint64_t length,
+                                 uint8_t *name, uint32_t *name_length)
+{
+  if (length < 2 || length > 2 + UNIX_PATH_MAX)
+    return -KERR_INVAL;
+  if (!readable((const void *)(uintptr_t)pointer, length))
+    return -KERR_FAULT;
+  const uint8_t *source = (const uint8_t *)(uintptr_t)pointer;
+  if (source[0] != UNIX_ADDRESS_FAMILY || source[1] != 0)
+    return -KERR_AFNOSUPPORT;
+  *name_length = (uint32_t)(length - 2);
+  memcpy(name, source + 2, *name_length);
+  return 0;
+}
+
+static int64_t unix_socket_syscall(uint64_t n, int32_t fd, int32_t id,
+                                   uint64_t a2, uint64_t a3, uint64_t a4)
+{
+  bool nonblock = fd_nonblocking(fd);
+  switch (n)
+  {
+  case SYS_BIND:
+  case SYS_CONNECT:
+  {
+    uint8_t name[UNIX_PATH_MAX + 1];
+    uint32_t length = 0;
+    int64_t status = unix_read_address(a2, a3, name, &length);
+    if (status < 0)
+      return status;
+    if (n == SYS_BIND)
+      return unix_bind(id, name, length);
+    return unix_connect(id, name, length, nonblock);
+  }
+  case SYS_LISTEN:
+    return unix_listen(id, (int32_t)a2);
+  case SYS_ACCEPT:
+  {
+    int32_t child;
+    int32_t result = unix_accept(id, nonblock, &child);
+    if (result < 0)
+      return result;
+    uint8_t name[UNIX_PATH_MAX + 1];
+    int32_t length = unix_name(child, true, name, sizeof(name));
+    int32_t opened = fd_install_unix(
+        child, (uint32_t)a4 & (SOCK_FLAG_NONBLOCK | SOCK_FLAG_CLOEXEC));
+    if (opened < 0)
+      return opened;
+    (void)unix_copy_address(a2, a3, name, length < 0 ? 0 : (uint32_t)length);
+    return opened;
+  }
+  case SYS_SOCK_SHUTDOWN:
+    return unix_shutdown(id, (int32_t)a2);
+  case SYS_SOCKNAME:
+  {
+    uint8_t name[UNIX_PATH_MAX + 1];
+    int32_t length = unix_name(id, a4 != 0, name, sizeof(name));
+    if (length < 0)
+      return length;
+    return unix_copy_address(a2, a3, name, (uint32_t)length);
+  }
+  case SYS_SETSOCKOPT:
+    return 0;
+  case SYS_GETSOCKOPT:
+  {
+    if (!writable((void *)(uintptr_t)a4, sizeof(uint32_t)))
+      return -KERR_FAULT;
+    uint32_t length = *(uint32_t *)(uintptr_t)a4;
+    if (length > 64 || (length && !writable((void *)(uintptr_t)a3, length)))
+      return -KERR_FAULT;
+    uint8_t value[64] = {0};
+    uint32_t value_length = sizeof(int32_t);
+    int32_t level = (int32_t)(a2 >> 32);
+    int32_t name = (int32_t)(uint32_t)a2;
+    if (level != KSOL_SOCKET)
+      return -KERR_NOPROTOOPT;
+    if (name == SOCK_SO_TYPE)
+      *(int32_t *)value = UNIX_TYPE_STREAM;
+    else if (name == SOCK_SO_ERROR)
+      *(int32_t *)value = 0;
+    else if (name == SOCK_SO_SNDBUF || name == SOCK_SO_RCVBUF)
+      *(int32_t *)value = 16384;
+    else if (name == KSO_PEERCRED)
+    {
+      struct unix_cred cred;
+      int32_t status = unix_peer_cred(id, &cred);
+      if (status < 0)
+        return status;
+      memcpy(value, &cred, sizeof(cred));
+      value_length = sizeof(cred);
+    }
+    else
+      return -KERR_NOPROTOOPT;
+    if (value_length < length)
+      length = value_length;
+    memcpy((void *)(uintptr_t)a3, value, length);
+    *(uint32_t *)(uintptr_t)a4 = length;
+    return 0;
+  }
+  case SYS_SOCK_SEND:
+  case SYS_SOCK_RECV:
+  {
+    if (a3 > 0x7FFFFFFFULL)
+      return -KERR_INVAL;
+    struct unix_iov iov = {a2, a3};
+    if (n == SYS_SOCK_SEND)
+    {
+      if (!readable((const void *)(uintptr_t)a2, a3))
+        return -KERR_FAULT;
+      return unix_send(id, &iov, 1, 0, 0, nonblock, (uint32_t)a4);
+    }
+    if (!writable((void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    return unix_recv(id, &iov, 1, 0, 0, 0, 0, nonblock, (uint32_t)a4);
+  }
+  default:
+    return -KERR_NOSYS;
+  }
+}
+
+static int64_t message_iov_load(const struct kernel_msghdr *msg,
+                                struct unix_iov *iov, bool for_write)
+{
+  if (msg->iov_count > MSG_IOV_MAX)
+    return -KERR_INVAL;
+  if (msg->iov_count &&
+      !readable((const void *)(uintptr_t)msg->iov, msg->iov_count * sizeof(*iov)))
+    return -KERR_FAULT;
+  if (msg->iov_count)
+    memcpy(iov, (const void *)(uintptr_t)msg->iov, msg->iov_count * sizeof(*iov));
+  uint64_t total = 0;
+  for (uint64_t i = 0; i < msg->iov_count; i++)
+  {
+    if (iov[i].length > 0x7FFFFFFFULL)
+      return -KERR_INVAL;
+    total += iov[i].length;
+    if (total > 0x7FFFFFFFULL)
+      return -KERR_INVAL;
+    if (!iov[i].length)
+      continue;
+    bool ok = for_write ? writable((void *)(uintptr_t)iov[i].base, iov[i].length)
+                        : readable((const void *)(uintptr_t)iov[i].base, iov[i].length);
+    if (!ok)
+      return -KERR_FAULT;
+  }
+  return 0;
+}
+
+static int64_t sendmsg_syscall(int32_t fd, uint64_t message_pointer,
+                               uint32_t flags)
+{
+  struct kernel_msghdr msg;
+  struct unix_iov iov[MSG_IOV_MAX];
+  if (!readable((const void *)(uintptr_t)message_pointer, sizeof(msg)))
+    return -KERR_FAULT;
+  memcpy(&msg, (const void *)(uintptr_t)message_pointer, sizeof(msg));
+  int64_t loaded = message_iov_load(&msg, iov, false);
+  if (loaded < 0)
+    return loaded;
+  bool nonblock = fd_nonblocking(fd);
+  int32_t object = fd_object(fd);
+  if (object < 0)
+    return -KERR_BADF;
+  int32_t unix_id = ofd_unix_id(object);
+  if (unix_id >= 0)
+  {
+    int32_t ofds[UNIX_FDS_PER_MESSAGE];
+    uint32_t ofd_count = 0;
+    if (msg.control && msg.control_length >= sizeof(struct kernel_cmsghdr))
+    {
+      if (!readable((const void *)(uintptr_t)msg.control, msg.control_length))
+        return -KERR_FAULT;
+      const uint8_t *control = (const uint8_t *)(uintptr_t)msg.control;
+      uint64_t offset = 0;
+      int64_t failure = 0;
+      while (!failure && offset + sizeof(struct kernel_cmsghdr) <= msg.control_length)
+      {
+        struct kernel_cmsghdr header;
+        memcpy(&header, control + offset, sizeof(header));
+        if (header.length < sizeof(header) ||
+            offset + header.length > msg.control_length)
+        {
+          failure = -KERR_INVAL;
+          break;
+        }
+        if (header.level == KSOL_SOCKET && header.type == KSCM_RIGHTS)
+        {
+          uint64_t count = (header.length - sizeof(header)) / sizeof(int32_t);
+          for (uint64_t i = 0; i < count; i++)
+          {
+            int32_t passed;
+            memcpy(&passed, control + offset + sizeof(header) + i * sizeof(int32_t),
+                   sizeof(passed));
+            int32_t passed_object = fd_object(passed);
+            if (passed_object < 0)
+            {
+              failure = -KERR_BADF;
+              break;
+            }
+            if (ofd_count >= UNIX_FDS_PER_MESSAGE)
+            {
+              failure = -KERR_INVAL;
+              break;
+            }
+            ofd_ref(passed_object);
+            ofds[ofd_count++] = passed_object;
+          }
+        }
+        offset += (header.length + 7) & ~7ULL;
+      }
+      if (failure)
+      {
+        for (uint32_t i = 0; i < ofd_count; i++)
+          ofd_release(ofds[i]);
+        return failure;
+      }
+    }
+    int64_t sent = unix_send(unix_id, iov, (uint32_t)msg.iov_count, ofds,
+                             ofd_count, nonblock, flags);
+    if (sent <= 0)
+      for (uint32_t i = 0; i < ofd_count; i++)
+        ofd_release(ofds[i]);
+    return sent;
+  }
+  int32_t socket_id = ofd_socket_id(object);
+  if (socket_id < 0)
+    return -KERR_NOTSOCK;
+  int64_t total = 0;
+  for (uint64_t i = 0; i < msg.iov_count; i++)
+  {
+    if (!iov[i].length)
+      continue;
+    int32_t result = sock_write(socket_id, (const void *)(uintptr_t)iov[i].base,
+                                (uint32_t)iov[i].length, nonblock, flags);
+    if (result < 0)
+      return total ? total : result;
+    total += result;
+    if ((uint64_t)result < iov[i].length)
+      break;
+  }
+  return total;
+}
+
+static int64_t recvmsg_syscall(int32_t fd, uint64_t message_pointer,
+                               uint32_t flags)
+{
+  struct kernel_msghdr msg;
+  struct unix_iov iov[MSG_IOV_MAX];
+  if (!writable((void *)(uintptr_t)message_pointer, sizeof(msg)))
+    return -KERR_FAULT;
+  memcpy(&msg, (const void *)(uintptr_t)message_pointer, sizeof(msg));
+  int64_t loaded = message_iov_load(&msg, iov, true);
+  if (loaded < 0)
+    return loaded;
+  if (msg.control && msg.control_length &&
+      !writable((void *)(uintptr_t)msg.control, msg.control_length))
+    return -KERR_FAULT;
+  bool nonblock = fd_nonblocking(fd);
+  int32_t object = fd_object(fd);
+  if (object < 0)
+    return -KERR_BADF;
+  int32_t unix_id = ofd_unix_id(object);
+  int64_t received;
+  int32_t out_flags = 0;
+  uint64_t control_used = 0;
+  if (unix_id >= 0)
+  {
+    int32_t ofds[UNIX_FDS_PER_MESSAGE];
+    uint32_t ofd_count = 0;
+    bool truncated = false;
+    uint32_t capacity = 0;
+    if (msg.control && msg.control_length > sizeof(struct kernel_cmsghdr))
+    {
+      capacity = (uint32_t)((msg.control_length - sizeof(struct kernel_cmsghdr)) /
+                            sizeof(int32_t));
+      if (capacity > UNIX_FDS_PER_MESSAGE)
+        capacity = UNIX_FDS_PER_MESSAGE;
+    }
+    received = unix_recv(unix_id, iov, (uint32_t)msg.iov_count, ofds,
+                         &ofd_count, &truncated, capacity, nonblock, flags);
+    if (received < 0)
+      return received;
+    if (ofd_count)
+    {
+      uint32_t installed = 0;
+      int32_t fds[UNIX_FDS_PER_MESSAGE];
+      uint32_t install_flags =
+          (flags & KMSG_CMSG_CLOEXEC) ? SOCK_FLAG_CLOEXEC : 0;
+      for (uint32_t i = 0; i < ofd_count; i++)
+      {
+        int32_t installed_fd = fd_install_ofd(ofds[i], install_flags);
+        if (installed_fd < 0)
+          truncated = true;
+        else
+          fds[installed++] = installed_fd;
+      }
+      if (installed)
+      {
+        struct kernel_cmsghdr header = {
+            sizeof(header) + installed * sizeof(int32_t), KSOL_SOCKET,
+            KSCM_RIGHTS};
+        uint8_t *control = (uint8_t *)(uintptr_t)msg.control;
+        memcpy(control, &header, sizeof(header));
+        memcpy(control + sizeof(header), fds, installed * sizeof(int32_t));
+        control_used = (header.length + 7) & ~7ULL;
+      }
+    }
+    if (truncated)
+      out_flags |= KMSG_CTRUNC;
+  }
+  else
+  {
+    int32_t socket_id = ofd_socket_id(object);
+    if (socket_id < 0)
+      return -KERR_NOTSOCK;
+    received = 0;
+    for (uint64_t i = 0; i < msg.iov_count; i++)
+    {
+      if (!iov[i].length)
+        continue;
+      received = sock_read(socket_id, (void *)(uintptr_t)iov[i].base,
+                           (uint32_t)iov[i].length, nonblock, flags);
+      break;
+    }
+    if (received < 0)
+      return received;
+  }
+  msg.name_length = 0;
+  msg.control_length = control_used;
+  msg.flags = out_flags;
+  memcpy((void *)(uintptr_t)message_pointer, &msg, sizeof(msg));
+  return received;
+}
+
+static int64_t socketpair_syscall(uint64_t domain, uint64_t type_flags,
+                                  uint64_t protocol, uint64_t pair_pointer)
+{
+  (void)protocol;
+  if (domain != UNIX_ADDRESS_FAMILY)
+    return -KERR_AFNOSUPPORT;
+  if (!writable((void *)(uintptr_t)pair_pointer, 2 * sizeof(int32_t)))
+    return -KERR_FAULT;
+  int32_t ids[2];
+  int32_t status = unix_pair((int32_t)(type_flags & SOCK_TYPE_MASK), ids);
+  if (status < 0)
+    return status;
+  uint32_t flags = (uint32_t)type_flags & (SOCK_FLAG_NONBLOCK | SOCK_FLAG_CLOEXEC);
+  int32_t first = fd_install_unix(ids[0], flags);
+  if (first < 0)
+  {
+    unix_release(ids[1]);
+    return first;
+  }
+  int32_t second = fd_install_unix(ids[1], flags);
+  if (second < 0)
+  {
+    (void)fd_close(first);
+    return second;
+  }
+  int32_t *out = (int32_t *)(uintptr_t)pair_pointer;
+  out[0] = first;
+  out[1] = second;
+  return 0;
+}
+
 static int64_t socket_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3,
                               uint64_t a4)
 {
   int32_t fd = (int32_t)a1;
+  if (n != SYS_SOCKET && n != SYS_SOCKETPAIR && n != SYS_SENDMSG &&
+      n != SYS_RECVMSG)
+  {
+    int32_t unix_id = unix_of_fd(fd);
+    if (unix_id >= 0)
+      return unix_socket_syscall(n, fd, unix_id, a2, a3, a4);
+  }
   switch (n)
   {
+  case SYS_SOCKETPAIR:
+    return socketpair_syscall(a1, a2, a3, a4);
+  case SYS_SENDMSG:
+    return sendmsg_syscall(fd, a2, (uint32_t)a3);
+  case SYS_RECVMSG:
+    return recvmsg_syscall(fd, a2, (uint32_t)a3);
   case SYS_SOCKET:
   {
     uint32_t type_flags = (uint32_t)a2;
+    if (a1 == UNIX_ADDRESS_FAMILY)
+    {
+      int32_t unix_id = unix_create((int32_t)(type_flags & SOCK_TYPE_MASK));
+      if (unix_id < 0)
+        return unix_id;
+      return fd_install_unix(
+          unix_id, type_flags & (SOCK_FLAG_NONBLOCK | SOCK_FLAG_CLOEXEC));
+    }
     int32_t id = sock_create((int32_t)a1, (int32_t)(type_flags & SOCK_TYPE_MASK),
                              (int32_t)a3);
     if (id < 0)
@@ -2072,6 +2491,9 @@ int64_t syscall_handler(struct syscall_regs *r)
   case SYS_GETSOCKOPT:
   case SYS_SOCK_SEND:
   case SYS_SOCK_RECV:
+  case SYS_SOCKETPAIR:
+  case SYS_SENDMSG:
+  case SYS_RECVMSG:
     return socket_syscall(n, a1, a2, a3, r->rsi);
   case SYS_DNS_RESOLVE:
   {
