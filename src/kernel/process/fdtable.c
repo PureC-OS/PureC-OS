@@ -3,6 +3,7 @@
 #include "../../lib/string.h"
 #include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
+#include "../ipc/unix.h"
 #include "../syscall/syscall.h"
 #include "ofd.h"
 #include "process.h"
@@ -76,19 +77,13 @@ int32_t fd_install_socket(int32_t sock_id, uint32_t flags)
   return fd;
 }
 
-int32_t fd_install_event(int32_t event_id, uint32_t flags)
+int32_t fd_install_ofd(int32_t object, uint32_t flags)
 {
   struct process *process = process_current();
   if (!process)
   {
-    evfd_release(event_id);
+    ofd_release(object);
     return -KERR_BADF;
-  }
-  int32_t object = ofd_create_event(event_id, flags);
-  if (object < 0)
-  {
-    evfd_release(event_id);
-    return -KERR_NFILE;
   }
   process_table_lock();
   int32_t fd = slot_find(process, 0);
@@ -102,6 +97,28 @@ int32_t fd_install_event(int32_t event_id, uint32_t flags)
   process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
   process_table_unlock();
   return fd;
+}
+
+int32_t fd_install_event(int32_t event_id, uint32_t flags)
+{
+  int32_t object = ofd_create_event(event_id, flags);
+  if (object < 0)
+  {
+    evfd_release(event_id);
+    return -KERR_NFILE;
+  }
+  return fd_install_ofd(object, flags);
+}
+
+int32_t fd_install_unix(int32_t unix_id, uint32_t flags)
+{
+  int32_t object = ofd_create_unix(unix_id, flags);
+  if (object < 0)
+  {
+    unix_release(unix_id);
+    return -KERR_NFILE;
+  }
+  return fd_install_ofd(object, flags);
 }
 
 int32_t fd_object(int32_t fd)
