@@ -20,6 +20,8 @@
 #include <stdarg.h>
 #include <stdint.h>
 
+int __pc_at_path(int dirfd_value, const char *path, char *out, size_t capacity);
+
 int64_t pc_syscall(uint64_t number, uint64_t argument1, uint64_t argument2,
                    uint64_t argument3);
 
@@ -457,3 +459,20 @@ clock_t times(struct tms *buffer)
     }
     return ticks;
 }
+
+int symlinkat(const char *target, int dirfd_value, const char *path)
+{
+    char full[1024];
+    if (__pc_at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return symlink(target, full);
+}
+
+ssize_t readlinkat(int dirfd_value, const char *path, char *buffer, size_t size)
+{
+    char full[1024];
+    if (__pc_at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return readlink(full, buffer, size);
+}
+

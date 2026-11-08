@@ -1082,6 +1082,11 @@ char *realpath(const char *path, char *resolved)
     return fresh;
 }
 
+int __pc_at_path(int dirfd_value, const char *path, char *out, size_t capacity)
+{
+    return at_path(dirfd_value, path, out, capacity);
+}
+
 int mkdirat(int dirfd_value, const char *path, unsigned int mode)
 {
     char full[1024];
@@ -1110,22 +1115,6 @@ int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_p
         at_path(new_dirfd, new_path, to, sizeof(to)) < 0)
         return -1;
     return link(from, to);
-}
-
-int symlinkat(const char *target, int dirfd_value, const char *path)
-{
-    char full[1024];
-    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
-        return -1;
-    return symlink(target, full);
-}
-
-ssize_t readlinkat(int dirfd_value, const char *path, char *buffer, size_t size)
-{
-    char full[1024];
-    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
-        return -1;
-    return readlink(full, buffer, size);
 }
 
 int faccessat(int dirfd_value, const char *path, int mode, int flags)
