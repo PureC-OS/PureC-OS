@@ -956,6 +956,20 @@ static int applet_uname(int argc, char **argv)
     return 0;
 }
 
+static int applet_true(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    return 0;
+}
+
+static int applet_false(int argc, char **argv)
+{
+    (void)argc;
+    (void)argv;
+    return 1;
+}
+
 struct applet
 {
     const char *name;
@@ -970,7 +984,8 @@ static const struct applet applets[] = {
     {"head", applet_head},     {"tail", applet_tail},
     {"wc", applet_wc},         {"tee", applet_tee},
     {"cmp", applet_cmp},       {"env", applet_env},
-    {"uname", applet_uname},
+    {"uname", applet_uname},   {"true", applet_true},
+    {"false", applet_false},
 };
 
 int main(int argc, char **argv)

@@ -101,6 +101,8 @@
 /usr/bin/box /usr/bin/cmp - 0 bin/programs/box
 /usr/bin/box /usr/bin/env - 0 bin/programs/box
 /usr/bin/box /usr/bin/uname - 0 bin/programs/box
+/usr/bin/box /usr/bin/true - 0 bin/programs/box
+/usr/bin/box /usr/bin/false - 0 bin/programs/box
 /bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest
