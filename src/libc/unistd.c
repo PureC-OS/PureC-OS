@@ -823,11 +823,6 @@ void *mmap(void *address, size_t length, int prot, int flags, int fd, long offse
             errno = EINVAL;
             return MAP_FAILED;
         }
-        if (sharing == MAP_SHARED && (prot & PROT_WRITE))
-        {
-            errno = ENODEV;
-            return MAP_FAILED;
-        }
     }
     struct kernel_mmap_args request;
     request.address = fixed ? (uint64_t)(uintptr_t)address : 0;
@@ -849,6 +844,11 @@ void *mmap(void *address, size_t length, int prot, int flags, int fd, long offse
             return shared;
         request.fd = -1;
         request.offset = 0;
+        if (prot & PROT_WRITE)
+        {
+            errno = ENODEV;
+            return MAP_FAILED;
+        }
     }
     request.prot = backed ? (uint64_t)(PROT_READ | PROT_WRITE) : (uint64_t)prot;
     request.flags = fixed ? KMAP_FIXED : 0;
@@ -918,18 +918,34 @@ int msync(void *address, size_t length, int flags)
 
 int madvise(void *address, size_t length, int advice)
 {
-    (void)length;
     if ((uintptr_t)address & 4095u)
     {
         errno = EINVAL;
         return -1;
     }
-    if (advice < MADV_NORMAL || advice > MADV_DONTNEED)
+    switch (advice)
     {
+    case MADV_NORMAL:
+    case MADV_RANDOM:
+    case MADV_SEQUENTIAL:
+    case MADV_WILLNEED:
+    case MADV_FREE:
+    case MADV_DONTFORK:
+    case MADV_DOFORK:
+    case MADV_HUGEPAGE:
+    case MADV_NOHUGEPAGE:
+    case MADV_DONTDUMP:
+    case MADV_DODUMP:
+        return 0;
+    case MADV_DONTNEED:
+        if (!length)
+            return 0;
+        return syscall_result(pc_syscall(SYS_MADVISE, (uint64_t)(uintptr_t)address,
+                                         length, (uint64_t)advice));
+    default:
         errno = EINVAL;
         return -1;
     }
-    return 0;
 }
 
 int mlock(const void *address, size_t length)
