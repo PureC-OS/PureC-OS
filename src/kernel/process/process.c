@@ -1452,6 +1452,23 @@ static void process_stop_siblings_begin(struct process *process,
 static void process_terminate(int32_t status, int32_t signal)
     __attribute__((noreturn));
 
+static void process_release_memory(struct process *process,
+                                   struct thread *self)
+{
+  uint64_t space = process->address_space;
+  if (!space || space == vmm_kernel_address_space())
+    return;
+  process->address_space = 0;
+  if (self)
+    self->address_space = vmm_kernel_address_space();
+  vmm_switch_address_space(vmm_kernel_address_space());
+  vmm_destroy_address_space(space);
+  oom_gate_remove_process(process->pid);
+  struct vma_table *table = process->vmas;
+  process->vmas = NULL;
+  vma_table_destroy(table);
+}
+
 static void process_terminate(int32_t status, int32_t signal)
 {
   struct process *exiting = process_current();
@@ -1496,6 +1513,8 @@ static void process_terminate(int32_t status, int32_t signal)
       scheduler_unblock(process->waiter_thread_id);
   }
   mutex_unlock(&process_mutex);
+  if (exiting && exiting_thread && exiting_thread->user_mode)
+    process_release_memory(exiting, exiting_thread);
   if (parent_waiter >= 0)
     scheduler_unblock(parent_waiter);
   if (parent_child_waiter >= 0 && parent_child_waiter != parent_waiter)
