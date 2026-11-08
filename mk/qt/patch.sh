@@ -39,5 +39,11 @@ patch("cmake/QtMkspecHelpers.cmake", "purec-clang", """    elseif(HURD)
 """, """    elseif(PUREC)
         set(QT_DEFAULT_MKSPEC purec-clang)
 """)
+
+patch("src/corelib/global/qsystemdetection.h", "Q_OS_PUREC", """#elif defined(__HAIKU__)
+#  define Q_OS_HAIKU
+""", """#elif defined(__purec__)
+#  define Q_OS_PUREC
+""")
 PY
 echo "qtbase patched for PureC"
