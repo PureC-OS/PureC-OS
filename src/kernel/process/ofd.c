@@ -427,3 +427,21 @@ int32_t ofd_poll(int32_t index)
     return KPOLLNVAL;
   }
 }
+
+uint64_t ofd_poll_generation(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o))
+    return 0;
+  switch (o.kind)
+  {
+  case OFD_PIPE:
+    return o.write_end ? 0 : pipe_generation(o.object);
+  case OFD_UNIX:
+    return unix_generation(o.object);
+  case OFD_EVENT:
+    return evfd_generation(o.object);
+  default:
+    return 0;
+  }
+}

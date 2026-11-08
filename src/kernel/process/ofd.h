@@ -44,5 +44,6 @@ int32_t ofd_path(int32_t ofd, char *out, uint32_t capacity);
 int32_t ofd_flags_get(int32_t ofd);
 int32_t ofd_flags_set(int32_t ofd, uint32_t flags);
 int32_t ofd_poll(int32_t ofd);
+uint64_t ofd_poll_generation(int32_t ofd);
 int32_t ofd_socket_id(int32_t ofd);
 bool ofd_nonblocking(int32_t ofd);
