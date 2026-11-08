@@ -43,8 +43,10 @@ bool QPurecWindow::openNative()
         ok = pg_window_init(&m_pg, title.constData(), 0, 0, fw, fh);
     else
         ok = pg_window_center(&m_pg, title.constData(), fw, fh);
-    if (!ok)
+    if (!ok) {
+        qWarning("purec: pg_window_init failed (%ux%u)", fw, fh);
         return false;
+    }
     if (w->flags().testFlag(Qt::CustomizeWindowHint) && !w->flags().testFlag(Qt::WindowCloseButtonHint))
         pg_window_set_closable(&m_pg, false);
     pg_window_set_esc_closes(&m_pg, false);
@@ -195,6 +197,7 @@ bool QPurecWindow::pollOne()
     QWindow *w = window();
     switch (ev.type) {
     case PG_EVENT_CLOSE:
+        qWarning("purec: close event from window manager");
         m_native = false;
         QWindowSystemInterface::handleCloseEvent(w);
         break;

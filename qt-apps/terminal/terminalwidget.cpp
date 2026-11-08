@@ -34,12 +34,17 @@ TerminalWidget::TerminalWidget(QWidget *parent)
     updateMetrics();
     m_cwd = QDir::currentPath();
     connect(&m_shell, &ShellSession::output, this, [this](const QByteArray &data) {
-        m_screen.feed(data);
+        QByteArray fixed = data;
+        fixed.replace("\r\n", "\n");
+        fixed.replace("\n", "\r\n");
+        m_screen.feed(fixed);
         m_scrollOffset = 0;
         update();
     });
     connect(&m_shell, &ShellSession::finished, this, [this](int status) {
         m_lastStatus = status;
+        if (status != 0)
+            print(QStringLiteral("\x1b[31m[exit %1]\x1b[0m\r\n").arg(status));
         showPrompt();
     });
     connect(&m_blinkTimer, &QTimer::timeout, this, [this] {

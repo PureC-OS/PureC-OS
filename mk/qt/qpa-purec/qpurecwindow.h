@@ -20,6 +20,7 @@ public:
     void setGeometry(const QRect &rect) override;
     void setWindowTitle(const QString &title) override;
     WId winId() const override { return WId(this); }
+    void propagateSizeHints() override {}
     void raise() override {}
     void lower() override {}
 

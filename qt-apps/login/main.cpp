@@ -20,5 +20,7 @@ int main(int argc, char **argv)
     window.setWindowFlags(Qt::Window | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
     window.resize(app.primaryScreen()->size());
     window.show();
-    return app.exec();
+    int rc = app.exec();
+    qWarning("qt-login: event loop ended rc=%d", rc);
+    return rc;
 }

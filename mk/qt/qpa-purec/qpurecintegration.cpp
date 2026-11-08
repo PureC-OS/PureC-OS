@@ -16,6 +16,12 @@ QT_BEGIN_NAMESPACE
 
 static QPurecIntegration *g_instance = nullptr;
 
+class QPurecFontDatabase : public QFreeTypeFontDatabase
+{
+public:
+    void populateFontDatabase() override {}
+};
+
 QPurecScreen::QPurecScreen()
 {
     refresh();
@@ -78,7 +84,7 @@ bool QPurecIntegration::hasCapability(QPlatformIntegration::Capability cap) cons
 QPlatformFontDatabase *QPurecIntegration::fontDatabase() const
 {
     if (!m_fontDatabase)
-        m_fontDatabase = new QFreeTypeFontDatabase;
+        m_fontDatabase = new QPurecFontDatabase;
     return m_fontDatabase;
 }
 
