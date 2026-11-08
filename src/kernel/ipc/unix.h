@@ -37,6 +37,6 @@ int32_t unix_send(int32_t id, const struct unix_iov *iov, uint32_t count,
                   const int32_t *ofds, uint32_t ofd_count, bool nonblock,
                   uint32_t flags);
 int32_t unix_recv(int32_t id, const struct unix_iov *iov, uint32_t count,
-                  int32_t *ofds, uint32_t *ofd_count, uint32_t ofd_capacity,
-                  bool nonblock, uint32_t flags);
+                  int32_t *ofds, uint32_t *ofd_count, bool *truncated,
+                  uint32_t ofd_capacity, bool nonblock, uint32_t flags);
 int32_t unix_poll(int32_t id);

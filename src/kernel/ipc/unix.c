@@ -695,14 +695,16 @@ int32_t unix_send(int32_t id, const struct unix_iov *iov, uint32_t count,
 }
 
 int32_t unix_recv(int32_t id, const struct unix_iov *iov, uint32_t count,
-                  int32_t *ofds, uint32_t *ofd_count, uint32_t ofd_capacity,
-                  bool nonblock, uint32_t flags)
+                  int32_t *ofds, uint32_t *ofd_count, bool *truncated,
+                  uint32_t ofd_capacity, bool nonblock, uint32_t flags)
 {
   uint64_t capacity = 0;
   for (uint32_t i = 0; i < count; i++)
     capacity += iov[i].length;
   if (ofd_count)
     *ofd_count = 0;
+  if (truncated)
+    *truncated = false;
   if (!capacity)
     return 0;
   int32_t self_tid = scheduler_current_tid();
@@ -770,11 +772,15 @@ int32_t unix_recv(int32_t id, const struct unix_iov *iov, uint32_t count,
           *ofd_count = deliver;
           for (uint32_t i = deliver; i < entry->count; i++)
             ofd_release(entry->ofds[i]);
+          if (truncated && deliver < entry->count)
+            *truncated = true;
         }
         else if (entry)
         {
           for (uint32_t i = 0; i < entry->count; i++)
             ofd_release(entry->ofds[i]);
+          if (truncated)
+            *truncated = true;
         }
         if (entry)
         {
