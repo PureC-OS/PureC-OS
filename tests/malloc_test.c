@@ -15,6 +15,9 @@ void *pc_memalign(size_t, size_t);
 size_t pc_malloc_usable_size(void *);
 
 int pc_errno;
+int __pc_threaded;
+void __pc_rlock_lock(void *lock) { (void)lock; }
+void __pc_rlock_unlock(void *lock) { (void)lock; }
 static uint64_t grown_bytes;
 static int failures;
 
