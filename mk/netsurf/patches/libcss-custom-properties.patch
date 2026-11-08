@@ -1,0 +1,4326 @@
+diff --git a/src/lex/lex.c b/src/lex/lex.c
+index 216b17c..d68abe4 100644
+--- a/src/lex/lex.c
++++ b/src/lex/lex.c
+@@ -636,6 +636,13 @@ css_error CDCOrIdentOrFunctionOrNPD(css_lexer *lexer, css_token **token)
+ 			APPEND(lexer, cptr, clen);
+ 
+ 			t->type = CSS_TOKEN_CDC;
++		} else if (startNMChar(c) && c != '\\') {
++			/* "--" followed by a name character is an identifier
++			 * (custom properties are named this way). The two
++			 * dashes are already part of the token. */
++			lexer->state = sIDENT;
++			lexer->substate = 0;
++			return IdentOrFunction(lexer, token);
+ 		} else {
+ 			/* Remove the '-' we read above */
+ 			lexer->bytesReadForToken -= 1;
+diff --git a/src/parse/Makefile b/src/parse/Makefile
+index 6d11096..6c77bc3 100644
+--- a/src/parse/Makefile
++++ b/src/parse/Makefile
+@@ -1,4 +1,4 @@
+ # Sources
+-DIR_SOURCES := parse.c language.c important.c propstrings.c font_face.c mq.c
++DIR_SOURCES := parse.c language.c important.c propstrings.c font_face.c mq.c var.c
+ 
+ include $(NSBUILD)/Makefile.subdir
+diff --git a/src/parse/language.c b/src/parse/language.c
+index 58bd15e..a64ee74 100644
+--- a/src/parse/language.c
++++ b/src/parse/language.c
+@@ -15,6 +15,7 @@
+ #include "parse/font_face.h"
+ #include "parse/important.h"
+ #include "parse/language.h"
++#include "parse/var.h"
+ #include "parse/mq.h"
+ #include "parse/parse.h"
+ #include "parse/propstrings.h"
+@@ -1850,6 +1851,11 @@ css_error parseProperty(css_language *c, const css_token *property,
+ 	css_style *style = NULL;
+ 	const css_token *token;
+ 
++	/* Custom properties are kept as text until selection */
++	if (css__is_custom_property_name(property))
++		return css__parse_var_declaration(c, property, 0, true,
++				vector, ctx, rule);
++
+ 	/* Find property index */
+ 	/** \todo improve on this linear search */
+ 	for (i = FIRST_PROP; i <= LAST_PROP; i++) {
+@@ -1862,6 +1868,12 @@ css_error parseProperty(css_language *c, const css_token *property,
+ 	if (i == LAST_PROP + 1)
+ 		return CSS_INVALID;
+ 
++	/* A value using var() can only be parsed once the custom properties
++	 * of the element are known, so it is kept as text until selection */
++	if (css__vector_has_var(vector, *ctx))
++		return css__parse_var_declaration(c, property, (uint32_t) i,
++				false, vector, ctx, rule);
++
+ 	/* Get handler */
+ 	handler = property_handlers[i - FIRST_PROP];
+ 	assert(handler != NULL);
+diff --git a/src/parse/var.c b/src/parse/var.c
+new file mode 100644
+index 0000000..704d86e
+--- /dev/null
++++ b/src/parse/var.c
+@@ -0,0 +1,275 @@
++/*
++ * This file is part of LibCSS.
++ * Licensed under the MIT License,
++ *                http://www.opensource.org/licenses/mit-license.php
++ *
++ * Parsing of CSS custom properties and of declarations that use var().
++ */
++
++#include <stdlib.h>
++#include <string.h>
++#include <strings.h>
++
++#include "bytecode/bytecode.h"
++#include "parse/var.h"
++#include "stylesheet.h"
++
++static bool token_is_text(const css_token *t, css_token_type type,
++		const char *text)
++{
++	size_t len = strlen(text);
++
++	if (t == NULL || t->type != type || t->idata == NULL)
++		return false;
++
++	return lwc_string_length(t->idata) == len &&
++			strncasecmp(lwc_string_data(t->idata), text, len) == 0;
++}
++
++bool css__is_custom_property_name(const css_token *token)
++{
++	if (token == NULL || token->type != CSS_TOKEN_IDENT ||
++			token->idata == NULL)
++		return false;
++
++	return lwc_string_length(token->idata) > 2 &&
++			memcmp(lwc_string_data(token->idata), "--", 2) == 0;
++}
++
++bool css__token_is_var(const css_token *token)
++{
++	return token_is_text(token, CSS_TOKEN_FUNCTION, "var");
++}
++
++bool css__vector_has_var(const parserutils_vector *vector, int32_t ctx)
++{
++	const css_token *token;
++
++	while ((token = parserutils_vector_iterate(vector, &ctx)) != NULL) {
++		if (css__token_is_var(token))
++			return true;
++	}
++
++	return false;
++}
++
++/* The lexer strips delimiters from some tokens (the '@' of at-keywords, the
++ * quotes of strings and so on). Write a token's text as it would be written
++ * in a stylesheet, or just measure it when dst is NULL. */
++static size_t token_text(const css_token *t, char *dst)
++{
++	size_t n = 0, i;
++	const char *prefix = "";
++	const char *suffix = "";
++	bool quote = false;
++
++	switch (t->type) {
++	case CSS_TOKEN_ATKEYWORD:
++		prefix = "@";
++		break;
++	case CSS_TOKEN_HASH:
++		prefix = "#";
++		break;
++	case CSS_TOKEN_PERCENTAGE:
++		suffix = "%";
++		break;
++	case CSS_TOKEN_FUNCTION:
++		suffix = "(";
++		break;
++	case CSS_TOKEN_UNICODE_RANGE:
++		prefix = "U+";
++		break;
++	case CSS_TOKEN_STRING:
++	case CSS_TOKEN_INVALID_STRING:
++		prefix = "\"";
++		suffix = t->type == CSS_TOKEN_STRING ? "\"" : "";
++		quote = true;
++		break;
++	case CSS_TOKEN_URI:
++		prefix = "url(\"";
++		suffix = "\")";
++		quote = true;
++		break;
++	case CSS_TOKEN_COMMENT:
++		return 0;
++	default:
++		break;
++	}
++
++	for (i = 0; prefix[i] != '\0'; i++) {
++		if (dst != NULL)
++			dst[n] = prefix[i];
++		n++;
++	}
++
++	for (i = 0; i < t->data.len; i++) {
++		char c = (char) t->data.data[i];
++
++		if (quote && c == '"' && (i == 0 || t->data.data[i - 1] != '\\')) {
++			if (dst != NULL)
++				dst[n] = '\\';
++			n++;
++		}
++		if (dst != NULL)
++			dst[n] = c;
++		n++;
++	}
++
++	for (i = 0; suffix[i] != '\0'; i++) {
++		if (dst != NULL)
++			dst[n] = suffix[i];
++		n++;
++	}
++
++	return n;
++}
++
++/* Turn the remaining tokens back into text, without surrounding whitespace
++ * and without a trailing !important, which is reported separately. */
++static css_error serialise_value(const parserutils_vector *vector,
++		int32_t *ctx, bool *important, lwc_string **out)
++{
++	int32_t scan = *ctx;
++	const css_token *token;
++	const css_token **tokens;
++	size_t count = 0, n = 0, first, last, total, i;
++	char *buffer, *cursor;
++	lwc_error lerror;
++
++	while (parserutils_vector_iterate(vector, &scan) != NULL)
++		count++;
++
++	tokens = malloc((count > 0 ? count : 1) * sizeof(*tokens));
++	if (tokens == NULL)
++		return CSS_NOMEM;
++
++	scan = *ctx;
++	while ((token = parserutils_vector_iterate(vector, &scan)) != NULL)
++		tokens[n++] = token;
++	*ctx = scan;
++
++	first = 0;
++	last = n;
++	*important = false;
++
++	while (last > first && tokens[last - 1]->type == CSS_TOKEN_S)
++		last--;
++
++	if (last - first >= 2 &&
++			token_is_text(tokens[last - 1], CSS_TOKEN_IDENT,
++					"important")) {
++		size_t k = last - 1;
++
++		while (k > first && tokens[k - 1]->type == CSS_TOKEN_S)
++			k--;
++
++		if (k > first && tokens[k - 1]->type == CSS_TOKEN_CHAR &&
++				tokens[k - 1]->idata != NULL &&
++				lwc_string_length(tokens[k - 1]->idata) == 1 &&
++				lwc_string_data(tokens[k - 1]->idata)[0] ==
++						'!') {
++			*important = true;
++			last = k - 1;
++			while (last > first &&
++					tokens[last - 1]->type == CSS_TOKEN_S)
++				last--;
++		}
++	}
++
++	while (first < last && tokens[first]->type == CSS_TOKEN_S)
++		first++;
++
++	total = 0;
++	for (i = first; i < last; i++)
++		total += token_text(tokens[i], NULL);
++
++	buffer = malloc(total + 1);
++	if (buffer == NULL) {
++		free(tokens);
++		return CSS_NOMEM;
++	}
++
++	cursor = buffer;
++	for (i = first; i < last; i++)
++		cursor += token_text(tokens[i], cursor);
++	*cursor = '\0';
++
++	lerror = lwc_intern_string(buffer, total, out);
++
++	free(buffer);
++	free(tokens);
++
++	return css_error_from_lwc_error(lerror);
++}
++
++css_error css__parse_var_declaration(css_language *c,
++		const css_token *name, uint32_t prop, bool custom,
++		const parserutils_vector *vector, int32_t *ctx,
++		css_rule *rule)
++{
++	lwc_string *value = NULL;
++	css_style *style = NULL;
++	uint32_t name_index = 0, value_index = 0;
++	bool important = false;
++	css_error error;
++
++	error = serialise_value(vector, ctx, &important, &value);
++	if (error != CSS_OK)
++		return error;
++
++	if (!custom && lwc_string_length(value) == 0) {
++		lwc_string_unref(value);
++		return CSS_INVALID;
++	}
++
++	error = css__stylesheet_style_create(c->sheet, &style);
++	if (error != CSS_OK) {
++		lwc_string_unref(value);
++		return error;
++	}
++
++	if (custom) {
++		error = css__stylesheet_string_add(c->sheet,
++				lwc_string_ref(name->idata), &name_index);
++		if (error != CSS_OK) {
++			lwc_string_unref(value);
++			css__stylesheet_style_destroy(style);
++			return error;
++		}
++	}
++
++	error = css__stylesheet_string_add(c->sheet, value, &value_index);
++	if (error != CSS_OK) {
++		css__stylesheet_style_destroy(style);
++		return error;
++	}
++
++	if (custom) {
++		error = css__stylesheet_style_append(style,
++				buildOPV(CSS_OP_CUSTOM,
++					important ? FLAG_IMPORTANT : 0, 0));
++		if (error == CSS_OK)
++			error = css__stylesheet_style_append(style, name_index);
++	} else {
++		error = css__stylesheet_style_append(style,
++				buildOPV(CSS_OP_PENDING,
++					important ? FLAG_IMPORTANT : 0,
++					(uint16_t) prop));
++	}
++	if (error == CSS_OK)
++		error = css__stylesheet_style_append(style, value_index);
++	if (error != CSS_OK) {
++		css__stylesheet_style_destroy(style);
++		return error;
++	}
++
++	c->sheet->uses_var = true;
++
++	error = css__stylesheet_rule_append_style(c->sheet, rule, style);
++	if (error != CSS_OK) {
++		css__stylesheet_style_destroy(style);
++		return error;
++	}
++
++	return CSS_OK;
++}
+diff --git a/src/parse/var.h b/src/parse/var.h
+new file mode 100644
+index 0000000..eec8bfa
+--- /dev/null
++++ b/src/parse/var.h
+@@ -0,0 +1,33 @@
++/*
++ * This file is part of LibCSS.
++ * Licensed under the MIT License,
++ *                http://www.opensource.org/licenses/mit-license.php
++ */
++
++#ifndef css_parse_var_h_
++#define css_parse_var_h_
++
++#include <stdbool.h>
++
++#include "parse/language.h"
++#include "stylesheet.h"
++
++/* Pseudo-opcodes for custom properties (--name: value) and for declarations
++ * whose value contains var() and so can only be parsed once the element's
++ * custom properties are known. Opcodes have ten bits, properties use the
++ * bottom of that range. */
++#define CSS_OP_CUSTOM  1022
++#define CSS_OP_PENDING 1023
++
++bool css__is_custom_property_name(const css_token *token);
++bool css__token_is_var(const css_token *token);
++bool css__vector_has_var(const parserutils_vector *vector, int32_t ctx);
++
++/* Store a custom property (custom == true) or a pending declaration of
++ * property `prop` in the rule. Consumes the rest of the vector. */
++css_error css__parse_var_declaration(css_language *c,
++		const css_token *name, uint32_t prop, bool custom,
++		const parserutils_vector *vector, int32_t *ctx,
++		css_rule *rule);
++
++#endif
+diff --git a/src/select/Makefile b/src/select/Makefile
+index 1c61909..0a88fc9 100644
+--- a/src/select/Makefile
++++ b/src/select/Makefile
+@@ -3,6 +3,6 @@
+ select_generator:
+ 	python3 src/select/select_generator.py
+ 
+-DIR_SOURCES := arena.c calc.c computed.c dispatch.c hash.c select.c strings.c font_face.c format_list_style.c unit.c
++DIR_SOURCES := arena.c calc.c computed.c dispatch.c hash.c select.c strings.c font_face.c format_list_style.c unit.c var.c
+ 
+ include $(NSBUILD)/Makefile.subdir
+diff --git a/src/select/select.c b/src/select/select.c
+index 9e4e384..21e2945 100644
+--- a/src/select/select.c
++++ b/src/select/select.c
+@@ -24,6 +24,8 @@
+ #include "select/propset.h"
+ #include "select/font_face.h"
+ #include "select/select.h"
++#include "select/var.h"
++#include "parse/var.h"
+ #include "select/strings.h"
+ #include "select/unit.h"
+ #include "utils/parserutilserror.h"
+@@ -55,6 +57,7 @@ struct css_select_ctx {
+ 	void *pw;	/**< Client's private selection context */
+ 
+ 	bool uses_revert;  /**< A sheet used revert property value */
++	bool uses_var;     /**< A sheet used custom properties or var() */
+ 
+ 	css_select_strings str;
+ 
+@@ -176,6 +179,8 @@ static void css__destroy_node_data(struct css_node_data *node_data)
+ 		}
+ 	}
+ 
++	css__custom_props_unref(node_data->custom);
++
+ 	free(node_data);
+ }
+ 
+@@ -378,6 +383,7 @@ css_error css_select_ctx_insert_sheet(css_select_ctx *ctx,
+ 	ctx->sheets[index].media = mq;
+ 
+ 	ctx->uses_revert |= sheet->uses_revert;
++	ctx->uses_var |= sheet->uses_var;
+ 
+ 	ctx->n_sheets++;
+ 
+@@ -1017,6 +1023,8 @@ printf("      \t%s\tno share: inline style\n");
+ static void css_select__finalise_selection_state(
+ 		css_select_state *state)
+ {
++	css__select_var_cleanup(state);
++
+ 	if (state->results != NULL) {
+ 		css_select_results_destroy(state->results);
+ 	}
+@@ -1279,6 +1287,15 @@ css_error css_select_style(css_select_ctx *ctx, void *node,
+ 	if (error != CSS_OK)
+ 		return error;
+ 
++	/* Custom properties are inherited, so they need the parent's. */
++	state.need_var = ctx->uses_var ||
++			(inline_style != NULL && inline_style->uses_var);
++	if (state.need_var) {
++		error = css__select_var_parent(&state, parent);
++		if (error != CSS_OK)
++			goto cleanup;
++	}
++
+ 	/* Fetch presentational hints */
+ 	error = handler->node_presentational_hint(pw, node, &nhints, &hints);
+ 	if (error != CSS_OK)
+@@ -1301,6 +1318,7 @@ css_error css_select_style(css_select_ctx *ctx, void *node,
+ 			state.results->styles[i] =
+ 					css__computed_style_ref(styles[i]);
+ 		}
++		state.node_data->custom = css__custom_props_ref(share->custom);
+ #ifdef DEBUG_STYLE_SHARING
+ 		printf("style:\t%s\tSHARED!\n",
+ 				lwc_string_data(state.element.name));
+@@ -1403,6 +1421,7 @@ css_error css_select_style(css_select_ctx *ctx, void *node,
+ 			 * same importance (CSS Cascade 4 6.4.4). */
+ 			state.current_origin = CSS_ORIGIN_AUTHOR;
+ 			state.current_specificity = UINT32_MAX;
++			state.sheet = inline_style;
+ 
+ 			error = cascade_style(sel->style, &state);
+ 			if (error != CSS_OK)
+@@ -1410,6 +1429,11 @@ css_error css_select_style(css_select_ctx *ctx, void *node,
+ 		}
+ 	}
+ 
++	/* Resolve custom properties and apply the declarations using var() */
++	error = css__select_var_finish(&state);
++	if (error != CSS_OK)
++		goto cleanup;
++
+ 	/* Fix up any remaining unset properties. */
+ 
+ 	/* Base element */
+@@ -2756,7 +2780,14 @@ css_error cascade_style(const css_style *style, css_select_state *state)
+ 
+ 		op = getOpcode(opv);
+ 
+-		error = prop_dispatch[op].cascade(opv, &s, state);
++		if (state->freeze_order == false)
++			state->current_order++;
++
++		if (op == CSS_OP_CUSTOM || op == CSS_OP_PENDING) {
++			error = css__select_var_op(opv, &s, state);
++		} else {
++			error = prop_dispatch[op].cascade(opv, &s, state);
++		}
+ 		if (error != CSS_OK)
+ 			return error;
+ 	}
+@@ -2764,6 +2795,18 @@ css_error cascade_style(const css_style *style, css_select_state *state)
+ 	return CSS_OK;
+ }
+ 
++css_error css__select_var_replay_style(css_style *style,
++		css_select_state *state)
++{
++	css_error error;
++
++	state->freeze_order = true;
++	error = cascade_style(style, state);
++	state->freeze_order = false;
++
++	return error;
++}
++
+ bool css__outranks_existing(uint16_t op, bool important, css_select_state *state,
+ 		enum flag_value explicit_default)
+ {
+@@ -2826,8 +2869,12 @@ bool css__outranks_existing(uint16_t op, bool important, css_select_state *state
+ 			 * for UA stylesheets, when specificity is always
+ 			 * considered (as importance is meaningless) */
+ 			if (existing->origin == CSS_ORIGIN_UA) {
+-				if (state->current_specificity >=
+-						existing->specificity) {
++				if (state->current_specificity >
++						existing->specificity ||
++						(state->current_specificity ==
++						existing->specificity &&
++						state->current_order >=
++						existing->order)) {
+ 					outranks = true;
+ 				}
+ 			} else if (existing->important == 0 && important) {
+@@ -2837,8 +2884,12 @@ bool css__outranks_existing(uint16_t op, bool important, css_select_state *state
+ 				/* Old is more important than new */
+ 			} else {
+ 				/* Same importance, consider specificity */
+-				if (state->current_specificity >=
+-						existing->specificity) {
++				if (state->current_specificity >
++						existing->specificity ||
++						(state->current_specificity ==
++						existing->specificity &&
++						state->current_order >=
++						existing->order)) {
+ 					outranks = true;
+ 				}
+ 			}
+@@ -2858,6 +2909,7 @@ bool css__outranks_existing(uint16_t op, bool important, css_select_state *state
+ 		 * Update our state to reflect this. */
+ 		existing->set = 1;
+ 		existing->specificity = state->current_specificity;
++		existing->order = state->current_order;
+ 		existing->origin = state->current_origin;
+ 		existing->important = important;
+ 		existing->explicit_default = explicit_default;
+diff --git a/src/select/select.h b/src/select/select.h
+index 5170e58..1027aa9 100644
+--- a/src/select/select.h
++++ b/src/select/select.h
+@@ -25,6 +25,7 @@ typedef struct reject_item {
+ 
+ typedef struct prop_state {
+ 	uint32_t specificity;                 /* Specificity of property in result */
++	uint32_t order;                       /* Declaration order, breaks ties */
+ 	unsigned int    set              : 1, /* Whether property is set in result */
+ 	                origin           : 2, /* Origin of property in result */
+ 	                important        : 1; /* Importance of property in result */
+@@ -52,10 +53,14 @@ typedef enum css_node_flags {
+ 			 CSS_NODE_FLAGS_PSEUDO_CLASS_VISITED),
+ } css_node_flags;
+ 
++struct css_custom_props;
++struct css_var_state;
++
+ struct css_node_data {
+ 	css_select_results partial;
+ 	css_bloom *bloom;
+ 	css_node_flags flags;
++	struct css_custom_props *custom;	/* Resolved custom properties */
+ };
+ 
+ struct revert_data {
+@@ -85,6 +90,12 @@ typedef struct css_select_state {
+ 
+ 	css_origin current_origin;	/* Origin of current sheet */
+ 	uint32_t current_specificity;	/* Specificity of current rule */
++	uint32_t current_order;		/* Order of current declaration */
++	bool freeze_order;		/* Do not advance current_order */
++
++	bool need_var;			/* Custom properties are in use */
++	struct css_var_state *var;	/* Custom property declarations */
++	struct css_custom_props *parent_custom;	/* Parent's custom properties */
+ 
+ 	css_qname element;		/* Element we're selecting for */
+ 	lwc_string *id;			/* Node id, if any */
+diff --git a/src/select/var.c b/src/select/var.c
+new file mode 100644
+index 0000000..cc5d32c
+--- /dev/null
++++ b/src/select/var.c
+@@ -0,0 +1,911 @@
++/*
++ * This file is part of LibCSS.
++ * Licensed under the MIT License,
++ *                http://www.opensource.org/licenses/mit-license.php
++ *
++ * Custom properties (--name) and var() at selection time.
++ *
++ * Custom property declarations and declarations using var() are stored as
++ * text in the stylesheet (see parse/var.c). While an element is selected they
++ * are collected with the same cascade rules as ordinary properties. Once all
++ * of the element's sheets have been processed the custom properties are
++ * resolved (inheriting from the parent's), and the declarations that were
++ * waiting for them are substituted, parsed and cascaded in their original
++ * order.
++ */
++
++#include <assert.h>
++#include <stdlib.h>
++#include <string.h>
++#include <strings.h>
++
++#include <parserutils/input/inputstream.h>
++#include <parserutils/utils/vector.h>
++
++#include "lex/lex.h"
++#include "parse/important.h"
++#include "parse/language.h"
++#include "parse/properties/properties.h"
++#include "parse/var.h"
++#include "select/select.h"
++#include "select/var.h"
++
++#define VAR_MAX_DEPTH 32
++#define VAR_MAX_LENGTH 65536
++
++struct css_custom_prop {
++	lwc_string *name;
++	lwc_string *value;
++};
++
++struct css_custom_props {
++	uint32_t refs;
++	uint32_t count;
++	struct css_custom_prop *items;	/* sorted by name pointer */
++};
++
++struct var_custom {
++	lwc_string *name;
++	lwc_string *value;
++	css_origin origin;
++	bool important;
++	uint32_t specificity;
++	uint32_t order;
++};
++
++struct var_pending {
++	const css_stylesheet *sheet;
++	uint32_t prop;
++	lwc_string *text;
++	bool important;
++	css_origin origin;
++	uint32_t specificity;
++	uint32_t order;
++	css_pseudo_element pseudo;
++};
++
++struct css_var_state {
++	struct var_custom *customs;
++	uint32_t n_customs, cap_customs;
++	struct var_pending *pending;
++	uint32_t n_pending, cap_pending;
++};
++
++/******************************************************************************
++ * Resolved custom property sets                                              *
++ ******************************************************************************/
++
++struct css_custom_props *css__custom_props_ref(struct css_custom_props *props)
++{
++	if (props != NULL)
++		props->refs++;
++
++	return props;
++}
++
++void css__custom_props_unref(struct css_custom_props *props)
++{
++	uint32_t i;
++
++	if (props == NULL || --props->refs > 0)
++		return;
++
++	for (i = 0; i < props->count; i++) {
++		lwc_string_unref(props->items[i].name);
++		lwc_string_unref(props->items[i].value);
++	}
++
++	free(props->items);
++	free(props);
++}
++
++static int compare_items(const void *a, const void *b)
++{
++	uintptr_t x = (uintptr_t) ((const struct css_custom_prop *) a)->name;
++	uintptr_t y = (uintptr_t) ((const struct css_custom_prop *) b)->name;
++
++	return x < y ? -1 : (x > y ? 1 : 0);
++}
++
++static lwc_string *props_get(const struct css_custom_props *props,
++		lwc_string *name)
++{
++	uint32_t low = 0, high;
++	uintptr_t key = (uintptr_t) name;
++
++	if (props == NULL)
++		return NULL;
++
++	high = props->count;
++	while (low < high) {
++		uint32_t mid = low + (high - low) / 2;
++		uintptr_t at = (uintptr_t) props->items[mid].name;
++
++		if (at == key)
++			return props->items[mid].value;
++		if (at < key)
++			low = mid + 1;
++		else
++			high = mid;
++	}
++
++	return NULL;
++}
++
++/******************************************************************************
++ * Collecting declarations                                                    *
++ ******************************************************************************/
++
++static css_error var_state_get(css_select_state *state,
++		struct css_var_state **out)
++{
++	if (state->var == NULL) {
++		state->var = calloc(1, sizeof(struct css_var_state));
++		if (state->var == NULL)
++			return CSS_NOMEM;
++	}
++
++	*out = state->var;
++
++	return CSS_OK;
++}
++
++/* Same ordering as css__outranks_existing(), for custom properties. */
++static bool beats(const struct var_custom *existing,
++		const css_select_state *state, bool important)
++{
++	bool spec_wins = state->current_specificity > existing->specificity ||
++			(state->current_specificity == existing->specificity &&
++			state->current_order >= existing->order);
++
++	if (existing->origin < state->current_origin) {
++		return !(existing->important &&
++				existing->origin == CSS_ORIGIN_USER);
++	} else if (existing->origin == state->current_origin) {
++		if (existing->origin == CSS_ORIGIN_UA)
++			return spec_wins;
++		if (!existing->important && important)
++			return true;
++		if (existing->important && !important)
++			return false;
++		return spec_wins;
++	}
++
++	return state->current_origin == CSS_ORIGIN_USER && important;
++}
++
++css_error css__select_var_op(css_code_t opv, css_style *style,
++		css_select_state *state)
++{
++	struct css_var_state *var;
++	lwc_string *name = NULL, *value = NULL;
++	uint32_t name_index = 0, value_index = 0;
++	bool important = isImportant(opv);
++	css_error error;
++	uint32_t i;
++
++	if (getOpcode(opv) == CSS_OP_CUSTOM) {
++		name_index = *style->bytecode;
++		advance_bytecode(style, sizeof(css_code_t));
++	}
++	value_index = *style->bytecode;
++	advance_bytecode(style, sizeof(css_code_t));
++
++	if (getOpcode(opv) == CSS_OP_CUSTOM) {
++		/* Custom properties of pseudo-elements are not supported. */
++		if (state->current_pseudo != CSS_PSEUDO_ELEMENT_NONE)
++			return CSS_OK;
++
++		error = css__stylesheet_string_get(
++				(css_stylesheet *) state->sheet, name_index,
++				&name);
++		if (error != CSS_OK)
++			return error;
++		error = css__stylesheet_string_get(
++				(css_stylesheet *) state->sheet, value_index,
++				&value);
++		if (error != CSS_OK)
++			return error;
++
++		error = var_state_get(state, &var);
++		if (error != CSS_OK)
++			return error;
++
++		for (i = 0; i < var->n_customs; i++) {
++			if (var->customs[i].name == name)
++				break;
++		}
++
++		if (i < var->n_customs) {
++			if (!beats(&var->customs[i], state, important))
++				return CSS_OK;
++			lwc_string_unref(var->customs[i].value);
++		} else {
++			if (var->n_customs == var->cap_customs) {
++				uint32_t cap = var->cap_customs ?
++						var->cap_customs * 2 : 16;
++				struct var_custom *grown = realloc(
++						var->customs,
++						cap * sizeof(*grown));
++				if (grown == NULL)
++					return CSS_NOMEM;
++				var->customs = grown;
++				var->cap_customs = cap;
++			}
++			var->customs[i].name = lwc_string_ref(name);
++			var->n_customs++;
++		}
++
++		var->customs[i].value = lwc_string_ref(value);
++		var->customs[i].origin = state->current_origin;
++		var->customs[i].important = important;
++		var->customs[i].specificity = state->current_specificity;
++		var->customs[i].order = state->current_order;
++
++		return CSS_OK;
++	}
++
++	error = css__stylesheet_string_get((css_stylesheet *) state->sheet,
++			value_index, &value);
++	if (error != CSS_OK)
++		return error;
++
++	error = var_state_get(state, &var);
++	if (error != CSS_OK)
++		return error;
++
++	if (var->n_pending == var->cap_pending) {
++		uint32_t cap = var->cap_pending ? var->cap_pending * 2 : 16;
++		struct var_pending *grown = realloc(var->pending,
++				cap * sizeof(*grown));
++		if (grown == NULL)
++			return CSS_NOMEM;
++		var->pending = grown;
++		var->cap_pending = cap;
++	}
++
++	i = var->n_pending++;
++	var->pending[i].sheet = state->sheet;
++	var->pending[i].prop = getValue(opv);
++	var->pending[i].text = lwc_string_ref(value);
++	var->pending[i].important = important;
++	var->pending[i].origin = state->current_origin;
++	var->pending[i].specificity = state->current_specificity;
++	var->pending[i].order = state->current_order;
++	var->pending[i].pseudo = state->current_pseudo;
++
++	return CSS_OK;
++}
++
++css_error css__select_var_parent(css_select_state *state, void *parent)
++{
++	struct css_node_data *data = NULL;
++	css_error error;
++
++	state->parent_custom = NULL;
++
++	if (parent == NULL)
++		return CSS_OK;
++
++	error = state->handler->get_libcss_node_data(state->pw, parent,
++			(void **) (void *) &data);
++	if (error != CSS_OK)
++		return error;
++
++	if (data != NULL)
++		state->parent_custom = data->custom;
++
++	return CSS_OK;
++}
++
++/******************************************************************************
++ * var() substitution                                                         *
++ ******************************************************************************/
++
++struct text_buffer {
++	char *data;
++	size_t length, capacity;
++	bool failed;
++};
++
++static void buffer_append(struct text_buffer *b, const char *s, size_t n)
++{
++	if (b->failed)
++		return;
++
++	if (b->length + n + 1 > b->capacity) {
++		size_t cap = b->capacity ? b->capacity : 128;
++		char *grown;
++
++		while (cap < b->length + n + 1)
++			cap *= 2;
++		grown = realloc(b->data, cap);
++		if (grown == NULL) {
++			b->failed = true;
++			return;
++		}
++		b->data = grown;
++		b->capacity = cap;
++	}
++
++	memcpy(b->data + b->length, s, n);
++	b->length += n;
++	b->data[b->length] = '\0';
++}
++
++struct resolve_ctx {
++	const struct css_custom_props *inherited;
++	struct var_custom *own;
++	uint32_t n_own;
++	uint8_t *own_state;		/* 0 todo, 1 busy, 2 valid, 3 invalid */
++	char **own_text;
++	size_t *own_length;
++};
++
++static bool substitute(struct resolve_ctx *rc, const char *text, size_t length,
++		unsigned depth, struct text_buffer *out);
++
++static bool resolve_own(struct resolve_ctx *rc, uint32_t index)
++{
++	const char *raw;
++	struct text_buffer out = {NULL, 0, 0, false};
++	bool valid;
++
++	if (rc->own_state[index] == 2)
++		return true;
++	if (rc->own_state[index] != 0)
++		return false;
++
++	rc->own_state[index] = 1;
++
++	raw = lwc_string_data(rc->own[index].value);
++	valid = substitute(rc, raw, lwc_string_length(rc->own[index].value), 0,
++			&out);
++
++	if (valid && !out.failed) {
++		size_t start = 0, end = out.length;
++
++		while (start < end && (out.data[start] == ' ' ||
++				out.data[start] == '\t' ||
++				out.data[start] == '\n'))
++			start++;
++		while (end > start && (out.data[end - 1] == ' ' ||
++				out.data[end - 1] == '\t' ||
++				out.data[end - 1] == '\n'))
++			end--;
++
++		if (end - start == 7 &&
++				strncasecmp(out.data + start, "initial", 7) == 0) {
++			valid = false;
++		} else if ((end - start == 7 &&
++				strncasecmp(out.data + start, "inherit", 7) == 0)
++				|| (end - start == 5 &&
++				strncasecmp(out.data + start, "unset", 5) == 0)) {
++			lwc_string *parent_value = props_get(rc->inherited,
++					rc->own[index].name);
++
++			if (parent_value == NULL) {
++				valid = false;
++			} else {
++				free(out.data);
++				out.data = NULL;
++				out.length = 0;
++				out.capacity = 0;
++				buffer_append(&out,
++					lwc_string_data(parent_value),
++					lwc_string_length(parent_value));
++				start = 0;
++				end = out.length;
++			}
++		}
++
++		if (valid) {
++			rc->own_text[index] = malloc(end - start + 1);
++			if (rc->own_text[index] == NULL) {
++				valid = false;
++			} else {
++				memcpy(rc->own_text[index], out.data + start,
++						end - start);
++				rc->own_text[index][end - start] = '\0';
++				rc->own_length[index] = end - start;
++			}
++		}
++	} else {
++		valid = false;
++	}
++
++	free(out.data);
++	rc->own_state[index] = valid ? 2 : 3;
++
++	return valid;
++}
++
++/* Look a custom property up; the text is valid until the context is freed. */
++static bool lookup(struct resolve_ctx *rc, lwc_string *name, const char **text,
++		size_t *length)
++{
++	uint32_t i;
++	lwc_string *value;
++
++	for (i = 0; i < rc->n_own; i++) {
++		if (rc->own[i].name != name)
++			continue;
++		if (!resolve_own(rc, i))
++			return false;
++		*text = rc->own_text[i];
++		*length = rc->own_length[i];
++		return true;
++	}
++
++	value = props_get(rc->inherited, name);
++	if (value == NULL)
++		return false;
++
++	*text = lwc_string_data(value);
++	*length = lwc_string_length(value);
++
++	return true;
++}
++
++static bool is_space(char c)
++{
++	return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f';
++}
++
++static bool is_ident_char(char c)
++{
++	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
++			(c >= '0' && c <= '9') || c == '-' || c == '_' ||
++			((unsigned char) c) >= 0x80;
++}
++
++static size_t skip_string(const char *text, size_t length, size_t i)
++{
++	char quote = text[i++];
++
++	while (i < length && text[i] != quote) {
++		if (text[i] == '\\' && i + 1 < length)
++			i++;
++		i++;
++	}
++
++	return i < length ? i + 1 : length;
++}
++
++/* Replace every var() in text; false if the value cannot be computed. */
++static bool substitute(struct resolve_ctx *rc, const char *text, size_t length,
++		unsigned depth, struct text_buffer *out)
++{
++	size_t i = 0;
++
++	if (depth > VAR_MAX_DEPTH)
++		return false;
++
++	while (i < length) {
++		char c = text[i];
++
++		if (out->length > VAR_MAX_LENGTH)
++			return false;
++
++		if (c == '"' || c == '\'') {
++			size_t end = skip_string(text, length, i);
++
++			buffer_append(out, text + i, end - i);
++			i = end;
++			continue;
++		}
++
++		if (i + 4 <= length && strncasecmp(text + i, "var(", 4) == 0 &&
++				(i == 0 || !is_ident_char(text[i - 1]))) {
++			size_t j = i + 4, inner_start = i + 4, inner_end;
++			unsigned nesting = 1;
++			size_t name_start, name_end, fallback_start = 0;
++			bool has_fallback = false;
++			lwc_string *name = NULL;
++			const char *found;
++			size_t found_length;
++			bool ok;
++
++			while (j < length && nesting > 0) {
++				if (text[j] == '"' || text[j] == '\'') {
++					j = skip_string(text, length, j);
++					continue;
++				}
++				if (text[j] == '(')
++					nesting++;
++				else if (text[j] == ')')
++					nesting--;
++				j++;
++			}
++			if (nesting != 0)
++				return false;
++			inner_end = j - 1;
++
++			name_start = inner_start;
++			while (name_start < inner_end &&
++					is_space(text[name_start]))
++				name_start++;
++			name_end = name_start;
++			while (name_end < inner_end && !is_space(text[name_end])
++					&& text[name_end] != ',')
++				name_end++;
++			if (name_end - name_start < 3 ||
++					memcmp(text + name_start, "--", 2) != 0)
++				return false;
++
++			fallback_start = name_end;
++			while (fallback_start < inner_end &&
++					is_space(text[fallback_start]))
++				fallback_start++;
++			if (fallback_start < inner_end) {
++				if (text[fallback_start] != ',')
++					return false;
++				has_fallback = true;
++				fallback_start++;
++				while (fallback_start < inner_end &&
++						is_space(text[fallback_start]))
++					fallback_start++;
++			}
++
++			if (lwc_intern_string(text + name_start,
++					name_end - name_start, &name) !=
++					lwc_error_ok)
++				return false;
++
++			ok = lookup(rc, name, &found, &found_length);
++			lwc_string_unref(name);
++
++			if (ok) {
++				buffer_append(out, found, found_length);
++			} else if (has_fallback) {
++				size_t fallback_end = inner_end;
++
++				while (fallback_end > fallback_start &&
++						is_space(text[fallback_end - 1]))
++					fallback_end--;
++				if (!substitute(rc, text + fallback_start,
++						fallback_end - fallback_start,
++						depth + 1, out))
++					return false;
++			} else {
++				return false;
++			}
++
++			i = j;
++			continue;
++		}
++
++		buffer_append(out, &text[i], 1);
++		i++;
++	}
++
++	return !out->failed;
++}
++
++/******************************************************************************
++ * Applying declarations that used var()                                      *
++ ******************************************************************************/
++
++static css_error compile(const css_stylesheet *sheet, uint32_t prop,
++		const char *text, size_t length, css_style **out)
++{
++	css_language language;
++	parserutils_inputstream *stream = NULL;
++	css_lexer *lexer = NULL;
++	parserutils_vector *vector = NULL;
++	css_style *style = NULL;
++	css_error error;
++	int32_t ctx = 0;
++	const css_token *token;
++	bool previous_space = false;
++
++	memset(&language, 0, sizeof(language));
++	language.sheet = (css_stylesheet *) sheet;
++	language.strings = sheet->propstrings;
++
++	if (parserutils_inputstream_create("UTF-8", CSS_CHARSET_DICTATED, NULL,
++			&stream) != PARSERUTILS_OK)
++		return CSS_NOMEM;
++
++	if (parserutils_inputstream_append(stream, (const uint8_t *) text,
++			length) != PARSERUTILS_OK ||
++			parserutils_inputstream_append(stream, NULL, 0) !=
++			PARSERUTILS_OK) {
++		parserutils_inputstream_destroy(stream);
++		return CSS_NOMEM;
++	}
++
++	error = css__lexer_create(stream, &lexer);
++	if (error != CSS_OK) {
++		parserutils_inputstream_destroy(stream);
++		return error;
++	}
++
++	if (parserutils_vector_create(sizeof(css_token), 32, &vector) !=
++			PARSERUTILS_OK) {
++		css__lexer_destroy(lexer);
++		parserutils_inputstream_destroy(stream);
++		return CSS_NOMEM;
++	}
++
++	for (;;) {
++		css_token *t;
++
++		error = css__lexer_get_token(lexer, &t);
++		if (error != CSS_OK || t->type == CSS_TOKEN_EOF)
++			break;
++
++		if (previous_space && t->type == CSS_TOKEN_S)
++			continue;
++
++		if (t->type < CSS_TOKEN_LAST_INTERN && t->data.data != NULL) {
++			if (lwc_intern_string((char *) t->data.data,
++					t->data.len, &t->idata) !=
++					lwc_error_ok) {
++				error = CSS_NOMEM;
++				break;
++			}
++		} else {
++			t->idata = NULL;
++		}
++
++		if (parserutils_vector_append(vector, t) != PARSERUTILS_OK) {
++			if (t->idata != NULL)
++				lwc_string_unref(t->idata);
++			error = CSS_NOMEM;
++			break;
++		}
++
++		previous_space = t->type == CSS_TOKEN_S;
++	}
++
++	if (error == CSS_OK)
++		error = css__stylesheet_style_create(
++				(css_stylesheet *) sheet, &style);
++
++	if (error == CSS_OK) {
++		consumeWhitespace(vector, &ctx);
++
++		error = property_handlers[prop - FIRST_PROP](&language, vector,
++				&ctx, style);
++		if (error == CSS_OK) {
++			consumeWhitespace(vector, &ctx);
++			if (parserutils_vector_iterate(vector, &ctx) != NULL)
++				error = CSS_INVALID;
++		}
++	}
++
++	ctx = 0;
++	while ((token = parserutils_vector_iterate(vector, &ctx)) != NULL) {
++		if (token->idata != NULL)
++			lwc_string_unref(token->idata);
++	}
++	parserutils_vector_destroy(vector);
++	css__lexer_destroy(lexer);
++	parserutils_inputstream_destroy(stream);
++
++	if (error != CSS_OK) {
++		if (style != NULL)
++			css__stylesheet_style_destroy(style);
++		return error;
++	}
++
++	*out = style;
++
++	return CSS_OK;
++}
++
++static css_error replay_pending(css_select_state *state,
++		struct css_var_state *var, struct resolve_ctx *rc)
++{
++	const css_stylesheet *saved_sheet = state->sheet;
++	css_origin saved_origin = state->current_origin;
++	uint32_t saved_specificity = state->current_specificity;
++	uint32_t saved_order = state->current_order;
++	css_pseudo_element saved_pseudo = state->current_pseudo;
++	css_computed_style *saved_computed = state->computed;
++	css_error result = CSS_OK;
++	uint32_t i;
++
++	for (i = 0; i < var->n_pending && result == CSS_OK; i++) {
++		struct var_pending *p = &var->pending[i];
++		struct text_buffer out = {NULL, 0, 0, false};
++		css_style *style = NULL;
++		css_error error;
++
++		if (state->results->styles[p->pseudo] == NULL)
++			continue;
++
++		if (!substitute(rc, lwc_string_data(p->text),
++				lwc_string_length(p->text), 0, &out) ||
++				out.failed || out.length == 0) {
++			/* Invalid at computed-value time: the declaration
++			 * still wins the cascade, as 'unset'. */
++			free(out.data);
++			out.data = strdup("unset");
++			if (out.data == NULL) {
++				result = CSS_NOMEM;
++				break;
++			}
++			out.length = 5;
++			out.failed = false;
++		}
++
++		error = compile(p->sheet, p->prop, out.data, out.length,
++				&style);
++		free(out.data);
++		if (error == CSS_NOMEM) {
++			result = error;
++			break;
++		}
++		if (error != CSS_OK)
++			continue;
++
++		if (p->important)
++			css__make_style_important(style);
++
++		state->sheet = p->sheet;
++		state->current_origin = p->origin;
++		state->current_specificity = p->specificity;
++		state->current_order = p->order;
++		state->current_pseudo = p->pseudo;
++		state->computed = state->results->styles[p->pseudo];
++
++		result = css__select_var_replay_style(style, state);
++
++		css__stylesheet_style_destroy(style);
++	}
++
++	state->sheet = saved_sheet;
++	state->current_origin = saved_origin;
++	state->current_specificity = saved_specificity;
++	state->current_order = saved_order;
++	state->current_pseudo = saved_pseudo;
++	state->computed = saved_computed;
++
++	return result;
++}
++
++css_error css__select_var_finish(css_select_state *state)
++{
++	struct css_var_state *var = state->var;
++	struct css_custom_props *map = NULL;
++	struct resolve_ctx rc;
++	css_error error = CSS_OK;
++	uint32_t i, valid = 0, inherited_count = 0, n = 0;
++
++	if (!state->need_var)
++		return CSS_OK;
++
++	if (var == NULL || var->n_customs == 0) {
++		state->node_data->custom =
++				css__custom_props_ref(state->parent_custom);
++		if (var == NULL || var->n_pending == 0)
++			return CSS_OK;
++
++		memset(&rc, 0, sizeof(rc));
++		rc.inherited = state->parent_custom;
++
++		return replay_pending(state, var, &rc);
++	}
++
++	memset(&rc, 0, sizeof(rc));
++	rc.inherited = state->parent_custom;
++	rc.own = var->customs;
++	rc.n_own = var->n_customs;
++	rc.own_state = calloc(var->n_customs, sizeof(uint8_t));
++	rc.own_text = calloc(var->n_customs, sizeof(char *));
++	rc.own_length = calloc(var->n_customs, sizeof(size_t));
++	if (rc.own_state == NULL || rc.own_text == NULL ||
++			rc.own_length == NULL) {
++		error = CSS_NOMEM;
++		goto done;
++	}
++
++	for (i = 0; i < var->n_customs; i++) {
++		if (resolve_own(&rc, i))
++			valid++;
++	}
++
++	if (state->parent_custom != NULL)
++		inherited_count = state->parent_custom->count;
++
++	map = calloc(1, sizeof(*map));
++	if (map == NULL) {
++		error = CSS_NOMEM;
++		goto done;
++	}
++	map->refs = 1;
++	map->items = malloc((inherited_count + valid + 1) *
++			sizeof(struct css_custom_prop));
++	if (map->items == NULL) {
++		free(map);
++		map = NULL;
++		error = CSS_NOMEM;
++		goto done;
++	}
++
++	for (i = 0; i < inherited_count; i++) {
++		struct css_custom_prop *item = &state->parent_custom->items[i];
++		uint32_t k;
++		bool overridden = false;
++
++		for (k = 0; k < var->n_customs; k++) {
++			if (var->customs[k].name == item->name) {
++				overridden = true;
++				break;
++			}
++		}
++		if (overridden)
++			continue;
++
++		map->items[n].name = lwc_string_ref(item->name);
++		map->items[n].value = lwc_string_ref(item->value);
++		n++;
++	}
++
++	for (i = 0; i < var->n_customs; i++) {
++		lwc_string *value = NULL;
++
++		if (rc.own_state[i] != 2)
++			continue;
++		if (lwc_intern_string(rc.own_text[i], rc.own_length[i],
++				&value) != lwc_error_ok) {
++			error = CSS_NOMEM;
++			break;
++		}
++
++		map->items[n].name = lwc_string_ref(var->customs[i].name);
++		map->items[n].value = value;
++		n++;
++	}
++
++	map->count = n;
++	qsort(map->items, map->count, sizeof(struct css_custom_prop),
++			compare_items);
++
++	state->node_data->custom = map;
++
++	/* Pending declarations see the resolved set, not the raw one. */
++	{
++		struct resolve_ctx final;
++
++		memset(&final, 0, sizeof(final));
++		final.inherited = map;
++
++		if (error == CSS_OK)
++			error = replay_pending(state, var, &final);
++	}
++
++done:
++	if (rc.own_text != NULL) {
++		for (i = 0; i < var->n_customs; i++)
++			free(rc.own_text[i]);
++	}
++	free(rc.own_text);
++	free(rc.own_state);
++	free(rc.own_length);
++
++	return error;
++}
++
++void css__select_var_cleanup(css_select_state *state)
++{
++	struct css_var_state *var = state->var;
++	uint32_t i;
++
++	if (var == NULL)
++		return;
++
++	for (i = 0; i < var->n_customs; i++) {
++		lwc_string_unref(var->customs[i].name);
++		lwc_string_unref(var->customs[i].value);
++	}
++	for (i = 0; i < var->n_pending; i++)
++		lwc_string_unref(var->pending[i].text);
++
++	free(var->customs);
++	free(var->pending);
++	free(var);
++	state->var = NULL;
++}
+diff --git a/src/select/var.h b/src/select/var.h
+new file mode 100644
+index 0000000..ed69bf4
+--- /dev/null
++++ b/src/select/var.h
+@@ -0,0 +1,46 @@
++/*
++ * This file is part of LibCSS.
++ * Licensed under the MIT License,
++ *                http://www.opensource.org/licenses/mit-license.php
++ *
++ * Custom properties (--name) and var() at selection time.
++ */
++
++#ifndef css_select_var_h_
++#define css_select_var_h_
++
++#include <stdbool.h>
++#include <stdint.h>
++
++#include <libcss/errors.h>
++
++#include "bytecode/bytecode.h"
++#include "stylesheet.h"
++
++struct css_select_state;
++struct css_select_handler;
++struct css_custom_props;
++struct css_var_state;
++
++struct css_custom_props *css__custom_props_ref(struct css_custom_props *props);
++void css__custom_props_unref(struct css_custom_props *props);
++
++/** Find the custom properties of a node's parent (they are inherited). */
++css_error css__select_var_parent(struct css_select_state *state, void *parent);
++
++/** Cascade a CSS_OP_CUSTOM or CSS_OP_PENDING item of a style. */
++css_error css__select_var_op(css_code_t opv, css_style *style,
++		struct css_select_state *state);
++
++/** Resolve the custom properties of the node and apply the declarations
++ * that were waiting for them. */
++css_error css__select_var_finish(struct css_select_state *state);
++
++/** Cascade a style without changing the declaration order (implemented in
++ * select.c, which owns the cascade). */
++css_error css__select_var_replay_style(css_style *style,
++		struct css_select_state *state);
++
++void css__select_var_cleanup(struct css_select_state *state);
++
++#endif
+diff --git a/src/stylesheet.h b/src/stylesheet.h
+index 673bc95..1c883ae 100644
+--- a/src/stylesheet.h
++++ b/src/stylesheet.h
+@@ -189,6 +189,7 @@ struct css_stylesheet {
+ 	bool quirks_used;			/**< Quirks actually used */
+ 
+ 	bool uses_revert;			/**< Uses 'revert' property value */
++	bool uses_var;				/**< Uses custom properties or var() */
+ 
+ 	bool inline_style;			/**< Is an inline style */
+ 
+diff --git a/test/data/lex/tests1.dat b/test/data/lex/tests1.dat
+index 5e575a9..95d0c22 100644
+--- a/test/data/lex/tests1.dat
++++ b/test/data/lex/tests1.dat
+@@ -403,8 +403,7 @@ EOF
+ #data
+ --x
+ #expected
+-CHAR:-
+-IDENT:-x
++IDENT:--x
+ S
+ EOF
+ #reset
+diff --git a/test/data/select/INDEX b/test/data/select/INDEX
+index de32689..e6f20b1 100644
+--- a/test/data/select/INDEX
++++ b/test/data/select/INDEX
+@@ -8,3 +8,4 @@ calc.dat		Tests involving calc
+ counter.dat		counter-increment/counter-reset named counters
+ gap.dat			Gap property tests
+ inline-style.dat	Inline style cascade order
++var.dat			Custom properties and var()
+diff --git a/test/data/select/var.dat b/test/data/select/var.dat
+new file mode 100644
+index 0000000..4c93341
+--- /dev/null
++++ b/test/data/select/var.dat
+@@ -0,0 +1,2589 @@
++#tree
++| div*
++#author
++div { --c: #00f; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { background-color: var(--missing, #0f0); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff00ff00
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { background-color: #f00; background-color: var(--missing); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #00000000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --a: #f00; --b: var(--a); background-color: var(--b); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ffff0000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div
++|  span*
++#author
++div { --c: #00f; } span { background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div
++|  p
++|   span*
++#author
++div { --c: #00f; } span { background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div
++|  span*
++#author
++div { --c: #00f; } span { --c: #f00; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ffff0000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++|  class=k
++#author
++.k { --c: #f00; } div { --c: #00f; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ffff0000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++|  class=k
++#author
++div { --c: #00f !important; } .k { --c: #f00; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --a: var(--b); --b: var(--a); background-color: var(--a, #0f0); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff00ff00
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --c: #00f; background-color: var(--c); background-color: #f00; }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ffff0000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --c: #00f; background-color: #f00; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --c: #0f0; }
++#inline-style
++background-color: var(--c);
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff00ff00
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { background-color: var(--c); }
++#inline-style
++--c: #00f;
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --m: 4px 8px; margin: var(--m); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #00000000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 4px
++margin-right: 8px
++margin-bottom: 4px
++margin-left: 8px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --w: 5px; --h: 7px; padding-top: var(--w); padding-left: var(--h); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #00000000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 5px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 7px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --c: #00f; background-color: var(--c) !important; background-color: #f00; }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#ua
++div { --c: #f00; }
++#author
++div { --c: #00f; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --x: #00f; font-family: var(--none, serif, var(--x)); background-color: var(--none, var(--x)); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div
++|  span*
++#author
++div { --c: #00f; } span { --c: inherit; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div
++|  span*
++#author
++div { --c: #00f; } span { --c: initial; background-color: var(--c, #0f0); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff00ff00
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --c: #00f; background-color: VAR(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
++#reset
++#tree
++| div*
++#author
++div { --C: #f00; --c: #00f; background-color: var(--c); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #ff0000ff
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: auto
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++
+diff --git a/test/data/select2/INDEX b/test/data/select2/INDEX
+index fbd834d..7a05334 100644
+--- a/test/data/select2/INDEX
++++ b/test/data/select2/INDEX
+@@ -3,3 +3,4 @@
+ # Test			Description
+ 
+ calc.dat		Tests involving calc
++var.dat			calc() with var()
+diff --git a/test/data/select2/var.dat b/test/data/select2/var.dat
+new file mode 100644
+index 0000000..00af7c5
+--- /dev/null
++++ b/test/data/select2/var.dat
+@@ -0,0 +1,111 @@
++#tree
++| div*
++#author
++div { --w: 10px; width: calc(var(--w) * 2); }
++#errors
++#expected
++align-content: stretch
++align-items: stretch
++align-self: auto
++background-attachment: scroll
++background-color: #00000000
++background-image: none
++background-position: 0% 0%
++background-repeat: repeat
++border-collapse: separate
++border-spacing: 0px 0px
++border-top-color: #ff000000
++border-right-color: #ff000000
++border-bottom-color: #ff000000
++border-left-color: #ff000000
++border-top-style: none
++border-right-style: none
++border-bottom-style: none
++border-left-style: none
++border-top-width: 2px
++border-right-width: 2px
++border-bottom-width: 2px
++border-left-width: 2px
++bottom: auto
++box-sizing: content-box
++break-after: auto
++break-before: auto
++break-inside: auto
++caption-side: top
++clear: none
++clip: auto
++color: #ff000000
++column-count: auto
++column-fill: balance
++column-gap: normal
++column-rule-color: #ff000000
++column-rule-style: none
++column-rule-width: 2px
++column-span: none
++column-width: auto
++content: normal
++counter-increment: none
++counter-reset: none
++cursor: auto
++direction: ltr
++display: inline
++empty-cells: show
++fill-opacity: 1.000
++flex-basis: auto
++flex-direction: row
++flex-grow: 0.000
++flex-shrink: 1.000
++flex-wrap: nowrap
++float: none
++font-family: sans-serif
++font-size: 16px
++font-style: normal
++font-variant: normal
++font-weight: normal
++height: auto
++justify-content: flex-start
++left: auto
++letter-spacing: normal
++line-height: normal
++list-style-image: none
++list-style-position: outside
++list-style-type: disc
++margin-top: 0px
++margin-right: 0px
++margin-bottom: 0px
++margin-left: 0px
++max-height: none
++max-width: none
++min-height: 0px
++min-width: 0px
++opacity: 1.000
++order: 0
++outline-color: invert
++outline-style: none
++outline-width: 2px
++overflow-x: visible
++overflow-y: visible
++padding-top: 0px
++padding-right: 0px
++padding-bottom: 0px
++padding-left: 0px
++position: static
++quotes: none
++right: auto
++row-gap: normal
++stroke-opacity: 1.000
++table-layout: auto
++text-align: default
++text-decoration: none
++text-indent: 0px
++text-transform: none
++top: auto
++unicode-bidi: normal
++vertical-align: baseline
++visibility: visible
++white-space: normal
++width: 20 pixels
++word-spacing: normal
++writing-mode: horizontal-tb
++z-index: auto
++

@@ -81,6 +81,7 @@
 /usr/bin/curl /usr/bin/curl - 0 bin/programs/curl
 /usr/bin/netsurf /usr/bin/netsurf - 0 bin/programs/netsurf
 /usr/local/share/netsurf/Messages /usr/local/share/netsurf/Messages - 0 netsurf/frontends/framebuffer/res/Messages
+/usr/local/share/netsurf/css-vars.html /usr/local/share/netsurf/css-vars.html - 0 tests/netsurf/css-vars.html
 /usr/local/share/netsurf/default.css /usr/local/share/netsurf/default.css - 0 netsurf/frontends/framebuffer/res/default.css
 /usr/local/share/netsurf/internal.css /usr/local/share/netsurf/internal.css - 0 netsurf/frontends/framebuffer/res/internal.css
 /usr/local/share/netsurf/quirks.css /usr/local/share/netsurf/quirks.css - 0 netsurf/frontends/framebuffer/res/quirks.css

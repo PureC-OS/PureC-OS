@@ -1,0 +1,35 @@
+<html>
+<head>
+<title>CSS variables</title>
+<style>
+:root { --ok: #2e7d32; --bad: #c62828; --pad: 10px; --text: #ffffff; }
+body { background: #eeeeee; font-family: sans-serif; font-size: 16px; }
+h1 { font-size: 20px; }
+.box { padding: var(--pad); margin: 6px; color: var(--text); background: #c62828; }
+.t1 { background: var(--ok); }
+.t2 { background: var(--missing, var(--ok)); }
+.t3 { --a: var(--ok); --b: var(--a); background: var(--b); }
+.t4 { background: #c62828; background: var(--ok); }
+.t5 { background: var(--ok) !important; background: #c62828; }
+.p { --c: #2e7d32; }
+.p .c { background: var(--c); }
+.q { --c: #c62828; }
+.q .o { --c: #2e7d32; background: var(--c); }
+.r { --w: 3px; --col: #2e7d32; }
+.r .e { border: var(--w) solid var(--col); background: #c62828; padding: var(--pad); margin: 6px; color: #fff; }
+.u .z { background: var(--nothing, #2e7d32); }
+</style>
+</head>
+<body>
+<h1>CSS variables: every box must be green</h1>
+<div class="box t1">1. variable declared on :root</div>
+<div class="box t2">2. fallback value when the variable is missing</div>
+<div class="box t3">3. chain of variables (--b uses --a uses --ok)</div>
+<div class="box t4">4. later var() declaration beats earlier plain one</div>
+<div class="box t5">5. !important var() beats later plain declaration</div>
+<div class="p"><div class="box c">6. inherited from the parent element</div></div>
+<div class="q"><div class="box o">7. child overrides the parent's variable</div></div>
+<div class="r"><div class="e">8. green border from var() in a shorthand (width 3px)</div></div>
+<div class="u"><div class="box z">9. var() with a literal fallback</div></div>
+</body>
+</html>
