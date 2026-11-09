@@ -543,4 +543,3 @@ qt-apps:
 	cmake --build $(BIN_DIR)/qt-apps
 	@mkdir -p $(BIN_DIR)/programs
 	cp $(BIN_DIR)/qt-apps/terminal/qt-terminal $(BIN_DIR)/programs/qt-terminal
-	cp $(BIN_DIR)/qt-apps/login/qt-login $(BIN_DIR)/programs/qt-login

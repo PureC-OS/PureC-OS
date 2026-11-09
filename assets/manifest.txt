@@ -73,7 +73,6 @@
 /usr/bin/cmaketest /usr/bin/cmaketest - 0 bin/programs/cmaketest
 /usr/bin/qtcoretest /usr/bin/qtcoretest - 0 bin/programs/qtcoretest
 /usr/bin/qt-terminal /usr/bin/qt-terminal - 0 bin/programs/qt-terminal
-/usr/bin/qt-login /usr/bin/qt-login - 0 bin/programs/qt-login
 /usr/share/fonts/DejaVuSansMono.ttf /usr/share/fonts/DejaVuSansMono.ttf - 0 assets/fonts/DejaVuSansMono.ttf
 /usr/share/fonts/DejaVuSansMono-Bold.ttf /usr/share/fonts/DejaVuSansMono-Bold.ttf - 0 assets/fonts/DejaVuSansMono-Bold.ttf
 /usr/share/fonts/DejaVuSans.ttf /usr/share/fonts/DejaVuSans.ttf - 0 assets/fonts/DejaVuSans.ttf
