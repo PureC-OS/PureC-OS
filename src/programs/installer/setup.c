@@ -16,6 +16,7 @@ bool setup_build_request(const struct install_settings *settings,
     pc_copy(request->hostname,settings->hostname,sizeof(request->hostname));
     pc_copy(request->user_name,settings->user_name,sizeof(request->user_name));
     pc_copy(request->user_gecos,settings->user_gecos,sizeof(request->user_gecos));
+    pc_copy(request->timezone,settings->timezone,sizeof(request->timezone));
     if(!account_hash_password(settings->root_password,request->root_hash,
                               sizeof(request->root_hash))) return false;
     if(!account_hash_password(settings->user_password,request->user_hash,

@@ -344,6 +344,14 @@ static int installer_main(void) {
             if (app.page == PAGE_COMPUTER || app.page == PAGE_ACCOUNT)
                 dirty = true;
         }
+        if (app.page == PAGE_TIME) {
+            struct time_info now;
+            static int64_t shown_second = -1;
+            if (pc_time_get(&now) == 0 && now.unix_seconds != shown_second) {
+                shown_second = now.unix_seconds;
+                dirty = true;
+            }
+        }
 
         if (app.page == PAGE_INSTALL) {
             set_closable(false);

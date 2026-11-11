@@ -1,5 +1,8 @@
 #include "app.h"
 #include "../../fs/install_accounts.h"
+#include "../../kernel/time/civil.h"
+#include "../../kernel/time/tz.h"
+#include "../../libc/include/purec.h"
 
 #define C_CARD 0x14172AU
 #define C_SIDE 0x0E1121U
@@ -35,7 +38,8 @@ enum {
     ID_SAME,
     ID_ERASE,
     ID_REVEAL,
-    ID_DISK0 = 100
+    ID_DISK0 = 100,
+    ID_TZ0 = 200
 };
 
 enum { STYLE_PRIMARY = 0, STYLE_SECONDARY, STYLE_DANGER };
@@ -46,8 +50,8 @@ struct lay {
 
 static struct lay L;
 
-static const char *const step_names[APP_PHASES] = {
-    "Welcome", "Disk", "Computer", "Account", "Review", "Install"};
+static const char *const step_names[APP_STEPS] = {
+    "Welcome", "Disk", "Computer", "Time", "Account", "Review", "Install"};
 
 static int32_t imin(int32_t a, int32_t b) { return a < b ? a : b; }
 static int32_t imax(int32_t a, int32_t b) { return a > b ? a : b; }
@@ -396,8 +400,11 @@ static void back(struct app *a, struct ui *u) {
     case PAGE_COMPUTER:
         go(a, u, PAGE_DISK);
         break;
-    case PAGE_ACCOUNT:
+    case PAGE_TIME:
         go(a, u, PAGE_COMPUTER);
+        break;
+    case PAGE_ACCOUNT:
+        go(a, u, PAGE_TIME);
         break;
     case PAGE_REVIEW:
         go(a, u, PAGE_ACCOUNT);
@@ -415,12 +422,14 @@ static int32_t step_of(const struct app *a) {
         return 1;
     case PAGE_COMPUTER:
         return 2;
-    case PAGE_ACCOUNT:
+    case PAGE_TIME:
         return 3;
-    case PAGE_REVIEW:
+    case PAGE_ACCOUNT:
         return 4;
-    default:
+    case PAGE_REVIEW:
         return 5;
+    default:
+        return 6;
     }
 }
 
@@ -445,13 +454,13 @@ static void draw_sidebar(struct app *a, struct ui *u) {
     bool finished = a->page == PAGE_DONE;
     bool failed = a->page == PAGE_FAILED;
     int32_t sy = y + 130;
-    int32_t gap = imin(58, (L.ch - 130 - 80) / APP_PHASES);
-    for (int32_t i = 0; i < APP_PHASES; i++) {
+    int32_t gap = imin(58, (L.ch - 130 - 80) / APP_STEPS);
+    for (int32_t i = 0; i < APP_STEPS; i++) {
         int32_t cy = sy + i * gap + 15;
         int32_t cx = x + 28 + 15;
         bool done = i < cur || finished;
         bool now = i == cur && !finished;
-        if (i + 1 < APP_PHASES)
+        if (i + 1 < APP_STEPS)
             ui_fill(c, cx - 1, cy + 18, 2, gap - 36,
                     (i < cur || finished) ? C_ACC0 : C_BORDER, 255);
         if (now && failed) {
@@ -726,6 +735,172 @@ static void page_computer(struct app *a, struct ui *u) {
     if (bk || u->in.key == 27)
         back(a, u);
     else if (next || (ok && (u->in.key == 13 || u->in.key == 10)))
+        go(a, u, PAGE_TIME);
+}
+
+static void two_digits(char *out, uint32_t v) {
+    out[0] = (char)('0' + (v / 10) % 10);
+    out[1] = (char)('0' + v % 10);
+}
+
+static void clock_text(int64_t local, bool seconds, char *out) {
+    struct civil_time t;
+    unix_to_civil(local, &t);
+    two_digits(out, t.hour);
+    out[2] = ':';
+    two_digits(out + 3, t.minute);
+    if (seconds) {
+        out[5] = ':';
+        two_digits(out + 6, t.second);
+        out[8] = 0;
+    } else {
+        out[5] = 0;
+    }
+}
+
+static void date_text(int64_t local, char *out, uint32_t cap) {
+    static const char *const days[7] = {"Sunday", "Monday", "Tuesday",
+                                        "Wednesday", "Thursday", "Friday",
+                                        "Saturday"};
+    static const char *const months[12] = {
+        "January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December"};
+    struct civil_time t;
+    unix_to_civil(local, &t);
+    int64_t d = local / 86400;
+    if (local < 0 && local % 86400)
+        d--;
+    int64_t w = (d + 4) % 7;
+    if (w < 0)
+        w += 7;
+    out[0] = 0;
+    cat(out, cap, days[w]);
+    cat(out, cap, ", ");
+    char n[3] = {0};
+    if (t.day >= 10) {
+        two_digits(n, t.day);
+    } else {
+        n[0] = (char)('0' + t.day);
+    }
+    cat(out, cap, n);
+    cat(out, cap, " ");
+    cat(out, cap, months[(t.month - 1) % 12]);
+    char y[5] = {(char)('0' + (t.year / 1000) % 10),
+                 (char)('0' + (t.year / 100) % 10),
+                 (char)('0' + (t.year / 10) % 10),
+                 (char)('0' + t.year % 10), 0};
+    cat(out, cap, " ");
+    cat(out, cap, y);
+}
+
+static int64_t now_utc(void) {
+    struct time_info info;
+    if (pc_time_get(&info) < 0)
+        return 0;
+    return info.unix_seconds;
+}
+
+static void page_time(struct app *a, struct ui *u) {
+    struct ui_canvas *c = &u->c;
+    header(a, u, "Time and region",
+           "Pick your time zone. The hardware clock is kept in UTC.");
+    int32_t count = (int32_t)tz_count();
+    if (a->tz_selected < 0 || a->tz_selected >= count)
+        a->tz_selected = 0;
+    const struct tz_zone *sel = tz_at((uint32_t)a->tz_selected);
+    int64_t utc = now_utc();
+    int32_t off = tz_offset_minutes(sel, utc);
+    int64_t local = utc + (int64_t)off * 60;
+
+    int32_t y = L.py + 86;
+    int32_t ph = 96;
+    ui_rrect(c, L.px, y, L.pw, ph, 16, ui_solid(0x0A0D1B), 255);
+    ui_rrect_stroke(c, L.px, y, L.pw, ph, 16, 1, ui_solid(C_BORDER), 255);
+    char big[10];
+    clock_text(local, true, big);
+    ui_text(c, L.px + 22, y + 18, big, C_TEXT, 16, F_BOLD);
+    char date[48];
+    date_text(local, date, sizeof(date));
+    ui_text(c, L.px + 22, y + 46, date, C_TEXT2, 8, F_BODY);
+    char offs[10];
+    tz_format_offset(off, offs);
+    char line[96] = "";
+    cat(line, sizeof(line), sel->name);
+    cat(line, sizeof(line), "  ");
+    cat(line, sizeof(line), offs);
+    if (tz_is_dst(sel, utc))
+        cat(line, sizeof(line), "  summer time");
+    ui_text(c, L.px + 22, y + 66, line, C_ACC0, 8, F_BODY);
+    char utcs[24] = "UTC ";
+    char uc[10];
+    clock_text(utc, true, uc);
+    cat(utcs, sizeof(utcs), uc);
+    ui_text(c, L.px + L.pw - 22 - ui_text_w(utcs, 8), y + 22, utcs, C_MUTED,
+            8, F_BODY);
+
+    int32_t top = y + ph + 14;
+    int32_t rh = 40, gap = 6;
+    int32_t room = L.fy - 24 - top;
+    int32_t visible = imax(1, room / (rh + gap));
+    int32_t maxscroll = imax(0, count - visible);
+    if (u->in.wheel)
+        a->tz_scroll = imax(0, imin(maxscroll, a->tz_scroll - u->in.wheel));
+    if (u->in.special == 10 && a->tz_selected > 0)
+        a->tz_selected--;
+    if (u->in.special == 11 && a->tz_selected + 1 < count)
+        a->tz_selected++;
+    if (u->in.special == 10 || u->in.special == 11) {
+        if (a->tz_selected < a->tz_scroll)
+            a->tz_scroll = a->tz_selected;
+        if (a->tz_selected >= a->tz_scroll + visible)
+            a->tz_scroll = a->tz_selected - visible + 1;
+    }
+    if (a->tz_scroll > maxscroll)
+        a->tz_scroll = maxscroll;
+    for (int32_t row = 0; row < visible && a->tz_scroll + row < count; row++) {
+        int32_t i = a->tz_scroll + row;
+        const struct tz_zone *z = tz_at((uint32_t)i);
+        int32_t ry = top + row * (rh + gap);
+        bool hot = inside(u, L.px, ry, L.pw, rh);
+        bool on = i == a->tz_selected;
+        if (hot && u->in.pressed)
+            u->active = ID_TZ0 + i;
+        if (hot && u->in.released && u->active == ID_TZ0 + i)
+            a->tz_selected = i, on = true;
+        ui_rrect(c, L.px, ry, L.pw, rh, 12,
+                 ui_solid(on ? 0x181D3C : (hot ? C_ROW_HOT : C_ROW)), 255);
+        ui_rrect_stroke(c, L.px, ry, L.pw, rh, 12, on ? 2 : 1,
+                        on ? ui_hgrad(C_ACC0, C_ACC1) : ui_solid(C_BORDER),
+                        255);
+        int32_t zo = tz_offset_minutes(z, utc);
+        char zoff[10];
+        tz_format_offset(zo, zoff);
+        ui_text(c, L.px + 16, ry + 8, z->city, C_TEXT, 8, F_BOLD);
+        ui_text(c, L.px + 16, ry + 24, z->name, C_MUTED, 8, F_BODY);
+        char zt[8];
+        clock_text(utc + (int64_t)zo * 60, false, zt);
+        int32_t tw = ui_text_w(zt, 16);
+        ui_text(c, L.px + L.pw - 16 - tw, ry + 12, zt, on ? C_TEXT : C_TEXT2,
+                16, F_BODY);
+        ui_text(c, L.px + L.pw - 32 - tw - ui_text_w(zoff, 8), ry + 16, zoff,
+                C_ACC0, 8, F_BODY);
+    }
+    if (maxscroll > 0) {
+        int32_t th = visible * (rh + gap) - gap;
+        int32_t bh = imax(24, th * visible / count);
+        int32_t by = top + (th - bh) * a->tz_scroll / maxscroll;
+        ui_rrect(c, L.px + L.pw + 10, top, 4, th, 2, ui_solid(C_BORDER), 255);
+        ui_rrect(c, L.px + L.pw + 10, by, 4, bh, 2, ui_hgrad(C_ACC0, C_ACC1),
+                 255);
+    }
+    ui_copy(a->s.timezone, tz_at((uint32_t)a->tz_selected)->name,
+            sizeof(a->s.timezone));
+
+    bool next, bk;
+    footer(a, u, "Continue", true, STYLE_PRIMARY, &next, &bk);
+    if (bk || u->in.key == 27)
+        back(a, u);
+    else if (next || u->in.key == 13 || u->in.key == 10)
         go(a, u, PAGE_ACCOUNT);
 }
 
@@ -826,7 +1001,7 @@ static void page_review(struct app *a, struct ui *u) {
     const struct storage_device_info *d = &a->disks[a->selected];
     int32_t y = L.py + 86;
     int32_t colw = (L.pw - 20) / 2;
-    int32_t h = 176;
+    int32_t h = 206;
     ui_rrect(c, L.px, y, colw, h, 16, ui_solid(C_ROW), 255);
     ui_rrect_stroke(c, L.px, y, colw, h, 16, 1, ui_solid(C_BORDER), 255);
     ui_text_bold(c, L.px + 20, y + 16, "TARGET DISK", C_ACC0, 8);
@@ -851,6 +1026,8 @@ static void page_review(struct app *a, struct ui *u) {
     summary_row(u, x2 + 20, y + 80, colw, "USER", who);
     summary_row(u, x2 + 20, y + 120, colw, "ADMINISTRATOR",
                 a->same_root ? "root (same password)" : "root");
+    summary_row(u, x2 + 20, y + 160, colw, "TIME ZONE",
+                a->s.timezone[0] ? a->s.timezone : "UTC");
 
     int32_t wy = y + h + 18;
     ui_rrect(c, L.px, wy, L.pw, 62, 14, ui_solid(0x23121C), 255);
@@ -1005,6 +1182,12 @@ void view_background(struct ui_canvas *c, int32_t ox, int32_t oy, int32_t sw,
 void view_init(struct app *a) {
     a->page = PAGE_WELCOME;
     ui_copy(a->s.hostname, "purec", sizeof(a->s.hostname));
+    char zone[32] = "";
+    a->tz_selected = 0;
+    if (pc_time_zone_get(zone, sizeof(zone)) > 0 && tz_find(zone) >= 0)
+        a->tz_selected = tz_find(zone);
+    ui_copy(a->s.timezone, tz_at((uint32_t)a->tz_selected)->name,
+            sizeof(a->s.timezone));
     a->same_root = true;
     a->selected = -1;
     for (int32_t i = 0; i < a->disk_count; i++)
@@ -1027,6 +1210,9 @@ void view_frame(struct app *a, struct ui *u) {
         break;
     case PAGE_COMPUTER:
         page_computer(a, u);
+        break;
+    case PAGE_TIME:
+        page_time(a, u);
         break;
     case PAGE_ACCOUNT:
         page_account(a, u);

@@ -12,6 +12,7 @@ struct install_settings {
     char user_name[INSTALL_USER_MAX];
     char user_gecos[INSTALL_GECOS_MAX];
     char user_password[SETUP_PASSWORD_MAX];
+    char timezone[32];
 };
 
 bool setup_build_request(const struct install_settings *settings,
