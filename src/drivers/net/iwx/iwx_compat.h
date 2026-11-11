@@ -36,4 +36,18 @@ struct ieee80211_frame {
     uint8_t i_seq[2];
 } __packed;
 
+#define setbit(a, i) ((a)[(i) / 8] |= (uint8_t)(1u << ((i) % 8)))
+#define clrbit(a, i) ((a)[(i) / 8] &= (uint8_t)~(1u << ((i) % 8)))
+#define isset(a, i) ((a)[(i) / 8] & (1u << ((i) % 8)))
+
+static inline int fls(int x)
+{
+    return x ? 32 - __builtin_clz((unsigned int)x) : 0;
+}
+
+static inline int flsl(long x)
+{
+    return x ? 64 - __builtin_clzl((unsigned long)x) : 0;
+}
+
 #include "../../../../third_party/openbsd-iwx/if_iwxreg.h"
