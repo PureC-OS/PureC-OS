@@ -95,6 +95,7 @@ C_SOURCES := \
 	drivers/mouse/usb_mouse.c \
 	drivers/mouse/vbox_mouse.c \
 	drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.c \
+	drivers/net/iwx/iwx.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \

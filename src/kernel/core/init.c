@@ -1,4 +1,5 @@
 #include <acpi/acpi.h>
+#include "../../drivers/net/iwx/iwx.h"
 #include "../../io/swap.h"
 #include "init.h"
 #include "../../drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.h"
@@ -62,6 +63,7 @@ void init_process_start(void)
   journal_start();
   (void)purec_i2c_hid_touchpad_start();
   acpi_ec_start_event_thread();
+  (void)iwx_start();
   int32_t net_pid = process_spawn_service(net_service_thread, 0, "net-rx", 2,
                                           -1, SCHED_QOS_UTILITY,
                                           PROCESS_CAP_NET_ADMIN);

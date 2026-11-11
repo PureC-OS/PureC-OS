@@ -2,6 +2,14 @@
 
 ## V1.2.29
 
+### Wi-Fi Intel AX201 (iwx), этап 1: загрузка прошивки и «alive» (`src/drivers/net/iwx/`, `third_party/openbsd-iwx/`)
+- Основа: драйвер iwx(4) из OpenBSD (ISC, `if_iwx.c` 1.230), а не Linux iwlwifi: iwlwifi завязан на mac80211/cfg80211. В `third_party/openbsd-iwx/` лежат оригинальные `if_iwx.c`, `if_iwxreg.h`, `if_iwxvar.h` и прошивка `firmware/iwx-so-a0-hr-b0-77` (это `iwlwifi-so-a0-hr-b0-77.ucode` из пакета linux-firmware-intel, с лицензией Intel рядом).
+- Регистры и структуры берутся из `if_iwxreg.h` без изменений через `iwx_compat.h` (типы, `__packed`, `htole*`, минимальные `ieee80211_frame` и константы).
+- `iwx.c` (~1960 строк, перенос логики iwx): только 8086:51f0 (AX201 CNVi на Alder Lake-P, MAC SO, RF HR2), путь AX210-семейства gen3: prepare_card_hw, sw_reset, apm_init, разбор TLV прошивки (52 секции: LMAC 15, UMAC 15, paging 20; IML), context info gen3 и prph scratch, кольца RX (512) и командной TX-очереди (256 TFD), запуск через `CPU_INIT_RUN`, ожидание ALIVE (аппаратная причина и пакет v6), шаг PNVM через doorbell ISR6, команды `INIT_EXTENDED_CFG` и `NVM_ACCESS_COMPLETE`, ожидание `INIT_COMPLETE`, MAC-адрес и `NVM_GET_INFO`, затем остановка устройства. Работает опросом, без прерываний; каждый шаг и каждый таймаут пишет строки `iwx:` с регистрами, при ошибке прошивки выводятся таблицы ошибок LMAC/UMAC.
+- Прошивка в `assets/manifest.txt`: модуль Limine (драйвер берёт её из памяти через `boot_get_module`) и `/lib/firmware/` на диске при установке (запасной путь через VFS).
+- Запускается потоком ядра `iwx` из `init.c`; без устройства 51f0 (VirtualBox) сразу пишет «no supported device» и выходит.
+- Проверено: сборка ядра; разбор прошивки, построение таблиц и TFD на хосте через заглушки. На железе не запускалось.
+
 ### Железо ASUS (по логу с ноутбука): BAR для I2C-контроллера тачпада, биты статуса EC
 - Тачпад теперь находится по `_CID` (`candidate ETPD hid=ASUE1411 cid=PNP0C50 addr=0x15 irq=40`), тайминги SSCN/FMCN читаются. Но прошивка ASUS оставляет BAR0 у LPSS I2C 00:15.0/00:15.1 пустым (Linux назначает его сам: `BAR 0 [mem 0x4017001000] assigned`), а драйвер такие контроллеры молча пропускал. Теперь, если BAR0 пустой, драйвер берёт 64-битное окно памяти корневого моста PCI из ACPI `_CRS` (`acpi_pci_root_mem64_window`, PNP0A08/PNP0A03), выделяет страницу у верхней границы окна (проверяя, что там нет BAR других устройств), записывает BAR и включает декодирование. Каждый пропущенный контроллер пишется в лог с сырым BAR0.
 - Слот 0x1f (LPC, SMBus, SPI) исключён из кандидатов: в прошлый раз драйвер сбросил LPSS и записал REMAP на SPI-контроллере флеш-памяти 00:1f.5.
