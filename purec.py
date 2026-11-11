@@ -812,7 +812,7 @@ def _ready() -> bool:
     return _qemu_ok() and _ensure_iso()
 
 def _qemu_base() -> List[str]:
-    cmd = ["qemu-system-x86_64", "-cdrom", ISO, "-m", "512M", "-boot", "d"]
+    cmd = ["qemu-system-x86_64", "-cdrom", ISO, "-m", "2G", "-smp", "10", "-boot", "d"]
     if os.access("/dev/kvm", os.R_OK | os.W_OK):
         cmd.append("-enable-kvm")
     else:
