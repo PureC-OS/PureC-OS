@@ -384,6 +384,7 @@ struct install_account_request {
   char user_name[INSTALL_USER_MAX];
   char user_gecos[INSTALL_GECOS_MAX];
   char user_hash[INSTALL_HASH_MAX];
+  char timezone[32];
 };
 
 struct install_start_request {

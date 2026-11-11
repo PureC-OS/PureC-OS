@@ -1,3 +1,5 @@
+#include "../kernel/time/tz.h"
+#include "../kernel/time/wallclock.h"
 #include "install.h"
 #include "ext2/include/ext2_block.h"
 #include "ext2/include/ext2_dir.h"
@@ -700,6 +702,27 @@ static int32_t install_write_accounts(void)
     status = write_account_file("/etc/hostname", files.hostname, 0644);
     if (status < 0)
         return status;
+    if (pending_accounts.timezone[0])
+    {
+        char zone[sizeof(pending_accounts.timezone) + 2];
+        uint32_t n = 0;
+        while (n < sizeof(pending_accounts.timezone) - 1 && pending_accounts.timezone[n])
+        {
+            zone[n] = pending_accounts.timezone[n];
+            n++;
+        }
+        zone[n] = '\n';
+        zone[n + 1] = 0;
+        if (tz_find(pending_accounts.timezone) >= 0)
+        {
+            status = write_account_file("/etc/timezone", zone, 0644);
+            if (status < 0)
+                return status;
+            (void)wallclock_set_zone(pending_accounts.timezone);
+        }
+        else
+            klogf(KLOG_WARN, "install: unknown timezone '%s' ignored", pending_accounts.timezone);
+    }
     status = payload_mkdir("/root");
     if (status < 0)
         return status;
