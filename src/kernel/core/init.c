@@ -1,3 +1,4 @@
+#include <acpi/acpi.h>
 #include "../../io/swap.h"
 #include "init.h"
 #include "../../drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.h"
@@ -60,6 +61,7 @@ void init_process_start(void)
     scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
   journal_start();
   (void)purec_i2c_hid_touchpad_start();
+  acpi_ec_start_event_thread();
   int32_t net_pid = process_spawn_service(net_service_thread, 0, "net-rx", 2,
                                           -1, SCHED_QOS_UTILITY,
                                           PROCESS_CAP_NET_ADMIN);
