@@ -68,7 +68,7 @@ static uint32_t compose_depth = 0;
 static bool dirty_valid = false;
 static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 static uint32_t cur_x=12, cur_y=12;
-static uint32_t fg=0xCDD6F4, bg=0x1E1E2E;
+static uint32_t fg=0xCDD6F4, bg=0x000000;
 #define GOP_PRESENT_MIN_INTERVAL_TICKS 16
 #define GOP_DEFERRED_FLUSH_TICKS 50
 static uint64_t last_present_tick = 0;
@@ -195,7 +195,7 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
     }
     gop.bpp = fb->bpp;
     gop.available = true;
-    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x000000;
     if(backbuffer
        && (backbuffer_width!=gop.width || backbuffer_height!=gop.height)){
         pmm_free_contiguous(backbuffer_phys, backbuffer_pages);
@@ -314,7 +314,7 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
     gop.available=true;
     if(!scale_fits(scale_num,scale_den)) scale_num=scale_den=1;
     apply_logical_size();
-    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x000000;
     front_clear_physical();
     surface_reset();
     return true;
@@ -341,7 +341,7 @@ bool gop_set_scale_percent(uint32_t percent){
     scale_num=num;
     scale_den=den;
     apply_logical_size();
-    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x1E1E2E;
+    cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x000000;
     front_clear_physical();
     surface_reset();
     return true;

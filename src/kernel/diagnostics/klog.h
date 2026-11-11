@@ -35,7 +35,7 @@ uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
 uint64_t klog_total_bytes(void);
 uint64_t klog_uptime_us(void);
 
-#define KLOG_BG 0x1E1E2E
+#define KLOG_BG 0x000000
 #define KLOG_FG 0xCDD6F4
 #define KLOG_OK_FG 0xA6E3A1
 #define KLOG_INFO_FG 0x89B4FA
