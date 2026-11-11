@@ -310,3 +310,4 @@
 /usr/share/icons/settings.icn /usr/share/icons/settings.icn - 0 assets/icons/settings.icn
 /usr/share/icons/terminal.icn /usr/share/icons/terminal.icn - 0 assets/icons/terminal.icn
 /usr/share/icons/tetris.icn /usr/share/icons/tetris.icn - 0 assets/icons/tetris.icn
+/lib/firmware/iwx-so-a0-hr-b0-77 /lib/firmware/iwx-so-a0-hr-b0-77 - 0 third_party/openbsd-iwx/firmware/iwx-so-a0-hr-b0-77
