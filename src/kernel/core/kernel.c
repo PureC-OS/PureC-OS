@@ -94,8 +94,9 @@ void kernel_main(struct limine_framebuffer *fb)
     {
       extern uint16_t vbe_debug_id(void);
       g_vbe_probe_id = vbe_debug_id();
-      klogf(KLOG_WARN, "vbe: dispi probe id=0x%x %s", g_vbe_probe_id,
-            (g_vbe_probe_id >= 0xB0C0 && g_vbe_probe_id <= 0xB0C5) ? "VBE_ALIVE" : "VBE_SILENT");
+      int vbe_alive = g_vbe_probe_id >= 0xB0C0 && g_vbe_probe_id <= 0xB0C5;
+      klogf(vbe_alive ? KLOG_INFO : KLOG_WARN, "vbe: dispi probe id=0x%x %s", g_vbe_probe_id,
+            vbe_alive ? "VBE_ALIVE" : "VBE_SILENT");
     }
     if (pref != 1 && mmio_is_ready())
     {
@@ -146,7 +147,7 @@ void kernel_main(struct limine_framebuffer *fb)
   klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
   {
     extern const char *svga_status_line(void);
-    klogf(KLOG_WARN, "video late: %s vbe=0x%x", svga_status_line(), g_vbe_probe_id);
+    klogf(KLOG_INFO, "video late: %s vbe=0x%x", svga_status_line(), g_vbe_probe_id);
   }
 
   init_process_start();

@@ -351,7 +351,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     uint32_t cls_raw = pci_read_config32(g.bus, g.slot, g.func, 0x08);
     uint32_t bar1_raw = pci_read_config32(g.bus, g.slot, g.func, 0x14);
     uint32_t bar2_raw = pci_read_config32(g.bus, g.slot, g.func, 0x18);
-    klogf(KLOG_WARN, "svga: pci=%02x:%02x.%u dev=0x%x cmd=0x%x cls=0x%x bar0=0x%x bar1=0x%x bar2=0x%x",
+    klogf(KLOG_INFO, "svga: pci=%02x:%02x.%u dev=0x%x cmd=0x%x cls=0x%x bar0=0x%x bar1=0x%x bar2=0x%x",
           g.bus, g.slot, g.func, id_raw, cmd_raw & 0xFFFFu, cls_raw, bar0_raw, bar1_raw, bar2_raw);
     if (!bar0) {
         st_set("svga: no-bar0");
@@ -372,13 +372,13 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         outl16(0xCF8, (uint32_t)(0x80000000u | ((uint32_t)g.bus << 16) |
                                  ((uint32_t)g.slot << 11) | ((uint32_t)g.func << 8)));
         uint32_t probe = inl16(0xCFC);
-        klogf(KLOG_WARN, "svga: io selftest cfc=0x%x expect=0x%x %s",
+        klogf(probe == expect ? KLOG_INFO : KLOG_WARN, "svga: io selftest cfc=0x%x expect=0x%x %s",
               probe, expect, probe == expect ? "IO_OK" : "IO_BROKEN");
     }
     {
         outl16(g.io_base, 15);
         uint32_t vram_probe = inl16((uint16_t)(g.io_base + 1));
-        klogf(KLOG_WARN, "svga: vram-size-first probe=0x%x", vram_probe);
+        klogf(KLOG_INFO, "svga: vram-size-first probe=0x%x", vram_probe);
         st_set("svga: vram=");
         st_hex(vram_probe);
     }
@@ -449,7 +449,7 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     uint32_t act_bpp = svga_reg_read(g.io_base, SVGA_REG_BPP);
     uint32_t bpl = svga_reg_read(g.io_base, SVGA_REG_BYTES_PER_LINE);
     uint32_t fboff = svga_reg_read(g.io_base, SVGA_REG_FB_OFFSET);
-    klogf(KLOG_WARN, "svga: want %ux%ux%u card %ux%ux%u bpl=%u fboff=0x%x",
+    klogf(KLOG_INFO, "svga: want %ux%ux%u card %ux%ux%u bpl=%u fboff=0x%x",
           want_w, want_h, want_bpp, act_w, act_h, act_bpp, bpl, fboff);
     if (act_w < 64 || act_w > 7680 || act_h < 64 || act_h > 4320 ||
         act_bpp != 32 || bpl != act_w * 4u) {
