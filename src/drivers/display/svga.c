@@ -3,6 +3,7 @@
 #include "../../arch/x86_64/mmio.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
+#include "gop.h"
 #include <stdbool.h>
 
 #define SVGA_PCI_VENDOR 0x15ADu
@@ -326,6 +327,20 @@ static bool svga_fifo_reset(uint64_t fifo_sz) {
     return true;
 }
 
+static uint32_t init_want_w, init_want_h, init_bpl, init_fboff;
+
+void svga_log_mode(void) {
+    if (!g.ready)
+        return;
+    klogf(KLOG_INFO, "svga: want %ux%ux32 card %ux%ux%u bpl=%u fboff=0x%x",
+          init_want_w, init_want_h, g.width, g.height, g.bpp, init_bpl, init_fboff);
+    klogf(KLOG_OK, "svga: %ux%ux%u io=0x%x fb=0x%llx (%lluK) fifo=0x%llx (%lluK) caps=0x%x id=0x%x",
+          g.width, g.height, g.bpp, g.io_base,
+          (unsigned long long)g.fb_phys, (unsigned long long)(g.fb_size / 1024),
+          (unsigned long long)g.fifo_phys, (unsigned long long)(g.fifo_size / 1024),
+          g.caps, g.dev_id);
+}
+
 bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     memset(&g, 0, sizeof(g));
     struct svga_probe_ctx c = {0};
@@ -439,6 +454,10 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         want_h = 768;
     if (want_bpp != 32)
         want_bpp = 32;
+    if (gop_is_available()) {
+        gop_clear(0x1E1E2E);
+        gop_present_forced();
+    }
     svga_reg_write(g.io_base, SVGA_REG_ENABLE, 0);
     svga_reg_write(g.io_base, SVGA_REG_WIDTH, want_w);
     svga_reg_write(g.io_base, SVGA_REG_HEIGHT, want_h);
@@ -449,12 +468,15 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
     uint32_t act_bpp = svga_reg_read(g.io_base, SVGA_REG_BPP);
     uint32_t bpl = svga_reg_read(g.io_base, SVGA_REG_BYTES_PER_LINE);
     uint32_t fboff = svga_reg_read(g.io_base, SVGA_REG_FB_OFFSET);
-    klogf(KLOG_INFO, "svga: want %ux%ux%u card %ux%ux%u bpl=%u fboff=0x%x",
-          want_w, want_h, want_bpp, act_w, act_h, act_bpp, bpl, fboff);
+    init_want_w = want_w;
+    init_want_h = want_h;
+    init_bpl = bpl;
+    init_fboff = fboff;
     if (act_w < 64 || act_w > 7680 || act_h < 64 || act_h > 4320 ||
         act_bpp != 32 || bpl != act_w * 4u) {
         st_set("svga: bad-geometry");
-        klog(KLOG_WARN, "svga: card geometry mismatch, GOP fallback");
+        klogf(KLOG_WARN, "svga: want %ux%ux%u card %ux%ux%u bpl=%u fboff=0x%x, GOP fallback",
+              want_w, want_h, want_bpp, act_w, act_h, act_bpp, bpl, fboff);
         return false;
     }
     g.width = act_w;
@@ -507,11 +529,6 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
         return false;
     }
     g.ready = true;
-    klogf(KLOG_OK, "svga: %ux%ux%u io=0x%x fb=0x%llx (%lluK) fifo=0x%llx (%lluK) caps=0x%x id=0x%x",
-          g.width, g.height, g.bpp, g.io_base,
-          (unsigned long long)g.fb_phys, (unsigned long long)(fb_sz / 1024),
-          (unsigned long long)g.fifo_phys, (unsigned long long)(fifo_sz / 1024),
-          g.caps, g.dev_id);
     st_ok();
     return true;
 }

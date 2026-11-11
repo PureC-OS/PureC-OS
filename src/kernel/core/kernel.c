@@ -102,8 +102,10 @@ void kernel_main(struct limine_framebuffer *fb)
     {
       if (svga_init(1024, 768, 32))
       {
-        if (gop_apply_live(svga_fb_virt(), svga_width(), svga_height(),
-                           svga_pitch_pixels(), svga_bpp()))
+        bool live = gop_apply_live(svga_fb_virt(), svga_width(), svga_height(),
+                                   svga_pitch_pixels(), svga_bpp());
+        svga_log_mode();
+        if (live)
           klog(KLOG_OK, "video: VMware SVGA II active (FIFO UPDATE)");
         else
           klog(KLOG_WARN, "video: svga mapped but gop_apply_live failed, keep GOP");
