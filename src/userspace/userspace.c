@@ -293,24 +293,30 @@ int32_t userspace_run_program(const char *path){
 }
 
 
-static void draw_power_button(void){
-    struct personalization_colors th;
-    desktop_theme(&th);
-    uint32_t x = desktop_width - 38;
-    display_draw_rect(x, 3, 30, 22, th.border);
-    display_draw_text_at(x + 7, 9, "PWR", th.text, th.border);
+static void focused_title(char *out, uint32_t cap){
+    out[0] = '\0';
+    struct gui_task_info tasks[32];
+    uint32_t count = window_manager_tasks(tasks, 32);
+    if(count > 32) count = 32;
+    for(uint32_t i = 0; i < count; i++){
+        if(!(tasks[i].flags & GUI_TASK_FOCUSED)) continue;
+        uint32_t n = 0;
+        for(; tasks[i].name[n] && n + 1 < cap; n++) out[n] = tasks[i].name[n];
+        out[n] = '\0';
+        return;
+    }
+}
+
+static void draw_top_panel(void){
+    char title[40];
+    focused_title(title, sizeof(title));
+    top_panel_draw(desktop_width, title);
+    audio_panel_draw(desktop_width);
 }
 
 static void draw_power_menu(void){
     if(!power_menu_visible) return;
-    struct personalization_colors th;
-    desktop_theme(&th);
-    uint32_t x = desktop_width - 158;
-    display_draw_rect(x, 28, 150, 62, th.border);
-    display_draw_rect(x + 2, 30, 146, 28, th.window);
-    display_draw_rect(x + 2, 60, 146, 28, th.window);
-    display_draw_text_at(x + 12, 39, "Restart",   th.text,   th.window);
-    display_draw_text_at(x + 12, 69, "Power off", th.danger, th.window);
+    top_panel_draw_power_menu(desktop_width);
 }
 
 
@@ -324,11 +330,8 @@ static void draw_desktop(void){
     desktop_theme(&dth);
     if(!wallpaper_draw())
         display_clear(dth.desktop);
-    display_draw_rect(0, 0, desktop_width, TOPBAR_HEIGHT, dth.titlebar);
-    display_draw_text_at(12, 8, "PureC OS", dth.accent, dth.titlebar);
-    audio_panel_draw(desktop_width);
     draw_desktop_icons();
-    draw_power_button();
+    draw_top_panel();
     bottom_panel_draw(desktop_width, desktop_height);
 }
 
@@ -458,8 +461,10 @@ static void handle_desktop_mouse(void){
         redraw = redraw || panel_redraw;
         if(consumed) service_bottom_panel_actions();
     }
+    uint32_t power_x, power_y, power_w, power_h;
+    top_panel_power_rect(desktop_width, &power_x, &power_y, &power_w, &power_h);
     if(pressed && !consumed && point_inside(mouse.x, mouse.y,
-                               desktop_width - 38, 3, 30, 22)){
+                               power_x, power_y, power_w, power_h)){
         power_menu_visible = !power_menu_visible;
         consumed = true;
         redraw   = true;
