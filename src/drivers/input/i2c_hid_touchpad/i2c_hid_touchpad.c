@@ -701,7 +701,8 @@ static void collect_controllers(const struct pci_device_info *pci, void *context
 {
     struct controller_set *c = context;
     if (c->count == MAX_CONTROLLERS || pci->vendor_id != INTEL_VENDOR_ID ||
-        pci->class_code != PCI_CLASS_SERIAL_BUS || pci->subclass != PCI_SUBCLASS_SERIAL_OTHER)
+        pci->class_code != PCI_CLASS_SERIAL_BUS || pci->subclass != PCI_SUBCLASS_SERIAL_OTHER ||
+        pci->slot == 0x1f)
         return;
     struct candidate *entry = &c->list[c->count++];
     entry->pci = *pci;
@@ -1021,6 +1022,74 @@ static void acpi_controller_prepare(const char *controller_path)
           acpi_fs_timing.sda_hold);
 }
 
+struct bar_scan {
+    uint64_t lo, hi;
+    bool clash;
+};
+
+static void bar_clash_visitor(const struct pci_device_info *pci, void *context)
+{
+    struct bar_scan *scan = context;
+    for (uint8_t i = 0; i < 6; i++)
+    {
+        uint64_t base = pci_read_bar(pci->bus, pci->slot, pci->function, i);
+        if (base && !(base & 1) && (base & ~0xFULL) >= scan->lo && (base & ~0xFULL) < scan->hi)
+            scan->clash = true;
+    }
+}
+
+static uint64_t next_bar_address;
+
+static uint64_t assign_bar0(const struct pci_device_info *pci)
+{
+    uint32_t low = pci_read_config32(pci->bus, pci->slot, pci->function, 0x10);
+    bool is64 = (low & 0x6) == 0x4;
+    if (low & 1)
+        return 0;
+    if (!next_bar_address)
+    {
+        uint64_t min = 0, max = 0;
+        if (!is64 || !acpi_pci_root_mem64_window(&min, &max))
+        {
+            klogf(KLOG_WARN, "i2c-hid: %02x:%02x.%u BAR0 unassigned and no 64-bit PCI window", pci->bus, pci->slot,
+                  pci->function);
+            return 0;
+        }
+        uint64_t candidate = ((max + 1) & ~0xFFFFFULL) - 0x100000ULL;
+        bool ok = false;
+        for (uint32_t tries = 0; tries < 32 && candidate > min + 0x100000ULL; tries++)
+        {
+            struct bar_scan scan = {candidate, candidate + 0x100000ULL, false};
+            pci_enumerate(bar_clash_visitor, &scan);
+            if (!scan.clash)
+            {
+                ok = true;
+                break;
+            }
+            candidate -= 0x1000000ULL;
+        }
+        if (!ok)
+        {
+            klog(KLOG_WARN, "i2c-hid: no free MMIO range for BAR0");
+            return 0;
+        }
+        klogf(KLOG_INFO, "i2c-hid: PCI window 0x%llx-0x%llx, BAR pool at 0x%llx", (unsigned long long)min,
+              (unsigned long long)max, (unsigned long long)candidate);
+        next_bar_address = candidate;
+    }
+    uint64_t address = next_bar_address;
+    next_bar_address += 0x1000;
+    uint32_t command = pci_read_config32(pci->bus, pci->slot, pci->function, 0x04) & 0xFFFF;
+    pci_write_config16(pci->bus, pci->slot, pci->function, 0x04, (uint16_t)(command & ~0x6U));
+    pci_write_config32(pci->bus, pci->slot, pci->function, 0x10, (uint32_t)address | (low & 0xF));
+    pci_write_config32(pci->bus, pci->slot, pci->function, 0x14, (uint32_t)(address >> 32));
+    pci_write_config16(pci->bus, pci->slot, pci->function, 0x04, (uint16_t)(command | 0x6U));
+    uint64_t readback = pci_read_bar(pci->bus, pci->slot, pci->function, 0);
+    klogf(KLOG_INFO, "i2c-hid: %02x:%02x.%u BAR0 was unassigned, set 0x%llx readback 0x%llx", pci->bus, pci->slot,
+          pci->function, (unsigned long long)address, (unsigned long long)readback);
+    return readback;
+}
+
 static bool bring_up(const struct acpi_target *target, uint16_t descriptor_register)
 {
     struct controller_set controllers;
@@ -1042,10 +1111,16 @@ static bool bring_up(const struct acpi_target *target, uint16_t descriptor_regis
             break;
         struct pci_device_info pci = controllers.list[best].pci;
         controllers.list[best].order = 0xFFFFFFFFU;
-        uint64_t bar = pci_read_bar(pci.bus, pci.slot, pci.function, 0);
-        if ((bar & 1) || !(bar & ~0xFULL))
-            continue;
         pci_set_d0(&pci);
+        uint64_t bar = pci_read_bar(pci.bus, pci.slot, pci.function, 0);
+        if (!(bar & ~0xFULL) && !(bar & 1))
+            bar = assign_bar0(&pci);
+        if ((bar & 1) || !(bar & ~0xFULL))
+        {
+            klogf(KLOG_WARN, "i2c-hid: skip %02x:%02x.%u id=%04x:%04x bar0=0x%08x", pci.bus, pci.slot, pci.function,
+                  pci.vendor_id, pci.device_id, pci_read_config32(pci.bus, pci.slot, pci.function, 0x10));
+            continue;
+        }
         bar = pci_read_bar(pci.bus, pci.slot, pci.function, 0);
         if ((bar & 1) || !(bar & ~0xFULL))
             continue;
