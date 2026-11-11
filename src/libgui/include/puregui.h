@@ -75,10 +75,10 @@ struct pg_window {
     bool registered;
     bool repainting;
     bool closable;
-    bool frameless;
     bool server;
     bool maximized;
     bool frame_synced;
+    bool frameless;
     uint32_t frame_generation;
 };
 
