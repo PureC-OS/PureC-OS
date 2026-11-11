@@ -75,6 +75,7 @@ struct pg_window {
     bool registered;
     bool repainting;
     bool closable;
+    bool frameless;
     bool server;
     bool maximized;
     bool frame_synced;
@@ -95,6 +96,7 @@ void pg_window_begin(struct pg_window *window);
 void pg_window_end(struct pg_window *window);
 void pg_window_close(struct pg_window *window);
 void pg_window_set_closable(struct pg_window *window, bool closable);
+void pg_window_set_frameless(struct pg_window *window, bool frameless);
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
 void pg_window_fit_display(struct pg_window *window);

@@ -77,6 +77,7 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event){
     window->previous_mouse_y=mouse.y;
     window->previous_mouse_buttons=mouse.buttons;
     if(!focused) return false;
+    if(window->frameless) return event->type!=PG_EVENT_NONE;
     if(window->server){
         if(state&GUI_WINDOW_STATE_DRAGGING){
             event->type=PG_EVENT_NONE;

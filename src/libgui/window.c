@@ -5,6 +5,10 @@
 #define PG_MINIMUM_HEIGHT 96
 
 static void update_client_rect(struct pg_window *window){
+    if(window->frameless){
+        window->client=window->frame;
+        return;
+    }
     window->client.x=window->frame.x+PG_WINDOW_BORDER;
     window->client.y=window->frame.y+PG_TITLEBAR_HEIGHT+PG_WINDOW_BORDER;
     window->client.width=window->frame.width-PG_WINDOW_BORDER*2;
@@ -43,6 +47,7 @@ uint32_t pg_internal_sync_frame(struct pg_window *window, uint32_t state){
 
 bool pg_internal_point_in_titlebar(const struct pg_window *window,
                                    int32_t x, int32_t y){
+    if(window->frameless) return false;
     return x>=(int32_t)window->frame.x
         && x<(int32_t)(window->frame.x+window->frame.width)
         && y>=(int32_t)window->frame.y
@@ -94,6 +99,7 @@ bool pg_window_init(struct pg_window *window, const char *title,
     window->maximized=false;
     window->frame_synced=false;
     window->frame_generation=0;
+    window->frameless=false;
     update_client_rect(window);
     struct gui_window_request request={x,y,width,height};
     if(!pc_gui_window_register(&request)){
@@ -119,6 +125,13 @@ void pg_window_begin(struct pg_window *window){
     if(!window || !window->open) return;
     (void)pg_internal_sync_frame(window,pc_gui_window_state());
     pc_display_begin_update();
+    if(window->frameless){
+        if(!window->minimized)
+            pc_draw_rect(window->client.x,window->client.y,
+                         window->client.width,window->client.height,
+                         window->theme.window);
+        return;
+    }
     pc_draw_rect(window->frame.x+6,window->frame.y+6,
                  window->frame.width,window->minimized
                     ? PG_TITLEBAR_HEIGHT+PG_WINDOW_BORDER*2
@@ -183,6 +196,12 @@ void pg_window_set_closable(struct pg_window *window, bool closable){
     if(window->registered)
         (void)pc_gui_window_set_flags(closable ? 0
             : GUI_WINDOW_FLAG_FIXED|GUI_WINDOW_FLAG_NOCLOSE);
+}
+
+void pg_window_set_frameless(struct pg_window *window, bool frameless){
+    if(!window) return;
+    window->frameless=frameless;
+    update_client_rect(window);
 }
 
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes){
