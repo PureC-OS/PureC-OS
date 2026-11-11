@@ -647,8 +647,16 @@ static void draw(struct pg_window *w, uint64_t now) {
     uint32_t s = l.cell;
     uint32_t cw = w->client.width, ch = w->client.height;
     pg_window_begin(w);
+    uint32_t bands = 12;
+    uint32_t band_h = ch / 2 / bands + 1;
     rect(w, 0, 0, cw, ch, C_BG);
-    rect(w, 0, 0, cw, ch / 3, C_BG_GLOW);
+    for (uint32_t i = 0; i < bands; i++) {
+        uint32_t t = 100 - i * 100 / bands;
+        uint32_t r = ((C_BG >> 16) & 0xFF) + ((((C_BG_GLOW >> 16) & 0xFF) - ((C_BG >> 16) & 0xFF)) * t) / 100;
+        uint32_t gg = ((C_BG >> 8) & 0xFF) + ((((C_BG_GLOW >> 8) & 0xFF) - ((C_BG >> 8) & 0xFF)) * t) / 100;
+        uint32_t b = (C_BG & 0xFF) + (((C_BG_GLOW & 0xFF) - (C_BG & 0xFF)) * t) / 100;
+        rect(w, 0, i * band_h, cw, band_h, (r << 16) | (gg << 8) | b);
+    }
 
     uint32_t bw = s * BOARD_W, bh = s * BOARD_H;
     rect(w, l.bx - 3, l.by - 3, bw + 6, bh + 6, C_PANEL_EDGE);
