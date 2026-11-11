@@ -1,0 +1,1962 @@
+/*	Derived from OpenBSD: if_iwx.c,v 1.230 2026/09/19 19:36:42 stsp Exp	*/
+
+/*
+ * Copyright (c) 2014, 2016 genua gmbh <info@genua.de>
+ *   Author: Stefan Sperling <stsp@openbsd.org>
+ * Copyright (c) 2014 Fixup Software Ltd.
+ * Copyright (c) 2017, 2019, 2020 Stefan Sperling <stsp@openbsd.org>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+/*-
+ * Based on BSD-licensed source modules in the Linux iwlwifi driver,
+ * which were used as the reference documentation for this implementation.
+ */
+
+#include "iwx_compat.h"
+#include "iwx.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#include "drivers/pci/pci.h"
+#include "arch/x86_64/mmio.h"
+#include "mm/pmm.h"
+#include "drivers/interrupts/timer.h"
+#include "kernel/process/scheduler.h"
+#include "kernel/diagnostics/klog.h"
+#include "lib/string.h"
+#include "boot/install_source.h"
+#include "fs/vfs.h"
+
+#define IWX_DEVICE_FAMILY_AX210 2
+#define IWX_CFG_MAC_TYPE_SO 0x37
+#define IWX_CFG_RF_TYPE_HR2 0x10a
+#define IWX_TX_RING_COUNT IWX_DEFAULT_QUEUE_SIZE
+#define IWX_RX_MQ_RING_COUNT 512
+#define IWX_RBUF_SIZE 4096
+#define IWX_CMD_RESP_MAX 4096
+#define IWX_INIT_COMPLETE 0x01
+#define IWX_PNVM_COMPLETE 0x04
+#define IWX_UCODE_SECT_MAX 69
+#define IWX_MAX_FW_CMD_VERSIONS 704
+#define IWX_FW_ADDR_CACHE_CONTROL 0xC0000000
+#define IWX_TXDATA_FLAG_CMD_IS_NARROW 0x01
+#define IWX_PAGE_SIZE 4096
+#define IWX_FW_NAME "iwx-so-a0-hr-b0-77"
+#define IWX_FW_PATH "/lib/firmware/" IWX_FW_NAME
+#define IWX_FW_MAX_SIZE (4u * 1024u * 1024u)
+#define IWX_UREG_UMAC_CURRENT_PC 0xa05c18
+#define IWX_UREG_LMAC1_CURRENT_PC 0xa05c1c
+#define IWX_PCI_COMMAND_INTX_DISABLE (1u << 10)
+#define IWX_ETIMEDOUT 60
+#define IWX_EINVAL 22
+#define IWX_ENOMEM 12
+#define IWX_EBUSY 16
+#define IWX_EIO 5
+#define IWX_ENXIO 6
+
+struct iwx_dma {
+    void *va;
+    uint64_t pa;
+    size_t size;
+};
+
+struct iwx_fw_onesect {
+    uint32_t devoff;
+    const uint8_t *data;
+    uint32_t len;
+};
+
+struct iwx_sc {
+    struct pci_device_info pci;
+    bool found;
+    uint16_t subsys_vendor;
+    uint16_t subsys_device;
+    uint8_t pcie_cap;
+    volatile uint8_t *regs;
+    uint64_t bar_pa;
+    uint64_t bar_size;
+    int nic_locks;
+    uint32_t hw_rev_raw;
+    uint32_t hw_rev;
+    uint32_t hw_rf_id;
+    uint32_t hw_crf_id;
+    uint32_t hw_cnv_id;
+    uint32_t umac_prph_offset;
+    uint32_t mac_addr_from_csr;
+    uint32_t max_tfd_queue_size;
+    int integrated;
+    int imr_enabled;
+    int pm_support;
+    int ltr_enabled;
+    int rfkill;
+    uint32_t intmask;
+
+    const uint8_t *fw_raw;
+    uint64_t fw_size;
+    uint32_t fw_major, fw_minor, fw_api;
+    struct iwx_fw_onesect sect[IWX_UCODE_SECT_MAX];
+    int sect_count;
+    uint32_t sect_totlen;
+    int other_sect_count;
+    const uint8_t *iml;
+    uint32_t iml_len;
+    struct iwx_fw_cmd_version cmd_versions[IWX_MAX_FW_CMD_VERSIONS];
+    int n_cmd_versions;
+    uint8_t ucode_api[howmany(IWX_NUM_UCODE_TLV_API, 8)];
+    uint8_t enabled_capa[howmany(IWX_NUM_UCODE_TLV_CAPA, 8)];
+    uint32_t phy_config;
+    uint32_t tlv_umac_err;
+    uint32_t tlv_lmac_err;
+    uint32_t pnvm_tlv_len;
+
+    struct iwx_dma ctxt_info;
+    struct iwx_dma prph_scratch;
+    struct iwx_dma prph_info;
+    struct iwx_dma iml_dma;
+    struct iwx_dma fw_dram[2 * IWX_MAX_DRAM_ENTRY];
+    struct iwx_dma paging[IWX_MAX_DRAM_ENTRY];
+    int lmac_cnt, umac_cnt, paging_cnt;
+
+    struct iwx_dma rx_free;
+    struct iwx_dma rx_stat;
+    struct iwx_dma rx_used;
+    uint64_t rxbuf_pa[IWX_RX_MQ_RING_COUNT];
+    uint8_t *rxbuf_va[IWX_RX_MQ_RING_COUNT];
+    int rx_cur;
+
+    struct iwx_dma tx_desc;
+    struct iwx_dma tx_bc;
+    struct iwx_dma tx_cmd;
+    int tx_qid;
+    int tx_cur;
+    int tx_cur_hw;
+    int tx_queued;
+    uint8_t tx_flags[IWX_TX_RING_COUNT];
+    volatile uint8_t tx_done[IWX_TX_RING_COUNT];
+    uint8_t *resp_buf[IWX_TX_RING_COUNT];
+    uint32_t resp_cap[IWX_TX_RING_COUNT];
+    uint32_t resp_got[IWX_TX_RING_COUNT];
+    uint8_t resp_storage[IWX_CMD_RESP_MAX];
+    int wait_idx;
+
+    int alive_hw;
+    int uc_intr;
+    int uc_ok;
+    uint32_t uc_lmac_err[2];
+    uint32_t uc_umac_err;
+    uint32_t uc_log_event;
+    uint32_t sku_id[3];
+    uint32_t init_complete;
+    int fatal;
+    int dead_logged;
+    uint32_t int_seen;
+    uint32_t pkts;
+    uint8_t mac[6];
+};
+
+static struct iwx_sc iwx_softc;
+static uint64_t iwx_tsc_per_us;
+static bool iwx_started;
+
+static inline uint64_t iwx_rdtsc(void)
+{
+    uint32_t lo, hi;
+    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+    return ((uint64_t)hi << 32) | lo;
+}
+
+static inline void iwx_pause(void)
+{
+    __asm__ volatile("pause" ::: "memory");
+}
+
+static inline void iwx_mb(void)
+{
+    __asm__ volatile("mfence" ::: "memory");
+}
+
+static void iwx_calibrate(void)
+{
+    uint64_t t0 = timer_ticks();
+    while (timer_ticks() == t0)
+        iwx_pause();
+    uint64_t c0 = iwx_rdtsc();
+    uint64_t t1 = timer_ticks();
+    while (timer_ticks() - t1 < 20)
+        iwx_pause();
+    uint64_t c1 = iwx_rdtsc();
+    uint64_t ms = timer_ticks() - t1;
+    if (ms == 0)
+        ms = 20;
+    iwx_tsc_per_us = (c1 - c0) / (ms * 1000);
+    if (iwx_tsc_per_us < 100 || iwx_tsc_per_us > 20000) {
+        klogf(KLOG_WARN, "iwx: tsc calibration odd (%llu/us), using 3000",
+              (unsigned long long)iwx_tsc_per_us);
+        iwx_tsc_per_us = 3000;
+    }
+    klogf(KLOG_INFO, "iwx: tsc %llu ticks/us", (unsigned long long)iwx_tsc_per_us);
+}
+
+static void DELAY(uint32_t us)
+{
+    uint64_t start = iwx_rdtsc();
+    uint64_t want = (uint64_t)us * iwx_tsc_per_us;
+    while (iwx_rdtsc() - start < want)
+        iwx_pause();
+}
+
+static inline uint32_t iwx_read(struct iwx_sc *sc, uint32_t reg)
+{
+    return *(volatile uint32_t *)(sc->regs + reg);
+}
+
+static inline void iwx_write(struct iwx_sc *sc, uint32_t reg, uint32_t val)
+{
+    *(volatile uint32_t *)(sc->regs + reg) = val;
+}
+
+static inline void iwx_write_1(struct iwx_sc *sc, uint32_t reg, uint8_t val)
+{
+    *(volatile uint8_t *)(sc->regs + reg) = val;
+}
+
+static inline void iwx_setbits(struct iwx_sc *sc, uint32_t reg, uint32_t mask)
+{
+    iwx_write(sc, reg, iwx_read(sc, reg) | mask);
+}
+
+static inline void iwx_clrbits(struct iwx_sc *sc, uint32_t reg, uint32_t mask)
+{
+    iwx_write(sc, reg, iwx_read(sc, reg) & ~mask);
+}
+
+static bool iwx_dma_alloc(struct iwx_dma *dma, size_t size, const char *what)
+{
+    uint64_t pages = (size + IWX_PAGE_SIZE - 1) / IWX_PAGE_SIZE;
+    if (pages == 0)
+        pages = 1;
+    uint64_t pa = pmm_allocate_contiguous(pages);
+    if (!pa) {
+        klogf(KLOG_ERROR, "iwx: dma alloc failed: %s (%llu bytes)", what,
+              (unsigned long long)size);
+        dma->va = NULL;
+        dma->pa = 0;
+        dma->size = 0;
+        return false;
+    }
+    dma->pa = pa;
+    dma->va = pmm_physical_to_virtual(pa);
+    dma->size = size;
+    memset(dma->va, 0, pages * IWX_PAGE_SIZE);
+    return true;
+}
+
+static int iwx_poll_bit(struct iwx_sc *sc, uint32_t reg, uint32_t bits,
+                        uint32_t mask, int timo)
+{
+    for (;;) {
+        if ((iwx_read(sc, reg) & mask) == (bits & mask))
+            return 1;
+        if (timo < 10)
+            return 0;
+        timo -= 10;
+        DELAY(10);
+    }
+}
+
+static int iwx_nic_lock(struct iwx_sc *sc)
+{
+    if (sc->nic_locks > 0) {
+        sc->nic_locks++;
+        return 1;
+    }
+    iwx_setbits(sc, IWX_CSR_GP_CNTRL, IWX_CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
+    DELAY(2);
+    if (iwx_poll_bit(sc, IWX_CSR_GP_CNTRL,
+                     IWX_CSR_GP_CNTRL_REG_VAL_MAC_ACCESS_EN,
+                     IWX_CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY |
+                         IWX_CSR_GP_CNTRL_REG_FLAG_GOING_TO_SLEEP,
+                     150000)) {
+        sc->nic_locks++;
+        return 1;
+    }
+    klogf(KLOG_ERROR, "iwx: acquiring device failed (GP_CNTRL=0x%08x)",
+          iwx_read(sc, IWX_CSR_GP_CNTRL));
+    return 0;
+}
+
+static void iwx_nic_unlock(struct iwx_sc *sc)
+{
+    if (sc->nic_locks > 0) {
+        if (--sc->nic_locks == 0)
+            iwx_clrbits(sc, IWX_CSR_GP_CNTRL,
+                        IWX_CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
+    } else {
+        klogf(KLOG_WARN, "iwx: NIC already unlocked");
+    }
+}
+
+static void iwx_nic_assert_locked(struct iwx_sc *sc, uint32_t addr)
+{
+    if (sc->nic_locks <= 0)
+        klogf(KLOG_ERROR, "iwx: prph 0x%x access without nic lock", addr);
+}
+
+static uint32_t iwx_read_prph_unlocked(struct iwx_sc *sc, uint32_t addr)
+{
+    iwx_write(sc, IWX_HBUS_TARG_PRPH_RADDR, ((addr & 0x00ffffff) | (3u << 24)));
+    iwx_mb();
+    return iwx_read(sc, IWX_HBUS_TARG_PRPH_RDAT);
+}
+
+static uint32_t iwx_read_prph(struct iwx_sc *sc, uint32_t addr)
+{
+    iwx_nic_assert_locked(sc, addr);
+    return iwx_read_prph_unlocked(sc, addr);
+}
+
+static void iwx_write_prph_unlocked(struct iwx_sc *sc, uint32_t addr, uint32_t val)
+{
+    iwx_write(sc, IWX_HBUS_TARG_PRPH_WADDR, ((addr & 0x00ffffff) | (3u << 24)));
+    iwx_mb();
+    iwx_write(sc, IWX_HBUS_TARG_PRPH_WDAT, val);
+}
+
+static void iwx_write_prph(struct iwx_sc *sc, uint32_t addr, uint32_t val)
+{
+    iwx_nic_assert_locked(sc, addr);
+    iwx_write_prph_unlocked(sc, addr, val);
+}
+
+static uint32_t iwx_read_umac_prph_unlocked(struct iwx_sc *sc, uint32_t addr)
+{
+    return iwx_read_prph_unlocked(sc, addr + sc->umac_prph_offset);
+}
+
+static uint32_t iwx_read_umac_prph(struct iwx_sc *sc, uint32_t addr)
+{
+    return iwx_read_prph(sc, addr + sc->umac_prph_offset);
+}
+
+static void iwx_write_umac_prph_unlocked(struct iwx_sc *sc, uint32_t addr, uint32_t val)
+{
+    iwx_write_prph_unlocked(sc, addr + sc->umac_prph_offset, val);
+}
+
+static void iwx_write_umac_prph(struct iwx_sc *sc, uint32_t addr, uint32_t val)
+{
+    iwx_write_prph(sc, addr + sc->umac_prph_offset, val);
+}
+
+static int iwx_read_mem(struct iwx_sc *sc, uint32_t addr, void *buf, int dwords)
+{
+    uint32_t *vals = buf;
+    if (!iwx_nic_lock(sc))
+        return IWX_EBUSY;
+    iwx_write(sc, IWX_HBUS_TARG_MEM_RADDR, addr);
+    for (int offs = 0; offs < dwords; offs++)
+        vals[offs] = le32toh(iwx_read(sc, IWX_HBUS_TARG_MEM_RDAT));
+    iwx_nic_unlock(sc);
+    return 0;
+}
+
+static const struct {
+    const char *name;
+    uint8_t num;
+} iwx_advanced_lookup[] = {
+    {"NMI_INTERRUPT_WDG", 0x34},
+    {"SYSASSERT", 0x35},
+    {"UCODE_VERSION_MISMATCH", 0x37},
+    {"BAD_COMMAND", 0x38},
+    {"BAD_COMMAND", 0x39},
+    {"NMI_INTERRUPT_DATA_ACTION_PT", 0x3C},
+    {"FATAL_ERROR", 0x3D},
+    {"NMI_TRM_HW_ERR", 0x46},
+    {"NMI_INTERRUPT_TRM", 0x4C},
+    {"NMI_INTERRUPT_BREAK_POINT", 0x54},
+    {"NMI_INTERRUPT_WDG_RXF_FULL", 0x5C},
+    {"NMI_INTERRUPT_WDG_NO_RBD_RXF_FULL", 0x64},
+    {"NMI_INTERRUPT_HOST", 0x66},
+    {"NMI_INTERRUPT_LMAC_FATAL", 0x70},
+    {"NMI_INTERRUPT_UMAC_FATAL", 0x71},
+    {"NMI_INTERRUPT_OTHER_LMAC_FATAL", 0x73},
+    {"NMI_INTERRUPT_ACTION_PT", 0x7C},
+    {"NMI_INTERRUPT_UNKNOWN", 0x84},
+    {"NMI_INTERRUPT_INST_ACTION_PT", 0x86},
+    {"ADVANCED_SYSASSERT", 0},
+};
+
+static const char *iwx_desc_lookup(uint32_t num)
+{
+    size_t i;
+    for (i = 0; i < nitems(iwx_advanced_lookup) - 1; i++)
+        if (iwx_advanced_lookup[i].num == (num & ~0xf0000000u))
+            return iwx_advanced_lookup[i].name;
+    return iwx_advanced_lookup[i].name;
+}
+
+struct iwx_error_event_table {
+    uint32_t valid, error_id, trm_hw_status0, trm_hw_status1, blink2, ilink1,
+        ilink2, data1, data2, data3, bcon_time, tsf_low, tsf_hi, gp1, gp2,
+        fw_rev_type, major, minor, hw_ver, brd_ver, log_pc, frame_ptr,
+        stack_ptr, hcmd, isr0, isr1, isr2, isr3, isr4, last_cmd_id, wait_event,
+        l2p_control, l2p_duration, l2p_mhvalid, l2p_addr_match, lmpm_pmg_sel,
+        u_timestamp, flow_handler;
+} __packed;
+
+struct iwx_umac_error_event_table {
+    uint32_t valid, error_id, blink1, blink2, ilink1, ilink2, data1, data2,
+        data3, umac_major, umac_minor, frame_pointer, stack_pointer,
+        cmd_header, nic_isr_pref;
+} __packed;
+
+static void iwx_nic_umac_error(struct iwx_sc *sc)
+{
+    struct iwx_umac_error_event_table t;
+    uint32_t base = sc->uc_umac_err;
+    if (base < 0x400000) {
+        klogf(KLOG_ERROR, "iwx: invalid UMAC error log pointer 0x%08x", base);
+        return;
+    }
+    if (iwx_read_mem(sc, base, &t, sizeof(t) / sizeof(uint32_t))) {
+        klogf(KLOG_ERROR, "iwx: reading UMAC errlog failed");
+        return;
+    }
+    klogf(KLOG_ERROR, "iwx: UMAC error log @0x%08x valid=%u", base, t.valid);
+    klogf(KLOG_ERROR, "iwx: 0x%08x | %s", t.error_id, iwx_desc_lookup(t.error_id));
+    klogf(KLOG_ERROR, "iwx: umac blink1=%08x blink2=%08x ilink1=%08x ilink2=%08x",
+          t.blink1, t.blink2, t.ilink1, t.ilink2);
+    klogf(KLOG_ERROR, "iwx: umac data1=%08x data2=%08x data3=%08x",
+          t.data1, t.data2, t.data3);
+    klogf(KLOG_ERROR, "iwx: umac major=%08x minor=%08x fp=%08x sp=%08x",
+          t.umac_major, t.umac_minor, t.frame_pointer, t.stack_pointer);
+    klogf(KLOG_ERROR, "iwx: umac last host cmd=%08x isr=%08x",
+          t.cmd_header, t.nic_isr_pref);
+}
+
+static void iwx_nic_error(struct iwx_sc *sc)
+{
+    struct iwx_error_event_table t;
+    uint32_t base = sc->uc_lmac_err[0];
+    klogf(KLOG_ERROR, "iwx: dumping device error log");
+    if (base < 0x400000) {
+        klogf(KLOG_ERROR, "iwx: invalid LMAC error log pointer 0x%08x", base);
+    } else if (iwx_read_mem(sc, base, &t, sizeof(t) / sizeof(uint32_t))) {
+        klogf(KLOG_ERROR, "iwx: reading LMAC errlog failed");
+    } else if (!t.valid) {
+        klogf(KLOG_ERROR, "iwx: LMAC errlog @0x%08x not valid", base);
+    } else {
+        klogf(KLOG_ERROR, "iwx: LMAC error log @0x%08x valid=%u", base, t.valid);
+        klogf(KLOG_ERROR, "iwx: 0x%08x | %s", t.error_id, iwx_desc_lookup(t.error_id));
+        klogf(KLOG_ERROR, "iwx: trm0=%08x trm1=%08x blink2=%08x ilink1=%08x ilink2=%08x",
+              t.trm_hw_status0, t.trm_hw_status1, t.blink2, t.ilink1, t.ilink2);
+        klogf(KLOG_ERROR, "iwx: data1=%08x data2=%08x data3=%08x bcon=%08x",
+              t.data1, t.data2, t.data3, t.bcon_time);
+        klogf(KLOG_ERROR, "iwx: tsf=%08x:%08x gp1=%08x gp2=%08x rev_type=%08x",
+              t.tsf_hi, t.tsf_low, t.gp1, t.gp2, t.fw_rev_type);
+        klogf(KLOG_ERROR, "iwx: major=%08x minor=%08x hw_ver=%08x brd_ver=%08x",
+              t.major, t.minor, t.hw_ver, t.brd_ver);
+        klogf(KLOG_ERROR, "iwx: log_pc=%08x fp=%08x sp=%08x hcmd=%08x",
+              t.log_pc, t.frame_ptr, t.stack_ptr, t.hcmd);
+        klogf(KLOG_ERROR, "iwx: isr0=%08x isr1=%08x isr2=%08x isr3=%08x isr4=%08x",
+              t.isr0, t.isr1, t.isr2, t.isr3, t.isr4);
+        klogf(KLOG_ERROR, "iwx: last_cmd=%08x wait_event=%08x l2p=%08x/%08x/%08x/%08x",
+              t.last_cmd_id, t.wait_event, t.l2p_control, t.l2p_duration,
+              t.l2p_mhvalid, t.l2p_addr_match);
+        klogf(KLOG_ERROR, "iwx: pmg_sel=%08x timestamp=%08x flow_handler=%08x",
+              t.lmpm_pmg_sel, t.u_timestamp, t.flow_handler);
+    }
+    if (sc->uc_umac_err)
+        iwx_nic_umac_error(sc);
+}
+
+static void iwx_dump_state(struct iwx_sc *sc, const char *why)
+{
+    const struct iwx_prph_info *pi = sc->prph_info.va;
+    uint16_t stat = sc->rx_stat.va ? *(volatile uint16_t *)sc->rx_stat.va : 0;
+    klogf(KLOG_ERROR, "iwx: state (%s): CSR_INT=0x%08x FH_INT=0x%08x INT_MASK=0x%08x",
+          why, iwx_read(sc, IWX_CSR_INT), iwx_read(sc, IWX_CSR_FH_INT_STATUS),
+          iwx_read(sc, IWX_CSR_INT_MASK));
+    klogf(KLOG_ERROR, "iwx: GP_CNTRL=0x%08x RESET=0x%08x HW_IF_CFG=0x%08x GP1=0x%08x",
+          iwx_read(sc, IWX_CSR_GP_CNTRL), iwx_read(sc, IWX_CSR_RESET),
+          iwx_read(sc, IWX_CSR_HW_IF_CONFIG_REG), iwx_read(sc, IWX_CSR_UCODE_DRV_GP1));
+    klogf(KLOG_ERROR, "iwx: IML_RESP=0x%08x CTXT_ADDR=0x%08x:%08x IML_SIZE=0x%x",
+          iwx_read(sc, IWX_CSR_IML_RESP_ADDR), iwx_read(sc, IWX_CSR_CTXT_INFO_ADDR + 4),
+          iwx_read(sc, IWX_CSR_CTXT_INFO_ADDR), iwx_read(sc, IWX_CSR_IML_SIZE_ADDR));
+    klogf(KLOG_ERROR, "iwx: rx stat=%u cur=%d tx cur=%d cur_hw=%d queued=%d ints_seen=0x%08x pkts=%u",
+          stat, sc->rx_cur, sc->tx_cur, sc->tx_cur_hw, sc->tx_queued, sc->int_seen,
+          sc->pkts);
+    if (pi)
+        klogf(KLOG_ERROR, "iwx: prph_info boot_stage=0x%08x ipc_status=0x%08x sleep=0x%08x",
+              pi->boot_stage_mirror, pi->ipc_status_mirror, pi->sleep_notif);
+    if (iwx_nic_lock(sc)) {
+        klogf(KLOG_ERROR, "iwx: UMAC_PC=0x%08x LMAC1_PC=0x%08x LOAD_STATUS=0x%08x CPU_INIT_RUN=0x%08x",
+              iwx_read_umac_prph(sc, IWX_UREG_UMAC_CURRENT_PC),
+              iwx_read_umac_prph(sc, IWX_UREG_LMAC1_CURRENT_PC),
+              iwx_read_umac_prph(sc, IWX_UREG_UCODE_LOAD_STATUS),
+              iwx_read_umac_prph(sc, IWX_UREG_CPU_INIT_RUN));
+        klogf(KLOG_ERROR, "iwx: UREG_CHICK=0x%08x RFH_GEN_STATUS=0x%08x RFH_DMA_CFG=0x%08x",
+              iwx_read_umac_prph(sc, IWX_UREG_CHICK),
+              iwx_read_umac_prph(sc, IWX_RFH_GEN_STATUS_GEN3),
+              iwx_read_umac_prph(sc, IWX_RFH_RXF_DMA_CFG_GEN3));
+        iwx_nic_unlock(sc);
+    }
+}
+
+static uint8_t iwx_lookup_cmd_ver(struct iwx_sc *sc, uint8_t grp, uint8_t cmd)
+{
+    for (int i = 0; i < sc->n_cmd_versions; i++) {
+        const struct iwx_fw_cmd_version *e = &sc->cmd_versions[i];
+        if (e->group == grp && e->cmd == cmd)
+            return e->cmd_ver;
+    }
+    return IWX_FW_CMD_VER_UNKNOWN;
+}
+
+static uint8_t iwx_lookup_notif_ver(struct iwx_sc *sc, uint8_t grp, uint8_t cmd)
+{
+    for (int i = 0; i < sc->n_cmd_versions; i++) {
+        const struct iwx_fw_cmd_version *e = &sc->cmd_versions[i];
+        if (e->group == grp && e->cmd == cmd)
+            return e->notif_ver;
+    }
+    return IWX_FW_CMD_VER_UNKNOWN;
+}
+
+static int iwx_firmware_store_section(struct iwx_sc *sc, uint32_t tlv_type,
+                                      const uint8_t *data, size_t dlen)
+{
+    if (dlen < sizeof(uint32_t))
+        return IWX_EINVAL;
+    if (tlv_type != IWX_UCODE_TLV_SEC_RT) {
+        sc->other_sect_count++;
+        return 0;
+    }
+    if (sc->sect_count >= IWX_UCODE_SECT_MAX)
+        return IWX_EINVAL;
+    struct iwx_fw_onesect *s = &sc->sect[sc->sect_count];
+    memcpy(&s->devoff, data, sizeof(uint32_t));
+    s->data = data + sizeof(uint32_t);
+    s->len = (uint32_t)(dlen - sizeof(uint32_t));
+    sc->sect_count++;
+    sc->sect_totlen += s->len;
+    return 0;
+}
+
+static int iwx_read_firmware(struct iwx_sc *sc)
+{
+    const struct iwx_tlv_ucode_header *uhdr = (const void *)sc->fw_raw;
+    struct iwx_ucode_tlv tlv;
+    uint32_t tlv_type = 0;
+    int err = 0, ntlv = 0, nunknown = 0;
+
+    if (sc->fw_size < sizeof(*uhdr) || uhdr->zero != 0 ||
+        le32toh(uhdr->magic) != IWX_TLV_UCODE_MAGIC) {
+        klogf(KLOG_ERROR, "iwx: invalid firmware %s (size %llu)", IWX_FW_NAME,
+              (unsigned long long)sc->fw_size);
+        return IWX_EINVAL;
+    }
+    char hr[65];
+    memcpy(hr, uhdr->human_readable, 64);
+    hr[64] = 0;
+    sc->fw_major = IWX_UCODE_MAJOR(le32toh(uhdr->ver));
+    sc->fw_minor = IWX_UCODE_MINOR(le32toh(uhdr->ver));
+    sc->fw_api = IWX_UCODE_API(le32toh(uhdr->ver));
+    klogf(KLOG_INFO, "iwx: firmware header '%s' ver=0x%08x build=%u", hr,
+          le32toh(uhdr->ver), le32toh(uhdr->build));
+
+    const uint8_t *data = uhdr->data;
+    size_t len = sc->fw_size - sizeof(*uhdr);
+
+    while (len >= sizeof(tlv)) {
+        size_t tlv_len;
+        const uint8_t *tlv_data;
+
+        memcpy(&tlv, data, sizeof(tlv));
+        tlv_len = le32toh(tlv.length);
+        tlv_type = le32toh(tlv.type);
+        len -= sizeof(tlv);
+        data += sizeof(tlv);
+        tlv_data = data;
+        ntlv++;
+
+        if (len < tlv_len) {
+            klogf(KLOG_ERROR, "iwx: firmware too short: %llu bytes", (unsigned long long)len);
+            err = IWX_EINVAL;
+            goto parse_out;
+        }
+
+        switch (tlv_type) {
+        case IWX_UCODE_TLV_NUM_OF_CPU: {
+            uint32_t num_cpu;
+            if (tlv_len != sizeof(uint32_t)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&num_cpu, tlv_data, 4);
+            if (num_cpu < 1 || num_cpu > 2) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            break;
+        }
+        case IWX_UCODE_TLV_SEC_RT:
+        case IWX_UCODE_TLV_SEC_INIT:
+        case IWX_UCODE_TLV_SEC_WOWLAN:
+        case IWX_UCODE_TLV_SEC_RT_USNIFFER:
+            err = iwx_firmware_store_section(sc, tlv_type, tlv_data, tlv_len);
+            if (err)
+                goto parse_out;
+            break;
+        case IWX_UCODE_TLV_PHY_SKU:
+            if (tlv_len != sizeof(uint32_t)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&sc->phy_config, tlv_data, 4);
+            break;
+        case IWX_UCODE_TLV_API_CHANGES_SET: {
+            struct iwx_ucode_api api;
+            if (tlv_len != sizeof(api)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&api, tlv_data, sizeof(api));
+            uint32_t idx = le32toh(api.api_index);
+            if (idx >= howmany(IWX_NUM_UCODE_TLV_API, 32)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            for (int i = 0; i < 32; i++)
+                if (le32toh(api.api_flags) & (1u << i))
+                    setbit(sc->ucode_api, i + 32 * (int)idx);
+            break;
+        }
+        case IWX_UCODE_TLV_ENABLED_CAPABILITIES: {
+            struct iwx_ucode_capa capa;
+            if (tlv_len != sizeof(capa)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&capa, tlv_data, sizeof(capa));
+            uint32_t idx = le32toh(capa.api_index);
+            if (idx >= howmany(IWX_NUM_UCODE_TLV_CAPA, 32)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            for (int i = 0; i < 32; i++)
+                if (le32toh(capa.api_capa) & (1u << i))
+                    setbit(sc->enabled_capa, i + 32 * (int)idx);
+            break;
+        }
+        case IWX_UCODE_TLV_FW_VERSION: {
+            uint32_t v[3];
+            if (tlv_len != sizeof(uint32_t) * 3) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(v, tlv_data, sizeof(v));
+            sc->fw_major = le32toh(v[0]);
+            sc->fw_minor = le32toh(v[1]);
+            sc->fw_api = le32toh(v[2]);
+            break;
+        }
+        case IWX_UCODE_TLV_UMAC_DEBUG_ADDRS: {
+            struct iwx_umac_debug_addrs d;
+            if (tlv_len != sizeof(d)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&d, tlv_data, sizeof(d));
+            sc->tlv_umac_err = le32toh(d.error_info_addr) & ~IWX_FW_ADDR_CACHE_CONTROL;
+            break;
+        }
+        case IWX_UCODE_TLV_LMAC_DEBUG_ADDRS: {
+            struct iwx_lmac_debug_addrs d;
+            if (tlv_len != sizeof(d)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&d, tlv_data, sizeof(d));
+            sc->tlv_lmac_err = le32toh(d.error_event_table_ptr) & ~IWX_FW_ADDR_CACHE_CONTROL;
+            break;
+        }
+        case IWX_UCODE_TLV_IML:
+            sc->iml = tlv_data;
+            sc->iml_len = (uint32_t)tlv_len;
+            break;
+        case IWX_UCODE_TLV_CMD_VERSIONS:
+            if (tlv_len % sizeof(struct iwx_fw_cmd_version)) {
+                tlv_len /= sizeof(struct iwx_fw_cmd_version);
+                tlv_len *= sizeof(struct iwx_fw_cmd_version);
+            }
+            if (sc->n_cmd_versions != 0) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            if (tlv_len > sizeof(sc->cmd_versions)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&sc->cmd_versions[0], tlv_data, tlv_len);
+            sc->n_cmd_versions = (int)(tlv_len / sizeof(struct iwx_fw_cmd_version));
+            break;
+        case IWX_UCODE_TLV_PNVM_DATA:
+            if (!sc->pnvm_tlv_len)
+                sc->pnvm_tlv_len = (uint32_t)tlv_len;
+            break;
+        default:
+            nunknown++;
+            break;
+        }
+
+        if (roundup(tlv_len, 4) > len)
+            break;
+        len -= roundup(tlv_len, 4);
+        data += roundup(tlv_len, 4);
+    }
+
+parse_out:
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: firmware parse error %d, section type %u (0x%x)",
+              err, tlv_type, tlv_type);
+        return err;
+    }
+    if (sc->fw_major >= 35)
+        klogf(KLOG_OK, "iwx: firmware version %u.%08x.%u", sc->fw_major,
+              sc->fw_minor, sc->fw_api);
+    else
+        klogf(KLOG_OK, "iwx: firmware version %u.%u.%u", sc->fw_major,
+              sc->fw_minor, sc->fw_api);
+    klogf(KLOG_INFO, "iwx: tlvs=%d skipped=%d rt_sections=%d (%u bytes) other_sections=%d",
+          ntlv, nunknown, sc->sect_count, sc->sect_totlen, sc->other_sect_count);
+    klogf(KLOG_INFO, "iwx: iml=%u bytes cmd_versions=%d phy_sku=0x%08x pnvm_tlv=%u",
+          sc->iml_len, sc->n_cmd_versions, sc->phy_config, sc->pnvm_tlv_len);
+    klogf(KLOG_INFO, "iwx: tlv err ptrs umac=0x%08x lmac=0x%08x; alive notif ver=%u",
+          sc->tlv_umac_err, sc->tlv_lmac_err,
+          iwx_lookup_notif_ver(sc, IWX_LEGACY_GROUP, IWX_ALIVE));
+    return 0;
+}
+
+static bool iwx_load_firmware_file(struct iwx_sc *sc)
+{
+    const void *addr = NULL;
+    uint64_t size = 0;
+    if (boot_get_module(IWX_FW_PATH, &addr, &size) && addr && size) {
+        sc->fw_raw = addr;
+        sc->fw_size = size;
+        klogf(KLOG_INFO, "iwx: firmware from boot module %s (%llu bytes)", IWX_FW_PATH,
+              (unsigned long long)size);
+        return true;
+    }
+    klogf(KLOG_INFO, "iwx: no boot module %s, waiting for root fs", IWX_FW_PATH);
+    for (int i = 0; i < 150 && !vfs_is_root_mounted(); i++)
+        scheduler_sleep(200);
+    if (!vfs_is_root_mounted()) {
+        klogf(KLOG_ERROR, "iwx: root fs not mounted after 30 s");
+        return false;
+    }
+    int32_t fd = vfs_open(IWX_FW_PATH);
+    if (fd < 0) {
+        klogf(KLOG_ERROR, "iwx: cannot open %s (%d)", IWX_FW_PATH, fd);
+        return false;
+    }
+    uint64_t pa = pmm_allocate_contiguous(IWX_FW_MAX_SIZE / IWX_PAGE_SIZE);
+    if (!pa) {
+        klogf(KLOG_ERROR, "iwx: no memory for firmware buffer");
+        vfs_close(fd);
+        return false;
+    }
+    uint8_t *buf = pmm_physical_to_virtual(pa);
+    uint64_t total = 0;
+    for (;;) {
+        uint32_t chunk = 65536;
+        if (total + chunk > IWX_FW_MAX_SIZE)
+            chunk = (uint32_t)(IWX_FW_MAX_SIZE - total);
+        if (chunk == 0) {
+            klogf(KLOG_ERROR, "iwx: firmware file larger than %u bytes", IWX_FW_MAX_SIZE);
+            vfs_close(fd);
+            return false;
+        }
+        int32_t n = vfs_read(fd, buf + total, chunk);
+        if (n < 0) {
+            klogf(KLOG_ERROR, "iwx: read error %d at %llu", n, (unsigned long long)total);
+            vfs_close(fd);
+            return false;
+        }
+        if (n == 0)
+            break;
+        total += (uint64_t)n;
+    }
+    vfs_close(fd);
+    sc->fw_raw = buf;
+    sc->fw_size = total;
+    klogf(KLOG_INFO, "iwx: firmware from vfs %s (%llu bytes)", IWX_FW_PATH,
+          (unsigned long long)total);
+    return total > 0;
+}
+
+static int iwx_set_hw_ready(struct iwx_sc *sc)
+{
+    iwx_setbits(sc, IWX_CSR_HW_IF_CONFIG_REG, IWX_CSR_HW_IF_CONFIG_REG_BIT_NIC_READY);
+    int ready = iwx_poll_bit(sc, IWX_CSR_HW_IF_CONFIG_REG,
+                             IWX_CSR_HW_IF_CONFIG_REG_BIT_NIC_READY,
+                             IWX_CSR_HW_IF_CONFIG_REG_BIT_NIC_READY, 50);
+    if (ready)
+        iwx_setbits(sc, IWX_CSR_MBOX_SET_REG, IWX_CSR_MBOX_SET_REG_OS_ALIVE);
+    return ready;
+}
+
+static int iwx_prepare_card_hw(struct iwx_sc *sc)
+{
+    int t = 0;
+    if (iwx_set_hw_ready(sc))
+        return 0;
+    iwx_setbits(sc, IWX_CSR_DBG_LINK_PWR_MGMT_REG, IWX_CSR_RESET_LINK_PWR_MGMT_DISABLED);
+    DELAY(1000);
+    for (int ntries = 0; ntries < 10; ntries++) {
+        iwx_setbits(sc, IWX_CSR_HW_IF_CONFIG_REG, IWX_CSR_HW_IF_CONFIG_REG_PREPARE);
+        do {
+            if (iwx_set_hw_ready(sc))
+                return 0;
+            DELAY(200);
+            t += 200;
+        } while (t < 150000);
+        DELAY(25000);
+    }
+    return IWX_ETIMEDOUT;
+}
+
+static uint32_t iwx_pci_cfg8(struct iwx_sc *sc, uint8_t off)
+{
+    uint32_t v = pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function,
+                                   (uint8_t)(off & 0xfc));
+    return (v >> ((off & 3) * 8)) & 0xff;
+}
+
+static uint8_t iwx_find_pcie_cap(struct iwx_sc *sc)
+{
+    uint32_t cmdsts = pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function, 0x04);
+    if (!(cmdsts & (1u << 20)))
+        return 0;
+    uint8_t ptr = (uint8_t)(iwx_pci_cfg8(sc, 0x34) & 0xfc);
+    for (int i = 0; i < 48 && ptr >= 0x40; i++) {
+        if (iwx_pci_cfg8(sc, ptr) == 0x10)
+            return ptr;
+        ptr = (uint8_t)(iwx_pci_cfg8(sc, (uint8_t)(ptr + 1)) & 0xfc);
+    }
+    return 0;
+}
+
+static void iwx_apm_config(struct iwx_sc *sc)
+{
+    iwx_setbits(sc, IWX_CSR_GIO_REG, IWX_CSR_GIO_REG_VAL_L0S_DISABLED);
+    if (!sc->pcie_cap)
+        return;
+    uint32_t lctl = pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function,
+                                      (uint8_t)(sc->pcie_cap + 0x10));
+    sc->pm_support = !(lctl & 0x1);
+    uint32_t cap = pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function,
+                                     (uint8_t)(sc->pcie_cap + 0x28));
+    sc->ltr_enabled = (cap & 0x400) ? 1 : 0;
+}
+
+static int iwx_apm_init(struct iwx_sc *sc)
+{
+    iwx_setbits(sc, IWX_CSR_GIO_CHICKEN_BITS, IWX_CSR_GIO_CHICKEN_BITS_REG_BIT_L1A_NO_L0S_RX);
+    iwx_setbits(sc, IWX_CSR_DBG_HPET_MEM_REG, IWX_CSR_DBG_HPET_MEM_REG_VAL);
+    iwx_setbits(sc, IWX_CSR_HW_IF_CONFIG_REG, IWX_CSR_HW_IF_CONFIG_REG_BIT_HAP_WAKE_L1A);
+    iwx_apm_config(sc);
+    iwx_setbits(sc, IWX_CSR_GP_CNTRL, IWX_CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
+    uint32_t ready = IWX_CSR_GP_CNTRL_REG_FLAG_MAC_CLOCK_READY;
+    if (!iwx_poll_bit(sc, IWX_CSR_GP_CNTRL, ready, ready, 25000)) {
+        klogf(KLOG_ERROR, "iwx: timeout waiting for clock stabilization (GP_CNTRL=0x%08x)",
+              iwx_read(sc, IWX_CSR_GP_CNTRL));
+        klogf(KLOG_ERROR, "iwx: apm init error %d", IWX_ETIMEDOUT);
+        return IWX_ETIMEDOUT;
+    }
+    return 0;
+}
+
+static void iwx_apm_stop(struct iwx_sc *sc)
+{
+    iwx_setbits(sc, IWX_CSR_DBG_LINK_PWR_MGMT_REG, IWX_CSR_RESET_LINK_PWR_MGMT_DISABLED);
+    iwx_setbits(sc, IWX_CSR_HW_IF_CONFIG_REG,
+                IWX_CSR_HW_IF_CONFIG_REG_PREPARE | IWX_CSR_HW_IF_CONFIG_REG_ENABLE_PME);
+    DELAY(1000);
+    iwx_clrbits(sc, IWX_CSR_DBG_LINK_PWR_MGMT_REG, IWX_CSR_RESET_LINK_PWR_MGMT_DISABLED);
+    DELAY(5000);
+    iwx_setbits(sc, IWX_CSR_RESET, IWX_CSR_RESET_REG_FLAG_STOP_MASTER);
+    if (!iwx_poll_bit(sc, IWX_CSR_RESET, IWX_CSR_RESET_REG_FLAG_MASTER_DISABLED,
+                      IWX_CSR_RESET_REG_FLAG_MASTER_DISABLED, 100))
+        klogf(KLOG_WARN, "iwx: timeout waiting for master");
+    iwx_clrbits(sc, IWX_CSR_GP_CNTRL, IWX_CSR_GP_CNTRL_REG_FLAG_INIT_DONE);
+}
+
+static void iwx_conf_msix_hw(struct iwx_sc *sc, int stopped)
+{
+    if (!stopped && iwx_nic_lock(sc)) {
+        iwx_write_umac_prph(sc, IWX_UREG_CHICK, IWX_UREG_CHICK_MSI_ENABLE);
+        klogf(KLOG_INFO, "iwx: UREG_CHICK <- MSI_ENABLE, readback 0x%08x",
+              iwx_read_umac_prph(sc, IWX_UREG_CHICK));
+        iwx_nic_unlock(sc);
+    }
+}
+
+static void iwx_disable_interrupts(struct iwx_sc *sc)
+{
+    iwx_write(sc, IWX_CSR_INT_MASK, 0);
+    iwx_write(sc, IWX_CSR_INT, ~0u);
+    iwx_write(sc, IWX_CSR_FH_INT_STATUS, ~0u);
+}
+
+static int iwx_check_rfkill(struct iwx_sc *sc)
+{
+    uint32_t v = iwx_read(sc, IWX_CSR_GP_CNTRL);
+    sc->rfkill = (v & IWX_CSR_GP_CNTRL_REG_FLAG_HW_RF_KILL_SW) == 0;
+    return sc->rfkill;
+}
+
+static void iwx_enable_rfkill_int(struct iwx_sc *sc)
+{
+    sc->intmask = IWX_CSR_INT_BIT_RF_KILL;
+    iwx_write(sc, IWX_CSR_INT_MASK, 0);
+    iwx_setbits(sc, IWX_CSR_GP_CNTRL, IWX_CSR_GP_CNTRL_REG_FLAG_RFKILL_WAKE_L1A_EN);
+}
+
+static void iwx_sw_reset(struct iwx_sc *sc)
+{
+    iwx_setbits(sc, IWX_CSR_RESET, IWX_CSR_RESET_REG_FLAG_SW_RESET);
+    DELAY(5000);
+}
+
+static int iwx_start_hw(struct iwx_sc *sc)
+{
+    int err = iwx_prepare_card_hw(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: prepare_card_hw timed out (HW_IF_CFG=0x%08x)",
+              iwx_read(sc, IWX_CSR_HW_IF_CONFIG_REG));
+        return err;
+    }
+    iwx_sw_reset(sc);
+    err = iwx_apm_init(sc);
+    if (err)
+        return err;
+    iwx_conf_msix_hw(sc, 0);
+    iwx_enable_rfkill_int(sc);
+    iwx_check_rfkill(sc);
+    klogf(KLOG_INFO, "iwx: start_hw ok GP_CNTRL=0x%08x rfkill=%d", iwx_read(sc, IWX_CSR_GP_CNTRL),
+          sc->rfkill);
+    return 0;
+}
+
+static void iwx_get_crf_id(struct iwx_sc *sc)
+{
+    uint32_t val = iwx_read_umac_prph_unlocked(sc, IWX_WFPM_CTRL_REG);
+    val |= IWX_WFPM_AUX_CTL_AUX_IF_MAC_OWNER_MSK;
+    iwx_write_umac_prph_unlocked(sc, IWX_WFPM_CTRL_REG, val);
+    sc->hw_crf_id = iwx_read_prph_unlocked(sc, IWX_SD_REG_VER_GEN2);
+    sc->hw_cnv_id = iwx_read_prph_unlocked(sc, IWX_CNVI_AUX_MISC_CHIP);
+}
+
+static void iwx_update_rx_desc(struct iwx_sc *sc, int idx)
+{
+    struct iwx_rx_transfer_desc *desc = sc->rx_free.va;
+    desc[idx].rbid = htole16((uint16_t)(idx & 0xffff));
+    desc[idx].addr = htole64(sc->rxbuf_pa[idx]);
+}
+
+static bool iwx_alloc_rx_ring(struct iwx_sc *sc)
+{
+    sc->rx_cur = 0;
+    if (!iwx_dma_alloc(&sc->rx_free, sizeof(struct iwx_rx_transfer_desc) * IWX_RX_MQ_RING_COUNT,
+                       "rx free ring"))
+        return false;
+    if (!iwx_dma_alloc(&sc->rx_stat, sizeof(uint16_t), "rx status"))
+        return false;
+    if (!iwx_dma_alloc(&sc->rx_used, sizeof(struct iwx_rx_completion_desc) * IWX_RX_MQ_RING_COUNT,
+                       "rx used ring"))
+        return false;
+    for (int i = 0; i < IWX_RX_MQ_RING_COUNT; i++) {
+        uint64_t pa = pmm_allocate_page();
+        if (!pa) {
+            klogf(KLOG_ERROR, "iwx: rx buffer %d alloc failed", i);
+            return false;
+        }
+        sc->rxbuf_pa[i] = pa;
+        sc->rxbuf_va[i] = pmm_physical_to_virtual(pa);
+        memset(sc->rxbuf_va[i], 0, IWX_RBUF_SIZE);
+        iwx_update_rx_desc(sc, i);
+    }
+    return true;
+}
+
+static bool iwx_alloc_tx_ring(struct iwx_sc *sc)
+{
+    sc->tx_qid = IWX_DQA_CMD_QUEUE;
+    sc->tx_cur = 0;
+    sc->tx_cur_hw = 0;
+    sc->tx_queued = 0;
+    if (!iwx_dma_alloc(&sc->tx_desc, IWX_TX_RING_COUNT * sizeof(struct iwx_tfh_tfd), "tx tfd ring"))
+        return false;
+    if (!iwx_dma_alloc(&sc->tx_bc, sizeof(struct iwx_gen3_bc_tbl_entry) *
+                                       IWX_TFD_QUEUE_BC_SIZE_GEN3_AX210, "tx bc table"))
+        return false;
+    if (!iwx_dma_alloc(&sc->tx_cmd, IWX_TX_RING_COUNT * sizeof(struct iwx_device_cmd), "tx cmd"))
+        return false;
+    return true;
+}
+
+static void iwx_reset_tx_ring(struct iwx_sc *sc)
+{
+    memset(sc->tx_bc.va, 0, sc->tx_bc.size);
+    memset(sc->tx_desc.va, 0, sc->tx_desc.size);
+    sc->tx_queued = 0;
+    sc->tx_cur = 0;
+    sc->tx_cur_hw = 0;
+    for (int i = 0; i < IWX_TX_RING_COUNT; i++) {
+        sc->tx_done[i] = 0;
+        sc->resp_buf[i] = NULL;
+    }
+}
+
+static int iwx_get_num_sections(struct iwx_sc *sc, int start)
+{
+    int i = 0;
+    while (start < sc->sect_count &&
+           sc->sect[start].devoff != IWX_CPU1_CPU2_SEPARATOR_SECTION &&
+           sc->sect[start].devoff != IWX_PAGING_SEPARATOR_SECTION) {
+        start++;
+        i++;
+    }
+    return i;
+}
+
+static int iwx_ctxt_info_alloc_dma(const struct iwx_fw_onesect *sec, struct iwx_dma *dram)
+{
+    if (!iwx_dma_alloc(dram, sec->len, "fw section"))
+        return IWX_ENOMEM;
+    memcpy(dram->va, sec->data, sec->len);
+    return 0;
+}
+
+static int iwx_init_fw_sec(struct iwx_sc *sc, struct iwx_context_info_dram *ctxt_dram)
+{
+    int i, ret, fw_cnt = 0;
+
+    sc->lmac_cnt = iwx_get_num_sections(sc, 0);
+    sc->umac_cnt = iwx_get_num_sections(sc, sc->lmac_cnt + 1);
+    sc->paging_cnt = iwx_get_num_sections(sc, sc->lmac_cnt + sc->umac_cnt + 2);
+    klogf(KLOG_INFO, "iwx: fw sections lmac=%d umac=%d paging=%d (total %d)",
+          sc->lmac_cnt, sc->umac_cnt, sc->paging_cnt, sc->sect_count);
+    if (sc->lmac_cnt > IWX_MAX_DRAM_ENTRY || sc->umac_cnt > IWX_MAX_DRAM_ENTRY ||
+        sc->paging_cnt > IWX_MAX_DRAM_ENTRY || sc->lmac_cnt == 0 || sc->umac_cnt == 0) {
+        klogf(KLOG_ERROR, "iwx: bad section layout");
+        return IWX_EINVAL;
+    }
+    if (sc->lmac_cnt < sc->sect_count)
+        klogf(KLOG_INFO, "iwx: separator[%d]=0x%08x", sc->lmac_cnt, sc->sect[sc->lmac_cnt].devoff);
+    if (sc->lmac_cnt + sc->umac_cnt + 1 < sc->sect_count)
+        klogf(KLOG_INFO, "iwx: separator[%d]=0x%08x", sc->lmac_cnt + sc->umac_cnt + 1,
+              sc->sect[sc->lmac_cnt + sc->umac_cnt + 1].devoff);
+
+    for (i = 0; i < sc->lmac_cnt; i++) {
+        ret = iwx_ctxt_info_alloc_dma(&sc->sect[i], &sc->fw_dram[fw_cnt]);
+        if (ret)
+            return ret;
+        ctxt_dram->lmac_img[i] = htole64(sc->fw_dram[fw_cnt].pa);
+        klogf(KLOG_DEBUG, "iwx: LMAC sect %d devoff 0x%08x at 0x%llx size %u", i,
+              sc->sect[i].devoff, (unsigned long long)sc->fw_dram[fw_cnt].pa, sc->sect[i].len);
+        fw_cnt++;
+    }
+    for (i = 0; i < sc->umac_cnt; i++) {
+        ret = iwx_ctxt_info_alloc_dma(&sc->sect[fw_cnt + 1], &sc->fw_dram[fw_cnt]);
+        if (ret)
+            return ret;
+        ctxt_dram->umac_img[i] = htole64(sc->fw_dram[fw_cnt].pa);
+        klogf(KLOG_DEBUG, "iwx: UMAC sect %d devoff 0x%08x at 0x%llx size %u", i,
+              sc->sect[fw_cnt + 1].devoff, (unsigned long long)sc->fw_dram[fw_cnt].pa,
+              sc->sect[fw_cnt + 1].len);
+        fw_cnt++;
+    }
+    for (i = 0; i < sc->paging_cnt; i++) {
+        int fw_idx = fw_cnt + i + 2;
+        ret = iwx_ctxt_info_alloc_dma(&sc->sect[fw_idx], &sc->paging[i]);
+        if (ret)
+            return ret;
+        ctxt_dram->virtual_img[i] = htole64(sc->paging[i].pa);
+        klogf(KLOG_DEBUG, "iwx: paging sect %d devoff 0x%08x at 0x%llx size %u", i,
+              sc->sect[fw_idx].devoff, (unsigned long long)sc->paging[i].pa, sc->sect[fw_idx].len);
+    }
+    return 0;
+}
+
+static int iwx_ctxt_info_gen3_init(struct iwx_sc *sc)
+{
+    struct iwx_context_info_gen3 *ci;
+    struct iwx_prph_scratch *ps;
+    struct iwx_prph_scratch_ctrl_cfg *psc;
+    uint16_t cb_size;
+    uint32_t control_flags, scratch_size;
+    uint64_t paddr;
+    int err;
+
+    if (sc->iml == NULL || sc->iml_len == 0) {
+        klogf(KLOG_ERROR, "iwx: no image loader found in firmware file");
+        return IWX_EINVAL;
+    }
+    if (!iwx_dma_alloc(&sc->iml_dma, sc->iml_len, "iml"))
+        return IWX_ENOMEM;
+
+    ps = sc->prph_scratch.va;
+    memset(ps, 0, sizeof(*ps));
+    psc = &ps->ctrl_cfg;
+    psc->version.version = 0;
+    psc->version.mac_id = htole16((uint16_t)iwx_read(sc, IWX_CSR_HW_REV));
+    psc->version.size = htole16(sizeof(*ps) / 4);
+
+    control_flags = IWX_PRPH_SCRATCH_RB_SIZE_4K | IWX_PRPH_SCRATCH_MTR_MODE |
+                    (IWX_PRPH_MTR_FORMAT_256B & IWX_PRPH_SCRATCH_MTR_FORMAT);
+    if (sc->imr_enabled)
+        control_flags |= IWX_PRPH_SCRATCH_IMR_DEBUG_EN;
+    psc->control.control_flags = htole32(control_flags);
+    psc->rbd_cfg.free_rbd_addr = htole64(sc->rx_free.pa);
+
+    err = iwx_init_fw_sec(sc, &ps->dram);
+    if (err)
+        return err;
+
+    ci = sc->ctxt_info.va;
+    memset(ci, 0, sizeof(*ci));
+    ci->prph_info_base_addr = htole64(sc->prph_info.pa);
+    ci->prph_scratch_base_addr = htole64(sc->prph_scratch.pa);
+    scratch_size = sizeof(*ps);
+    ci->prph_scratch_size = htole32(scratch_size);
+    ci->cr_head_idx_arr_base_addr = htole64(sc->rx_stat.pa);
+    ci->tr_tail_idx_arr_base_addr = htole64(sc->prph_info.pa + IWX_PAGE_SIZE / 2);
+    ci->cr_tail_idx_arr_base_addr = htole64(sc->prph_info.pa + 3 * IWX_PAGE_SIZE / 4);
+    ci->mtr_base_addr = htole64(sc->tx_desc.pa);
+    ci->mcr_base_addr = htole64(sc->rx_used.pa);
+    cb_size = IWX_TFD_QUEUE_CB_SIZE(IWX_TX_RING_COUNT);
+    ci->mtr_size = htole16(cb_size);
+    cb_size = IWX_RX_QUEUE_CB_SIZE(IWX_MQ_RX_TABLE_SIZE);
+    ci->mcr_size = htole16(cb_size);
+
+    memcpy(sc->iml_dma.va, sc->iml, sc->iml_len);
+
+    klogf(KLOG_INFO, "iwx: ctxt_info_gen3 @0x%llx (%u bytes) prph_scratch @0x%llx (%u bytes) flags 0x%08x mac_id 0x%04x",
+          (unsigned long long)sc->ctxt_info.pa, (unsigned)sizeof(*ci),
+          (unsigned long long)sc->prph_scratch.pa, scratch_size, control_flags,
+          psc->version.mac_id);
+    klogf(KLOG_INFO, "iwx: mtr @0x%llx size %u, mcr @0x%llx size %u, free rbd @0x%llx, stat @0x%llx, prph_info @0x%llx",
+          (unsigned long long)sc->tx_desc.pa, ci->mtr_size, (unsigned long long)sc->rx_used.pa,
+          ci->mcr_size, (unsigned long long)sc->rx_free.pa, (unsigned long long)sc->rx_stat.pa,
+          (unsigned long long)sc->prph_info.pa);
+    klogf(KLOG_INFO, "iwx: iml @0x%llx %u bytes", (unsigned long long)sc->iml_dma.pa, sc->iml_len);
+
+    iwx_mb();
+
+    paddr = sc->ctxt_info.pa;
+    iwx_write(sc, IWX_CSR_CTXT_INFO_ADDR, (uint32_t)(paddr & 0xffffffff));
+    iwx_write(sc, IWX_CSR_CTXT_INFO_ADDR + 4, (uint32_t)(paddr >> 32));
+
+    paddr = sc->iml_dma.pa;
+    iwx_write(sc, IWX_CSR_IML_DATA_ADDR, (uint32_t)(paddr & 0xffffffff));
+    iwx_write(sc, IWX_CSR_IML_DATA_ADDR + 4, (uint32_t)(paddr >> 32));
+    iwx_write(sc, IWX_CSR_IML_SIZE_ADDR, sc->iml_len);
+
+    iwx_setbits(sc, IWX_CSR_CTXT_INFO_BOOT_CTRL, IWX_CSR_AUTO_FUNC_BOOT_ENA);
+
+    if (!iwx_nic_lock(sc))
+        return IWX_EBUSY;
+    iwx_write_umac_prph(sc, IWX_UREG_CPU_INIT_RUN, 1);
+    iwx_nic_unlock(sc);
+    klogf(KLOG_INFO, "iwx: firmware self-load kicked (CPU_INIT_RUN=1)");
+    return 0;
+}
+
+static void iwx_cmd_done(struct iwx_sc *sc, int qid, int idx, uint32_t code)
+{
+    if (qid != IWX_DQA_CMD_QUEUE)
+        return;
+    if (idx < 0 || idx >= IWX_TX_RING_COUNT)
+        return;
+    sc->tx_done[idx] = 1;
+    if (sc->tx_queued == 0)
+        klogf(KLOG_WARN, "iwx: unexpected firmware response to command 0x%x", code);
+    else if (sc->tx_queued > 0)
+        sc->tx_queued--;
+}
+
+static int iwx_rx_pkt_valid(const struct iwx_rx_packet *pkt)
+{
+    int qid = pkt->hdr.qid & ~0x80;
+    int idx = pkt->hdr.idx;
+    int code = IWX_WIDE_ID(pkt->hdr.flags, pkt->hdr.code);
+    return (!(qid == 0 && idx == 0 && code == 0) &&
+            pkt->len_n_flags != htole32(IWX_FH_RSCSR_FRAME_INVALID));
+}
+
+static void iwx_rx_alive(struct iwx_sc *sc, const struct iwx_rx_packet *pkt)
+{
+    int notif_ver = iwx_lookup_notif_ver(sc, IWX_LEGACY_GROUP, IWX_ALIVE);
+    uint32_t plen = iwx_rx_packet_payload_len(pkt);
+    const struct iwx_lmac_alive *lmac = NULL;
+    const struct iwx_umac_alive *umac = NULL;
+    uint16_t status = 0, flags = 0;
+
+    sc->uc_ok = 0;
+    klogf(KLOG_INFO, "iwx: ALIVE notif ver %d payload %u (v4=%u v5=%u v6=%u)", notif_ver, plen,
+          (unsigned)sizeof(struct iwx_alive_resp_v4), (unsigned)sizeof(struct iwx_alive_resp_v5),
+          (unsigned)sizeof(struct iwx_alive_resp_v6));
+
+    if (notif_ver == 6 || notif_ver == 7) {
+        const struct iwx_alive_resp_v6 *r = (const void *)pkt->data;
+        if (plen != sizeof(*r)) {
+            klogf(KLOG_ERROR, "iwx: ALIVE v6 size mismatch");
+            sc->uc_intr = 1;
+            return;
+        }
+        status = r->status;
+        flags = r->flags;
+        lmac = r->lmac_data;
+        umac = &r->umac_data;
+        sc->sku_id[0] = le32toh(r->sku_id.data[0]);
+        sc->sku_id[1] = le32toh(r->sku_id.data[1]);
+        sc->sku_id[2] = le32toh(r->sku_id.data[2]);
+        klogf(KLOG_INFO, "iwx: ALIVE imr base=0x%llx size=0x%x enabled=%u",
+              (unsigned long long)r->imr.base_addr, r->imr.size, r->imr.enabled);
+    } else if (notif_ver == 5) {
+        const struct iwx_alive_resp_v5 *r = (const void *)pkt->data;
+        if (plen != sizeof(*r)) {
+            klogf(KLOG_ERROR, "iwx: ALIVE v5 size mismatch");
+            sc->uc_intr = 1;
+            return;
+        }
+        status = r->status;
+        flags = r->flags;
+        lmac = r->lmac_data;
+        umac = &r->umac_data;
+        sc->sku_id[0] = le32toh(r->sku_id.data[0]);
+        sc->sku_id[1] = le32toh(r->sku_id.data[1]);
+        sc->sku_id[2] = le32toh(r->sku_id.data[2]);
+    } else if (plen == sizeof(struct iwx_alive_resp_v4)) {
+        const struct iwx_alive_resp_v4 *r = (const void *)pkt->data;
+        status = r->status;
+        flags = r->flags;
+        lmac = r->lmac_data;
+        umac = &r->umac_data;
+    } else {
+        klogf(KLOG_ERROR, "iwx: ALIVE unknown layout");
+    }
+
+    if (lmac && umac) {
+        sc->uc_lmac_err[0] = le32toh(lmac[0].dbg_ptrs.error_event_table_ptr);
+        sc->uc_lmac_err[1] = le32toh(lmac[1].dbg_ptrs.error_event_table_ptr);
+        sc->uc_log_event = le32toh(lmac[0].dbg_ptrs.log_event_table_ptr);
+        sc->uc_umac_err = le32toh(umac->dbg_ptrs.error_info_addr);
+        if (status == IWX_ALIVE_STATUS_OK)
+            sc->uc_ok = 1;
+        klogf(sc->uc_ok ? KLOG_OK : KLOG_ERROR, "iwx: ALIVE status 0x%04x flags 0x%04x", status, flags);
+        klogf(KLOG_INFO, "iwx: lmac0 %u.%u type %u/%u mac %u, lmac1 %u.%u, umac %u.%u",
+              lmac[0].ucode_major, lmac[0].ucode_minor, lmac[0].ver_type, lmac[0].ver_subtype,
+              lmac[0].mac, lmac[1].ucode_major, lmac[1].ucode_minor, umac->umac_major,
+              umac->umac_minor);
+        klogf(KLOG_INFO, "iwx: err tables lmac0=0x%08x lmac1=0x%08x umac=0x%08x log=0x%08x",
+              sc->uc_lmac_err[0], sc->uc_lmac_err[1], sc->uc_umac_err, sc->uc_log_event);
+        klogf(KLOG_INFO, "iwx: sku_id %08x %08x %08x", sc->sku_id[0], sc->sku_id[1], sc->sku_id[2]);
+    }
+    sc->uc_intr = 1;
+}
+
+static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
+{
+    uint8_t *buf = sc->rxbuf_va[ridx];
+    uint32_t offset = 0;
+    const size_t minsz = sizeof(uint32_t) + sizeof(struct iwx_cmd_header);
+
+    while (offset + minsz < IWX_RBUF_SIZE) {
+        struct iwx_rx_packet *pkt = (struct iwx_rx_packet *)(buf + offset);
+        int qid = pkt->hdr.qid;
+        int idx = pkt->hdr.idx;
+        uint32_t code = IWX_WIDE_ID(pkt->hdr.flags, pkt->hdr.code);
+        int handled = 1;
+
+        if (!iwx_rx_pkt_valid(pkt)) {
+            klogf(KLOG_WARN, "iwx: rx[%d] invalid packet len_n_flags=0x%08x", ridx,
+                  pkt->len_n_flags);
+            break;
+        }
+        if (iwx_cmd_groupid(code) == IWX_LONG_GROUP) {
+            int q = qid & ~0x80;
+            if (q == IWX_DQA_CMD_QUEUE && (sc->tx_flags[idx] & IWX_TXDATA_FLAG_CMD_IS_NARROW))
+                code = iwx_cmd_opcode(code);
+        }
+        uint32_t len = (uint32_t)sizeof(pkt->len_n_flags) + iwx_rx_packet_len(pkt);
+        if (len < minsz || len > (IWX_RBUF_SIZE - offset)) {
+            klogf(KLOG_WARN, "iwx: rx[%d] bad packet length %u", ridx, len);
+            break;
+        }
+        sc->pkts++;
+        klogf(KLOG_INFO, "iwx: rx[%d] pkt code 0x%x len %u qid 0x%x idx %d flags 0x%x", ridx,
+              code, len, qid, idx, pkt->hdr.flags);
+
+        switch (code) {
+        case IWX_ALIVE:
+            iwx_rx_alive(sc, pkt);
+            break;
+        case IWX_MFUART_LOAD_NOTIFICATION:
+        case IWX_DEBUG_LOG_MSG:
+            break;
+        case IWX_INIT_COMPLETE_NOTIF:
+            sc->init_complete |= IWX_INIT_COMPLETE;
+            klogf(KLOG_OK, "iwx: INIT_COMPLETE_NOTIF received");
+            break;
+        case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_PNVM_INIT_COMPLETE):
+            sc->init_complete |= IWX_PNVM_COMPLETE;
+            klogf(KLOG_OK, "iwx: PNVM_INIT_COMPLETE received");
+            break;
+        case IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_INIT_EXTENDED_CFG_CMD):
+        case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_ACCESS_COMPLETE):
+            break;
+        case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO): {
+            if (idx < 0 || idx >= IWX_TX_RING_COUNT || sc->resp_buf[idx] == NULL)
+                break;
+            uint32_t pkt_len = (uint32_t)sizeof(pkt->len_n_flags) + iwx_rx_packet_len(pkt);
+            if ((pkt->hdr.flags & IWX_CMD_FAILED_MSK) || pkt_len < sizeof(*pkt) ||
+                pkt_len > sc->resp_cap[idx]) {
+                klogf(KLOG_WARN, "iwx: response rejected flags 0x%x len %u cap %u",
+                      pkt->hdr.flags, pkt_len, sc->resp_cap[idx]);
+                sc->resp_buf[idx] = NULL;
+                break;
+            }
+            memcpy(sc->resp_buf[idx], pkt, pkt_len);
+            sc->resp_got[idx] = pkt_len;
+            break;
+        }
+        case IWX_REPLY_ERROR: {
+            const struct iwx_error_resp *r = (const void *)pkt->data;
+            klogf(KLOG_ERROR, "iwx: firmware error 0x%x, cmd 0x%x seq 0x%x service 0x%x",
+                  le32toh(r->error_type), r->cmd_id, r->bad_cmd_seq_num, r->error_service);
+            break;
+        }
+        default:
+            handled = 0;
+            klogf(KLOG_WARN, "iwx: unhandled firmware response 0x%x/0x%x rx ring %d[%d]", code,
+                  pkt->len_n_flags, (qid & ~0x80), idx);
+            break;
+        }
+
+        if (!(qid & (1 << 7))) {
+            if (!handled)
+                klogf(KLOG_WARN, "iwx: completing unhandled response 0x%x idx %d", code, idx);
+            iwx_cmd_done(sc, qid, idx, code);
+        }
+
+        offset += roundup(len, IWX_FH_RSCSR_FRAME_ALIGN);
+        break;
+    }
+}
+
+static void iwx_notif_intr(struct iwx_sc *sc)
+{
+    uint16_t hw = le16toh(*(volatile uint16_t *)sc->rx_stat.va) & 0xfff;
+    hw &= (IWX_RX_MQ_RING_COUNT - 1);
+    if (sc->rx_cur == hw)
+        return;
+    __atomic_thread_fence(__ATOMIC_SEQ_CST);
+    while (sc->rx_cur != hw) {
+        const struct iwx_rx_completion_desc *cd = sc->rx_used.va;
+        uint16_t rbid = le16toh(cd[sc->rx_cur].rbid);
+        if (rbid != sc->rx_cur)
+            klogf(KLOG_WARN, "iwx: rx used[%d].rbid=%u mismatch", sc->rx_cur, rbid);
+        iwx_rx_pkt(sc, sc->rx_cur);
+        sc->rx_cur = (sc->rx_cur + 1) % IWX_RX_MQ_RING_COUNT;
+    }
+    hw = (hw == 0) ? IWX_RX_MQ_RING_COUNT - 1 : hw - 1;
+    iwx_write(sc, IWX_RFH_Q0_FRBDCB_WIDX_TRG, hw & ~7);
+}
+
+static void iwx_post_rx_after_alive(struct iwx_sc *sc)
+{
+    for (int i = 0; i < IWX_RX_MQ_RING_COUNT; i++)
+        iwx_update_rx_desc(sc, i);
+    iwx_mb();
+    iwx_write(sc, IWX_RFH_Q0_FRBDCB_WIDX_TRG, 8);
+}
+
+static int iwx_service(struct iwx_sc *sc)
+{
+    uint32_t r1 = iwx_read(sc, IWX_CSR_INT);
+    if (r1 == 0xffffffff || (r1 & 0xfffffff0) == 0xa5a5a5a0) {
+        if (!sc->dead_logged) {
+            klogf(KLOG_ERROR, "iwx: device not responding, CSR_INT=0x%08x", r1);
+            sc->dead_logged = 1;
+        }
+        sc->fatal = 1;
+        return -1;
+    }
+    uint32_t r2 = iwx_read(sc, IWX_CSR_FH_INT_STATUS);
+    if (r1 || r2) {
+        iwx_write(sc, IWX_CSR_INT, r1);
+        if ((r1 & ~sc->int_seen) || (r2 & ~(IWX_CSR_FH_INT_RX_MASK | IWX_CSR_FH_INT_TX_MASK)))
+            klogf(KLOG_INFO, "iwx: int CSR_INT=0x%08x FH_INT=0x%08x", r1, r2);
+        sc->int_seen |= r1;
+        if (r1 & IWX_CSR_INT_BIT_ALIVE) {
+            klogf(KLOG_OK, "iwx: ALIVE hw cause, posting %d rx buffers, WIDX=8",
+                  IWX_RX_MQ_RING_COUNT);
+            iwx_post_rx_after_alive(sc);
+            sc->alive_hw = 1;
+        }
+        if (r1 & IWX_CSR_INT_BIT_RF_KILL)
+            klogf(KLOG_WARN, "iwx: rfkill change, rfkill=%d", iwx_check_rfkill(sc));
+        if (r1 & IWX_CSR_INT_BIT_SW_ERR) {
+            klogf(KLOG_ERROR, "iwx: fatal firmware error (SW_ERR)");
+            iwx_notif_intr(sc);
+            iwx_nic_error(sc);
+            iwx_dump_state(sc, "sw_err");
+            sc->fatal = 1;
+            return -1;
+        }
+        if (r1 & IWX_CSR_INT_BIT_HW_ERR) {
+            klogf(KLOG_ERROR, "iwx: hardware error, stopping device");
+            iwx_dump_state(sc, "hw_err");
+            sc->fatal = 1;
+            return -1;
+        }
+        if (r1 & IWX_CSR_INT_BIT_FH_TX)
+            iwx_write(sc, IWX_CSR_FH_INT_STATUS, IWX_CSR_FH_INT_TX_MASK);
+        if (r1 & (IWX_CSR_INT_BIT_FH_RX | IWX_CSR_INT_BIT_SW_RX))
+            iwx_write(sc, IWX_CSR_FH_INT_STATUS, IWX_CSR_FH_INT_RX_MASK);
+    }
+    iwx_notif_intr(sc);
+    return sc->fatal ? -1 : 0;
+}
+
+typedef int (*iwx_cond_fn)(struct iwx_sc *sc);
+
+static int iwx_wait(struct iwx_sc *sc, iwx_cond_fn done, uint32_t ms, uint64_t *elapsed)
+{
+    uint64_t start = timer_ticks();
+    for (;;) {
+        if (iwx_service(sc) < 0)
+            return IWX_EIO;
+        if (done(sc)) {
+            if (elapsed)
+                *elapsed = timer_ticks() - start;
+            return 0;
+        }
+        if (timer_ticks() - start >= ms) {
+            if (elapsed)
+                *elapsed = timer_ticks() - start;
+            return IWX_ETIMEDOUT;
+        }
+        DELAY(20);
+        scheduler_yield();
+    }
+}
+
+static int iwx_cond_alive(struct iwx_sc *sc) { return sc->uc_intr; }
+static int iwx_cond_pnvm(struct iwx_sc *sc) { return (sc->init_complete & IWX_PNVM_COMPLETE) != 0; }
+static int iwx_cond_init(struct iwx_sc *sc) { return (sc->init_complete & IWX_INIT_COMPLETE) != 0; }
+static int iwx_cond_cmd(struct iwx_sc *sc) { return sc->tx_done[sc->wait_idx]; }
+
+static int iwx_send_cmd(struct iwx_sc *sc, uint32_t id, const void *data, uint16_t paylen,
+                        void *resp, uint32_t resp_cap, uint32_t *resp_len)
+{
+    int idx = sc->tx_cur;
+    uint32_t code = id;
+    struct iwx_tfh_tfd *desc = (struct iwx_tfh_tfd *)sc->tx_desc.va + idx;
+    struct iwx_device_cmd *cmd = (struct iwx_device_cmd *)sc->tx_cmd.va + idx;
+    uint64_t paddr = sc->tx_cmd.pa + (uint64_t)idx * sizeof(struct iwx_device_cmd);
+    size_t hdrlen = sizeof(cmd->hdr_wide);
+    size_t datasz = sizeof(cmd->data_wide);
+    uint64_t addr, elapsed = 0;
+
+    if (paylen > datasz) {
+        klogf(KLOG_ERROR, "iwx: command 0x%x too long (%u)", id, paylen);
+        return IWX_EINVAL;
+    }
+    sc->resp_buf[idx] = resp;
+    sc->resp_cap[idx] = resp_cap;
+    sc->resp_got[idx] = 0;
+    sc->tx_done[idx] = 0;
+    if (resp)
+        memset(resp, 0, resp_cap);
+
+    if (iwx_cmd_groupid(code) == 0) {
+        code = IWX_WIDE_ID(IWX_LONG_GROUP, code);
+        sc->tx_flags[idx] |= IWX_TXDATA_FLAG_CMD_IS_NARROW;
+    } else {
+        sc->tx_flags[idx] &= (uint8_t)~IWX_TXDATA_FLAG_CMD_IS_NARROW;
+    }
+
+    memset(cmd, 0, sizeof(*cmd));
+    cmd->hdr_wide.opcode = iwx_cmd_opcode(code);
+    cmd->hdr_wide.group_id = iwx_cmd_groupid(code);
+    cmd->hdr_wide.qid = (uint8_t)sc->tx_qid;
+    cmd->hdr_wide.idx = (uint8_t)idx;
+    cmd->hdr_wide.length = htole16(paylen);
+    cmd->hdr_wide.version = iwx_cmd_version(code);
+    if (paylen)
+        memcpy(cmd->data_wide, data, paylen);
+
+    memset(desc, 0, sizeof(*desc));
+    desc->tbs[0].tb_len = htole16((uint16_t)MIN(hdrlen + paylen, IWX_FIRST_TB_SIZE));
+    addr = htole64(paddr);
+    memcpy(&desc->tbs[0].addr, &addr, sizeof(addr));
+    if (hdrlen + paylen > IWX_FIRST_TB_SIZE) {
+        desc->tbs[1].tb_len = htole16((uint16_t)(hdrlen + paylen - IWX_FIRST_TB_SIZE));
+        addr = htole64(paddr + IWX_FIRST_TB_SIZE);
+        memcpy(&desc->tbs[1].addr, &addr, sizeof(addr));
+        desc->num_tbs = htole16(2);
+    } else {
+        desc->num_tbs = htole16(1);
+    }
+
+    iwx_mb();
+    sc->tx_queued++;
+    sc->tx_cur = (sc->tx_cur + 1) % IWX_TX_RING_COUNT;
+    sc->tx_cur_hw = (int)((uint32_t)(sc->tx_cur_hw + 1) % sc->max_tfd_queue_size);
+    klogf(KLOG_INFO, "iwx: send cmd 0x%x (grp 0x%x op 0x%x ver %u) len %u idx %d wrptr 0x%x",
+          code, cmd->hdr_wide.group_id, cmd->hdr_wide.opcode, cmd->hdr_wide.version, paylen,
+          idx, (uint32_t)(sc->tx_qid << 16 | sc->tx_cur_hw));
+    iwx_write(sc, IWX_HBUS_TARG_WRPTR, (uint32_t)(sc->tx_qid << 16 | sc->tx_cur_hw));
+
+    sc->wait_idx = idx;
+    int err = iwx_wait(sc, iwx_cond_cmd, 1000, &elapsed);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: cmd 0x%x idx %d failed: %s after %llu ms", code, idx,
+              err == IWX_ETIMEDOUT ? "timeout" : "device error", (unsigned long long)elapsed);
+        if (err == IWX_ETIMEDOUT)
+            iwx_dump_state(sc, "cmd timeout");
+        sc->resp_buf[idx] = NULL;
+        return err;
+    }
+    klogf(KLOG_OK, "iwx: cmd 0x%x done in %llu ms", code, (unsigned long long)elapsed);
+    if (resp) {
+        if (resp_len)
+            *resp_len = sc->resp_got[idx];
+        if (!sc->resp_got[idx]) {
+            sc->resp_buf[idx] = NULL;
+            return IWX_EIO;
+        }
+    }
+    sc->resp_buf[idx] = NULL;
+    return 0;
+}
+
+static int iwx_nic_init(struct iwx_sc *sc)
+{
+    int err = iwx_apm_init(sc);
+    if (err)
+        klogf(KLOG_WARN, "iwx: nic_init: apm_init returned %d (ignored like iwx)", err);
+    iwx_write_1(sc, IWX_CSR_INT_COALESCING, IWX_HOST_INT_TIMEOUT_DEF);
+    iwx_setbits(sc, IWX_CSR_MAC_SHADOW_REG_CTRL, 0x800fffff);
+    return 0;
+}
+
+static int iwx_load_firmware(struct iwx_sc *sc)
+{
+    uint64_t elapsed = 0;
+    int err;
+
+    sc->uc_intr = 0;
+    sc->uc_ok = 0;
+    sc->alive_hw = 0;
+
+    err = iwx_ctxt_info_gen3_init(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: could not init context info (%d)", err);
+        return err;
+    }
+    err = iwx_wait(sc, iwx_cond_alive, 1000, &elapsed);
+    if (err == IWX_ETIMEDOUT && !sc->alive_hw) {
+        klogf(KLOG_WARN, "iwx: no ALIVE hw cause after %llu ms, forcing rx post and waiting 1 s more",
+              (unsigned long long)elapsed);
+        iwx_dump_state(sc, "alive cause timeout");
+        iwx_post_rx_after_alive(sc);
+        err = iwx_wait(sc, iwx_cond_alive, 1000, &elapsed);
+    }
+    if (err || !sc->uc_ok) {
+        klogf(KLOG_ERROR, "iwx: could not load firmware, err=%d alive_hw=%d uc_intr=%d uc_ok=%d (%llu ms)",
+              err, sc->alive_hw, sc->uc_intr, sc->uc_ok, (unsigned long long)elapsed);
+        iwx_dump_state(sc, "alive");
+        if (sc->uc_intr && (sc->uc_lmac_err[0] || sc->uc_umac_err))
+            iwx_nic_error(sc);
+        return IWX_EINVAL;
+    }
+    klogf(KLOG_OK, "iwx: firmware alive after %llu ms", (unsigned long long)elapsed);
+    return 0;
+}
+
+static int iwx_start_fw(struct iwx_sc *sc)
+{
+    iwx_write(sc, IWX_CSR_INT, ~0u);
+    iwx_disable_interrupts(sc);
+    iwx_write(sc, IWX_CSR_UCODE_DRV_GP1_CLR, IWX_CSR_UCODE_SW_BIT_RFKILL);
+    iwx_write(sc, IWX_CSR_UCODE_DRV_GP1_CLR, IWX_CSR_UCODE_DRV_GP1_BIT_CMD_BLOCKED);
+    iwx_write(sc, IWX_CSR_INT, ~0u);
+    int err = iwx_nic_init(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: unable to init nic");
+        return err;
+    }
+    sc->intmask = IWX_CSR_INT_BIT_ALIVE | IWX_CSR_INT_BIT_FH_RX;
+    iwx_write(sc, IWX_CSR_INT_MASK, 0);
+    klogf(KLOG_INFO, "iwx: fwload: iwx intmask would be 0x%08x, polling with CSR_INT_MASK=0 GP_CNTRL=0x%08x",
+          sc->intmask, iwx_read(sc, IWX_CSR_GP_CNTRL));
+    return iwx_load_firmware(sc);
+}
+
+static int iwx_load_pnvm(struct iwx_sc *sc)
+{
+    uint64_t elapsed = 0;
+    if (sc->sku_id[0] == 0 && sc->sku_id[1] == 0 && sc->sku_id[2] == 0) {
+        klogf(KLOG_INFO, "iwx: sku_id is zero, skipping PNVM step");
+        return 0;
+    }
+    if (!iwx_nic_lock(sc))
+        return IWX_EBUSY;
+    iwx_write_umac_prph(sc, IWX_UREG_DOORBELL_TO_ISR6, IWX_UREG_DOORBELL_TO_ISR6_PNVM);
+    klogf(KLOG_INFO, "iwx: no PNVM file, doorbell ISR6 <- PNVM (0x%x)", IWX_UREG_DOORBELL_TO_ISR6_PNVM);
+    int err = iwx_wait(sc, iwx_cond_pnvm, 2000, &elapsed);
+    iwx_nic_unlock(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: PNVM_INIT_COMPLETE wait failed (%d) after %llu ms", err,
+              (unsigned long long)elapsed);
+        iwx_dump_state(sc, "pnvm");
+        return err;
+    }
+    klogf(KLOG_OK, "iwx: PNVM step done in %llu ms", (unsigned long long)elapsed);
+    return 0;
+}
+
+static int iwx_is_valid_mac_addr(const uint8_t *a)
+{
+    static const uint8_t reserved[6] = {0x02, 0xcc, 0xaa, 0xff, 0xee, 0x00};
+    static const uint8_t bcast[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    static const uint8_t any[6] = {0, 0, 0, 0, 0, 0};
+    return memcmp(reserved, a, 6) != 0 && memcmp(bcast, a, 6) != 0 &&
+           memcmp(any, a, 6) != 0 && !(a[0] & 1);
+}
+
+static void iwx_flip_hw_address(uint32_t mac_addr0, uint32_t mac_addr1, uint8_t *dest)
+{
+    const uint8_t *hw = (const uint8_t *)&mac_addr0;
+    dest[0] = hw[3];
+    dest[1] = hw[2];
+    dest[2] = hw[1];
+    dest[3] = hw[0];
+    hw = (const uint8_t *)&mac_addr1;
+    dest[4] = hw[1];
+    dest[5] = hw[0];
+}
+
+static void iwx_set_mac_addr_from_csr(struct iwx_sc *sc)
+{
+    memset(sc->mac, 0, sizeof(sc->mac));
+    if (!iwx_nic_lock(sc))
+        return;
+    uint32_t a0 = htole32(iwx_read(sc, IWX_CSR_MAC_ADDR0_STRAP(sc)));
+    uint32_t a1 = htole32(iwx_read(sc, IWX_CSR_MAC_ADDR1_STRAP(sc)));
+    klogf(KLOG_INFO, "iwx: mac strap 0x%08x 0x%08x", a0, a1);
+    iwx_flip_hw_address(a0, a1, sc->mac);
+    if (!iwx_is_valid_mac_addr(sc->mac)) {
+        a0 = htole32(iwx_read(sc, IWX_CSR_MAC_ADDR0_OTP(sc)));
+        a1 = htole32(iwx_read(sc, IWX_CSR_MAC_ADDR1_OTP(sc)));
+        klogf(KLOG_INFO, "iwx: mac otp 0x%08x 0x%08x", a0, a1);
+        iwx_flip_hw_address(a0, a1, sc->mac);
+    }
+    iwx_nic_unlock(sc);
+}
+
+static void iwx_nvm_get(struct iwx_sc *sc)
+{
+    struct iwx_nvm_get_info cmd = {0};
+    int v4 = isset(sc->ucode_api, IWX_UCODE_TLV_API_REGULATORY_NVM_INFO) ? 1 : 0;
+    uint32_t resp_size = v4 ? sizeof(struct iwx_nvm_get_info_rsp) : sizeof(struct iwx_nvm_get_info_rsp_v3);
+    uint32_t got = 0;
+
+    iwx_set_mac_addr_from_csr(sc);
+    klogf(iwx_is_valid_mac_addr(sc->mac) ? KLOG_OK : KLOG_WARN,
+          "iwx: MAC address %02x:%02x:%02x:%02x:%02x:%02x%s", sc->mac[0], sc->mac[1], sc->mac[2],
+          sc->mac[3], sc->mac[4], sc->mac[5], iwx_is_valid_mac_addr(sc->mac) ? "" : " (invalid)");
+
+    int err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO), &cmd,
+                           sizeof(cmd), sc->resp_storage,
+                           (uint32_t)sizeof(struct iwx_rx_packet) + resp_size, &got);
+    if (err) {
+        klogf(KLOG_WARN, "iwx: NVM_GET_INFO failed (%d)", err);
+        return;
+    }
+    const struct iwx_rx_packet *pkt = (const void *)sc->resp_storage;
+    uint32_t plen = iwx_rx_packet_payload_len(pkt);
+    if (plen != resp_size)
+        klogf(KLOG_WARN, "iwx: NVM_GET_INFO payload %u, expected %u (api v4=%d)", plen, resp_size, v4);
+    if (plen < sizeof(struct iwx_nvm_get_info_general) + sizeof(struct iwx_nvm_get_info_sku) +
+                   sizeof(struct iwx_nvm_get_info_phy) + 4)
+        return;
+    const struct iwx_nvm_get_info_rsp *rsp = (const void *)pkt->data;
+    uint32_t flags = le32toh(rsp->mac_sku.mac_sku_flags);
+    klogf(KLOG_OK, "iwx: NVM version 0x%x n_hw_addrs %u board %u flags 0x%x",
+          le16toh(rsp->general.nvm_version), rsp->general.n_hw_addrs, rsp->general.board_type,
+          le32toh(rsp->general.flags));
+    klogf(KLOG_INFO, "iwx: NVM sku 0x%08x (2G=%d 5G=%d n=%d ac=%d ax=%d mimo_dis=%d) tx_ant 0x%x rx_ant 0x%x lar %u",
+          flags, !!(flags & IWX_NVM_MAC_SKU_FLAGS_BAND_2_4_ENABLED),
+          !!(flags & IWX_NVM_MAC_SKU_FLAGS_BAND_5_2_ENABLED),
+          !!(flags & IWX_NVM_MAC_SKU_FLAGS_802_11N_ENABLED),
+          !!(flags & IWX_NVM_MAC_SKU_FLAGS_802_11AC_ENABLED),
+          !!(flags & IWX_NVM_MAC_SKU_FLAGS_802_11AX_ENABLED),
+          !!(flags & IWX_NVM_MAC_SKU_FLAGS_MIMO_DISABLED), le32toh(rsp->phy_sku.tx_chains),
+          le32toh(rsp->phy_sku.rx_chains), le32toh(rsp->regulatory.lar_enabled));
+}
+
+static int iwx_run_init_mvm_ucode(struct iwx_sc *sc)
+{
+    struct iwx_nvm_access_complete_cmd nvm_complete = {0};
+    struct iwx_init_extended_cfg_cmd init_cfg = {.init_flags = htole32(IWX_INIT_NVM)};
+    uint64_t elapsed = 0;
+    int err;
+
+    if (sc->rfkill)
+        klogf(KLOG_WARN, "iwx: radio is disabled by hardware switch (continuing, readnvm)");
+
+    sc->init_complete = 0;
+    err = iwx_start_fw(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: failed to load init firmware");
+        return err;
+    }
+    err = iwx_load_pnvm(sc);
+    if (err)
+        return err;
+    klogf(KLOG_INFO, "iwx: post_alive: ICT not used (polling)");
+
+    klogf(KLOG_INFO, "iwx: INIT_EXTENDED_CFG cmd ver %u, NVM_ACCESS_COMPLETE cmd ver %u",
+          iwx_lookup_cmd_ver(sc, IWX_SYSTEM_GROUP, IWX_INIT_EXTENDED_CFG_CMD),
+          iwx_lookup_cmd_ver(sc, IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_ACCESS_COMPLETE));
+    err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_INIT_EXTENDED_CFG_CMD), &init_cfg,
+                       sizeof(init_cfg), NULL, 0, NULL);
+    if (err)
+        return err;
+    err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_ACCESS_COMPLETE),
+                       &nvm_complete, sizeof(nvm_complete), NULL, 0, NULL);
+    if (err)
+        return err;
+    err = iwx_wait(sc, iwx_cond_init, 2000, &elapsed);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: INIT_COMPLETE wait failed (%d) after %llu ms", err,
+              (unsigned long long)elapsed);
+        iwx_dump_state(sc, "init_complete");
+        return err;
+    }
+    klogf(KLOG_OK, "iwx: init firmware complete in %llu ms", (unsigned long long)elapsed);
+    iwx_nvm_get(sc);
+    return 0;
+}
+
+static void iwx_disable_rx_dma(struct iwx_sc *sc)
+{
+    if (iwx_nic_lock(sc)) {
+        iwx_write_umac_prph(sc, IWX_RFH_RXF_DMA_CFG_GEN3, 0);
+        int ntries;
+        for (ntries = 0; ntries < 1000; ntries++) {
+            if (iwx_read_umac_prph(sc, IWX_RFH_GEN_STATUS_GEN3) & IWX_RXF_DMA_IDLE)
+                break;
+            DELAY(10);
+        }
+        if (ntries == 1000)
+            klogf(KLOG_WARN, "iwx: rx dma did not go idle");
+        iwx_nic_unlock(sc);
+    }
+}
+
+static void iwx_stop_device(struct iwx_sc *sc)
+{
+    iwx_disable_interrupts(sc);
+    iwx_disable_rx_dma(sc);
+    sc->rx_cur = 0;
+    if (sc->rx_stat.va)
+        *(volatile uint16_t *)sc->rx_stat.va = 0;
+    if (sc->tx_desc.va)
+        iwx_reset_tx_ring(sc);
+    iwx_clrbits(sc, IWX_CSR_GP_CNTRL, IWX_CSR_GP_CNTRL_REG_FLAG_MAC_ACCESS_REQ);
+    if (sc->nic_locks > 0)
+        klogf(KLOG_WARN, "iwx: %d active NIC locks forcefully cleared", sc->nic_locks);
+    sc->nic_locks = 0;
+    iwx_apm_stop(sc);
+    iwx_sw_reset(sc);
+    iwx_conf_msix_hw(sc, 1);
+    iwx_disable_interrupts(sc);
+    iwx_enable_rfkill_int(sc);
+    iwx_check_rfkill(sc);
+    iwx_prepare_card_hw(sc);
+    klogf(KLOG_INFO, "iwx: device stopped GP_CNTRL=0x%08x", iwx_read(sc, IWX_CSR_GP_CNTRL));
+}
+
+static void iwx_pci_visitor(const struct pci_device_info *dev, void *ctx)
+{
+    struct iwx_sc *sc = ctx;
+    if (sc->found)
+        return;
+    if (dev->vendor_id == 0x8086 && dev->device_id == 0x51f0 && dev->class_code == 0x02) {
+        sc->pci = *dev;
+        sc->found = true;
+    }
+}
+
+static bool iwx_attach(struct iwx_sc *sc)
+{
+    uint32_t ss = pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function, 0x2c);
+    sc->subsys_vendor = (uint16_t)(ss & 0xffff);
+    sc->subsys_device = (uint16_t)(ss >> 16);
+    klogf(KLOG_INFO, "iwx: found %04x:%04x at %02x:%02x.%u subsys %04x:%04x rev 0x%02x",
+          sc->pci.vendor_id, sc->pci.device_id, sc->pci.bus, sc->pci.slot, sc->pci.function,
+          sc->subsys_vendor, sc->subsys_device, sc->pci.revision);
+
+    sc->pcie_cap = iwx_find_pcie_cap(sc);
+    if (!sc->pcie_cap) {
+        klogf(KLOG_ERROR, "iwx: PCIe capability structure not found!");
+        return false;
+    }
+
+    uint32_t reg = pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function, 0x40);
+    pci_write_config32(sc->pci.bus, sc->pci.slot, sc->pci.function, 0x40, reg & ~0xff00u);
+
+    sc->bar_pa = pci_read_bar(sc->pci.bus, sc->pci.slot, sc->pci.function, 0);
+    if (!sc->bar_pa) {
+        klogf(KLOG_ERROR, "iwx: BAR0 not assigned");
+        return false;
+    }
+    pci_update_command(&sc->pci, 0, PCI_COMMAND_MEMORY);
+    sc->bar_size = pci_bar_size(sc->pci.bus, sc->pci.slot, sc->pci.function, 0);
+    if (sc->bar_size == 0 || sc->bar_size > 0x100000)
+        sc->bar_size = 0x4000;
+    pci_update_command(&sc->pci, PCI_COMMAND_MEMORY | PCI_COMMAND_BUS_MASTER |
+                                      IWX_PCI_COMMAND_INTX_DISABLE, 0);
+    sc->regs = (volatile uint8_t *)mmio_map(sc->bar_pa, sc->bar_size);
+    if (!sc->regs) {
+        klogf(KLOG_ERROR, "iwx: can't map mem space 0x%llx", (unsigned long long)sc->bar_pa);
+        return false;
+    }
+    klogf(KLOG_INFO, "iwx: BAR0 0x%llx size 0x%llx, PCI cmd/status 0x%08x, pcie cap 0x%02x",
+          (unsigned long long)sc->bar_pa, (unsigned long long)sc->bar_size,
+          pci_read_config32(sc->pci.bus, sc->pci.slot, sc->pci.function, 0x04), sc->pcie_cap);
+
+    iwx_write(sc, IWX_CSR_INT_MASK, 0);
+    iwx_write(sc, IWX_CSR_INT, ~0u);
+    iwx_write(sc, IWX_CSR_FH_INT_STATUS, ~0u);
+
+    sc->hw_rev_raw = iwx_read(sc, IWX_CSR_HW_REV);
+    sc->hw_rf_id = iwx_read(sc, IWX_CSR_HW_RF_ID);
+    if (sc->hw_rev_raw == 0xffffffff) {
+        klogf(KLOG_ERROR, "iwx: CSR_HW_REV reads all ones, device not accessible");
+        return false;
+    }
+    sc->hw_rev = (sc->hw_rev_raw & 0xfff0) | (IWX_CSR_HW_REV_STEP(sc->hw_rev_raw << 2) << 2);
+    klogf(KLOG_INFO, "iwx: CSR_HW_REV 0x%08x (hw_rev 0x%x mac type 0x%x step %u) RF_ID 0x%08x (rf type 0x%x)",
+          sc->hw_rev_raw, sc->hw_rev, IWX_CSR_HW_REV_TYPE(sc->hw_rev),
+          IWX_CSR_HW_REV_STEP(sc->hw_rev << 2), sc->hw_rf_id, IWX_CSR_HW_RFID_TYPE(sc->hw_rf_id));
+    if (IWX_CSR_HW_REV_TYPE(sc->hw_rev) != IWX_CFG_MAC_TYPE_SO ||
+        IWX_CSR_HW_RFID_TYPE(sc->hw_rf_id) != IWX_CFG_RF_TYPE_HR2) {
+        klogf(KLOG_ERROR, "iwx: unsupported mac/rf combination for %s", IWX_FW_NAME);
+        return false;
+    }
+
+    sc->integrated = 1;
+    sc->imr_enabled = 1;
+    sc->mac_addr_from_csr = 0x380;
+    sc->umac_prph_offset = 0x300000;
+    sc->max_tfd_queue_size = IWX_TFD_QUEUE_SIZE_MAX_GEN3;
+
+    if (iwx_apm_init(sc) == 0 && iwx_nic_lock(sc)) {
+        iwx_get_crf_id(sc);
+        iwx_nic_unlock(sc);
+        iwx_apm_stop(sc);
+    }
+    klogf(KLOG_INFO, "iwx: crf-id 0x%08x cnv-id 0x%08x pm_support %d ltr %d", sc->hw_crf_id,
+          sc->hw_cnv_id, sc->pm_support, sc->ltr_enabled);
+
+    if (!iwx_dma_alloc(&sc->ctxt_info, sizeof(struct iwx_context_info_gen3), "ctxt info"))
+        return false;
+    if (!iwx_dma_alloc(&sc->prph_scratch, sizeof(struct iwx_prph_scratch), "prph scratch"))
+        return false;
+    if (!iwx_dma_alloc(&sc->prph_info, IWX_PAGE_SIZE, "prph info"))
+        return false;
+    if (!iwx_alloc_tx_ring(sc))
+        return false;
+    if (!iwx_alloc_rx_ring(sc))
+        return false;
+    klogf(KLOG_INFO, "iwx: rings allocated: tx %d x %u B, cmd %u B, rx %d x 4K",
+          IWX_TX_RING_COUNT, (unsigned)sizeof(struct iwx_tfh_tfd),
+          (unsigned)sizeof(struct iwx_device_cmd), IWX_RX_MQ_RING_COUNT);
+    return true;
+}
+
+static void iwx_thread(void *arg)
+{
+    struct iwx_sc *sc = arg;
+    int err;
+
+    pci_enumerate(iwx_pci_visitor, sc);
+    if (!sc->found) {
+        klogf(KLOG_INFO, "iwx: no supported device");
+        return;
+    }
+    iwx_calibrate();
+    if (!iwx_attach(sc))
+        return;
+    if (!iwx_load_firmware_file(sc))
+        return;
+    if (iwx_read_firmware(sc))
+        return;
+
+    err = iwx_prepare_card_hw(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: could not initialize hardware");
+        return;
+    }
+    err = iwx_start_hw(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: could not initialize hardware (%d)", err);
+        iwx_stop_device(sc);
+        return;
+    }
+    err = iwx_run_init_mvm_ucode(sc);
+    iwx_stop_device(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: init firmware run failed (%d)", err);
+        return;
+    }
+    klogf(KLOG_OK, "iwx: milestone 1 complete: hw rev 0x%x, fw %u.%08x.%u, address %02x:%02x:%02x:%02x:%02x:%02x",
+          sc->hw_rev & IWX_CSR_HW_REV_TYPE_MSK, sc->fw_major, sc->fw_minor, sc->fw_api,
+          sc->mac[0], sc->mac[1], sc->mac[2], sc->mac[3], sc->mac[4], sc->mac[5]);
+}
+
+bool iwx_start(void)
+{
+    if (iwx_started)
+        return true;
+    memset(&iwx_softc, 0, sizeof(iwx_softc));
+    if (scheduler_create_thread(iwx_thread, &iwx_softc, "iwx", 1, -1) < 0) {
+        klogf(KLOG_ERROR, "iwx: cannot create thread");
+        return false;
+    }
+    iwx_started = true;
+    return true;
+}

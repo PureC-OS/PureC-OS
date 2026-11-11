@@ -11,6 +11,7 @@ typedef uint64_t bus_addr_t;
 
 #define __packed __attribute__((packed))
 #define __aligned(x) __attribute__((aligned(x)))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define nitems(a) (sizeof(a) / sizeof((a)[0]))
 #define howmany(x, y) (((x) + ((y) - 1)) / (y))
 #define roundup(x, y) ((((x) + ((y) - 1)) / (y)) * (y))
