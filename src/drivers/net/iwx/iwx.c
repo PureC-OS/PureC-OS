@@ -164,6 +164,7 @@ struct iwx_sc {
     int fatal;
     int dead_logged;
     uint32_t int_seen;
+    uint32_t fh_seen;
     uint32_t pkts;
     uint8_t mac[6];
 };
@@ -497,9 +498,9 @@ static void iwx_dump_state(struct iwx_sc *sc, const char *why)
     klogf(KLOG_ERROR, "iwx: IML_RESP=0x%08x CTXT_ADDR=0x%08x:%08x IML_SIZE=0x%x",
           iwx_read(sc, IWX_CSR_IML_RESP_ADDR), iwx_read(sc, IWX_CSR_CTXT_INFO_ADDR + 4),
           iwx_read(sc, IWX_CSR_CTXT_INFO_ADDR), iwx_read(sc, IWX_CSR_IML_SIZE_ADDR));
-    klogf(KLOG_ERROR, "iwx: rx stat=%u cur=%d tx cur=%d cur_hw=%d queued=%d ints_seen=0x%08x pkts=%u",
+    klogf(KLOG_ERROR, "iwx: rx stat=%u cur=%d tx cur=%d cur_hw=%d queued=%d ints_seen=0x%08x fh_seen=0x%08x pkts=%u",
           stat, sc->rx_cur, sc->tx_cur, sc->tx_cur_hw, sc->tx_queued, sc->int_seen,
-          sc->pkts);
+          sc->fh_seen, sc->pkts);
     if (pi)
         klogf(KLOG_ERROR, "iwx: prph_info boot_stage=0x%08x ipc_status=0x%08x sleep=0x%08x",
               pi->boot_stage_mirror, pi->ipc_status_mirror, pi->sleep_notif);
@@ -1413,9 +1414,10 @@ static int iwx_service(struct iwx_sc *sc)
     uint32_t r2 = iwx_read(sc, IWX_CSR_FH_INT_STATUS);
     if (r1 || r2) {
         iwx_write(sc, IWX_CSR_INT, r1);
-        if ((r1 & ~sc->int_seen) || (r2 & ~(IWX_CSR_FH_INT_RX_MASK | IWX_CSR_FH_INT_TX_MASK)))
+        if ((r1 & ~sc->int_seen) || (r2 & ~sc->fh_seen))
             klogf(KLOG_INFO, "iwx: int CSR_INT=0x%08x FH_INT=0x%08x", r1, r2);
         sc->int_seen |= r1;
+        sc->fh_seen |= r2;
         if (r1 & IWX_CSR_INT_BIT_ALIVE) {
             klogf(KLOG_OK, "iwx: ALIVE hw cause, posting %d rx buffers, WIDX=8",
                   IWX_RX_MQ_RING_COUNT);
@@ -1698,8 +1700,7 @@ static void iwx_nvm_get(struct iwx_sc *sc)
           sc->mac[3], sc->mac[4], sc->mac[5], iwx_is_valid_mac_addr(sc->mac) ? "" : " (invalid)");
 
     int err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO), &cmd,
-                           sizeof(cmd), sc->resp_storage,
-                           (uint32_t)sizeof(struct iwx_rx_packet) + resp_size, &got);
+                           sizeof(cmd), sc->resp_storage, sizeof(sc->resp_storage), &got);
     if (err) {
         klogf(KLOG_WARN, "iwx: NVM_GET_INFO failed (%d)", err);
         return;
