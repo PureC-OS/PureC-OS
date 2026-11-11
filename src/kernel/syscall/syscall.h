@@ -198,6 +198,9 @@
 #define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
 #define SYS_SHM_UNLINK 392       /* (name) */
 #define SYS_MADVISE 393          /* (address, length, advice) */
+#define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
+#define TIME_ZONE_GET 0
+#define TIME_ZONE_SET 1
 #define SYS_SIGALTSTACK 394      /* (const struct kernel_stack *, struct kernel_stack *old) */
 
 #define FD_CTL_GETFD 1

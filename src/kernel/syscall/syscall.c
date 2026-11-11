@@ -1328,6 +1328,46 @@ int64_t syscall_handler(struct syscall_regs *r)
     if (process_current_uid() != 0)
       return -1;
     return wallclock_set((int64_t)a1, (int32_t)a2);
+  case SYS_TIME_ZONE:
+  {
+    if (a1 == TIME_ZONE_GET)
+    {
+      char *out = (char *)(uintptr_t)a2;
+      uint32_t cap = (uint32_t)a3;
+      if (cap == 0 || cap > 256 || !writable(out, cap))
+        return -1;
+      const char *name = wallclock_zone_name();
+      uint32_t n = 0;
+      while (name[n] && n + 1 < cap)
+      {
+        out[n] = name[n];
+        n++;
+      }
+      out[n] = 0;
+      return (int64_t)n;
+    }
+    if (a1 != TIME_ZONE_SET || process_current_uid() != 0 ||
+        !readable_string((const char *)(uintptr_t)a2))
+      return -1;
+    char name[64];
+    strncpy(name, (const char *)(uintptr_t)a2, sizeof(name) - 1);
+    name[sizeof(name) - 1] = 0;
+    if (!wallclock_set_zone(name))
+      return -1;
+    if (!filesystem_syscall_acquire())
+      return 0;
+    if (vfs_is_root_mounted())
+    {
+      char line[66];
+      uint32_t n = (uint32_t)strlen(name);
+      memcpy(line, name, n);
+      line[n++] = '\n';
+      if (vfs_write_file(WALLCLOCK_ZONE_PATH, line, n) < 0)
+        klog(KLOG_WARN, "time: cannot write " WALLCLOCK_ZONE_PATH);
+    }
+    filesystem_syscall_unlock();
+    return 0;
+  }
   case SYS_FILE_STAT_EX:
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||
@@ -1935,8 +1975,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     {
       if (!filesystem_syscall_acquire())
       return -1;
-      if (!vfs_is_root_mounted())
-        (void)vfs_mount_root();
+      if (!vfs_is_root_mounted() && vfs_mount_root())
+        wallclock_load_zone();
       filesystem_syscall_unlock();
     }
     return count;
@@ -2764,6 +2804,7 @@ void syscall_init(void)
     {
       klogf(KLOG_OK, "vfs: root mounted from %s", vfs_root_device_name());
       audio_restore_system_settings();
+      wallclock_load_zone();
       {
         int32_t fd = vfs_open("/purec/install.cfg");
         if (fd >= 0)

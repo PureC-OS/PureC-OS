@@ -15,8 +15,8 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: qt-apps qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+.PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
 
@@ -266,6 +266,12 @@ test-libm:
 	cc -std=gnu11 -O1 -Wall -Wextra -c tests/libm_test.c -o $(BIN_DIR)/tests/libm_test.o
 	cc $(BIN_DIR)/tests/libm_test.o $(BIN_DIR)/tests/libm_math.o $(BIN_DIR)/tests/libm_libm.o -lm -o $(BIN_DIR)/tests/libm_test
 	$(BIN_DIR)/tests/libm_test
+
+test-tz:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src tests/tz_test.c \
+		src/kernel/time/tz.c src/kernel/time/civil.c -o $(BIN_DIR)/tests/tz_test
+	$(BIN_DIR)/tests/tz_test
 
 test-civil:
 	@mkdir -p $(BIN_DIR)/tests
