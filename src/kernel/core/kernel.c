@@ -4,6 +4,7 @@
 #include "../../arch/x86_64/mmio.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/svga.h"
+#include "../../drivers/display/svga3d.h"
 #include "../../drivers/display/vbe.h"
 #include "../../drivers/power/power.h"
 #include "../../drivers/serial/serial.h"
@@ -102,10 +103,18 @@ void kernel_main(struct limine_framebuffer *fb)
     {
       if (svga_init(1024, 768, 32))
       {
-        bool live = gop_apply_live(svga_fb_virt(), svga_width(), svga_height(),
-                                   svga_pitch_pixels(), svga_bpp());
+        void *front3d = 0;
+        if (pref != 3 && svga3d_start())
+          front3d = svga3d_screen_setup(svga_width(), svga_height());
+        bool live = front3d
+                        ? gop_apply_live(front3d, svga_width(), svga_height(),
+                                         svga_width(), 32)
+                        : gop_apply_live(svga_fb_virt(), svga_width(), svga_height(),
+                                         svga_pitch_pixels(), svga_bpp());
         svga_log_mode();
-        if (live)
+        if (live && front3d)
+          klog(KLOG_OK, "video: VMware SVGA 3D active (screen target)");
+        else if (live)
           klog(KLOG_OK, "video: VMware SVGA II active (FIFO UPDATE)");
         else
           klog(KLOG_WARN, "video: svga mapped but gop_apply_live failed, keep GOP");
@@ -149,7 +158,8 @@ void kernel_main(struct limine_framebuffer *fb)
   klogf(KLOG_OK, "devman: %u devices registered", devman_get_device_count());
   {
     extern const char *svga_status_line(void);
-    klogf(KLOG_INFO, "video late: %s vbe=0x%x", svga_status_line(), g_vbe_probe_id);
+    klogf(KLOG_INFO, "video late: %s vbe=0x%x %s", svga_status_line(), g_vbe_probe_id,
+          svga3d_status());
   }
 
   init_process_start();

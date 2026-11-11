@@ -89,6 +89,7 @@ C_SOURCES := \
 	gfx/blit.c \
 	drivers/display/vbe.c \
 	drivers/display/svga.c \
+	drivers/display/svga3d.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
 	drivers/mouse/vbox_mouse.c \

@@ -2,6 +2,7 @@
 #include "blit.h"
 #include "../drivers/display/gop.h"
 #include "../drivers/display/svga.h"
+#include "../drivers/display/svga3d.h"
 #include "../kernel/process/scheduler.h"
 #include "../lib/string.h"
 #include "../mm/pmm.h"
@@ -773,4 +774,7 @@ bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1) {
 
 void compositor_panic_disable(void) {
   comp_off = true;
+#ifndef PUREC_HOST_TEST
+  svga3d_panic();
+#endif
 }

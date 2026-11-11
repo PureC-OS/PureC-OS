@@ -320,6 +320,12 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
     return true;
 }
 
+void gop_retarget_front(void *address, uint32_t pitch_pixels){
+    if(!address || !pitch_pixels) return;
+    gop.addr=(uint32_t*)address;
+    gop.pitch=pitch_pixels;
+}
+
 static uint32_t gcd32(uint32_t a, uint32_t b){
     while(b){ uint32_t t=a%b; a=b; b=t; }
     return a;

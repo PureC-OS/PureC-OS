@@ -4,6 +4,7 @@
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
 #include "gop.h"
+#include "svga3d.h"
 #include <stdbool.h>
 
 #define SVGA_PCI_VENDOR 0x15ADu
@@ -146,9 +147,34 @@ void svga_sync(void) {
     }
 }
 
+uint32_t svga_reg_get(uint32_t index) {
+    return g.io_base ? svga_reg_read(g.io_base, index) : 0;
+}
+
+void svga_reg_set(uint32_t index, uint32_t value) {
+    if (g.io_base)
+        svga_reg_write(g.io_base, index, value);
+}
+
+bool svga_legacy_restore(uint32_t width, uint32_t height) {
+    if (!g.io_base || !g.fb)
+        return false;
+    svga_reg_write(g.io_base, SVGA_REG_WIDTH, width);
+    svga_reg_write(g.io_base, SVGA_REG_HEIGHT, height);
+    svga_reg_write(g.io_base, SVGA_REG_BPP, 32);
+    svga_reg_write(g.io_base, SVGA_REG_ENABLE, 1);
+    svga_reg_write(g.io_base, SVGA_REG_CONFIG_DONE, 1);
+    return svga_reg_read(g.io_base, SVGA_REG_WIDTH) == width &&
+           svga_reg_read(g.io_base, SVGA_REG_HEIGHT) == height;
+}
+
 void svga_update(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
     if (!g.ready || !w || !h)
         return;
+    if (svga3d_active()) {
+        svga3d_front_dirty(x, y, w, h);
+        return;
+    }
     if (x >= g.width || y >= g.height)
         return;
     if (x + w > g.width)
