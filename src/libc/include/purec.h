@@ -75,6 +75,8 @@ int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
                    uint32_t height, int32_t x, int32_t y, uint32_t flags);
 int32_t pc_time_get(struct time_info *out);
 int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes);
+int32_t pc_time_zone_get(char *out, uint32_t capacity);
+int32_t pc_time_zone_set(const char *name);
 int32_t pc_file_stat_ex(const char *path, struct file_stat_ex *out);
 int32_t pc_session_begin(uint32_t uid, uint32_t gid);
 int32_t pc_install_start_accounts(const char *device, const char *serial,

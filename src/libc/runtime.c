@@ -306,6 +306,16 @@ int32_t pc_time_get(struct time_info *out){
     return (int32_t)pc_syscall(SYS_TIME_GET,(uint64_t)(uintptr_t)out,0,0);
 }
 
+int32_t pc_time_zone_get(char *out, uint32_t capacity){
+    if(!out || capacity==0) return -1;
+    out[0]=0;
+    return (int32_t)pc_syscall(SYS_TIME_ZONE,TIME_ZONE_GET,(uint64_t)(uintptr_t)out,capacity);
+}
+
+int32_t pc_time_zone_set(const char *name){
+    return (int32_t)pc_syscall(SYS_TIME_ZONE,TIME_ZONE_SET,(uint64_t)(uintptr_t)name,0);
+}
+
 int32_t pc_time_set(int64_t unix_seconds, int32_t tz_minutes){
     return (int32_t)pc_syscall(SYS_TIME_SET,(uint64_t)unix_seconds,
         (uint64_t)(int64_t)tz_minutes,0);
