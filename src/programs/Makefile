@@ -63,6 +63,7 @@ GENERAL_SOURCES := \
 	installer/setup.c \
 	installer/ui.c \
 	installer/view.c \
+	installer/tz_link.c \
 	accounts/accounts.c \
 	accounts/accounts_core.c \
 	terminal/main.c \
@@ -297,7 +298,7 @@ $(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progress.o $(OBJ_DIR)/installer/setup.o $(OBJ_DIR)/installer/ui.o $(OBJ_DIR)/installer/view.o $(ACCOUNT_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progress.o $(OBJ_DIR)/installer/setup.o $(OBJ_DIR)/installer/ui.o $(OBJ_DIR)/installer/view.o $(OBJ_DIR)/installer/tz_link.o $(ACCOUNT_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
