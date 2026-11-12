@@ -84,6 +84,7 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
                                   const struct install_account_request *accounts);
 int32_t pc_getuid(void);
 int32_t pc_sudo(const char *password);
+int32_t pc_config_path(const char *name, char *out, uint32_t capacity, bool for_write);
 int32_t pc_getgid(void);
 int32_t pc_setuid(uint32_t uid);
 int32_t pc_setgid(uint32_t gid);

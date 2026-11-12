@@ -434,6 +434,54 @@ int32_t pc_getrandom(void *buffer, uint32_t count){
 }
 
 int32_t pc_getuid(void){ return (int32_t)pc_syscall(SYS_GETUID,0,0,0); }
+static int32_t config_uid=-1;
+static char config_dir[128];
+
+static uint32_t config_join(char *out, uint32_t cap, uint32_t at, const char *text){
+    while(text && *text && at+1<cap) out[at++]=*text++;
+    if(at<cap) out[at]='\0';
+    return at;
+}
+
+int32_t pc_config_path(const char *name, char *out, uint32_t capacity, bool for_write){
+    if(!name || !out || capacity<2) return -1;
+    int32_t uid=pc_getuid();
+    if(uid!=config_uid){
+        struct user_info info;
+        config_dir[0]='\0';
+        if(pc_user_lookup(0,(uint32_t)uid,&info)==0 && info.home[0]){
+            uint32_t n=config_join(config_dir,sizeof(config_dir),0,info.home);
+            config_join(config_dir,sizeof(config_dir),n,"/.config/purec");
+        }
+        config_uid=uid;
+    }
+    if(config_dir[0]){
+        uint32_t n=config_join(out,capacity,0,config_dir);
+        n=config_join(out,capacity,n,"/");
+        config_join(out,capacity,n,name);
+        if(for_write){
+            char parent[128];
+            uint32_t len=config_join(parent,sizeof(parent),0,config_dir);
+            while(len && parent[len-1]!='/') len--;
+            if(len){
+                parent[len-1]='\0';
+                (void)pc_directory_create(parent);
+            }
+            (void)pc_directory_create(config_dir);
+            return 0;
+        }
+        int32_t fd=pc_file_open(out);
+        if(fd>=0){
+            pc_file_close(fd);
+            return 0;
+        }
+    }
+    if(for_write) (void)pc_directory_create("/config");
+    uint32_t n=config_join(out,capacity,0,"/config/");
+    config_join(out,capacity,n,name);
+    return 1;
+}
+
 int32_t pc_sudo(const char *password){ return (int32_t)pc_syscall(SYS_SUDO,(uint64_t)(uintptr_t)password,0,0); }
 int32_t pc_getgid(void){ return (int32_t)pc_syscall(SYS_GETGID,0,0,0); }
 int32_t pc_setuid(uint32_t uid){ return (int32_t)pc_syscall(SYS_SETUID,uid,0,0); }
