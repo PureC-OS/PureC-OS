@@ -287,40 +287,85 @@ void pgc_ring(struct pg_canvas *c, int cx, int cy, int r, int thick, uint32_t pe
 
 int pgc_font_h(int font) { return pgf_fonts[font].height; }
 
-int pgc_text_w(int font, const char *s)
+uint32_t pgc_utf8_next(const char **ps)
+{
+    const unsigned char *s = (const unsigned char *)*ps;
+    uint32_t c = s[0];
+    int n = 1;
+    if (c >= 0xF0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 && (s[3] & 0xC0) == 0x80) {
+        c = ((c & 7) << 18) | ((s[1] & 63u) << 12) | ((s[2] & 63u) << 6) | (s[3] & 63u);
+        n = 4;
+    } else if (c >= 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+        c = ((c & 15) << 12) | ((s[1] & 63u) << 6) | (s[2] & 63u);
+        n = 3;
+    } else if (c >= 0xC0 && (s[1] & 0xC0) == 0x80) {
+        c = ((c & 31) << 6) | (s[1] & 63u);
+        n = 2;
+    } else if (c >= 0x80) {
+        c = '?';
+    }
+    *ps += n;
+    return c;
+}
+
+const struct pgf_glyph *pgc_glyph(int font, uint32_t cp)
 {
     const struct pgf_font *f = &pgf_fonts[font];
+    if (cp >= 32 && cp <= 126)
+        return &f->glyphs[cp - 32];
+    int lo = 0, hi = (int)f->ext_count - 1;
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2;
+        if (f->ext_cp[mid] == cp)
+            return &f->ext[mid];
+        if (f->ext_cp[mid] < cp)
+            lo = mid + 1;
+        else
+            hi = mid - 1;
+    }
+    return 0;
+}
+
+static const struct pgf_glyph *glyph_or_q(int font, uint32_t cp, const uint8_t **bits)
+{
+    const struct pgf_glyph *g = pgc_glyph(font, cp);
+    if (!g)
+        g = &pgf_fonts[font].glyphs['?' - 32];
+    *bits = pgf_fonts[font].bits + g->off;
+    return g;
+}
+
+int pgc_glyph_draw(struct pg_canvas *c, int font, int x, int y, uint32_t cp, uint32_t color)
+{
+    const uint8_t *bits;
+    const struct pgf_glyph *g = glyph_or_q(font, cp, &bits);
+    int gx = x + g->x, gy = y + g->y;
+    if (gx < c->cx1 && gy < c->cy1 && gx + g->w > c->cx0 && gy + g->h > c->cy0) {
+        for (int j = 0; j < g->h; j++)
+            for (int i = 0; i < g->w; i++) {
+                uint32_t a = bits[j * g->w + i];
+                if (a)
+                    blend(c, gx + i, gy + j, color, a);
+            }
+    }
+    return g->adv;
+}
+
+int pgc_text_w(int font, const char *s)
+{
     int w = 0;
-    for (; s && *s; s++) {
-        unsigned ch = (unsigned char)*s;
-        if (ch < 32 || ch > 126)
-            ch = '?';
-        w += f->glyphs[ch - 32].adv;
+    while (s && *s) {
+        const uint8_t *bits;
+        w += glyph_or_q(font, pgc_utf8_next(&s), &bits)->adv;
     }
     return w;
 }
 
 int pgc_text(struct pg_canvas *c, int font, int x, int y, const char *s, uint32_t color)
 {
-    const struct pgf_font *f = &pgf_fonts[font];
     int pen = x;
-    for (; s && *s; s++) {
-        unsigned ch = (unsigned char)*s;
-        if (ch < 32 || ch > 126)
-            ch = '?';
-        const struct pgf_glyph *g = &f->glyphs[ch - 32];
-        const uint8_t *bits = f->bits + g->off;
-        int gx = pen + g->x, gy = y + g->y;
-        if (gx < c->cx1 && gy < c->cy1 && gx + g->w > c->cx0 && gy + g->h > c->cy0) {
-            for (int j = 0; j < g->h; j++)
-                for (int i = 0; i < g->w; i++) {
-                    uint32_t a = bits[j * g->w + i];
-                    if (a)
-                        blend(c, gx + i, gy + j, color, a);
-                }
-        }
-        pen += g->adv;
-    }
+    while (s && *s)
+        pen += pgc_glyph_draw(c, font, pen, y, pgc_utf8_next(&s), color);
     return pen - x;
 }
 
@@ -328,27 +373,20 @@ int pgc_text_fit(struct pg_canvas *c, int font, int x, int y, int maxw, const ch
 {
     if (pgc_text_w(font, s) <= maxw)
         return pgc_text(c, font, x, y, s, color);
-    char buf[160];
-    int n = 0;
     int dots = pgc_text_w(font, "...");
-    int w = 0;
-    const struct pgf_font *f = &pgf_fonts[font];
-    while (s[n] && n < (int)sizeof(buf) - 4) {
-        unsigned ch = (unsigned char)s[n];
-        if (ch < 32 || ch > 126)
-            ch = '?';
-        int a = f->glyphs[ch - 32].adv;
-        if (w + a + dots > maxw)
+    int pen = x;
+    while (s && *s) {
+        const char *next = s;
+        uint32_t cp = pgc_utf8_next(&next);
+        const uint8_t *bits;
+        int a = glyph_or_q(font, cp, &bits)->adv;
+        if (pen - x + a + dots > maxw)
             break;
-        buf[n] = s[n];
-        w += a;
-        n++;
+        pen += pgc_glyph_draw(c, font, pen, y, cp, color);
+        s = next;
     }
-    buf[n++] = '.';
-    buf[n++] = '.';
-    buf[n++] = '.';
-    buf[n] = 0;
-    return pgc_text(c, font, x, y, buf, color);
+    pen += pgc_text(c, font, pen, y, "...", color);
+    return pen - x;
 }
 
 void pgc_text_center(struct pg_canvas *c, int font, int x, int y, int w, const char *s, uint32_t color)
@@ -451,32 +489,33 @@ int pgc_text_wrap(struct pg_canvas *c, int font, int x, int y, int maxw, const c
 {
     int line_h = pgc_font_h(font) + 4;
     int cy = y;
-    char line[256];
+    char line[512];
     while (s && *s) {
-        int n = 0, last_space = -1, w = 0;
-        const struct pgf_font *f = &pgf_fonts[font];
-        while (s[n] && s[n] != '\n' && n < (int)sizeof(line) - 1) {
-            unsigned ch = (unsigned char)s[n];
-            if (ch < 32 || ch > 126)
-                ch = '?';
-            int a = f->glyphs[ch - 32].adv;
-            if (w + a > maxw && n > 0)
+        const char *p = s, *last_space = 0;
+        int w = 0;
+        while (*p && *p != '\n') {
+            const char *q = p;
+            uint32_t cp = pgc_utf8_next(&q);
+            const uint8_t *bits;
+            int a = glyph_or_q(font, cp, &bits)->adv;
+            if (w + a > maxw && p != s)
                 break;
-            if (s[n] == ' ')
-                last_space = n;
+            if (cp == ' ')
+                last_space = p;
             w += a;
-            n++;
+            p = q;
         }
-        int take = n;
-        if (s[n] && s[n] != '\n' && last_space > 0)
-            take = last_space;
-        for (int i = 0; i < take; i++)
+        const char *end = (*p && *p != '\n' && last_space) ? last_space : p;
+        int n = (int)(end - s);
+        if (n > (int)sizeof(line) - 1)
+            n = (int)sizeof(line) - 1;
+        for (int i = 0; i < n; i++)
             line[i] = s[i];
-        line[take] = 0;
+        line[n] = 0;
         if (c)
             pgc_text(c, font, x, cy, line, color);
         cy += line_h;
-        s += take;
+        s = end;
         while (*s == ' ')
             s++;
         if (*s == '\n')

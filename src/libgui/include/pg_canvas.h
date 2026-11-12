@@ -43,6 +43,9 @@ int pgc_text_w(int font, const char *s);
 int pgc_text_fit(struct pg_canvas *c, int font, int x, int y, int maxw, const char *s, uint32_t color);
 void pgc_text_center(struct pg_canvas *c, int font, int x, int y, int w, const char *s, uint32_t color);
 int pgc_font_h(int font);
+uint32_t pgc_utf8_next(const char **ps);
+const struct pgf_glyph *pgc_glyph(int font, uint32_t cp);
+int pgc_glyph_draw(struct pg_canvas *c, int font, int x, int y, uint32_t cp, uint32_t color);
 int pgc_text_wrap(struct pg_canvas *c, int font, int x, int y, int maxw, const char *s, uint32_t color);
 
 void pgc_icon(struct pg_canvas *c, int icon, int size, int x, int y, uint32_t color);
