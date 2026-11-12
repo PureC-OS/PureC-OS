@@ -213,7 +213,7 @@ void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h)
     int view_h = h - view_y;
     int *scroll = &app->scroll[app->page];
     if (u->wheel && !u->modal && u->mx >= x0) {
-        *scroll += u->wheel * 48;
+        *scroll -= u->wheel * 48;
         u->wheel = 0;
     }
     if (!u->modal && u->special == 6)
