@@ -14,7 +14,7 @@ static char sudo_buffer[SUDO_FILE_MAX];
 
 static uint32_t read_whole(const char *path)
 {
-  int32_t fd = vfs_open(path);
+  int32_t fd = vfs_open_trusted(path);
   if (fd < 0)
     return 0;
   uint32_t total = 0;

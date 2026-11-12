@@ -462,15 +462,17 @@ const char *vfs_root_device_name(void) {
   return ext2_device_name();
 }
 
-int32_t vfs_open(const char *path) {
+static int32_t vfs_open_checked(const char *path, bool check) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
   if (status < 0)
     return status;
-  status = check_access(resolved.path, false, VFS_PERM_R);
-  if (status < 0)
-    return status;
+  if (check) {
+    status = check_access(resolved.path, false, VFS_PERM_R);
+    if (status < 0)
+      return status;
+  }
   int32_t idx = allocate_handle();
   if (idx < 0)
     return idx;
@@ -512,6 +514,12 @@ int32_t vfs_open(const char *path) {
   h->backend_descriptor = backend;
   h->mount = resolved.mount;
   return VFS_FD_BASE + idx;
+}
+
+int32_t vfs_open(const char *path) { return vfs_open_checked(path, true); }
+
+int32_t vfs_open_trusted(const char *path) {
+  return vfs_open_checked(path, false);
 }
 
 int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
