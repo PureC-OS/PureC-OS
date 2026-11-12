@@ -26,7 +26,11 @@ int main(int argc, char **argv)
     struct tm *tm = utc ? gmtime(&t) : localtime(&t);
     if (!tm) return util_err("cannot convert time");
     char buf[512];
-    if (!format) format = utc ? "%a %b %e %H:%M:%S UTC %Y" : "%a %b %e %H:%M:%S %Z %Y";
+    if (!format) {
+        char zone[32] = "";
+        strftime(zone, sizeof(zone), "%Z", tm);
+        format = utc ? "%a %b %e %H:%M:%S UTC %Y" : zone[0] ? "%a %b %e %H:%M:%S %Z %Y" : "%a %b %e %H:%M:%S %Y";
+    }
     if (!strftime(buf, sizeof(buf), format, tm) && *format) buf[0] = 0;
     puts(buf);
     return 0;
