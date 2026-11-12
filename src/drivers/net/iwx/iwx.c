@@ -230,6 +230,7 @@ struct iwx_sc {
     uint16_t mq_last_status;
     int rate_v2;
     int lmac_id;
+    uint16_t assoc_aid;
     volatile int sp_started;
     volatile int sp_ended;
     int mlme_on;
@@ -2746,6 +2747,24 @@ static int iwx_enable_mgmt_queue(struct iwx_sc *sc)
     return 0;
 }
 
+static int iwx_disable_mgmt_queue(struct iwx_sc *sc)
+{
+    struct iwx_scd_queue_cfg_cmd cmd;
+    uint32_t got = 0;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.operation = htole32(IWX_SCD_QUEUE_REMOVE);
+    cmd.u.remove.sta_mask = htole32(1u << IWX_STATION_ID);
+    cmd.u.remove.tid = htole32(IWX_MGMT_TID);
+    int err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_DATA_PATH_GROUP, IWX_SCD_QUEUE_CONFIG_CMD) | (3u << 16),
+                           &cmd, sizeof(cmd), sc->resp_storage, sizeof(sc->resp_storage), &got);
+    if (err)
+        klogf(KLOG_ERROR, "iwx: could not remove mgmt queue (%d)", err);
+    else
+        klogf(KLOG_INFO, "iwx: mgmt queue removed");
+    sc->mq_enabled = 0;
+    return err;
+}
+
 static int iwx_session_protect(struct iwx_sc *sc, uint32_t action, uint32_t duration_tu)
 {
     struct iwx_session_prot_cmd cmd;
@@ -2946,7 +2965,7 @@ static int iwx_associate(struct iwx_sc *sc)
 {
     uint8_t rsn[64];
     int rsn_len = 0;
-    int phy = 0, mac = 0, bind = 0, sta = 0, sp = 0;
+    int phy = 0, mac = 0, bind = 0, sta = 0, sp = 0, assoc = 0;
     uint64_t elapsed = 0;
     int err;
 
@@ -3029,6 +3048,8 @@ static int iwx_associate(struct iwx_sc *sc)
         goto out;
     if ((err = iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_MODIFY, 1)))
         goto out;
+    assoc = 1;
+    sc->assoc_aid = sc->mlme.aid;
 
     if (rsn_len > 0) {
         if (iwx_wait(sc, iwx_cond_eapol, 3000, &elapsed) == 0)
@@ -3049,9 +3070,15 @@ out:
         klogf(KLOG_INFO, "iwx: disassociation sent");
     }
     sc->mlme_on = 0;
-    if (sp) {
-        if (!sc->sp_ended)
-            iwx_session_protect(sc, IWX_FW_CTXT_ACTION_REMOVE, 0);
+    if (assoc && !sc->fatal)
+        iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_MODIFY, 0);
+    if (sc->mq_enabled && !sc->fatal)
+        iwx_disable_mgmt_queue(sc);
+    if (sp && !sc->sp_ended && !sc->fatal)
+        iwx_session_protect(sc, IWX_FW_CTXT_ACTION_REMOVE, 0);
+    if (sc->fatal) {
+        sc->mq_enabled = 0;
+        return err ? err : IWX_EIO;
     }
     if (sta)
         iwx_rm_sta(sc);
@@ -3256,7 +3283,7 @@ static void iwx_thread(void *arg)
     if (err)
         klogf(KLOG_ERROR, "iwx: milestone 3 failed (%d)", err);
     else
-        klogf(KLOG_OK, "iwx: milestone 3 complete: associated, aid %u, EAPOL frames %d", sc->mlme.aid,
+        klogf(KLOG_OK, "iwx: milestone 3 complete: associated, aid %u, EAPOL frames %d", sc->assoc_aid,
               sc->eapol_seen);
 }
 
