@@ -1,0 +1,46 @@
+NAME
+       man - an interface to the system reference manuals
+
+SYNOPSIS
+       man [SECTION] NAME...
+       man -k KEYWORD
+       man -f NAME
+       apropos KEYWORD
+       whatis NAME
+
+DESCRIPTION
+       Show the manual page for NAME in a pager. Pages are stored in
+       /usr/share/man as NAME.SECTION. Sections: 1 user commands, 5 file
+       formats, 7 overviews, 8 system administration.
+
+OPTIONS
+       -k KEYWORD
+           search names and descriptions of all pages (apropos); man -k . lists
+           everything
+
+       -f NAME
+           print the one-line description of NAME (whatis)
+
+       -w
+           print the location of the page instead of showing it
+
+PAGER KEYS
+       j, Down, Enter     one line down          k, Up      one line up
+       Space, f, PgDn     one page down          b, PgUp    one page up
+       d / u              half a page down/up    g / G      beginning / end
+       /TEXT              search forward         ?TEXT      search backward
+       n / N              next / previous match  h          short help
+       q, Esc, Ctrl+C     quit
+
+WRITING PAGES
+       A page is plain text. A line that starts at column 0 is a section heading. Indented lines whose
+       first word starts with - are options and are highlighted. **text** is bold, __text__ underlined.
+
+EXAMPLES
+       man ls
+       man 8 reboot
+       man -k file
+       man man
+
+SEE ALSO
+       less(1), help(1), intro(1)

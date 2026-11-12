@@ -1,0 +1,33 @@
+NAME
+       mv - move or rename files
+
+SYNOPSIS
+       mv [OPTION]... SOURCE DEST
+       mv [OPTION]... SOURCE... DIRECTORY
+
+DESCRIPTION
+       Rename SOURCE to DEST, or move SOURCEs into DIRECTORY. When a plain
+       rename is not possible the data is copied and the source removed.
+
+OPTIONS
+       -n
+           do not overwrite an existing file
+
+       -i
+           prompt before overwrite
+
+       -f
+           do not prompt before overwriting
+
+       -v
+           explain what is being done
+
+       -t DIR
+           move all SOURCE arguments into DIR
+
+EXAMPLES
+       mv old.txt new.txt
+       mv *.c src/
+
+SEE ALSO
+       cp(1), rm(1)

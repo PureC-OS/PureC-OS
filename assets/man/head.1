@@ -1,0 +1,29 @@
+NAME
+       head - output the first part of files
+
+SYNOPSIS
+       head [-n N] [-c N] [-qv] [FILE]...
+
+DESCRIPTION
+       Print the first 10 lines of each FILE. With more than one FILE, precede
+       each with a header.
+
+OPTIONS
+       -n N, -N
+           print the first N lines; with a negative N, all but the last N lines
+
+       -c N
+           print the first N bytes
+
+       -q
+           never print headers
+
+       -v
+           always print headers
+
+EXAMPLES
+       head -n 3 /etc/passwd
+       ls /bin | head
+
+SEE ALSO
+       tail(1), cat(1)

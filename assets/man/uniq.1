@@ -1,0 +1,34 @@
+NAME
+       uniq - report or omit repeated lines
+
+SYNOPSIS
+       uniq [-cdui] [-f N] [-s N] [INPUT [OUTPUT]]
+
+DESCRIPTION
+       Filter adjacent matching lines from INPUT, writing to OUTPUT. Sort the
+       input first to find all duplicates.
+
+OPTIONS
+       -c
+           prefix lines by the number of occurrences
+
+       -d
+           only print duplicate lines
+
+       -u
+           only print unique lines
+
+       -i
+           ignore case
+
+       -f N
+           skip the first N fields
+
+       -s N
+           skip the first N characters
+
+EXAMPLES
+       sort words | uniq -c | sort -rn | head
+
+SEE ALSO
+       sort(1)

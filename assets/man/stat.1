@@ -1,0 +1,25 @@
+NAME
+       stat - display file status
+
+SYNOPSIS
+       stat [-t] [-c FORMAT] FILE...
+
+DESCRIPTION
+       Display size, type, inode, permissions, owner and timestamps of each
+       FILE.
+
+OPTIONS
+       -c, --format=FORMAT
+           use FORMAT: %n name, %s size, %a octal mode, %A mode string, %F
+           type, %u/%U uid/user, %g/%G gid/group, %i inode, %h links, %X/%Y/%Z
+           access/modify/change time in seconds
+
+       -t
+           print the information in terse form
+
+EXAMPLES
+       stat /bin/ls
+       stat -c '%n %s bytes' *.c
+
+SEE ALSO
+       ls(1), touch(1)

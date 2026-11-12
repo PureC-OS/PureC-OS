@@ -1,0 +1,35 @@
+NAME
+       touch - change file timestamps or create empty files
+
+SYNOPSIS
+       touch [OPTION]... FILE...
+
+DESCRIPTION
+       Update the access and modification times of each FILE to the current
+       time. A FILE that does not exist is created empty.
+
+OPTIONS
+       -a
+           change only the access time
+
+       -m
+           change only the modification time
+
+       -c, --no-create
+           do not create any files
+
+       -r FILE
+           use FILE's times instead of the current time
+
+       -t STAMP
+           use [[CC]YY]MMDDhhmm[.ss] instead of the current time
+
+       -d @SECONDS
+           use a Unix timestamp
+
+EXAMPLES
+       touch new.txt
+       touch -t 202601011200 file
+
+SEE ALSO
+       stat(1), ls(1)

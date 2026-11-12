@@ -1,0 +1,38 @@
+NAME
+       tree - list contents of directories in a tree-like format
+
+SYNOPSIS
+       tree [-adshfCn] [-L LEVEL] [DIRECTORY]...
+
+DESCRIPTION
+       Recursively list directories as an indented tree with line drawing
+       characters, then print the number of directories and files.
+
+OPTIONS
+       -a
+           show hidden files
+
+       -d
+           list directories only
+
+       -L LEVEL
+           descend at most LEVEL directories deep
+
+       -s
+           print the size of each file
+
+       -h
+           print sizes in human readable form
+
+       -f
+           print the full path of each file
+
+       -C, -n
+           force colors on or off
+
+EXAMPLES
+       tree /usr
+       tree -L 2 -d /
+
+SEE ALSO
+       ls(1), find(1), du(1)

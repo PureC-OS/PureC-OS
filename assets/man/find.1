@@ -1,0 +1,66 @@
+NAME
+       find - search for files in a directory hierarchy
+
+SYNOPSIS
+       find [PATH]... [EXPRESSION]
+
+DESCRIPTION
+       Walk the directory tree rooted at each PATH (default .) and evaluate
+       EXPRESSION for every file. Tests are joined with AND unless separated by
+       -o. When the expression has no action, matching paths are printed.
+
+OPTIONS
+       -name PATTERN
+           base name matches shell PATTERN (*, ?, [...])
+
+       -iname PATTERN
+           like -name, case insensitive
+
+       -path PATTERN
+           whole path matches PATTERN
+
+       -type f|d|l
+           file is a regular file, directory or link
+
+       -size [+-]N[ckMG]
+           size is more (+), less (-) or exactly N units (512-byte blocks by
+           default)
+
+       -mtime [+-]N
+           modified N days ago
+
+       -newer FILE
+           modified more recently than FILE
+
+       -perm MODE
+           permission bits are exactly MODE (octal)
+
+       -empty
+           empty file or directory
+
+       -maxdepth N, -mindepth N
+           limit the depth of the search
+
+       ! EXPR, -not EXPR
+           negate the next test
+
+       -o
+           logical OR between tests
+
+       -print, -print0
+           print the path, followed by a newline or a NUL
+
+       -exec CMD {} ;
+           run CMD with {} replaced by the path; true if CMD exits 0
+
+       -delete
+           delete matching files (depth first)
+
+EXAMPLES
+       find / -name '*.c'
+       find /root -type d -empty
+       find . -name '*.o' -delete
+       find . -size +1M -exec ls -lh {} ;
+
+SEE ALSO
+       ls(1), grep(1), xargs(1), tree(1)

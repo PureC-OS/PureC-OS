@@ -1,0 +1,29 @@
+NAME
+       reboot - reboot or power off the machine
+
+SYNOPSIS
+       reboot
+       poweroff
+       shutdown [-r|-h|-P] [now]
+       halt
+
+DESCRIPTION
+       reboot restarts the computer. poweroff, shutdown and halt turn it off
+       through ACPI. Only root may do this.
+
+OPTIONS
+       -r
+           reboot instead of powering off
+
+       -h, -P
+           power off
+
+       now, -f
+           accepted for compatibility
+
+EXAMPLES
+       reboot
+       shutdown -h now
+
+SEE ALSO
+       ps(1)

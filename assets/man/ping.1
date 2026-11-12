@@ -1,0 +1,34 @@
+NAME
+       ping - send ICMP ECHO_REQUEST to network hosts
+
+SYNOPSIS
+       ping [-q] [-c COUNT] [-i INTERVAL] [-W TIMEOUT] HOST
+
+DESCRIPTION
+       Send ICMP echo requests to HOST (IP address, host name or URL) and print
+       the round trip times, then a summary with packet loss and min/avg/max
+       time. Ctrl+C stops early and still prints the summary.
+
+OPTIONS
+       -c COUNT
+           stop after COUNT requests (default 4, 0 = until interrupted)
+
+       -t
+           ping until interrupted
+
+       -i SECONDS
+           wait between requests (default 1, minimum 0.2)
+
+       -W SECONDS
+           time to wait for each reply (default 2)
+
+       -q
+           print only the summary
+
+EXAMPLES
+       ping 8.8.8.8
+       ping -c 10 google.com
+       ping -t 1.1.1.1
+
+SEE ALSO
+       curl(1)

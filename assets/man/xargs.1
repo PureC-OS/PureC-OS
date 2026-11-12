@@ -1,0 +1,36 @@
+NAME
+       xargs - build and execute command lines from standard input
+
+SYNOPSIS
+       xargs [-0rt] [-n N] [-I STR] [-d DELIM] [COMMAND [ARG]...]
+
+DESCRIPTION
+       Read items separated by blanks and newlines from standard input and run
+       COMMAND (default echo) with the items appended as arguments. Quotes and
+       backslashes in the input are honored.
+
+OPTIONS
+       -n N
+           use at most N items per command line
+
+       -I STR
+           run COMMAND once per input line, replacing STR in the arguments
+
+       -0
+           items are separated by NUL characters (see find -print0)
+
+       -d DELIM
+           items are separated by DELIM
+
+       -r
+           do not run COMMAND if the input is empty
+
+       -t
+           print each command line before running it
+
+EXAMPLES
+       find . -name '*.o' | xargs rm
+       ls *.c | xargs -I{} cp {} /root/backup/
+
+SEE ALSO
+       find(1)

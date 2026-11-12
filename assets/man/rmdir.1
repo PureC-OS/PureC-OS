@@ -1,0 +1,25 @@
+NAME
+       rmdir - remove empty directories
+
+SYNOPSIS
+       rmdir [OPTION]... DIRECTORY...
+
+DESCRIPTION
+       Remove the DIRECTORY(ies), if they are empty.
+
+OPTIONS
+       -p
+           remove DIRECTORY and its ancestors: rmdir -p a/b/c is similar to
+           rmdir a/b/c a/b a
+
+       -v
+           output a diagnostic for every directory processed
+
+       --ignore-fail-on-non-empty
+           ignore failures caused by non-empty directories
+
+EXAMPLES
+       rmdir -p a/b/c
+
+SEE ALSO
+       rm(1), mkdir(1)

@@ -1,0 +1,39 @@
+NAME
+       cat - concatenate files and print on the standard output
+
+SYNOPSIS
+       cat [OPTION]... [FILE]...
+
+DESCRIPTION
+       Concatenate FILEs to standard output. With no FILE, or when FILE is -,
+       read standard input.
+
+OPTIONS
+       -n, --number
+           number all output lines
+
+       -b
+           number nonempty output lines, overrides -n
+
+       -s
+           suppress repeated empty output lines
+
+       -E
+           display $ at end of each line
+
+       -T
+           display TAB characters as ^I
+
+       -v
+           use ^ and M- notation for control characters
+
+       -A
+           equivalent to -vET
+
+EXAMPLES
+       cat /etc/passwd
+       cat -n main.c
+       cat part1 part2 > whole
+
+SEE ALSO
+       less(1), head(1), tail(1), xxd(1)

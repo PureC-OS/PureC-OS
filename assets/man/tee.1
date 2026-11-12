@@ -1,0 +1,18 @@
+NAME
+       tee - read from standard input and write to standard output and files
+
+SYNOPSIS
+       tee [-a] [FILE]...
+
+DESCRIPTION
+       Copy standard input to each FILE, and also to standard output.
+
+OPTIONS
+       -a
+           append to the given FILEs, do not overwrite
+
+EXAMPLES
+       make 2>&1 | tee build.log
+
+SEE ALSO
+       cat(1)

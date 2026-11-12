@@ -1,0 +1,25 @@
+NAME
+       kill - send a signal to a process
+
+SYNOPSIS
+       kill [-s SIGNAL | -SIGNAL] PID...
+       kill -l [NUMBER]
+
+DESCRIPTION
+       Send SIGNAL (TERM by default) to the processes with the given PIDs.
+       SIGNAL is a name (TERM, SIGKILL) or a number.
+
+OPTIONS
+       -s SIGNAL, -SIGNAL
+           signal to send
+
+       -l
+           list signal names, or translate NUMBER to a name
+
+EXAMPLES
+       kill 42
+       kill -9 42
+       kill -l
+
+SEE ALSO
+       ps(1)
