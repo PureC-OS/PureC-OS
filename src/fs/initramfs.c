@@ -186,29 +186,42 @@ static int32_t list_common(const char *path, void *entries, uint32_t capacity,
     for (uint32_t i = 0; i < length; i++)
       if (base[i] == '/') {
         child = false;
+        length = i;
         break;
       }
-    if (!child || count >= capacity)
+    if (!length || count >= capacity)
       continue;
     if (long_names) {
       struct fs_directory_entry_long *out = entries;
       uint32_t n = length < FS_LONG_NAME_CAPACITY - 1
                        ? length
                        : FS_LONG_NAME_CAPACITY - 1;
+      bool seen = false;
+      for (uint32_t k = 0; k < count && !child; k++)
+        if (strlen(out[k].name) == n && memcmp(out[k].name, base, n) == 0)
+          seen = true;
+      if (seen)
+        continue;
       memcpy(out[count].name, base, n);
       out[count].name[n] = 0;
-      out[count].size = filesize;
-      out[count].attributes = 0;
+      out[count].size = child ? filesize : 0;
+      out[count].attributes = child ? 0 : FS_ATTRIBUTE_DIRECTORY;
       memset(out[count].reserved, 0, 3);
     } else {
       struct fs_directory_entry *out = entries;
       uint32_t n = length < FS_DIRECTORY_NAME_CAPACITY - 1
                        ? length
                        : FS_DIRECTORY_NAME_CAPACITY - 1;
+      bool seen = false;
+      for (uint32_t k = 0; k < count && !child; k++)
+        if (strlen(out[k].name) == n && memcmp(out[k].name, base, n) == 0)
+          seen = true;
+      if (seen)
+        continue;
       memcpy(out[count].name, base, n);
       out[count].name[n] = 0;
-      out[count].size = filesize;
-      out[count].attributes = 0;
+      out[count].size = child ? filesize : 0;
+      out[count].attributes = child ? 0 : FS_ATTRIBUTE_DIRECTORY;
     }
     count++;
   }

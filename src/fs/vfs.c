@@ -825,6 +825,29 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
   return (int64_t)h->position;
 }
 
+
+#define VFS_OVERLAY_MAX 512
+static struct fs_directory_entry_long overlay_entries[VFS_OVERLAY_MAX];
+
+static bool overlay_dir(const char *path) {
+  return !live_mode && initramfs_is_mounted() && initramfs_directory_exists(path);
+}
+
+static int32_t overlay_list(const char *path) {
+  if (live_mode || !initramfs_is_mounted())
+    return 0;
+  char directory[VFS_PATH_MAX];
+  uint32_t length = (uint32_t)strlen(path);
+  if (length + 2 > sizeof(directory))
+    return 0;
+  memcpy(directory, path, length);
+  if (!length || directory[length - 1] != '/')
+    directory[length++] = '/';
+  directory[length] = 0;
+  int32_t n = initramfs_list_long(directory, overlay_entries, VFS_OVERLAY_MAX);
+  return n > 0 ? n : 0;
+}
+
 int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!out)
@@ -850,7 +873,7 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   int32_t result = FS_ERROR_NOT_FOUND;
   if (ops->stat && mount_ready(resolved.mount))
     result = ops->stat(resolved.mount->context, resolved.relative, out);
-  if (result < 0 && is_virtual_dir(resolved.path)) {
+  if (result < 0 && (is_virtual_dir(resolved.path) || overlay_dir(resolved.path))) {
     out->size = 0;
     out->is_directory = 1;
     out->reserved = FS_NODE_FILE;
@@ -992,9 +1015,19 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
                                             VFS_MOUNT_MAX);
   child_count += virtual_children(resolved.path, children + child_count, 8);
   bool is_root = path_equals(resolved.path, "/");
-  if (backend < 0 && !is_root && !child_count && !is_virtual_dir(resolved.path))
+  bool extra = overlay_dir(resolved.path);
+  if (backend < 0 && !is_root && !child_count && !extra && !is_virtual_dir(resolved.path))
     return backend;
   uint32_t count = backend > 0 ? (uint32_t)backend : 0;
+  int32_t overlay_count = extra || is_root ? overlay_list(resolved.path) : 0;
+  for (int32_t i = 0; i < overlay_count && count < capacity; i++) {
+    if ((is_root && !(overlay_entries[i].attributes & FS_ATTRIBUTE_DIRECTORY)) || short_has(entries, count, overlay_entries[i].name))
+      continue;
+    copy_name(entries[count].name, overlay_entries[i].name);
+    entries[count].size = overlay_entries[i].size;
+    entries[count].attributes = overlay_entries[i].attributes;
+    count++;
+  }
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
     if (short_has(entries, count, children[i]))
       continue;
@@ -1036,9 +1069,17 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
                                             VFS_MOUNT_MAX);
   child_count += virtual_children(resolved.path, children + child_count, 8);
   bool is_root = path_equals(resolved.path, "/");
-  if (backend < 0 && !is_root && !child_count && !is_virtual_dir(resolved.path))
+  bool extra = overlay_dir(resolved.path);
+  if (backend < 0 && !is_root && !child_count && !extra && !is_virtual_dir(resolved.path))
     return backend;
   uint32_t count = backend > 0 ? (uint32_t)backend : 0;
+  int32_t overlay_count = extra || is_root ? overlay_list(resolved.path) : 0;
+  for (int32_t i = 0; i < overlay_count && count < capacity; i++) {
+    if ((is_root && !(overlay_entries[i].attributes & FS_ATTRIBUTE_DIRECTORY)) || long_has(entries, count, overlay_entries[i].name))
+      continue;
+    entries[count] = overlay_entries[i];
+    count++;
+  }
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
     if (long_has(entries, count, children[i]))
       continue;
