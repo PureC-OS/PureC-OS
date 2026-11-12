@@ -115,6 +115,7 @@ uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_
     uint8_t ext_rates = (uint8_t)(rate_count - first_rates);
     uint16_t need = (uint16_t)(DOT11_HDR_LEN + 4 + 2 + m->ssid_len + 2 + first_rates);
     if (ext_rates) need = (uint16_t)(need + 2 + ext_rates);
+    need = (uint16_t)(need + m->rsn_ie_len);
     if (out_cap < need) return 0;
 
     uint16_t off = build_hdr(out, out_cap, DOT11_STYPE_ASSOC_REQ,
@@ -136,6 +137,10 @@ uint16_t dot11_build_assoc_req(struct dot11_mlme *m, uint8_t *out, uint16_t out_
         out[off++] = ext_rates;
         mlme_memcpy(out + off, rates + first_rates, ext_rates);
         off = (uint16_t)(off + ext_rates);
+    }
+    if (m->rsn_ie_len) {
+        mlme_memcpy(out + off, m->rsn_ie, m->rsn_ie_len);
+        off = (uint16_t)(off + m->rsn_ie_len);
     }
     return off;
 }
@@ -303,6 +308,15 @@ void dot11_mlme_init(struct dot11_mlme *m, const uint8_t self[DOT11_ADDR_LEN],
     mlme_set_defaults(m);
 }
 
+bool dot11_mlme_set_rsn_ie(struct dot11_mlme *m, const uint8_t *ie, uint8_t len) {
+    if (!m || len > DOT11_RSN_IE_MAX || (len && (!ie || len < 2 || ie[0] != DOT11_IE_RSN ||
+                                                 ie[1] + 2 != len)))
+        return false;
+    if (len) mlme_memcpy(m->rsn_ie, ie, len);
+    m->rsn_ie_len = len;
+    return true;
+}
+
 static void *mlme_event_ctx(struct dot11_mlme *m) {
     return m->event_ctx ? m->event_ctx : m->tx_ctx;
 }
@@ -357,7 +371,7 @@ bool dot11_mlme_start_open(struct dot11_mlme *m, const char *ssid,
     m->last_status = 0;
     m->ap_capability = 0;
     m->bss_profile_valid = false;
-    m->capability = DOT11_CAP_STA_OPEN;
+    m->capability = (uint16_t)(DOT11_CAP_STA_OPEN | (m->rsn_ie_len ? DOT11_CAP_PRIVACY : 0));
     mlme_memcpy(m->rates, default_rates, sizeof(default_rates));
     m->rate_count = (uint8_t)sizeof(default_rates);
     if (!mlme_send_auth(m, now_ms)) {
@@ -470,7 +484,8 @@ static bool mlme_apply_bss(struct dot11_mlme *m, const struct dot11_bss *bss) {
     if (!compatible_count) return false;
     m->ap_capability = bss->capability;
     m->capability = (uint16_t)(DOT11_CAP_ESS |
-        (bss->capability & (DOT11_CAP_SHORT_PREAMBLE | DOT11_CAP_SHORT_SLOT)));
+        (bss->capability & (DOT11_CAP_SHORT_PREAMBLE | DOT11_CAP_SHORT_SLOT)) |
+        (m->rsn_ie_len ? DOT11_CAP_PRIVACY : 0));
     if (bss->channel) m->channel = bss->channel;
     mlme_memcpy(m->rates, compatible, compatible_count);
     m->rate_count = compatible_count;
@@ -490,7 +505,7 @@ bool dot11_mlme_input(struct dot11_mlme *m, const uint8_t *frame, uint16_t len,
         if (!dot11_parse_bss(frame, len, &bss) || !dot11_addr_eq(bss.bssid, m->ap) ||
             !ssid_matches(m, &bss))
             return false;
-        if ((bss.capability & DOT11_CAP_PRIVACY) || bss.has_rsn) {
+        if (((bss.capability & DOT11_CAP_PRIVACY) || bss.has_rsn) && !m->rsn_ie_len) {
             mlme_fail(m, DOT11_FAIL_UNSUPPORTED_SECURITY, 0);
             return true;
         }

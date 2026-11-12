@@ -8,6 +8,7 @@
 #define DOT11_MGMT_MAX 512
 #define DOT11_ADDR_LEN 6
 #define DOT11_RATES_MAX 32
+#define DOT11_RSN_IE_MAX 64
 
 #define DOT11_FTYPE_MGMT 0x00
 #define DOT11_FTYPE_CTRL 0x01
@@ -130,6 +131,8 @@ struct dot11_mlme {
     uint8_t rate_count;
     bool bss_profile_valid;
     bool last_tx_failed;
+    uint8_t rsn_ie[DOT11_RSN_IE_MAX];
+    uint8_t rsn_ie_len;
     dot11_tx_fn tx;
     void *tx_ctx;
     dot11_event_fn on_associated;
@@ -147,6 +150,7 @@ bool dot11_mlme_start_open(struct dot11_mlme *m, const char *ssid,
                            const uint8_t bssid[DOT11_ADDR_LEN],
                            uint8_t channel, uint64_t now_ms);
 void dot11_mlme_stop(struct dot11_mlme *m);
+bool dot11_mlme_set_rsn_ie(struct dot11_mlme *m, const uint8_t *ie, uint8_t len);
 uint8_t dot11_mlme_state(const struct dot11_mlme *m);
 
 void dot11_mlme_poll(struct dot11_mlme *m, uint64_t now_ms);
