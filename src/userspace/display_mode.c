@@ -1,3 +1,4 @@
+#include "user_config.h"
 #include "display_mode.h"
 #include "display.h"
 #include "userspace.h"
@@ -44,7 +45,9 @@ static bool display_mode_load_ex(uint32_t *width, uint32_t *height,
                                  uint8_t *bpp, uint32_t *scale){
     if(!vfs_is_root_mounted()) return false;
     if(!filesystem_syscall_acquire()) return false;
-    int32_t fd=vfs_open(DISPLAY_INI_PATH);
+    char path[192];
+    user_config_path("display.ini",path,sizeof(path),false);
+    int32_t fd=vfs_open(path);
     char buffer[128];
     int32_t total=0;
     if(fd>=0){
@@ -117,8 +120,10 @@ static void write_back_ini(uint32_t width, uint32_t height, uint8_t bpp){
     *out='\0';
     if(!vfs_is_root_mounted()) return;
     if(!filesystem_syscall_acquire()) return;
-    (void)vfs_write_file(DISPLAY_INI_PATH,buffer,
-                         (uint32_t)(out-buffer));
+    char path[192];
+    user_config_path("display.ini",path,sizeof(path),true);
+    if(vfs_write_file(path,buffer,(uint32_t)(out-buffer))>=0)
+        user_config_claim(path);
     filesystem_syscall_unlock();
 }
 

@@ -7,6 +7,7 @@
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
+#include "user_config.h"
 
 static struct personalization g_current;
 static bool g_has_current;
@@ -103,7 +104,9 @@ bool personalization_load(struct personalization *p){
     personalization_defaults(p);
     if(!vfs_is_root_mounted()) return true;
     if(!filesystem_syscall_acquire()) return true;
-    int32_t fd=vfs_open(PERSONALIZATION_PATH);
+    char path[192];
+    user_config_path("appear.ini",path,sizeof(path),false);
+    int32_t fd=vfs_open(path);
     char buffer[512];
     int32_t total=0;
     if(fd>=0){
@@ -120,13 +123,13 @@ bool personalization_load(struct personalization *p){
     if(fd<0){
         if(g_had_config)
             klogf(KLOG_WARN,"personalization: lost '%s' rc=%d",
-                PERSONALIZATION_PATH,fd);
+                path,fd);
         g_had_config=false;
         return true;
     }
     if(!g_had_config)
         klogf(KLOG_OK,"personalization: found '%s' bytes=%d",
-            PERSONALIZATION_PATH,total);
+            path,total);
     g_had_config=true;
     if(total<=0) return true;
     buffer[total]='\0';
