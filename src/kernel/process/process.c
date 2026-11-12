@@ -2363,6 +2363,15 @@ int32_t process_set_uid(uint32_t uid)
   return 0;
 }
 
+void process_grant_root(void)
+{
+  struct process *process = process_current();
+  if (!process)
+    return;
+  process->uid = 0;
+  process->gid = 0;
+}
+
 int32_t process_set_gid(uint32_t gid)
 {
   struct process *process = process_current();
