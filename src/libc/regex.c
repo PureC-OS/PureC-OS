@@ -159,7 +159,6 @@ static int rx_parse_bracket(struct rx_parser *ps)
         }
         int lo = c;
         ps->p++;
-        if (lo == '\\' && !ps->ere && 0) lo = (unsigned char)*ps->p++;
         if (*ps->p == '-' && ps->p[1] && ps->p[1] != ']') {
             int hi = (unsigned char)ps->p[1];
             ps->p += 2;
@@ -453,7 +452,7 @@ int regcomp(regex_t *preg, const char *pattern, int cflags)
     ps.icase = (cflags & REG_ICASE) != 0;
     ps.prog = prog;
     int root = rx_parse_alt(&ps, 0);
-    if (root >= 0 && *ps.p) ps.error = ps.ere ? 8 : 8;
+    if (root >= 0 && *ps.p) ps.error = 8;
     if (root < 0 || ps.error) {
         int err = ps.error ? ps.error : REG_BADPAT;
         free(ps.nodes);
@@ -464,8 +463,6 @@ int regcomp(regex_t *preg, const char *pattern, int cflags)
     prog->ngroups = ps.ngroups;
     bool ok = rx_emit(prog, I_SAVE, 0, 0) >= 0 && rx_gen(&ps, root) &&
               rx_emit(prog, I_SAVE, 1, 0) >= 0 && rx_emit(prog, I_MATCH, 0, 0) >= 0;
-    prog->anchored = ps.nodes[root].type == N_BOL ||
-                     (ps.nodes[root].type == N_CAT && 0);
     int first = root;
     while (ps.nodes[first].type == N_CAT) first = ps.nodes[first].left;
     if (ps.nodes[first].type == N_BOL && !(cflags & REG_NEWLINE)) prog->anchored = true;
