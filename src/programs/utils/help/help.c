@@ -36,7 +36,7 @@ int main(int argc, char **argv)
         }
         putchar('\n');
     }
-    printf("\n  %sShell%s     cd pwd export unset alias type history; Up/Down history, Tab completion,\n"
+    printf("\n  %sShell%s     cd pwd export unset type history; Up/Down history, Tab completion,\n"
            "            Ctrl+C interrupt, Ctrl+L clear, Ctrl+A/E line start/end, Ctrl+U/K/W delete\n",
            color ? C_BOLD C_YELLOW : "", color ? C_RESET : "");
     printf("  %sTerminal%s  Ctrl+Shift+T new tab, Ctrl+Shift+W close, Ctrl+Tab switch, Ctrl+= / Ctrl+- font size\n",
