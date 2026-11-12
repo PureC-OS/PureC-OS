@@ -14,14 +14,14 @@ struct nav_item {
 };
 
 static const struct nav_item nav[PAGE_COUNT] = {
-    {PAGE_ABOUT, SI_INFORMATION_OUTLINE, "About", "About this PC", "Hardware, memory and system overview"},
-    {PAGE_NETWORK, SI_WIFI, "Network", "Network & Internet", "Wi-Fi, wired adapters and connectivity"},
-    {PAGE_SOUND, SI_VOLUME_HIGH, "Sound", "Sound", "Volume, output device and audio test"},
-    {PAGE_DISPLAY, SI_MONITOR, "Display", "Display", "Resolution and interface scale"},
-    {PAGE_APPEARANCE, SI_PALETTE, "Appearance", "Appearance", "Theme, wallpaper and fonts"},
-    {PAGE_STORAGE, SI_HARDDISK, "Storage", "Storage", "Disks, file system and free space"},
-    {PAGE_DATETIME, SI_CLOCK_OUTLINE, "Date & time", "Date & time", "Clock, time zone and uptime"},
-    {PAGE_POWER, SI_POWER, "Power", "Power & battery", "Battery status, restart and shut down"},
+    {PAGE_ABOUT, PGI_INFORMATION_OUTLINE, "About", "About this PC", "Hardware, memory and system overview"},
+    {PAGE_NETWORK, PGI_WIFI, "Network", "Network & Internet", "Wi-Fi, wired adapters and connectivity"},
+    {PAGE_SOUND, PGI_VOLUME_HIGH, "Sound", "Sound", "Volume, output device and audio test"},
+    {PAGE_DISPLAY, PGI_MONITOR, "Display", "Display", "Resolution and interface scale"},
+    {PAGE_APPEARANCE, PGI_PALETTE, "Appearance", "Appearance", "Theme, wallpaper and fonts"},
+    {PAGE_STORAGE, PGI_HARDDISK, "Storage", "Storage", "Disks, file system and free space"},
+    {PAGE_DATETIME, PGI_CLOCK_OUTLINE, "Date & time", "Date & time", "Clock, time zone and uptime"},
+    {PAGE_POWER, PGI_POWER, "Power", "Power & battery", "Battery status, restart and shut down"},
 };
 
 static const char *group_of(int index)
@@ -71,18 +71,18 @@ bool settings_page_wants_live(int page)
            page == PAGE_POWER || page == PAGE_SOUND;
 }
 
-static void draw_sidebar(struct settings_app *app, struct ui *u, int h)
+static void draw_sidebar(struct settings_app *app, struct pg_ui *u, int h)
 {
-    const struct ui_palette *p = &u->pal;
-    struct sg_canvas *c = u->c;
-    sg_fill(c, 0, 0, SIDEBAR_W, h, p->sidebar);
-    sg_fill_a(c, SIDEBAR_W - 1, 0, 1, h, p->border, 150);
+    const struct pg_palette *p = &u->pal;
+    struct pg_canvas *c = u->c;
+    pgc_fill(c, 0, 0, SIDEBAR_W, h, p->sidebar);
+    pgc_fill_a(c, SIDEBAR_W - 1, 0, 1, h, p->border, 150);
 
-    sg_rrect_grad(c, 20, 22, 40, 40, 12, sg_lighten(p->accent, 30), sg_mix(p->accent, 0x5b21b6, 110),
+    pgc_rrect_grad(c, 20, 22, 40, 40, 12, pgc_lighten(p->accent, 30), pgc_mix(p->accent, 0x5b21b6, 110),
                   false);
-    sg_icon(c, SI_COG, SG_ICON_M, 26, 28, 0xffffff);
-    sg_text(c, SF_HEAD, 72, 22, "Settings", p->text);
-    sg_text(c, SF_SMALL, 72, 43, "PureC OS 1.2.29", p->text3);
+    pgc_icon(c, PGI_COG, PG_ICON_M, 26, 28, 0xffffff);
+    pgc_text(c, PGF_HEAD, 72, 22, "Settings", p->text);
+    pgc_text(c, PGF_SMALL, 72, 43, "PureC OS 1.2.29", p->text3);
 
     struct user_info user;
     char name[48];
@@ -93,12 +93,12 @@ static void draw_sidebar(struct settings_app *app, struct ui *u, int h)
     else
         fs(&f, "root");
     int cy = 80;
-    sg_rrect(c, 14, cy, SIDEBAR_W - 28, 52, 12, p->surface, p->light ? 255 : 200);
-    sg_circle(c, 40, cy + 26, 16, sg_mix(p->accent, p->surface, 120), 255);
+    pgc_rrect(c, 14, cy, SIDEBAR_W - 28, 52, 12, p->surface, p->light ? 255 : 200);
+    pgc_circle(c, 40, cy + 26, 16, pgc_mix(p->accent, p->surface, 120), 255);
     char initial[2] = {name[0] >= 'a' && name[0] <= 'z' ? (char)(name[0] - 32) : name[0], 0};
-    sg_text_center(c, SF_HEAD, 24, cy + 15, 32, initial, p->on_accent);
-    sg_text(c, SF_MEDIUM, 66, cy + 9, name, p->text);
-    sg_text(c, SF_SMALL, 66, cy + 28, pc_getuid() == 0 ? "Administrator" : "Standard user", p->text3);
+    pgc_text_center(c, PGF_HEAD, 24, cy + 15, 32, initial, p->on_accent);
+    pgc_text(c, PGF_MEDIUM, 66, cy + 9, name, p->text);
+    pgc_text(c, PGF_SMALL, 66, cy + 28, pc_getuid() == 0 ? "Administrator" : "Standard user", p->text3);
 
     int y = cy + 70;
     for (int i = 0; i < PAGE_COUNT; i++) {
@@ -106,69 +106,69 @@ static void draw_sidebar(struct settings_app *app, struct ui *u, int h)
         if (g) {
             if (i)
                 y += 8;
-            sg_text(c, SF_SMALL, 26, y, g, p->text3);
+            pgc_text(c, PGF_SMALL, 26, y, g, p->text3);
             y += 24;
         }
         const struct nav_item *it = &nav[i];
         bool sel = app->page == it->page;
-        uint32_t id = ui_id("nav", i);
-        if (ui_click(u, id, 12, y, SIDEBAR_W - 24, 40) && !sel) {
+        uint32_t id = pgu_id("nav", i);
+        if (pgu_click(u, id, 12, y, SIDEBAR_W - 24, 40) && !sel) {
             app->page = it->page;
             app->refresh = true;
             u->focus = 0;
         }
         bool hot = u->hot == id;
         if (sel) {
-            sg_rrect(c, 12, y, SIDEBAR_W - 24, 40, 10, p->accent, p->light ? 34 : 44);
-            sg_rrect(c, 12, y + 10, 4, 20, 2, p->accent, 255);
+            pgc_rrect(c, 12, y, SIDEBAR_W - 24, 40, 10, p->accent, p->light ? 34 : 44);
+            pgc_rrect(c, 12, y + 10, 4, 20, 2, p->accent, 255);
         } else if (hot) {
-            sg_rrect(c, 12, y, SIDEBAR_W - 24, 40, 10, p->surface2, 255);
+            pgc_rrect(c, 12, y, SIDEBAR_W - 24, 40, 10, p->surface2, 255);
         }
-        sg_icon(c, it->icon, SG_ICON_S, 30, y + 11, sel ? p->accent : p->text2);
-        sg_text(c, sel ? SF_MEDIUM : SF_BODY, 60, y + 11, it->label, sel ? p->text : p->text2);
+        pgc_icon(c, it->icon, PG_ICON_S, 30, y + 11, sel ? p->accent : p->text2);
+        pgc_text(c, sel ? PGF_MEDIUM : PGF_BODY, 60, y + 11, it->label, sel ? p->text : p->text2);
         y += 44;
     }
 }
 
-static void draw_toast(struct settings_app *app, struct ui *u, int x0, int w, int h)
+static void draw_toast(struct settings_app *app, struct pg_ui *u, int x0, int w, int h)
 {
     if (!app->toast[0] || u->now >= app->toast_until)
         return;
-    int tw = sg_text_w(SF_MEDIUM, app->toast) + 56;
+    int tw = pgc_text_w(PGF_MEDIUM, app->toast) + 56;
     int x = x0 + (w - tw) / 2, y = h - 64;
-    sg_shadow(u->c, x, y, tw, 40, 20, 8, 90);
-    sg_rrect(u->c, x, y, tw, 40, 20, u->pal.light ? 0x1e1e2e : sg_lighten(u->pal.surface3, 10), 255);
-    sg_circle(u->c, x + 22, y + 20, 5, app->toast_color, 255);
-    sg_text(u->c, SF_MEDIUM, x + 36, y + 11, app->toast, u->pal.light ? 0xffffff : u->pal.text);
+    pgc_shadow(u->c, x, y, tw, 40, 20, 8, 90);
+    pgc_rrect(u->c, x, y, tw, 40, 20, u->pal.light ? 0x1e1e2e : pgc_lighten(u->pal.surface3, 10), 255);
+    pgc_circle(u->c, x + 22, y + 20, 5, app->toast_color, 255);
+    pgc_text(u->c, PGF_MEDIUM, x + 36, y + 11, app->toast, u->pal.light ? 0xffffff : u->pal.text);
     u->animating = true;
 }
 
-static void draw_confirm(struct settings_app *app, struct ui *u, int w, int h)
+static void draw_confirm(struct settings_app *app, struct pg_ui *u, int w, int h)
 {
     if (app->confirm == CONFIRM_NONE)
         return;
-    const struct ui_palette *p = &u->pal;
-    sg_fill_a(u->c, 0, 0, w, h, 0x000000, 140);
+    const struct pg_palette *p = &u->pal;
+    pgc_fill_a(u->c, 0, 0, w, h, 0x000000, 140);
     int mw = 420, mh = 210;
     int x = (w - mw) / 2, y = (h - mh) / 2;
-    sg_shadow(u->c, x, y, mw, mh, 16, 14, 140);
-    sg_rrect(u->c, x, y, mw, mh, 16, p->light ? 0xffffff : p->surface, 255);
-    sg_rrect_stroke(u->c, x, y, mw, mh, 16, p->border, 160);
+    pgc_shadow(u->c, x, y, mw, mh, 16, 14, 140);
+    pgc_rrect(u->c, x, y, mw, mh, 16, p->light ? 0xffffff : p->surface, 255);
+    pgc_rrect_stroke(u->c, x, y, mw, mh, 16, p->border, 160);
     bool off = app->confirm == CONFIRM_SHUTDOWN;
-    ui_icon_tile(u, x + 24, y + 24, 44, off ? SI_POWER : SI_RESTART, off ? p->danger : p->accent);
-    sg_text(u->c, SF_TITLE, x + 84, y + 26, off ? "Shut down?" : "Restart?", p->text);
-    sg_text(u->c, SF_BODY, x + 24, y + 88,
+    pgu_icon_tile(u, x + 24, y + 24, 44, off ? PGI_POWER : PGI_RESTART, off ? p->danger : p->accent);
+    pgc_text(u->c, PGF_TITLE, x + 84, y + 26, off ? "Shut down?" : "Restart?", p->text);
+    pgc_text(u->c, PGF_BODY, x + 24, y + 88,
             off ? "The computer will power off now." : "The computer will restart now.", p->text2);
-    sg_text(u->c, SF_BODY, x + 24, y + 110, "Unsaved work in open apps will be lost.", p->text3);
+    pgc_text(u->c, PGF_BODY, x + 24, y + 110, "Unsaved work in open apps will be lost.", p->text3);
     u->modal = false;
-    if (ui_button(u, ui_id("confirm-cancel", 0), x + mw - 252, y + mh - 60, 108, 38, "Cancel", -1,
-                  UI_BTN_SECONDARY) ||
+    if (pgu_button(u, pgu_id("confirm-cancel", 0), x + mw - 252, y + mh - 60, 108, 38, "Cancel", -1,
+                  PGU_BTN_SECONDARY) ||
         u->key == 27) {
         app->confirm = CONFIRM_NONE;
         u->key = 0;
     }
-    if (ui_button(u, ui_id("confirm-ok", 0), x + mw - 134, y + mh - 60, 110, 38,
-                  off ? "Shut down" : "Restart", -1, off ? UI_BTN_DANGER : UI_BTN_PRIMARY)) {
+    if (pgu_button(u, pgu_id("confirm-ok", 0), x + mw - 134, y + mh - 60, 110, 38,
+                  off ? "Shut down" : "Restart", -1, off ? PGU_BTN_DANGER : PGU_BTN_PRIMARY)) {
         int what = app->confirm;
         app->confirm = CONFIRM_NONE;
         if (what == CONFIRM_SHUTDOWN)
@@ -183,16 +183,16 @@ static int (*const pages[PAGE_COUNT])(struct page_ctx *) = {
     page_appearance, page_storage, page_datetime, page_power,
 };
 
-void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h)
+void settings_app_frame(struct settings_app *app, struct pg_ui *u, int w, int h)
 {
-    const struct ui_palette *p = &u->pal;
-    struct sg_canvas *c = u->c;
+    const struct pg_palette *p = &u->pal;
+    struct pg_canvas *c = u->c;
     u->hot = 0;
     u->any_hot = false;
     u->animating = false;
     u->modal = app->confirm != CONFIRM_NONE;
 
-    sg_fill(c, 0, 0, w, h, p->bg);
+    pgc_fill(c, 0, 0, w, h, p->bg);
     draw_sidebar(app, u, h);
 
     int x0 = SIDEBAR_W;
@@ -206,8 +206,8 @@ void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h)
         cx = x0 + pad;
 
     const struct nav_item *it = &nav[app->page];
-    sg_text(c, SF_TITLE, cx, 26, it->title, p->text);
-    sg_text(c, SF_BODY, cx, 58, it->subtitle, p->text3);
+    pgc_text(c, PGF_TITLE, cx, 26, it->title, p->text);
+    pgc_text(c, PGF_BODY, cx, 58, it->subtitle, p->text3);
 
     int view_y = HEADER_H;
     int view_h = h - view_y;
@@ -229,9 +229,9 @@ void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h)
         *scroll = 0;
 
     if (*scroll > 0)
-        sg_fill_a(c, x0, view_y - 1, cw, 1, p->border, 160);
+        pgc_fill_a(c, x0, view_y - 1, cw, 1, p->border, 160);
 
-    sg_clip(c, x0, view_y, cw, view_h);
+    pgc_clip(c, x0, view_y, cw, view_h);
     struct page_ctx ctx = {app, u, cx, view_y + 8 - *scroll, content_w, view_h};
     bool saved_modal = u->modal;
     if (u->my < view_y)
@@ -239,7 +239,7 @@ void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h)
     int ch = pages[app->page](&ctx);
     u->modal = saved_modal;
     app->content_h[app->page] = ch;
-    sg_unclip(c);
+    pgc_unclip(c);
 
     if (max_scroll > 0) {
         int track_h = view_h - 16;
@@ -247,7 +247,7 @@ void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h)
         if (thumb_h < 40)
             thumb_h = 40;
         int thumb_y = view_y + 8 + (track_h - thumb_h) * *scroll / max_scroll;
-        sg_rrect(c, w - 10, thumb_y, 5, thumb_h, 3, p->text3, 110);
+        pgc_rrect(c, w - 10, thumb_y, 5, thumb_h, 3, p->text3, 110);
     }
 
     draw_toast(app, u, x0, cw, h);

@@ -42,61 +42,61 @@ static void refresh(struct settings_app *app)
 
 static void hero(struct page_ctx *p, int y)
 {
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     int h = 150;
-    uint32_t c0 = sg_mix(pal->accent, 0x1e1b4b, 120);
-    uint32_t c1 = sg_mix(pal->accent, 0x0f766e, 150);
-    sg_rrect_grad(u->c, p->x, y, p->w, h, 16, c0, c1, true);
-    struct sg_clip saved = sg_clip_push(u->c, p->x + 16, y, p->w - 16, h);
+    uint32_t c0 = pgc_mix(pal->accent, 0x1e1b4b, 120);
+    uint32_t c1 = pgc_mix(pal->accent, 0x0f766e, 150);
+    pgc_rrect_grad(u->c, p->x, y, p->w, h, 16, c0, c1, true);
+    struct pg_clip saved = pgc_clip_push(u->c, p->x + 16, y, p->w - 16, h);
     for (int i = 0; i < 5; i++)
-        sg_circle(u->c, p->x + p->w - 70 - i * 26, y + h - 10 - i * 8, 120 - i * 18, 0xffffff, 9);
-    sg_clip_pop(u->c, saved);
-    sg_rrect(u->c, p->x + 28, y + 35, 80, 80, 22, 0xffffff, 36);
-    sg_text_center(u->c, SF_HERO, p->x + 28, y + 51, 80, "P", 0xffffff);
-    sg_text(u->c, SF_HERO, p->x + 132, y + 32, "PureC OS", 0xffffff);
-    sg_text(u->c, SF_BODY, p->x + 134, y + 78, "Version 1.2.29  -  x86_64", sg_mix(0xffffff, c1, 60));
-    sg_text(u->c, SF_SMALL, p->x + 134, y + 102, "A 64-bit operating system written from scratch in C",
-            sg_mix(0xffffff, c1, 90));
+        pgc_circle(u->c, p->x + p->w - 70 - i * 26, y + h - 10 - i * 8, 120 - i * 18, 0xffffff, 9);
+    pgc_clip_pop(u->c, saved);
+    pgc_rrect(u->c, p->x + 28, y + 35, 80, 80, 22, 0xffffff, 36);
+    pgc_text_center(u->c, PGF_HERO, p->x + 28, y + 51, 80, "P", 0xffffff);
+    pgc_text(u->c, PGF_HERO, p->x + 132, y + 32, "PureC OS", 0xffffff);
+    pgc_text(u->c, PGF_BODY, p->x + 134, y + 78, "Version 1.2.29  -  x86_64", pgc_mix(0xffffff, c1, 60));
+    pgc_text(u->c, PGF_SMALL, p->x + 134, y + 102, "A 64-bit operating system written from scratch in C",
+            pgc_mix(0xffffff, c1, 90));
 }
 
 static void stat_tile(struct page_ctx *p, int x, int y, int w, int h, int icon, uint32_t color,
                       const char *label, const char *value, const char *sub, uint32_t permille,
                       bool ring)
 {
-    struct ui *u = p->u;
-    ui_card(u, x, y, w, h);
-    ui_icon_tile(u, x + 18, y + 18, 36, icon, color);
-    sg_text(u->c, SF_SMALL, x + 66, y + 18, label, u->pal.text3);
-    sg_text_fit(u->c, SF_HEAD, x + 66, y + 34, w - (ring ? 150 : 84), value, u->pal.text);
+    struct pg_ui *u = p->u;
+    pgu_card(u, x, y, w, h);
+    pgu_icon_tile(u, x + 18, y + 18, 36, icon, color);
+    pgc_text(u->c, PGF_SMALL, x + 66, y + 18, label, u->pal.text3);
+    pgc_text_fit(u->c, PGF_HEAD, x + 66, y + 34, w - (ring ? 150 : 84), value, u->pal.text);
     if (sub)
-        sg_text_fit(u->c, SF_SMALL, x + 18, y + h - 30, w - (ring ? 110 : 36), sub, u->pal.text3);
+        pgc_text_fit(u->c, PGF_SMALL, x + 18, y + h - 30, w - (ring ? 110 : 36), sub, u->pal.text3);
     if (ring) {
         int r = 34;
-        sg_ring(u->c, x + w - r - 22, y + h / 2, r, 8, permille, color, u->pal.surface3);
+        pgc_ring(u->c, x + w - r - 22, y + h / 2, r, 8, permille, color, u->pal.surface3);
         char pct[8];
         struct fmt f;
         fmt_init(&f, pct, sizeof(pct));
         fu(&f, permille / 10);
         fc(&f, '%');
-        sg_text_center(u->c, SF_MEDIUM, x + w - 2 * r - 22, y + h / 2 - 10, 2 * r, pct, u->pal.text);
+        pgc_text_center(u->c, PGF_MEDIUM, x + w - 2 * r - 22, y + h / 2 - 10, 2 * r, pct, u->pal.text);
     }
 }
 
 static void cpu_graph(struct page_ctx *p, int x, int y, int w, int h)
 {
-    struct ui *u = p->u;
-    ui_card(u, x, y, w, h);
-    ui_card_title(u, x + 20, y + 18, SI_CHIP, "Processor load", "Last 48 seconds");
+    struct pg_ui *u = p->u;
+    pgu_card(u, x, y, w, h);
+    pgu_card_title(u, x + 20, y + 18, PGI_CHIP, "Processor load", "Last 48 seconds");
     char cur[16];
     struct fmt f;
     fmt_init(&f, cur, sizeof(cur));
     fu(&f, st.have_cpu ? st.cpu.usage_percent : 0);
     fc(&f, '%');
-    sg_text(u->c, SF_TITLE, x + w - 20 - sg_text_w(SF_TITLE, cur), y + 18, cur, u->pal.accent);
+    pgc_text(u->c, PGF_TITLE, x + w - 20 - pgc_text_w(PGF_TITLE, cur), y + 18, cur, u->pal.accent);
     int gx = x + 20, gy = y + 72, gw = w - 40, gh = h - 92;
     for (int i = 0; i <= 4; i++)
-        sg_fill_a(u->c, gx, gy + gh * i / 4, gw, 1, u->pal.border, 90);
+        pgc_fill_a(u->c, gx, gy + gh * i / 4, gw, 1, u->pal.border, 90);
     int n = (int)sizeof(st.hist);
     int bw = gw / n;
     for (int i = 0; i < st.hist_n; i++) {
@@ -105,14 +105,14 @@ static void cpu_graph(struct page_ctx *p, int x, int y, int w, int h)
         if (bh < 2)
             bh = 2;
         int bx = gx + (n - st.hist_n + i) * bw;
-        uint32_t col = sg_mix(u->pal.accent, u->pal.info, (uint32_t)(i * 255 / n));
-        sg_rrect(u->c, bx + 1, gy + gh - bh, bw - 2, bh, 2, col, 255);
+        uint32_t col = pgc_mix(u->pal.accent, u->pal.info, (uint32_t)(i * 255 / n));
+        pgc_rrect(u->c, bx + 1, gy + gh - bh, bw - 2, bh, 2, col, 255);
     }
 }
 
 int page_about(struct page_ctx *p)
 {
-    struct ui *u = p->u;
+    struct pg_ui *u = p->u;
     refresh(p->app);
     int y = p->y;
     hero(p, y);
@@ -162,15 +162,15 @@ int page_about(struct page_ctx *p)
     fmt_init(&f, s3, sizeof(s3));
     fs(&f, "Since last boot");
 
-    stat_tile(p, p->x, y, cols == 3 ? tw : tw, th, SI_CPU_64_BIT, u->pal.accent, "Processor", v1, s1, 0,
+    stat_tile(p, p->x, y, cols == 3 ? tw : tw, th, PGI_CPU_64_BIT, u->pal.accent, "Processor", v1, s1, 0,
               false);
-    stat_tile(p, p->x + tw + gap, y, tw, th, SI_MEMORY, u->pal.info, "Memory", v2, s2, mem_pm, true);
+    stat_tile(p, p->x + tw + gap, y, tw, th, PGI_MEMORY, u->pal.info, "Memory", v2, s2, mem_pm, true);
     if (cols == 3)
-        stat_tile(p, p->x + 2 * (tw + gap), y, tw, th, SI_TIMER_OUTLINE, u->pal.success, "Uptime", v3, s3,
+        stat_tile(p, p->x + 2 * (tw + gap), y, tw, th, PGI_TIMER_OUTLINE, u->pal.success, "Uptime", v3, s3,
                   0, false);
     y += th + gap;
     if (cols == 2) {
-        stat_tile(p, p->x, y, tw, th, SI_TIMER_OUTLINE, u->pal.success, "Uptime", v3, s3, 0, false);
+        stat_tile(p, p->x, y, tw, th, PGI_TIMER_OUTLINE, u->pal.success, "Uptime", v3, s3, 0, false);
         y += th + gap;
     }
 
@@ -178,17 +178,17 @@ int page_about(struct page_ctx *p)
     y += 200 + gap;
 
     int dh = 248;
-    ui_card(u, p->x, y, p->w, dh);
-    ui_card_title(u, p->x + 20, y + 18, SI_INFORMATION_OUTLINE, "Device specifications", 0);
+    pgu_card(u, p->x, y, p->w, dh);
+    pgu_card_title(u, p->x + 20, y + 18, PGI_INFORMATION_OUTLINE, "Device specifications", 0);
     int ky = y + 72, kx = p->x + 24, kw = p->w - 48;
     char buf[96];
     fmt_init(&f, buf, sizeof(buf));
     fs(&f, "PureC OS 1.2.29 (x86_64)");
-    ui_kv(u, kx, ky, kw, "Operating system", buf);
-    ui_separator(u, kx, ky + 28, kw);
+    pgu_kv(u, kx, ky, kw, "Operating system", buf);
+    pgu_separator(u, kx, ky + 28, kw);
     ky += 38;
-    ui_kv(u, kx, ky, kw, "Processor", s1);
-    ui_separator(u, kx, ky + 28, kw);
+    pgu_kv(u, kx, ky, kw, "Processor", s1);
+    pgu_separator(u, kx, ky + 28, kw);
     ky += 38;
     fmt_init(&f, buf, sizeof(buf));
     if (st.have_mem)
@@ -196,8 +196,8 @@ int page_about(struct page_ctx *p)
     else
         fs(&f, "-");
     fs(&f, " RAM");
-    ui_kv(u, kx, ky, kw, "Installed memory", buf);
-    ui_separator(u, kx, ky + 28, kw);
+    pgu_kv(u, kx, ky, kw, "Installed memory", buf);
+    pgu_separator(u, kx, ky + 28, kw);
     ky += 38;
     fmt_init(&f, buf, sizeof(buf));
     if (st.have_scale) {
@@ -215,15 +215,15 @@ int page_about(struct page_ctx *p)
     } else {
         fs(&f, "-");
     }
-    ui_kv(u, kx, ky, kw, "Display", buf);
-    ui_separator(u, kx, ky + 28, kw);
+    pgu_kv(u, kx, ky, kw, "Display", buf);
+    pgu_separator(u, kx, ky + 28, kw);
     ky += 38;
     fmt_init(&f, buf, sizeof(buf));
     fs(&f, st.root);
     fs(&f, " (");
     fs(&f, st.fstype);
     fc(&f, ')');
-    ui_kv(u, kx, ky, kw, "System drive", buf);
+    pgu_kv(u, kx, ky, kw, "System drive", buf);
     y += dh;
     return y - p->y;
 }

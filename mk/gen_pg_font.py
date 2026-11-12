@@ -8,13 +8,13 @@ NERD = "/usr/share/fonts/TTF/JetBrainsMonoNerdFontPropo-Regular.ttf"
 ASCII = "".join(chr(c) for c in range(32, 127))
 
 FONTS = [
-    ("SF_SMALL", "Regular", 12, ASCII),
-    ("SF_BODY", "Regular", 14, ASCII),
-    ("SF_MEDIUM", "Medium", 14, ASCII),
-    ("SF_HEAD", "Bold", 16, ASCII),
-    ("SF_TITLE", "Bold", 24, ASCII),
-    ("SF_HERO", "Bold", 34, ASCII),
-    ("SF_DIGITS", "Medium", 60, "0123456789: "),
+    ("PGF_SMALL", "Regular", 12, ASCII),
+    ("PGF_BODY", "Regular", 14, ASCII),
+    ("PGF_MEDIUM", "Medium", 14, ASCII),
+    ("PGF_HEAD", "Bold", 16, ASCII),
+    ("PGF_TITLE", "Bold", 24, ASCII),
+    ("PGF_HERO", "Bold", 34, ASCII),
+    ("PGF_DIGITS", "Medium", 60, "0123456789: "),
 ]
 
 ICONS = [
@@ -97,46 +97,46 @@ def main(path):
     o.append("#pragma once")
     o.append("#include <stdint.h>")
     o.append("")
-    o.append("struct sf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };")
-    o.append("struct sf_font { uint8_t ascent, height; const struct sf_glyph *glyphs; const uint8_t *bits; };")
+    o.append("struct pgf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };")
+    o.append("struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; };")
     o.append("")
     for f in fonts:
         n = f["name"].lower()
         o.append("static const uint8_t %s_bits[] = {" % n)
         o.append(c_bytes(f["data"]) if f["data"] else "    0,")
         o.append("};")
-        o.append("static const struct sf_glyph %s_glyphs[95] = {" % n)
+        o.append("static const struct pgf_glyph %s_glyphs[95] = {" % n)
         for g in f["glyphs"]:
             o.append("    {%d,%d,%d,%d,%d,%d}," % g)
         o.append("};")
     o.append("")
-    o.append("enum sf_font_id {")
+    o.append("enum pgf_font_id {")
     for f in fonts:
         o.append("    %s," % f["name"])
-    o.append("    SF_FONT_COUNT")
+    o.append("    PGF_COUNT")
     o.append("};")
-    o.append("static const struct sf_font sf_fonts[SF_FONT_COUNT] = {")
+    o.append("static const struct pgf_font pgf_fonts[PGF_COUNT] = {")
     for f in fonts:
         n = f["name"].lower()
         o.append("    {%d,%d,%s_glyphs,%s_bits}," % (f["ascent"], f["height"], n, n))
     o.append("};")
     o.append("")
-    o.append("enum sf_icon_id {")
+    o.append("enum pgf_icon_id {")
     for icon in ICONS:
-        o.append("    SI_%s," % icon.upper())
-    o.append("    SI_COUNT")
+        o.append("    PGI_%s," % icon.upper())
+    o.append("    PGI_COUNT")
     o.append("};")
-    o.append("#define SF_ICON_SIZES %d" % len(ICON_SIZES))
-    o.append("static const uint8_t sf_icon_size[SF_ICON_SIZES] = {%s};" % ",".join(map(str, ICON_SIZES)))
+    o.append("#define PGF_ICON_SIZES %d" % len(ICON_SIZES))
+    o.append("static const uint8_t pgf_icon_size[PGF_ICON_SIZES] = {%s};" % ",".join(map(str, ICON_SIZES)))
     blob = bytearray()
     offs = []
     for icon, size, bits in icons:
         offs.append(len(blob))
         blob += bits
-    o.append("static const uint8_t sf_icon_bits[] = {")
+    o.append("static const uint8_t pgf_icon_bits[] = {")
     o.append(c_bytes(blob))
     o.append("};")
-    o.append("static const uint32_t sf_icon_off[SF_ICON_SIZES][SI_COUNT] = {")
+    o.append("static const uint32_t pgf_icon_off[PGF_ICON_SIZES][PGI_COUNT] = {")
     for s in range(len(ICON_SIZES)):
         o.append("    {" + ",".join(str(offs[s * len(ICONS) + i]) for i in range(len(ICONS))) + "},")
     o.append("};")
@@ -147,4 +147,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else "src/programs/settings/include/settings/font_data.h")
+    main(sys.argv[1] if len(sys.argv) > 1 else "src/libgui/include/pg_font_data.h")

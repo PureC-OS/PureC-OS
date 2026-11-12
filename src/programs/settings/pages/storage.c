@@ -48,26 +48,26 @@ static const char *transport_name(uint8_t t)
 
 int page_storage(struct page_ctx *p)
 {
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     refresh(p->app);
     int y = p->y;
     struct fmt f;
     char a[128], b[96];
 
     int h = 190;
-    ui_card(u, p->x, y, p->w, h);
-    sg_rrect(u->c, p->x + 24, y + 24, 64, 64, 18, pal->accent, pal->light ? 36 : 40);
-    sg_icon(u->c, SI_HARDDISK, SG_ICON_M, p->x + 42, y + 42, pal->accent);
+    pgu_card(u, p->x, y, p->w, h);
+    pgc_rrect(u->c, p->x + 24, y + 24, 64, 64, 18, pal->accent, pal->light ? 36 : 40);
+    pgc_icon(u->c, PGI_HARDDISK, PG_ICON_M, p->x + 42, y + 42, pal->accent);
     fmt_init(&f, a, sizeof(a));
     fs(&f, "System drive (");
     fs(&f, st.root);
     fc(&f, ')');
-    sg_text(u->c, SF_HEAD, p->x + 108, y + 28, a, pal->text);
+    pgc_text(u->c, PGF_HEAD, p->x + 108, y + 28, a, pal->text);
     fmt_init(&f, b, sizeof(b));
     fs(&f, st.fstype);
     fs(&f, " file system, mounted at /");
-    sg_text(u->c, SF_SMALL, p->x + 108, y + 50, b, pal->text3);
+    pgc_text(u->c, PGF_SMALL, p->x + 108, y + 50, b, pal->text3);
     if (st.have_sb) {
         uint64_t bs = st.sb.block_size ? st.sb.block_size : 1024;
         uint64_t total = (uint64_t)st.sb.total_blocks * bs;
@@ -75,16 +75,16 @@ int page_storage(struct page_ctx *p)
         uint64_t used = total - freeb;
         uint32_t pm = total ? (uint32_t)(used * 1000 / total) : 0;
         uint32_t col = pm > 900 ? pal->danger : pm > 750 ? pal->warning : pal->accent;
-        ui_progress(u, p->x + 24, y + 108, p->w - 48, 14, pm, col);
+        pgu_progress(u, p->x + 24, y + 108, p->w - 48, 14, pm, col);
         fmt_init(&f, a, sizeof(a));
         fbytes(&f, used);
         fs(&f, " used");
-        sg_text(u->c, SF_MEDIUM, p->x + 24, y + 134, a, pal->text);
+        pgc_text(u->c, PGF_MEDIUM, p->x + 24, y + 134, a, pal->text);
         fmt_init(&f, b, sizeof(b));
         fbytes(&f, freeb);
         fs(&f, " free of ");
         fbytes(&f, total);
-        sg_text(u->c, SF_BODY, p->x + p->w - 24 - sg_text_w(SF_BODY, b), y + 134, b, pal->text2);
+        pgc_text(u->c, PGF_BODY, p->x + p->w - 24 - pgc_text_w(PGF_BODY, b), y + 134, b, pal->text2);
         fmt_init(&f, a, sizeof(a));
         fu(&f, st.sb.total_inodes - st.sb.free_inodes);
         fs(&f, " files and folders  -  ");
@@ -92,31 +92,31 @@ int page_storage(struct page_ctx *p)
         fs(&f, "-byte blocks  -  ");
         fu(&f, st.sb.groups_count);
         fs(&f, " block groups");
-        sg_text(u->c, SF_SMALL, p->x + 24, y + 160, a, pal->text3);
+        pgc_text(u->c, PGF_SMALL, p->x + 24, y + 160, a, pal->text3);
     } else {
-        sg_text(u->c, SF_BODY, p->x + 24, y + 112, "Usage information is not available for this file system.",
+        pgc_text(u->c, PGF_BODY, p->x + 24, y + 112, "Usage information is not available for this file system.",
                 pal->text3);
     }
     y += h + 16;
 
     int row_h = 88;
     int dh = 84 + (st.count ? st.count * row_h : 60);
-    ui_card(u, p->x, y, p->w, dh);
+    pgu_card(u, p->x, y, p->w, dh);
     fmt_init(&f, a, sizeof(a));
     fu(&f, (uint64_t)st.count);
     fs(&f, st.count == 1 ? " device connected" : " devices connected");
-    ui_card_title(u, p->x + 20, y + 20, SI_SERVER, "Disks", a);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_SERVER, "Disks", a);
     int yy = y + 76;
-    ui_separator(u, p->x + 20, yy, p->w - 40);
+    pgu_separator(u, p->x + 20, yy, p->w - 40);
     yy += 14;
     if (!st.count)
-        sg_text(u->c, SF_BODY, p->x + 24, yy + 10, "No storage devices detected.", pal->text3);
+        pgc_text(u->c, PGF_BODY, p->x + 24, yy + 10, "No storage devices detected.", pal->text3);
     for (int i = 0; i < st.count; i++) {
         const struct storage_device_info *d = &st.disks[i];
         bool usb = d->transport == STORAGE_TRANSPORT_USB_MSC || d->transport == STORAGE_TRANSPORT_USB_EHCI;
-        ui_icon_tile(u, p->x + 24, yy, 40, usb ? SI_USB : SI_HARDDISK, usb ? pal->info : pal->accent);
+        pgu_icon_tile(u, p->x + 24, yy, 40, usb ? PGI_USB : PGI_HARDDISK, usb ? pal->info : pal->accent);
         const char *model = d->model[0] ? d->model : "Unknown disk";
-        sg_text_fit(u->c, SF_MEDIUM, p->x + 80, yy, p->w - 300, model, pal->text);
+        pgc_text_fit(u->c, PGF_MEDIUM, p->x + 80, yy, p->w - 300, model, pal->text);
         fmt_init(&f, a, sizeof(a));
         fs(&f, d->name);
         fs(&f, "  -  ");
@@ -126,28 +126,28 @@ int page_storage(struct page_ctx *p)
             fu(&f, d->sector_size);
             fs(&f, " B sectors");
         }
-        sg_text(u->c, SF_SMALL, p->x + 80, yy + 21, a, pal->text3);
+        pgc_text(u->c, PGF_SMALL, p->x + 80, yy + 21, a, pal->text3);
         fmt_init(&f, b, sizeof(b));
         fbytes(&f, d->sector_count * (d->sector_size ? d->sector_size : 512));
-        sg_text(u->c, SF_HEAD, p->x + p->w - 24 - sg_text_w(SF_HEAD, b), yy + 2, b, pal->text);
+        pgc_text(u->c, PGF_HEAD, p->x + p->w - 24 - pgc_text_w(PGF_HEAD, b), yy + 2, b, pal->text);
         int bx = p->x + 80;
-        bx += ui_badge(u, bx, yy + 44, d->operational ? "Healthy" : "Offline",
+        bx += pgu_badge(u, bx, yy + 44, d->operational ? "Healthy" : "Offline",
                        d->operational ? pal->success : pal->danger) + 8;
-        bx += ui_badge(u, bx, yy + 44, d->writable ? "Read / write" : "Read only",
+        bx += pgu_badge(u, bx, yy + 44, d->writable ? "Read / write" : "Read only",
                        d->writable ? pal->info : pal->warning) + 8;
         if (fmt_streq(d->name, st.root))
-            ui_badge(u, bx, yy + 44, "System", pal->accent);
+            pgu_badge(u, bx, yy + 44, "System", pal->accent);
         yy += row_h;
         if (i + 1 < st.count)
-            ui_separator(u, p->x + 80, yy - 12, p->w - 104);
+            pgu_separator(u, p->x + 80, yy - 12, p->w - 104);
     }
     y += dh + 16;
 
     int nh = 96;
-    ui_card(u, p->x, y, p->w, nh);
-    ui_icon_tile(u, p->x + 24, y + 28, 40, SI_SHIELD_CHECK, pal->success);
-    sg_text(u->c, SF_MEDIUM, p->x + 80, y + 26, "Formatting and partitioning live in the Disks app", pal->text);
-    sg_text(u->c, SF_SMALL, p->x + 80, y + 48, "Destructive actions always ask for a separate confirmation.",
+    pgu_card(u, p->x, y, p->w, nh);
+    pgu_icon_tile(u, p->x + 24, y + 28, 40, PGI_SHIELD_CHECK, pal->success);
+    pgc_text(u->c, PGF_MEDIUM, p->x + 80, y + 26, "Formatting and partitioning live in the Disks app", pal->text);
+    pgc_text(u->c, PGF_SMALL, p->x + 80, y + 48, "Destructive actions always ask for a separate confirmation.",
             pal->text3);
     y += nh;
     return y - p->y;

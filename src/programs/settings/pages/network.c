@@ -131,20 +131,20 @@ static void connect(struct settings_app *app, const struct wifi_network_info *n,
 
 static int status_card(struct page_ctx *p, int y)
 {
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     const struct net_if_info *wired = online_if();
     bool wifi_on = st.status.has_device && st.status.connected;
     bool online = wired || (wifi_on && st.status.ip_address);
     int h = 132;
-    ui_card(u, p->x, y, p->w, h);
+    pgu_card(u, p->x, y, p->w, h);
     uint32_t col = online ? pal->success
                    : st.status.state == WIFI_STATE_CONNECTING ? pal->warning
                    : st.status.state == WIFI_STATE_FAILED     ? pal->danger
                                                               : pal->text3;
-    int icon = wifi_on ? SI_WIFI : wired ? SI_ETHERNET : SI_WIFI_OFF;
-    sg_rrect(u->c, p->x + 24, y + 24, 84, 84, 24, col, pal->light ? 36 : 40);
-    sg_icon(u->c, icon, SG_ICON_L, p->x + 38, y + 38, col);
+    int icon = wifi_on ? PGI_WIFI : wired ? PGI_ETHERNET : PGI_WIFI_OFF;
+    pgc_rrect(u->c, p->x + 24, y + 24, 84, 84, 24, col, pal->light ? 36 : 40);
+    pgc_icon(u->c, icon, PG_ICON_L, p->x + 38, y + 38, col);
 
     char title[80], sub[96];
     struct fmt f;
@@ -180,24 +180,24 @@ static int status_card(struct page_ctx *p, int y)
         fs(&t, "Not connected");
         fs(&f, st.status.has_device ? "Choose a Wi-Fi network below" : "No active network connection");
     }
-    sg_text_fit(u->c, SF_TITLE, p->x + 130, y + 30, p->w - 300, title, pal->text);
-    sg_text_fit(u->c, SF_BODY, p->x + 130, y + 64, p->w - 300, sub, pal->text2);
+    pgc_text_fit(u->c, PGF_TITLE, p->x + 130, y + 30, p->w - 300, title, pal->text);
+    pgc_text_fit(u->c, PGF_BODY, p->x + 130, y + 64, p->w - 300, sub, pal->text2);
     int bx = p->x + 130;
     if (wifi_on && !online)
-        bx += ui_badge(u, bx, y + 92, "Waiting for DHCP", pal->warning) + 8;
+        bx += pgu_badge(u, bx, y + 92, "Waiting for DHCP", pal->warning) + 8;
     else
-        bx += ui_badge(u, bx, y + 92, online ? "Internet" : "Offline", online ? pal->success : pal->danger) + 8;
+        bx += pgu_badge(u, bx, y + 92, online ? "Internet" : "Offline", online ? pal->success : pal->danger) + 8;
     if (wifi_on) {
         char ch[24];
         fmt_init(&f, ch, sizeof(ch));
         fs(&f, "Channel ");
         fu(&f, st.status.channel);
-        bx += ui_badge(u, bx, y + 92, ch, pal->info) + 8;
-        ui_badge(u, bx, y + 92, sec_name(st.status.security), pal->accent);
+        bx += pgu_badge(u, bx, y + 92, ch, pal->info) + 8;
+        pgu_badge(u, bx, y + 92, sec_name(st.status.security), pal->accent);
     }
     if (wifi_on &&
-        ui_button(u, ui_id("wifi-disc", 0), p->x + p->w - 148, y + 47, 124, 38, "Disconnect", -1,
-                  UI_BTN_SECONDARY)) {
+        pgu_button(u, pgu_id("wifi-disc", 0), p->x + p->w - 148, y + 47, 124, 38, "Disconnect", -1,
+                  PGU_BTN_SECONDARY)) {
         (void)pc_wifi_disconnect();
         settings_toast(p->app, "Disconnected", pal->warning);
         p->app->refresh = true;
@@ -207,8 +207,8 @@ static int status_card(struct page_ctx *p, int y)
 
 static int wifi_card(struct page_ctx *p, int y)
 {
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     int list_h = 0;
     int rows = st.count;
     int row_h = 58;
@@ -223,7 +223,7 @@ static int wifi_card(struct page_ctx *p, int y)
     else
         list_h = rows * row_h + (expanded ? 64 : 0);
     int h = 84 + list_h + 12;
-    ui_card(u, p->x, y, p->w, h);
+    pgu_card(u, p->x, y, p->w, h);
     char sub[48];
     struct fmt f;
     fmt_init(&f, sub, sizeof(sub));
@@ -233,12 +233,12 @@ static int wifi_card(struct page_ctx *p, int y)
     } else {
         fs(&f, "Adapter not detected");
     }
-    ui_card_title(u, p->x + 20, y + 20, SI_WIFI, "Wi-Fi", sub);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_WIFI, "Wi-Fi", sub);
     if (st.status.has_device) {
         bool scanning = st.status.state == WIFI_STATE_SCANNING ||
                         (st.scan_at && settings_now() - st.scan_at < 2500);
-        if (ui_button(u, ui_id("wifi-scan", 0), p->x + p->w - 130, y + 22, 106, 36,
-                      scanning ? "Scanning" : "Scan", SI_REFRESH, UI_BTN_SECONDARY) &&
+        if (pgu_button(u, pgu_id("wifi-scan", 0), p->x + p->w - 130, y + 22, 106, 36,
+                      scanning ? "Scanning" : "Scan", PGI_REFRESH, PGU_BTN_SECONDARY) &&
             !scanning) {
             (void)pc_wifi_scan();
             st.scan_at = settings_now();
@@ -248,16 +248,16 @@ static int wifi_card(struct page_ctx *p, int y)
             u->animating = true;
     }
     y += 76;
-    ui_separator(u, p->x + 20, y, p->w - 40);
+    pgu_separator(u, p->x + 20, y, p->w - 40);
     y += 8;
     if (!st.status.has_device) {
-        sg_text(u->c, SF_BODY, p->x + 24, y + 24, "No Wi-Fi hardware was found on this computer.", pal->text3);
-        sg_text(u->c, SF_SMALL, p->x + 24, y + 46, "Supported: Atheros AR9285, Intel Wi-Fi 6 AX201.",
+        pgc_text(u->c, PGF_BODY, p->x + 24, y + 24, "No Wi-Fi hardware was found on this computer.", pal->text3);
+        pgc_text(u->c, PGF_SMALL, p->x + 24, y + 46, "Supported: Atheros AR9285, Intel Wi-Fi 6 AX201.",
                 pal->text3);
         return h;
     }
     if (!rows) {
-        sg_text(u->c, SF_BODY, p->x + 24, y + 26, "No networks found yet. Press Scan to search again.",
+        pgc_text(u->c, PGF_BODY, p->x + 24, y + 26, "No networks found yet. Press Scan to search again.",
                 pal->text3);
         return h;
     }
@@ -266,7 +266,7 @@ static int wifi_card(struct page_ctx *p, int y)
         bool connected = st.status.connected && fmt_streq(st.status.ssid, n->ssid);
         bool sel = st.selected[0] && fmt_streq(st.selected, n->ssid);
         int rx = p->x + 10, rw = p->w - 20;
-        if (ui_row(u, ui_id("wifi-row", i), rx, y, rw, row_h - 4, sel)) {
+        if (pgu_row(u, pgu_id("wifi-row", i), rx, y, rw, row_h - 4, sel)) {
             if (connected) {
                 st.selected[0] = 0;
             } else if (n->security == WIFI_SECURITY_OPEN) {
@@ -279,13 +279,13 @@ static int wifi_card(struct page_ctx *p, int y)
                     fmt_copy(st.password, st.saved_pass, sizeof(st.password));
                 else
                     st.password[0] = 0;
-                u->focus = ui_id("wifi-pass", 0);
+                u->focus = pgu_id("wifi-pass", 0);
             }
         }
-        ui_signal_bars(u, rx + 16, y + (row_h - 4 - 18) / 2, n->rssi,
+        pgu_signal_bars(u, rx + 16, y + (row_h - 4 - 18) / 2, n->rssi,
                        connected ? pal->success : sel ? pal->accent : pal->text2);
         const char *name = n->ssid[0] ? n->ssid : "Hidden network";
-        sg_text_fit(u->c, SF_MEDIUM, rx + 50, y + 9, rw - 240, name, n->ssid[0] ? pal->text : pal->text3);
+        pgc_text_fit(u->c, PGF_MEDIUM, rx + 50, y + 9, rw - 240, name, n->ssid[0] ? pal->text : pal->text3);
         char info[64];
         fmt_init(&f, info, sizeof(info));
         fs(&f, sec_name(n->security));
@@ -295,24 +295,24 @@ static int wifi_card(struct page_ctx *p, int y)
         fs(&f, "  -  ");
         fi(&f, n->rssi);
         fs(&f, " dBm");
-        sg_text(u->c, SF_SMALL, rx + 50, y + 30, info, pal->text3);
+        pgc_text(u->c, PGF_SMALL, rx + 50, y + 30, info, pal->text3);
         int ex = rx + rw - 16;
         if (connected) {
-            int bw = sg_text_w(SF_SMALL, "Connected") + 16;
-            ui_badge(u, ex - bw, y + 16, "Connected", pal->success);
+            int bw = pgc_text_w(PGF_SMALL, "Connected") + 16;
+            pgu_badge(u, ex - bw, y + 16, "Connected", pal->success);
         } else if (n->security != WIFI_SECURITY_OPEN) {
-            sg_icon(u->c, SI_LOCK, SG_ICON_S, ex - 18, y + 18, pal->text3);
+            pgc_icon(u->c, PGI_LOCK, PG_ICON_S, ex - 18, y + 18, pal->text3);
         }
         y += row_h;
         if (sel) {
             int bw = 116;
-            bool go = ui_textbox(u, ui_id("wifi-pass", 0), rx + 50, y, rw - 50 - bw - 112 - 16, 40,
+            bool go = pgu_textbox(u, pgu_id("wifi-pass", 0), rx + 50, y, rw - 50 - bw - 112 - 16, 40,
                                  st.password, sizeof(st.password), true, "Network password");
-            if (ui_button(u, ui_id("wifi-cancel", 0), rx + rw - bw - 112 - 8, y, 104, 40, "Cancel", -1,
-                          UI_BTN_SECONDARY))
+            if (pgu_button(u, pgu_id("wifi-cancel", 0), rx + rw - bw - 112 - 8, y, 104, 40, "Cancel", -1,
+                          PGU_BTN_SECONDARY))
                 st.selected[0] = 0;
-            if (ui_button(u, ui_id("wifi-connect", 0), rx + rw - bw, y, bw, 40, "Connect", -1,
-                          UI_BTN_PRIMARY) ||
+            if (pgu_button(u, pgu_id("wifi-connect", 0), rx + rw - bw, y, bw, 40, "Connect", -1,
+                          PGU_BTN_PRIMARY) ||
                 go)
                 connect(p->app, n, st.password);
             y += 64;
@@ -323,29 +323,29 @@ static int wifi_card(struct page_ctx *p, int y)
 
 static int wired_card(struct page_ctx *p, int y)
 {
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     int rows = st.if_count;
     int row_h = 112;
     int h = 84 + (rows ? rows * row_h : 70);
-    ui_card(u, p->x, y, p->w, h);
-    ui_card_title(u, p->x + 20, y + 20, SI_LAN, "Network adapters", "Wired and virtual interfaces");
+    pgu_card(u, p->x, y, p->w, h);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_LAN, "Network adapters", "Wired and virtual interfaces");
     y += 76;
-    ui_separator(u, p->x + 20, y, p->w - 40);
+    pgu_separator(u, p->x + 20, y, p->w - 40);
     y += 12;
     if (!rows) {
-        sg_text(u->c, SF_BODY, p->x + 24, y + 20, "No network adapters detected.", pal->text3);
+        pgc_text(u->c, PGF_BODY, p->x + 24, y + 20, "No network adapters detected.", pal->text3);
         return h;
     }
     for (int i = 0; i < rows; i++) {
         const struct net_if_info *n = &st.ifs[i];
         int x = p->x + 24;
-        sg_icon(u->c, SI_ETHERNET, SG_ICON_S, x, y + 2, n->link_up ? pal->accent : pal->text3);
-        sg_text(u->c, SF_HEAD, x + 30, y, n->name, pal->text);
-        int nx = x + 40 + sg_text_w(SF_HEAD, n->name);
+        pgc_icon(u->c, PGI_ETHERNET, PG_ICON_S, x, y + 2, n->link_up ? pal->accent : pal->text3);
+        pgc_text(u->c, PGF_HEAD, x + 30, y, n->name, pal->text);
+        int nx = x + 40 + pgc_text_w(PGF_HEAD, n->name);
         const char *state = !n->link_up ? "No link" : n->has_ip ? "Connected" : "Waiting for DHCP";
         uint32_t sc = !n->link_up ? pal->danger : n->has_ip ? pal->success : pal->warning;
-        ui_badge(u, nx, y - 1, state, sc);
+        pgu_badge(u, nx, y - 1, state, sc);
         char a[64], b[64], c[64], d[64];
         struct fmt f;
         fmt_init(&f, a, sizeof(a));
@@ -367,23 +367,23 @@ static int wired_card(struct page_ctx *p, int y)
         fmt_init(&f, d, sizeof(d));
         fmac(&f, n->mac);
         int colw = (p->w - 48) / 2;
-        ui_kv(u, x, y + 34, colw - 20, "IP address", a);
-        ui_kv(u, x + colw, y + 34, colw - 20, "Gateway", b);
-        ui_kv(u, x, y + 58, colw - 20, "DNS", c);
-        ui_kv(u, x + colw, y + 58, colw - 20, "MAC", d);
+        pgu_kv(u, x, y + 34, colw - 20, "IP address", a);
+        pgu_kv(u, x + colw, y + 34, colw - 20, "Gateway", b);
+        pgu_kv(u, x, y + 58, colw - 20, "DNS", c);
+        pgu_kv(u, x + colw, y + 58, colw - 20, "MAC", d);
         fmt_init(&f, a, sizeof(a));
         fbytes(&f, n->rx_bytes);
         fs(&f, " received");
         fmt_init(&f, b, sizeof(b));
         fbytes(&f, n->tx_bytes);
         fs(&f, " sent");
-        sg_icon(u->c, SI_DOWNLOAD, SG_ICON_S, x, y + 80, pal->info);
-        sg_text(u->c, SF_SMALL, x + 22, y + 82, a, pal->text3);
-        sg_icon(u->c, SI_UPLOAD, SG_ICON_S, x + colw, y + 80, pal->success);
-        sg_text(u->c, SF_SMALL, x + colw + 22, y + 82, b, pal->text3);
+        pgc_icon(u->c, PGI_DOWNLOAD, PG_ICON_S, x, y + 80, pal->info);
+        pgc_text(u->c, PGF_SMALL, x + 22, y + 82, a, pal->text3);
+        pgc_icon(u->c, PGI_UPLOAD, PG_ICON_S, x + colw, y + 80, pal->success);
+        pgc_text(u->c, PGF_SMALL, x + colw + 22, y + 82, b, pal->text3);
         y += row_h;
         if (i + 1 < rows)
-            ui_separator(u, p->x + 20, y - 8, p->w - 40);
+            pgu_separator(u, p->x + 20, y - 8, p->w - 40);
     }
     return h;
 }

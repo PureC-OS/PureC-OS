@@ -3,7 +3,7 @@
 #include "settings/model.h"
 #include "settings/personalization.h"
 #include "settings/display.h"
-#include "settings/ui.h"
+#include "../../../libgui/include/pg_ui.h"
 
 enum settings_page {
     PAGE_ABOUT,
@@ -36,13 +36,13 @@ struct settings_app {
 
 struct page_ctx {
     struct settings_app *app;
-    struct ui *u;
+    struct pg_ui *u;
     int x, y, w;
     int view_h;
 };
 
 void settings_app_init(struct settings_app *app);
-void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h);
+void settings_app_frame(struct settings_app *app, struct pg_ui *u, int w, int h);
 uint64_t settings_now(void);
 void settings_toast(struct settings_app *app, const char *text, uint32_t color);
 bool settings_page_wants_live(int page);

@@ -3,13 +3,13 @@
 #include "settings/app.h"
 
 static struct settings_app app;
-static struct ui ui;
-static struct sg_canvas canvas;
+static struct pg_ui ui;
+static struct pg_canvas canvas;
 
 static void palette_update(void)
 {
     struct pg_theme t = pg_theme_by_name(app.appearance.theme);
-    ui_palette_from_theme(&ui.pal, t.window, t.text, t.muted_text, t.accent, t.danger);
+    pgu_palette_from_theme(&ui.pal, t.window, t.text, t.muted_text, t.accent, t.danger);
 }
 
 static void render(struct pg_window *w, uint32_t *px)
@@ -17,7 +17,7 @@ static void render(struct pg_window *w, uint32_t *px)
     int cw = (int)w->client.width, ch = (int)w->client.height;
     w->theme = pg_theme_by_name(app.appearance.theme);
     palette_update();
-    sg_init(&canvas, px, cw, ch);
+    pgc_init(&canvas, px, cw, ch);
     ui.c = &canvas;
     ui.now = settings_now();
     settings_app_frame(&app, &ui, cw, ch);

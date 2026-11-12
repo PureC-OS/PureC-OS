@@ -60,8 +60,8 @@ static void offset_str(struct fmt *f, int minutes)
 int page_datetime(struct page_ctx *p)
 {
     struct settings_app *app = p->app;
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     int y = p->y;
     struct fmt f;
     uint64_t now = settings_now();
@@ -78,19 +78,19 @@ int page_datetime(struct page_ctx *p)
     civil_from_unix(local, &yr, &mo, &dy, &hh, &mi, &ss, &wd);
 
     int h = 220;
-    sg_rrect_grad(u->c, p->x, y, p->w, h, 16, sg_mix(pal->accent, 0x0c0a1d, 140),
-                  sg_mix(pal->info, 0x0c0a1d, 150), true);
+    pgc_rrect_grad(u->c, p->x, y, p->w, h, 16, pgc_mix(pal->accent, 0x0c0a1d, 140),
+                  pgc_mix(pal->info, 0x0c0a1d, 150), true);
     char clock[16];
     fmt_init(&f, clock, sizeof(clock));
     fu2(&f, (uint32_t)hh);
     fc(&f, ':');
     fu2(&f, (uint32_t)mi);
-    sg_text(u->c, SF_DIGITS, p->x + 36, y + 30, clock, 0xffffff);
-    int cw = sg_text_w(SF_DIGITS, clock);
+    pgc_text(u->c, PGF_DIGITS, p->x + 36, y + 30, clock, 0xffffff);
+    int cw = pgc_text_w(PGF_DIGITS, clock);
     char sec[4];
     fmt_init(&f, sec, sizeof(sec));
     fu2(&f, (uint32_t)ss);
-    sg_text(u->c, SF_TITLE, p->x + 44 + cw, y + 72, sec, sg_mix(0xffffff, pal->accent, 90));
+    pgc_text(u->c, PGF_TITLE, p->x + 44 + cw, y + 72, sec, pgc_mix(0xffffff, pal->accent, 90));
     char date[64];
     fmt_init(&f, date, sizeof(date));
     fs(&f, wdays[wd]);
@@ -100,50 +100,50 @@ int page_datetime(struct page_ctx *p)
     fs(&f, months[(mo - 1) % 12]);
     fc(&f, ' ');
     fu(&f, (uint64_t)yr);
-    sg_text(u->c, SF_TITLE, p->x + 40, y + 124, date, 0xffffff);
+    pgc_text(u->c, PGF_TITLE, p->x + 40, y + 124, date, 0xffffff);
     char zl[96];
     fmt_init(&f, zl, sizeof(zl));
     fs(&f, st.zone);
     fs(&f, "  -  ");
     offset_str(&f, have ? t.tz_minutes : 0);
-    sg_text(u->c, SF_BODY, p->x + 40, y + 162, zl, sg_mix(0xffffff, pal->accent, 70));
+    pgc_text(u->c, PGF_BODY, p->x + 40, y + 162, zl, pgc_mix(0xffffff, pal->accent, 70));
     int ax = p->x + p->w - 130, ay = y + 110;
     const float tau = 6.2831853f;
-    sg_circle(u->c, ax, ay + 3, 80, 0x000000, 40);
-    sg_circle(u->c, ax, ay, 80, 0xffffff, 34);
-    sg_circle(u->c, ax, ay, 72, sg_mix(pal->accent, 0x0c0a1d, 170), 255);
+    pgc_circle(u->c, ax, ay + 3, 80, 0x000000, 40);
+    pgc_circle(u->c, ax, ay, 80, 0xffffff, 34);
+    pgc_circle(u->c, ax, ay, 72, pgc_mix(pal->accent, 0x0c0a1d, 170), 255);
     for (int i = 0; i < 60; i++) {
         float ang = (float)i / 60.0f * tau;
-        float s0 = sg_sin(ang), c0 = sg_cos(ang);
+        float s0 = pgc_sin(ang), c0 = pgc_cos(ang);
         float r0 = i % 5 == 0 ? 56.0f : 62.0f;
-        sg_line(u->c, (float)ax + s0 * r0, (float)ay - c0 * r0, (float)ax + s0 * 66.0f,
+        pgc_line(u->c, (float)ax + s0 * r0, (float)ay - c0 * r0, (float)ax + s0 * 66.0f,
                 (float)ay - c0 * 66.0f, i % 5 == 0 ? 2.6f : 1.2f, i % 5 == 0 ? 0xffffff : 0x9aa0c0);
     }
     float ah = ((float)(hh % 12) + (float)mi / 60.0f) / 12.0f * tau;
     float am = ((float)mi + (float)ss / 60.0f) / 60.0f * tau;
     float as = (float)ss / 60.0f * tau;
-    sg_line(u->c, (float)ax, (float)ay, (float)ax + sg_sin(ah) * 34.0f, (float)ay - sg_cos(ah) * 34.0f, 5.5f,
+    pgc_line(u->c, (float)ax, (float)ay, (float)ax + pgc_sin(ah) * 34.0f, (float)ay - pgc_cos(ah) * 34.0f, 5.5f,
             0xffffff);
-    sg_line(u->c, (float)ax, (float)ay, (float)ax + sg_sin(am) * 50.0f, (float)ay - sg_cos(am) * 50.0f, 3.5f,
+    pgc_line(u->c, (float)ax, (float)ay, (float)ax + pgc_sin(am) * 50.0f, (float)ay - pgc_cos(am) * 50.0f, 3.5f,
             0xe8e8f4);
-    sg_line(u->c, (float)ax - sg_sin(as) * 12.0f, (float)ay + sg_cos(as) * 12.0f,
-            (float)ax + sg_sin(as) * 58.0f, (float)ay - sg_cos(as) * 58.0f, 1.6f, pal->danger);
-    sg_circle(u->c, ax, ay, 5, pal->danger, 255);
-    sg_circle(u->c, ax, ay, 2, 0xffffff, 255);
+    pgc_line(u->c, (float)ax - pgc_sin(as) * 12.0f, (float)ay + pgc_cos(as) * 12.0f,
+            (float)ax + pgc_sin(as) * 58.0f, (float)ay - pgc_cos(as) * 58.0f, 1.6f, pal->danger);
+    pgc_circle(u->c, ax, ay, 5, pal->danger, 255);
+    pgc_circle(u->c, ax, ay, 2, 0xffffff, 255);
     u->animating = true;
     y += h + 16;
 
     int ih = 128;
-    ui_card(u, p->x, y, p->w, ih);
-    ui_card_title(u, p->x + 20, y + 20, SI_TIMER_OUTLINE, "System clock", 0);
+    pgu_card(u, p->x, y, p->w, ih);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_TIMER_OUTLINE, "System clock", 0);
     char buf[64];
     fmt_init(&f, buf, sizeof(buf));
     fdur(&f, have ? t.uptime_ms : 0);
-    ui_kv(u, p->x + 24, y + 70, p->w - 48, "Uptime", buf);
-    ui_separator(u, p->x + 24, y + 96, p->w - 48);
+    pgu_kv(u, p->x + 24, y + 70, p->w - 48, "Uptime", buf);
+    pgu_separator(u, p->x + 24, y + 96, p->w - 48);
     fmt_init(&f, buf, sizeof(buf));
     fs(&f, have && t.source ? "Hardware RTC" : "Software clock");
-    ui_kv(u, p->x + 24, y + 102, p->w - 48, "Time source", buf);
+    pgu_kv(u, p->x + 24, y + 102, p->w - 48, "Time source", buf);
     y += ih + 16;
 
     int cols = p->w > 700 ? 3 : 2;
@@ -152,13 +152,13 @@ int page_datetime(struct page_ctx *p)
     int rh = 50;
     int rows = (ZONES + cols - 1) / cols;
     int zh = 84 + rows * (rh + gap) + 12;
-    ui_card(u, p->x, y, p->w, zh);
-    ui_card_title(u, p->x + 20, y + 20, SI_EARTH, "Time zone", "Daylight saving is handled automatically");
+    pgu_card(u, p->x, y, p->w, zh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_EARTH, "Time zone", "Daylight saving is handled automatically");
     for (int i = 0; i < ZONES; i++) {
         int zx = p->x + 20 + (i % cols) * (cw2 + gap);
         int zy = y + 84 + (i / cols) * (rh + gap);
         bool sel = fmt_streq(st.zone, zones[i].name);
-        if (ui_row(u, ui_id("tz", i), zx, zy, cw2, rh, sel) && !sel) {
+        if (pgu_row(u, pgu_id("tz", i), zx, zy, cw2, rh, sel) && !sel) {
             if (pc_time_zone_set(zones[i].name) >= 0) {
                 fmt_copy(st.zone, zones[i].name, sizeof(st.zone));
                 settings_toast(app, "Time zone updated", pal->success);
@@ -166,12 +166,12 @@ int page_datetime(struct page_ctx *p)
                 settings_toast(app, "Could not change time zone", pal->danger);
             }
         }
-        sg_text(u->c, sel ? SF_MEDIUM : SF_BODY, zx + 14, zy + 7, zones[i].city, sel ? pal->text : pal->text2);
+        pgc_text(u->c, sel ? PGF_MEDIUM : PGF_BODY, zx + 14, zy + 7, zones[i].city, sel ? pal->text : pal->text2);
         fmt_init(&f, buf, sizeof(buf));
         offset_str(&f, zones[i].offset);
-        sg_text(u->c, SF_SMALL, zx + 14, zy + 27, buf, pal->text3);
+        pgc_text(u->c, PGF_SMALL, zx + 14, zy + 27, buf, pal->text3);
         if (sel)
-            sg_icon(u->c, SI_CHECK_CIRCLE, SG_ICON_S, zx + cw2 - 30, zy + 16, pal->accent);
+            pgc_icon(u->c, PGI_CHECK_CIRCLE, PG_ICON_S, zx + cw2 - 30, zy + 16, pal->accent);
     }
     y += zh;
     return y - p->y;

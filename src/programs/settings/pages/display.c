@@ -70,31 +70,31 @@ static void apply(struct settings_app *app)
 
 static void monitor(struct page_ctx *p, int x, int y, int w, int h, uint32_t rw, uint32_t rh)
 {
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     int sw = w, sh = (int)((uint64_t)w * rh / (rw ? rw : 1));
     if (sh > h - 30) {
         sh = h - 30;
         sw = (int)((uint64_t)sh * rw / (rh ? rh : 1));
     }
     int sx = x + (w - sw) / 2, sy = y;
-    sg_rrect(u->c, sx - 8, sy - 8, sw + 16, sh + 16, 12, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
-    sg_rrect_grad(u->c, sx, sy, sw, sh, 5, sg_mix(pal->accent, 0x1e1b4b, 150),
-                  sg_mix(pal->accent, 0x0f766e, 170), true);
+    pgc_rrect(u->c, sx - 8, sy - 8, sw + 16, sh + 16, 12, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
+    pgc_rrect_grad(u->c, sx, sy, sw, sh, 5, pgc_mix(pal->accent, 0x1e1b4b, 150),
+                  pgc_mix(pal->accent, 0x0f766e, 170), true);
     int ww = sw * 45 / 100, wh = sh * 45 / 100;
-    sg_rrect(u->c, sx + sw / 7, sy + sh / 5, ww, wh, 4, 0xffffff, 200);
-    sg_fill_a(u->c, sx + sw / 7, sy + sh / 5, ww, 6, pal->accent, 200);
-    sg_rrect(u->c, sx + sw / 2, sy + sh / 3, ww * 3 / 4, wh, 4, 0xffffff, 120);
-    sg_fill_a(u->c, sx, sy + sh - 8, sw, 8, 0x000000, 90);
-    sg_rrect(u->c, x + w / 2 - 34, sy + sh + 8, 68, 10, 3, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
-    sg_rrect(u->c, x + w / 2 - 56, sy + sh + 16, 112, 6, 3, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
+    pgc_rrect(u->c, sx + sw / 7, sy + sh / 5, ww, wh, 4, 0xffffff, 200);
+    pgc_fill_a(u->c, sx + sw / 7, sy + sh / 5, ww, 6, pal->accent, 200);
+    pgc_rrect(u->c, sx + sw / 2, sy + sh / 3, ww * 3 / 4, wh, 4, 0xffffff, 120);
+    pgc_fill_a(u->c, sx, sy + sh - 8, sw, 8, 0x000000, 90);
+    pgc_rrect(u->c, x + w / 2 - 34, sy + sh + 8, 68, 10, 3, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
+    pgc_rrect(u->c, x + w / 2 - 56, sy + sh + 16, 112, 6, 3, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
 }
 
 int page_display(struct page_ctx *p)
 {
     struct settings_app *app = p->app;
-    struct ui *u = p->u;
-    const struct ui_palette *pal = &u->pal;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
     struct display_settings *d = &app->display;
     int y = p->y;
     struct fmt f;
@@ -107,7 +107,7 @@ int page_display(struct page_ctx *p)
     uint32_t cur_h = have_phys ? phys.physical_height : d->height;
 
     int h = 230;
-    ui_card(u, p->x, y, p->w, h);
+    pgu_card(u, p->x, y, p->w, h);
     int mw = p->w * 40 / 100;
     if (mw > 300)
         mw = 300;
@@ -118,8 +118,8 @@ int page_display(struct page_ctx *p)
     fu(&f, cur_w);
     fs(&f, " x ");
     fu(&f, cur_h);
-    sg_text(u->c, SF_SMALL, tx, y + 40, "CURRENT MODE", pal->text3);
-    sg_text(u->c, SF_HERO, tx, y + 58, big, pal->text);
+    pgc_text(u->c, PGF_SMALL, tx, y + 40, "CURRENT MODE", pal->text3);
+    pgc_text(u->c, PGF_HERO, tx, y + 58, big, pal->text);
     char sub[64];
     fmt_init(&f, sub, sizeof(sub));
     aspect(&f, cur_w, cur_h);
@@ -128,7 +128,7 @@ int page_display(struct page_ctx *p)
     fs(&f, "-bit color  -  scale ");
     fu(&f, have_phys ? phys.scale_percent : 100);
     fc(&f, '%');
-    sg_text(u->c, SF_BODY, tx, y + 104, sub, pal->text2);
+    pgc_text(u->c, PGF_BODY, tx, y + 104, sub, pal->text2);
     char eff[64];
     uint32_t sc = have_phys && phys.scale_percent ? phys.scale_percent : 100;
     fmt_init(&f, eff, sizeof(eff));
@@ -137,10 +137,10 @@ int page_display(struct page_ctx *p)
     fs(&f, " x ");
     fu(&f, cur_h * 100 / sc);
     fs(&f, " logical pixels");
-    sg_text(u->c, SF_SMALL, tx, y + 130, eff, pal->text3);
+    pgc_text(u->c, PGF_SMALL, tx, y + 130, eff, pal->text3);
     int bx = tx;
-    bx += ui_badge(u, bx, y + 160, "Live switching", pal->success) + 8;
-    ui_badge(u, bx, y + 160, "No reboot needed", pal->info);
+    bx += pgu_badge(u, bx, y + 160, "Live switching", pal->success) + 8;
+    pgu_badge(u, bx, y + 160, "No reboot needed", pal->info);
     y += h + 16;
 
     int count = (int)display_mode_count();
@@ -150,8 +150,8 @@ int page_display(struct page_ctx *p)
     int ch = 62;
     int rows = (count + cols - 1) / cols;
     int rh = 84 + rows * (ch + gap) + 14;
-    ui_card(u, p->x, y, p->w, rh);
-    ui_card_title(u, p->x + 20, y + 20, SI_MONITOR_SCREENSHOT, "Resolution",
+    pgu_card(u, p->x, y, p->w, rh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_MONITOR_SCREENSHOT, "Resolution",
                   "Works in QEMU and VirtualBox; real UEFI keeps the boot mode");
     int gy = y + 84;
     for (int i = 0; i < count; i++) {
@@ -159,24 +159,24 @@ int page_display(struct page_ctx *p)
         int cx = p->x + 24 + (i % cols) * (cw + gap);
         int cy = gy + (i / cols) * (ch + gap);
         bool sel = m.width == cur_w && m.height == cur_h;
-        uint32_t id = ui_id("mode", i);
-        bool clicked = ui_click(u, id, cx, cy, cw, ch);
+        uint32_t id = pgu_id("mode", i);
+        bool clicked = pgu_click(u, id, cx, cy, cw, ch);
         bool hot = u->hot == id;
-        sg_rrect(u->c, cx, cy, cw, ch, 10, sel ? sg_mix(pal->surface, pal->accent, 50)
+        pgc_rrect(u->c, cx, cy, cw, ch, 10, sel ? pgc_mix(pal->surface, pal->accent, 50)
                                                : hot ? pal->surface2 : pal->surface, 255);
-        sg_rrect_stroke(u->c, cx, cy, cw, ch, 10, sel ? pal->accent : pal->border, sel ? 255 : 150);
+        pgc_rrect_stroke(u->c, cx, cy, cw, ch, 10, sel ? pal->accent : pal->border, sel ? 255 : 150);
         char lbl[24];
         fmt_init(&f, lbl, sizeof(lbl));
         fu(&f, m.width);
         fs(&f, " x ");
         fu(&f, m.height);
-        sg_text(u->c, SF_MEDIUM, cx + 14, cy + 12, lbl, sel ? pal->text : pal->text2);
+        pgc_text(u->c, PGF_MEDIUM, cx + 14, cy + 12, lbl, sel ? pal->text : pal->text2);
         char asp[16];
         fmt_init(&f, asp, sizeof(asp));
         aspect(&f, m.width, m.height);
-        sg_text(u->c, SF_SMALL, cx + 14, cy + 34, asp, pal->text3);
+        pgc_text(u->c, PGF_SMALL, cx + 14, cy + 34, asp, pal->text3);
         if (sel)
-            sg_icon(u->c, SI_CHECK_CIRCLE, SG_ICON_S, cx + cw - 30, cy + 22, pal->accent);
+            pgc_icon(u->c, PGI_CHECK_CIRCLE, PG_ICON_S, cx + cw - 30, cy + 22, pal->accent);
         if (clicked && !sel) {
             d->width = m.width;
             d->height = m.height;
@@ -187,8 +187,8 @@ int page_display(struct page_ctx *p)
     y += rh + 16;
 
     int sh = 160;
-    ui_card(u, p->x, y, p->w, sh);
-    ui_card_title(u, p->x + 20, y + 20, SI_BRIGHTNESS_6, "Interface scale",
+    pgu_card(u, p->x, y, p->w, sh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_BRIGHTNESS_6, "Interface scale",
                   "Makes text, icons and windows bigger");
     int n = (int)display_scale_count();
     if (n > 8)
@@ -202,7 +202,7 @@ int page_display(struct page_ctx *p)
         ptrs[i] = labels[i];
     }
     int sel = (int)display_scale_index_of(have_phys ? phys.scale_percent : d->scale);
-    if (ui_segmented(u, ui_id("scale", 0), p->x + 24, y + 86, p->w - 48, 44, ptrs, n, &sel)) {
+    if (pgu_segmented(u, pgu_id("scale", 0), p->x + 24, y + 86, p->w - 48, 44, ptrs, n, &sel)) {
         d->width = cur_w;
         d->height = cur_h;
         d->scale = display_scale_at((uint32_t)sel);
