@@ -135,7 +135,7 @@ static int status_card(struct page_ctx *p, int y)
     const struct ui_palette *pal = &u->pal;
     const struct net_if_info *wired = online_if();
     bool wifi_on = st.status.has_device && st.status.connected;
-    bool online = wired || wifi_on;
+    bool online = wired || (wifi_on && st.status.ip_address);
     int h = 132;
     ui_card(u, p->x, y, p->w, h);
     uint32_t col = online ? pal->success
@@ -183,7 +183,10 @@ static int status_card(struct page_ctx *p, int y)
     sg_text_fit(u->c, SF_TITLE, p->x + 130, y + 30, p->w - 300, title, pal->text);
     sg_text_fit(u->c, SF_BODY, p->x + 130, y + 64, p->w - 300, sub, pal->text2);
     int bx = p->x + 130;
-    bx += ui_badge(u, bx, y + 92, online ? "Internet" : "Offline", online ? pal->success : pal->danger) + 8;
+    if (wifi_on && !online)
+        bx += ui_badge(u, bx, y + 92, "Waiting for DHCP", pal->warning) + 8;
+    else
+        bx += ui_badge(u, bx, y + 92, online ? "Internet" : "Offline", online ? pal->success : pal->danger) + 8;
     if (wifi_on) {
         char ch[24];
         fmt_init(&f, ch, sizeof(ch));
