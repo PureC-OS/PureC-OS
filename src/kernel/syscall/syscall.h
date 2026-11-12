@@ -379,14 +379,23 @@ struct format_request {
 #define INSTALL_HASH_MAX 128
 #define INSTALL_FIRST_UID 1000
 
+#define INSTALL_USERS_MAX 8
+#define INSTALL_WHEEL_GID 10
+
+struct install_user {
+  char name[INSTALL_USER_MAX];
+  char gecos[INSTALL_GECOS_MAX];
+  char hash[INSTALL_HASH_MAX];
+  uint32_t uid;
+  uint32_t admin;
+};
+
 struct install_account_request {
   uint32_t present;
-  uint32_t user_uid;
+  uint32_t user_count;
   char hostname[INSTALL_HOSTNAME_MAX];
   char root_hash[INSTALL_HASH_MAX];
-  char user_name[INSTALL_USER_MAX];
-  char user_gecos[INSTALL_GECOS_MAX];
-  char user_hash[INSTALL_HASH_MAX];
+  struct install_user users[INSTALL_USERS_MAX];
   char timezone[32];
 };
 
