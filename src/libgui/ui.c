@@ -9,27 +9,26 @@ uint32_t pgu_id(const char *s, int n)
     return h ? h : 1;
 }
 
-void pgu_palette_from_theme(struct pg_palette *p, uint32_t window, uint32_t text, uint32_t muted,
-                           uint32_t accent, uint32_t danger)
+void pgu_palette_from_theme(struct pg_palette *p, const struct pg_theme *t)
 {
-    bool light = pgc_luma(window) > 140;
+    bool light = pgc_luma(t->window) > 140;
     p->light = light;
-    p->bg = light ? pgc_lighten(window, -6) : pgc_lighten(window, -14);
-    p->sidebar = light ? pgc_lighten(window, -14) : pgc_lighten(window, -26);
-    p->surface = light ? pgc_lighten(window, 160) : pgc_mix(window, text, 14);
-    p->surface2 = light ? pgc_lighten(window, -10) : pgc_mix(window, text, 24);
-    p->surface3 = light ? pgc_lighten(window, -22) : pgc_mix(window, text, 38);
-    p->border = light ? pgc_lighten(window, -34) : pgc_mix(window, text, 30);
-    p->text = text;
-    p->text2 = pgc_mix(text, light ? window : p->bg, 70);
-    p->text3 = muted;
-    p->accent = accent;
-    p->accent2 = pgc_mix(accent, light ? 0x000000 : 0xffffff, 60);
-    p->on_accent = pgc_luma(accent) > 150 ? 0x11111b : 0xffffff;
-    p->danger = danger;
-    p->success = light ? 0x2f9e44 : 0xa6e3a1;
-    p->warning = light ? 0xe67700 : 0xf9e2af;
-    p->info = light ? 0x1c7ed6 : 0x89dceb;
+    p->bg = light ? pgc_lighten(t->window, -6) : pgc_lighten(t->window, -14);
+    p->sidebar = light ? pgc_lighten(t->window, -14) : pgc_lighten(t->window, -26);
+    p->surface = t->surface ? t->surface : pgc_mix(t->window, t->text, 14);
+    p->surface2 = t->surface_alt ? pgc_mix(p->surface, t->surface_alt, 150) : pgc_mix(t->window, t->text, 24);
+    p->surface3 = t->surface_alt ? t->surface_alt : pgc_mix(t->window, t->text, 38);
+    p->border = light ? pgc_lighten(t->window, -34) : pgc_mix(p->surface3, t->window, 60);
+    p->text = t->text;
+    p->text2 = pgc_mix(t->text, light ? t->window : p->bg, 70);
+    p->text3 = t->muted_text;
+    p->accent = t->accent;
+    p->accent2 = pgc_mix(t->accent, light ? 0x000000 : 0xffffff, 60);
+    p->on_accent = t->on_accent ? t->on_accent : (pgc_luma(t->accent) > 150 ? 0x11111b : 0xffffff);
+    p->danger = t->danger;
+    p->success = t->success ? t->success : (light ? 0x2f9e44 : 0xa6e3a1);
+    p->warning = t->warning ? t->warning : (light ? 0xe67700 : 0xf9e2af);
+    p->info = t->info ? t->info : (light ? 0x1c7ed6 : 0x89dceb);
 }
 
 bool pgu_hover(struct pg_ui *u, int x, int y, int w, int h)

@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "pg_canvas.h"
+#include "puregui.h"
 
 struct pg_palette {
     uint32_t bg, sidebar, surface, surface2, surface3, border, text, text2, text3;
@@ -28,8 +29,7 @@ struct pg_ui {
 };
 
 uint32_t pgu_id(const char *s, int n);
-void pgu_palette_from_theme(struct pg_palette *p, uint32_t window, uint32_t text, uint32_t muted,
-                           uint32_t accent, uint32_t danger);
+void pgu_palette_from_theme(struct pg_palette *p, const struct pg_theme *t);
 
 bool pgu_hover(struct pg_ui *u, int x, int y, int w, int h);
 bool pgu_click(struct pg_ui *u, uint32_t id, int x, int y, int w, int h);
