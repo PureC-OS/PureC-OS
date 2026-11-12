@@ -2124,7 +2124,7 @@ static bool is_builtin(const char *name) {
         "cd", "pwd", "echo", "printf", "exit", "export", "readonly", "unset",
         "set", "shift", "read", "test", "[", "true", "false", ":", ".", "source",
         "eval", "exec", "wait", "return", "break", "continue", "trap", "umask",
-        "ulimit", "type", "command", "hash", "local", "kill", "times", "getopts"};
+        "ulimit", "type", "command", "hash", "local", "kill", "times", "getopts", "history"};
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
         if (strcmp(name, names[i]) == 0) return true;
     return false;
@@ -2153,6 +2153,7 @@ static int find_in_path(const char *name, char *out, size_t size) {
 }
 
 static int builtin_dispatch(int argc, char **argv, bool *handled);
+static int builtin_history(int argc, char **argv);
 
 static int run_function(struct function *fn, int argc, char **argv) {
     char **saved = positional;
@@ -2174,6 +2175,7 @@ static int run_function(struct function *fn, int argc, char **argv) {
 static int builtin_dispatch(int argc, char **argv, bool *handled) {
     const char *name = argv[0];
     *handled = true;
+    if (strcmp(name, "history") == 0) return builtin_history(argc, argv);
     if (strcmp(name, "echo") == 0) return builtin_echo(argc, argv);
     if (strcmp(name, "printf") == 0) return builtin_printf(argc, argv);
     if (strcmp(name, "true") == 0 || strcmp(name, ":") == 0) return 0;
@@ -2935,6 +2937,30 @@ static void history_add(const char *line) {
             close(fd);
         }
     }
+}
+
+static int builtin_history(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "-c") == 0) {
+        for (int i = 0; i < history_count; i++) free(history[i]);
+        history_count = 0;
+        if (history_path[0]) {
+            int fd = open(history_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+            if (fd >= 0) close(fd);
+        }
+        return 0;
+    }
+    int start = 0;
+    if (argc > 1) {
+        int n = atoi(argv[1]);
+        if (n > 0 && n < history_count) start = history_count - n;
+    }
+    for (int i = start; i < history_count; i++) {
+        const char *line = history[i];
+        size_t len = strlen(line);
+        while (len && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
+        printf("%5d  %.*s\n", i + 1, (int)len, line);
+    }
+    return 0;
 }
 
 static void history_load(void) {
