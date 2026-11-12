@@ -58,6 +58,29 @@
 #define IWX_FW_NAME "iwx-so-a0-hr-b0-77"
 #define IWX_FW_PATH "/lib/firmware/" IWX_FW_NAME
 #define IWX_FW_MAX_SIZE (4u * 1024u * 1024u)
+#define IWX_NUM_2GHZ_CHANNELS 14
+#define IWX_NUM_5GHZ_CHANNELS 37
+#define IWX_NCHAN (IWX_NUM_2GHZ_CHANNELS + IWX_NUM_5GHZ_CHANNELS)
+#define IWX_MAX_BSS 64
+
+struct iwx_bss {
+    uint8_t bssid[6];
+    uint8_t ssid_len;
+    char ssid[33];
+    uint8_t channel;
+    int8_t rssi;
+    uint16_t capinfo;
+    uint8_t rsn;
+    uint8_t wpa;
+    uint32_t seen;
+};
+
+static const uint8_t iwx_nvm_channels_8000[IWX_NCHAN] = {
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+    36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92,
+    96, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144,
+    149, 153, 157, 161, 165, 169, 173, 177, 181,
+};
 #define IWX_UREG_UMAC_CURRENT_PC 0xa05c18
 #define IWX_UREG_LMAC1_CURRENT_PC 0xa05c1c
 #define IWX_PCI_COMMAND_INTX_DISABLE (1u << 10)
@@ -167,6 +190,21 @@ struct iwx_sc {
     uint32_t fh_seen;
     uint32_t pkts;
     uint8_t mac[6];
+
+    struct iwx_dma tx_big;
+    uint32_t n_scan_channels;
+    uint32_t nvm_tx_ant;
+    uint32_t nvm_rx_ant;
+    int nvm_5ghz;
+    int nvm_lar;
+    int nchan;
+    uint8_t chan_num[IWX_NCHAN];
+    uint8_t chan_band[IWX_NCHAN];
+    uint8_t chan_passive[IWX_NCHAN];
+    volatile int scan_done;
+    uint32_t scan_beacons;
+    int nbss;
+    struct iwx_bss bss[IWX_MAX_BSS];
 };
 
 static struct iwx_sc iwx_softc;
@@ -630,6 +668,13 @@ static int iwx_read_firmware(struct iwx_sc *sc)
             }
             memcpy(&sc->phy_config, tlv_data, 4);
             break;
+        case IWX_UCODE_TLV_N_SCAN_CHANNELS:
+            if (tlv_len != sizeof(uint32_t)) {
+                err = IWX_EINVAL;
+                goto parse_out;
+            }
+            memcpy(&sc->n_scan_channels, tlv_data, 4);
+            break;
         case IWX_UCODE_TLV_API_CHANGES_SET: {
             struct iwx_ucode_api api;
             if (tlv_len != sizeof(api)) {
@@ -1049,7 +1094,7 @@ static int iwx_get_num_sections(struct iwx_sc *sc, int start)
 
 static int iwx_ctxt_info_alloc_dma(const struct iwx_fw_onesect *sec, struct iwx_dma *dram)
 {
-    if (!iwx_dma_alloc(dram, sec->len, "fw section"))
+    if (dram->va == NULL && !iwx_dma_alloc(dram, sec->len, "fw section"))
         return IWX_ENOMEM;
     memcpy(dram->va, sec->data, sec->len);
     return 0;
@@ -1120,7 +1165,7 @@ static int iwx_ctxt_info_gen3_init(struct iwx_sc *sc)
         klogf(KLOG_ERROR, "iwx: no image loader found in firmware file");
         return IWX_EINVAL;
     }
-    if (!iwx_dma_alloc(&sc->iml_dma, sc->iml_len, "iml"))
+    if (sc->iml_dma.va == NULL && !iwx_dma_alloc(&sc->iml_dma, sc->iml_len, "iml"))
         return IWX_ENOMEM;
 
     ps = sc->prph_scratch.va;
@@ -1284,6 +1329,89 @@ static void iwx_rx_alive(struct iwx_sc *sc, const struct iwx_rx_packet *pkt)
     sc->uc_intr = 1;
 }
 
+static struct iwx_bss *iwx_bss_lookup(struct iwx_sc *sc, const uint8_t *bssid)
+{
+    for (int i = 0; i < sc->nbss; i++)
+        if (memcmp(sc->bss[i].bssid, bssid, 6) == 0)
+            return &sc->bss[i];
+    if (sc->nbss >= IWX_MAX_BSS)
+        return NULL;
+    struct iwx_bss *b = &sc->bss[sc->nbss++];
+    memset(b, 0, sizeof(*b));
+    memcpy(b->bssid, bssid, 6);
+    b->rssi = -127;
+    return b;
+}
+
+static void iwx_rx_mpdu(struct iwx_sc *sc, const struct iwx_rx_packet *pkt, uint32_t pktlen)
+{
+    const size_t desc_size = sizeof(struct iwx_rx_mpdu_desc);
+    const size_t hdr = sizeof(pkt->len_n_flags) + sizeof(struct iwx_cmd_header);
+    if (pktlen < hdr + desc_size)
+        return;
+    size_t maxlen = pktlen - hdr - desc_size;
+    const struct iwx_rx_mpdu_desc *desc = (const void *)pkt->data;
+    uint32_t status = le32toh(desc->status);
+    if (!(status & IWX_RX_MPDU_RES_STATUS_CRC_OK) ||
+        !(status & IWX_RX_MPDU_RES_STATUS_OVERRUN_OK))
+        return;
+    uint32_t len = le16toh(desc->mpdu_len);
+    if (len < sizeof(struct ieee80211_frame) || len > maxlen)
+        return;
+    const uint8_t *frame = pkt->data + desc_size;
+    const struct ieee80211_frame *wh = (const void *)frame;
+    uint8_t fc0 = wh->i_fc[0];
+    if ((fc0 & 0x0c) != 0x00)
+        return;
+    uint8_t subtype = fc0 & 0xf0;
+    if (subtype != 0x80 && subtype != 0x50)
+        return;
+
+    size_t body_off = sizeof(struct ieee80211_frame);
+    if (desc->mac_flags2 & IWX_RX_MPDU_MFLG2_PAD)
+        body_off += 2;
+    if (len < body_off + 12)
+        return;
+    const uint8_t *body = frame + body_off;
+    size_t body_len = len - body_off;
+
+    int sig_a = desc->v3.energy_a ? -(int)desc->v3.energy_a : -127;
+    int sig_b = desc->v3.energy_b ? -(int)desc->v3.energy_b : -127;
+    int rssi = sig_a > sig_b ? sig_a : sig_b;
+
+    sc->scan_beacons++;
+    struct iwx_bss *b = iwx_bss_lookup(sc, wh->i_addr3);
+    if (!b)
+        return;
+    b->seen++;
+    if (rssi > b->rssi)
+        b->rssi = (int8_t)rssi;
+    b->capinfo = (uint16_t)(body[10] | (body[11] << 8));
+    if (!b->channel)
+        b->channel = desc->v3.channel;
+
+    size_t p = 12;
+    while (p + 2 <= body_len) {
+        uint8_t id = body[p], elen = body[p + 1];
+        if (p + 2 + elen > body_len)
+            break;
+        const uint8_t *e = body + p + 2;
+        if (id == 0 && elen <= 32 && (b->ssid_len == 0 || subtype == 0x50)) {
+            memcpy(b->ssid, e, elen);
+            b->ssid[elen] = 0;
+            b->ssid_len = elen;
+        } else if (id == 3 && elen == 1) {
+            b->channel = e[0];
+        } else if (id == 48) {
+            b->rsn = 1;
+        } else if (id == 221 && elen >= 4 && e[0] == 0x00 && e[1] == 0x50 && e[2] == 0xf2 &&
+                   e[3] == 0x01) {
+            b->wpa = 1;
+        }
+        p += 2 + (size_t)elen;
+    }
+}
+
 static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
 {
     uint8_t *buf = sc->rxbuf_va[ridx];
@@ -1302,21 +1430,40 @@ static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
                   pkt->len_n_flags);
             break;
         }
-        if (iwx_cmd_groupid(code) == IWX_LONG_GROUP) {
-            int q = qid & ~0x80;
-            if (q == IWX_DQA_CMD_QUEUE && (sc->tx_flags[idx] & IWX_TXDATA_FLAG_CMD_IS_NARROW))
-                code = iwx_cmd_opcode(code);
-        }
+        if (iwx_cmd_groupid(code) == IWX_LONG_GROUP)
+            code = iwx_cmd_opcode(code);
         uint32_t len = (uint32_t)sizeof(pkt->len_n_flags) + iwx_rx_packet_len(pkt);
         if (len < minsz || len > (IWX_RBUF_SIZE - offset)) {
             klogf(KLOG_WARN, "iwx: rx[%d] bad packet length %u", ridx, len);
             break;
         }
         sc->pkts++;
-        klogf(KLOG_INFO, "iwx: rx[%d] pkt code 0x%x len %u qid 0x%x idx %d flags 0x%x", ridx,
-              code, len, qid, idx, pkt->hdr.flags);
+        if (code != IWX_REPLY_RX_MPDU_CMD)
+            klogf(KLOG_INFO, "iwx: rx[%d] pkt code 0x%x len %u qid 0x%x idx %d flags 0x%x", ridx,
+                  code, len, qid, idx, pkt->hdr.flags);
 
         switch (code) {
+        case IWX_REPLY_RX_MPDU_CMD:
+            iwx_rx_mpdu(sc, pkt, len);
+            break;
+        case IWX_SCAN_ITERATION_COMPLETE_UMAC: {
+            const struct iwx_umac_scan_iter_complete_notif *n = (const void *)pkt->data;
+            klogf(KLOG_INFO, "iwx: scan iteration complete: %u channels, status %u, last channel %u",
+                  n->scanned_channels, n->status, n->last_channel);
+            if (sc->scan_done < 1)
+                sc->scan_done = 1;
+            break;
+        }
+        case IWX_SCAN_COMPLETE_UMAC: {
+            const struct iwx_umac_scan_complete *n = (const void *)pkt->data;
+            klogf(KLOG_OK, "iwx: scan complete: status %u ebs %u last_iter %u",
+                  n->status, n->ebs_status, n->last_iter);
+            sc->scan_done = 2;
+            break;
+        }
+        case IWX_MCC_CHUB_UPDATE_CMD:
+            klogf(KLOG_INFO, "iwx: MCC chub update notification");
+            break;
         case IWX_ALIVE:
             iwx_rx_alive(sc, pkt);
             break;
@@ -1333,22 +1480,19 @@ static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
             break;
         case IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_INIT_EXTENDED_CFG_CMD):
         case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_ACCESS_COMPLETE):
+        case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO):
+        case IWX_WIDE_ID(IWX_SYSTEM_GROUP, IWX_SOC_CONFIGURATION_CMD):
+        case IWX_WIDE_ID(IWX_DATA_PATH_GROUP, IWX_DQA_ENABLE_CMD):
+        case IWX_WIDE_ID(IWX_PHY_OPS_GROUP, IWX_TEMP_REPORTING_THRESHOLDS_CMD):
+        case IWX_TX_ANT_CONFIGURATION_CMD:
+        case IWX_BT_CONFIG:
+        case IWX_LTR_CONFIG:
+        case IWX_POWER_TABLE_CMD:
+        case IWX_MCC_UPDATE_CMD:
+        case IWX_SCAN_CFG_CMD:
+        case IWX_SCAN_REQ_UMAC:
+        case IWX_REPLY_BEACON_FILTERING_CMD:
             break;
-        case IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO): {
-            if (idx < 0 || idx >= IWX_TX_RING_COUNT || sc->resp_buf[idx] == NULL)
-                break;
-            uint32_t pkt_len = (uint32_t)sizeof(pkt->len_n_flags) + iwx_rx_packet_len(pkt);
-            if ((pkt->hdr.flags & IWX_CMD_FAILED_MSK) || pkt_len < sizeof(*pkt) ||
-                pkt_len > sc->resp_cap[idx]) {
-                klogf(KLOG_WARN, "iwx: response rejected flags 0x%x len %u cap %u",
-                      pkt->hdr.flags, pkt_len, sc->resp_cap[idx]);
-                sc->resp_buf[idx] = NULL;
-                break;
-            }
-            memcpy(sc->resp_buf[idx], pkt, pkt_len);
-            sc->resp_got[idx] = pkt_len;
-            break;
-        }
         case IWX_REPLY_ERROR: {
             const struct iwx_error_resp *r = (const void *)pkt->data;
             klogf(KLOG_ERROR, "iwx: firmware error 0x%x, cmd 0x%x seq 0x%x service 0x%x",
@@ -1362,6 +1506,17 @@ static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
             break;
         }
 
+        if (!(qid & (1 << 7)) && idx >= 0 && idx < IWX_TX_RING_COUNT && sc->resp_buf[idx]) {
+            if ((pkt->hdr.flags & IWX_CMD_FAILED_MSK) || len < sizeof(*pkt) ||
+                len > sc->resp_cap[idx]) {
+                klogf(KLOG_WARN, "iwx: response 0x%x rejected flags 0x%x len %u cap %u",
+                      code, pkt->hdr.flags, len, sc->resp_cap[idx]);
+                sc->resp_buf[idx] = NULL;
+            } else {
+                memcpy(sc->resp_buf[idx], pkt, len);
+                sc->resp_got[idx] = len;
+            }
+        }
         if (!(qid & (1 << 7))) {
             if (!handled)
                 klogf(KLOG_WARN, "iwx: completing unhandled response 0x%x idx %d", code, idx);
@@ -1386,6 +1541,7 @@ static void iwx_notif_intr(struct iwx_sc *sc)
         if (rbid != sc->rx_cur)
             klogf(KLOG_WARN, "iwx: rx used[%d].rbid=%u mismatch", sc->rx_cur, rbid);
         iwx_rx_pkt(sc, sc->rx_cur);
+        iwx_update_rx_desc(sc, sc->rx_cur);
         sc->rx_cur = (sc->rx_cur + 1) % IWX_RX_MQ_RING_COUNT;
     }
     hw = (hw == 0) ? IWX_RX_MQ_RING_COUNT - 1 : hw - 1;
@@ -1490,8 +1646,12 @@ static int iwx_send_cmd(struct iwx_sc *sc, uint32_t id, const void *data, uint16
     uint64_t addr, elapsed = 0;
 
     if (paylen > datasz) {
-        klogf(KLOG_ERROR, "iwx: command 0x%x too long (%u)", id, paylen);
-        return IWX_EINVAL;
+        if (paylen > IWX_MAX_CMD_PAYLOAD_SIZE || sc->tx_big.va == NULL) {
+            klogf(KLOG_ERROR, "iwx: command 0x%x too long (%u)", id, paylen);
+            return IWX_EINVAL;
+        }
+        cmd = sc->tx_big.va;
+        paddr = sc->tx_big.pa;
     }
     sc->resp_buf[idx] = resp;
     sc->resp_cap[idx] = resp_cap;
@@ -1507,7 +1667,7 @@ static int iwx_send_cmd(struct iwx_sc *sc, uint32_t id, const void *data, uint16
         sc->tx_flags[idx] &= (uint8_t)~IWX_TXDATA_FLAG_CMD_IS_NARROW;
     }
 
-    memset(cmd, 0, sizeof(*cmd));
+    memset(cmd, 0, paylen > datasz ? hdrlen + paylen : sizeof(*cmd));
     cmd->hdr_wide.opcode = iwx_cmd_opcode(code);
     cmd->hdr_wide.group_id = iwx_cmd_groupid(code);
     cmd->hdr_wide.qid = (uint8_t)sc->tx_qid;
@@ -1725,6 +1885,13 @@ static void iwx_nvm_get(struct iwx_sc *sc)
           !!(flags & IWX_NVM_MAC_SKU_FLAGS_802_11AX_ENABLED),
           !!(flags & IWX_NVM_MAC_SKU_FLAGS_MIMO_DISABLED), le32toh(rsp->phy_sku.tx_chains),
           le32toh(rsp->phy_sku.rx_chains), le32toh(rsp->regulatory.lar_enabled));
+    sc->nvm_tx_ant = le32toh(rsp->phy_sku.tx_chains);
+    sc->nvm_rx_ant = le32toh(rsp->phy_sku.rx_chains);
+    sc->nvm_5ghz = !!(flags & IWX_NVM_MAC_SKU_FLAGS_BAND_5_2_ENABLED);
+    sc->nvm_lar = le32toh(rsp->regulatory.lar_enabled) &&
+                  isset(sc->enabled_capa, IWX_UCODE_TLV_CAPA_LAR_SUPPORT);
+    if (plen >= sizeof(struct iwx_nvm_get_info_rsp))
+        iwx_init_channel_map(sc, rsp->regulatory.channel_profile, IWX_NCHAN);
 }
 
 static int iwx_run_init_mvm_ucode(struct iwx_sc *sc)
@@ -1900,6 +2067,8 @@ static bool iwx_attach(struct iwx_sc *sc)
     if (!iwx_dma_alloc(&sc->prph_info, IWX_PAGE_SIZE, "prph info"))
         return false;
     if (!iwx_alloc_tx_ring(sc))
+        return false;
+    if (!iwx_dma_alloc(&sc->tx_big, IWX_PAGE_SIZE, "tx big cmd"))
         return false;
     if (!iwx_alloc_rx_ring(sc))
         return false;
