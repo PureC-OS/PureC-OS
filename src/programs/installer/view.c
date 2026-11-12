@@ -933,60 +933,135 @@ static void suggest_username(struct app *a) {
     a->s.user_name[n] = '\0';
 }
 
+static void add_draft(struct app *a, struct ui *u) {
+    if (!draft_ok(a) || !setup_add_user(&a->s))
+        return;
+    for (uint32_t i = 0; i < sizeof(a->user_pass2); i++)
+        ((volatile char *)a->user_pass2)[i] = 0;
+    a->username_edited = false;
+    u->focus = ID_FULLNAME;
+    u->dirty = true;
+}
+
+static void user_list(struct app *a, struct ui *u, int32_t y) {
+    int32_t colw = (L.pw - 16) / 2;
+    int32_t rh = 34;
+    for (uint32_t i = 0; i < a->s.user_count; i++) {
+        const struct setup_user *user = &a->s.users[i];
+        int32_t x = L.px + (int32_t)(i % 2) * (colw + 16);
+        int32_t ry = y + (int32_t)(i / 2) * (rh + 8);
+        ui_rrect(&u->c, x, ry, colw, rh, 10, ui_solid(C_ROW), 255);
+        ui_rrect_stroke(&u->c, x, ry, colw, rh, 10, 1, ui_solid(C_BORDER), 255);
+        char label[64] = "";
+        cat(label, sizeof(label), user->gecos);
+        cat(label, sizeof(label), " (");
+        cat(label, sizeof(label), user->name);
+        cat(label, sizeof(label), ")");
+        int32_t text_w = colw - 24 - 40 - (user->admin ? 64 : 0);
+        char shown[64];
+        ui_copy(shown, label, sizeof(shown));
+        while (ui_strlen(shown) > 3 && ui_text_w(shown, 16) > text_w)
+            shown[ui_strlen(shown) - 1] = 0;
+        ui_text(&u->c, x + 12, ry + 9, shown, C_TEXT, 16, F_BODY);
+        if (user->admin) {
+            int32_t bx = x + colw - 40 - 60;
+            ui_rrect(&u->c, bx, ry + 8, 52, 18, 9, ui_hgrad(C_ACC0, C_ACC1), 255);
+            ui_text_center(&u->c, bx, 52, ry + 13, "SUDO", 0xFFFFFF, 8, F_BOLD);
+        }
+        int32_t id = ID_USER0 + (int32_t)i;
+        int32_t cx = x + colw - 34;
+        bool hot = inside(u, cx, ry + 4, 26, 26);
+        if (hot && u->in.pressed)
+            u->active = id;
+        ui_rrect(&u->c, cx, ry + 4, 26, 26, 8,
+                 ui_solid(hot ? 0x3A1B28 : C_FIELD), 255);
+        ui_cross(&u->c, cx + 13, ry + 17, 10, hot ? C_ERR : C_MUTED, 255);
+        if (hot && u->in.released && u->active == id) {
+            setup_remove_user(&a->s, i);
+            u->dirty = true;
+            return;
+        }
+    }
+}
+
 static void page_account(struct app *a, struct ui *u) {
-    header(a, u, "Create your account",
-           "You will sign in with this account every day.");
+    header(a, u, "Accounts",
+           "Set the root password and add the people who will use this computer.");
     int32_t colw = (L.pw - 24) / 2;
     int32_t x1 = L.px, x2 = L.px + colw + 24;
-    int32_t y = L.py + 82;
-    int32_t rowh = 92;
+    int32_t y = L.py + 78;
+    int32_t rowh = 84;
 
+    field(u, ID_ROOTPASS, x1, y, colw, "ROOT PASSWORD", a->s.root_password,
+          SETUP_PASSWORD_MAX, true, a->reveal, 0, 0);
+    reveal_toggle(u, x1, y, colw, &a->reveal);
+    strength_meter(u, x1, y, colw, a->s.root_password);
+    bool rm = a->root_pass2[0] && !streq(a->s.root_password, a->root_pass2);
+    field(u, ID_ROOTPASS2, x2, y, colw, "CONFIRM ROOT PASSWORD", a->root_pass2,
+          SETUP_PASSWORD_MAX, true, a->reveal, 0,
+          rm ? "Passwords do not match" : 0);
+
+    y += rowh;
+    char count[48] = "USERS  ";
+    char num[8];
+    fmt_u(num, sizeof(num), a->s.user_count);
+    cat(count, sizeof(count), num);
+    cat(count, sizeof(count), " / 8");
+    ui_text_bold(&u->c, L.px, y, count, C_ACC0, 8);
+    ui_text(&u->c, L.px + 110, y, "optional, you can install with root only",
+            C_MUTED, 8, F_BODY);
+    y += 20;
+
+    bool full = a->s.user_count >= INSTALL_USERS_MAX;
     bool gecos_bad = a->s.user_gecos[0] &&
                      !install_account_gecos_valid(a->s.user_gecos);
     if (field(u, ID_FULLNAME, x1, y, colw, "FULL NAME", a->s.user_gecos,
               INSTALL_GECOS_MAX, false, false, "Ada Lovelace",
               gecos_bad ? "Cannot contain ':'" : 0))
         suggest_username(a);
-    bool ubad = a->s.user_name[0] && !user_ok(a->s.user_name);
+    const char *uerr = 0;
+    if (a->s.user_name[0] && !user_ok(a->s.user_name))
+        uerr = "a-z, 0-9, - and _ ; start with a letter";
+    else if (a->s.user_name[0] && setup_user_taken(&a->s, a->s.user_name))
+        uerr = "This user name is already added";
     if (field(u, ID_USERNAME, x2, y, colw, "USER NAME", a->s.user_name,
-              INSTALL_USER_MAX, false, false, "ada",
-              ubad ? "a-z, 0-9, - and _ ; start with a letter" : 0))
+              INSTALL_USER_MAX, false, false, "ada", uerr))
         a->username_edited = a->s.user_name[0] != '\0';
 
     y += rowh;
     field(u, ID_PASS, x1, y, colw, "PASSWORD", a->s.user_password,
           SETUP_PASSWORD_MAX, true, a->reveal, 0, 0);
-    reveal_toggle(u, x1, y, colw, &a->reveal);
     strength_meter(u, x1, y, colw, a->s.user_password);
-    bool mism = a->user_pass2[0] &&
-                !streq(a->s.user_password, a->user_pass2);
+    bool mism = a->user_pass2[0] && !streq(a->s.user_password, a->user_pass2);
     field(u, ID_PASS2, x2, y, colw, "CONFIRM PASSWORD", a->user_pass2,
           SETUP_PASSWORD_MAX, true, a->reveal, 0,
           mism ? "Passwords do not match" : 0);
 
-    y += rowh;
-    checkbox(u, ID_SAME, L.px, y + 2,
-             "Use the same password for root",
-             &a->same_root);
-    if (!a->same_root) {
-        y += 44;
-        field(u, ID_ROOTPASS, x1, y, colw, "ROOT PASSWORD",
-              a->s.root_password, SETUP_PASSWORD_MAX, true, a->reveal, 0, 0);
-        strength_meter(u, x1, y, colw, a->s.root_password);
-        bool rm = a->root_pass2[0] &&
-                  !streq(a->s.root_password, a->root_pass2);
-        field(u, ID_ROOTPASS2, x2, y, colw, "CONFIRM ROOT PASSWORD",
-              a->root_pass2, SETUP_PASSWORD_MAX, true, a->reveal, 0,
-              rm ? "Passwords do not match" : 0);
-    }
+    y += rowh - 8;
+    checkbox(u, ID_ADMIN, L.px, y + 9,
+             "Administrator: allow sudo (adds to group wheel)",
+             &a->s.user_admin);
+    bool can_add = draft_ok(a);
+    if (button(u, ID_ADDUSER, L.px + L.pw - 150, y, 150, 44,
+               full ? "List is full" : "Add user", STYLE_SECONDARY, can_add))
+        add_draft(a, u);
+
+    y += 56;
+    user_list(a, u, y);
 
     bool ok = account_ok(a);
+    if (root_ok(a) && !draft_empty(a)) {
+        const char *hint = "Add this user or clear the form to continue.";
+        ui_text(&u->c, L.px + 150, L.fy + 14, hint, C_WARN, 8, F_BODY);
+    }
     bool next, bk;
     footer(a, u, "Continue", ok, STYLE_PRIMARY, &next, &bk);
     if (u->in.key == 9)
         ui_focus_next(u, 1);
     else if (u->in.key == 13 || u->in.key == 10) {
-        if (!focus_is_last(u))
+        if (u->focus == ID_PASS2 && can_add)
+            add_draft(a, u);
+        else if (!focus_is_last(u))
             ui_focus_next(u, 1);
         else if (ok)
             next = true;
@@ -1030,14 +1105,18 @@ static void page_review(struct app *a, struct ui *u) {
     ui_rrect_stroke(c, x2, y, colw, h, 16, 1, ui_solid(C_BORDER), 255);
     ui_text_bold(c, x2 + 20, y + 16, "THIS COMPUTER", C_ACC0, 8);
     summary_row(u, x2 + 20, y + 40, colw, "COMPUTER NAME", a->s.hostname);
-    char who[48] = "";
-    cat(who, sizeof(who), a->s.user_gecos);
-    cat(who, sizeof(who), " (");
-    cat(who, sizeof(who), a->s.user_name);
-    cat(who, sizeof(who), ")");
-    summary_row(u, x2 + 20, y + 80, colw, "USER", who);
-    summary_row(u, x2 + 20, y + 120, colw, "ADMINISTRATOR",
-                a->same_root ? "root (same password)" : "root");
+    char who[160] = "";
+    for (uint32_t i = 0; i < a->s.user_count; i++) {
+        if (i)
+            cat(who, sizeof(who), ", ");
+        cat(who, sizeof(who), a->s.users[i].name);
+        if (a->s.users[i].admin)
+            cat(who, sizeof(who), " (sudo)");
+    }
+    if (!a->s.user_count)
+        cat(who, sizeof(who), "none, only root");
+    summary_row(u, x2 + 20, y + 80, colw, "USERS", who);
+    summary_row(u, x2 + 20, y + 120, colw, "ADMINISTRATOR", "root");
     summary_row(u, x2 + 20, y + 160, colw, "TIME ZONE",
                 a->s.timezone[0] ? a->s.timezone : "UTC");
 
