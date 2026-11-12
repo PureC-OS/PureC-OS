@@ -17,7 +17,6 @@ int main(int argc, char **argv)
     if (getuid() != 0) return util_err("must be run as root");
     printf(off ? "System is powering off...\n" : "System is rebooting...\n");
     fflush(stdout);
-    sync();
     if (off) pc_shutdown();
     else pc_reboot();
     return util_err("operation failed");
