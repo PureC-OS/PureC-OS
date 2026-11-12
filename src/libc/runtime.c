@@ -289,8 +289,91 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
     return (int32_t)pc_syscall(SYS_INSTALL_START_EX, (uint64_t)(uintptr_t)&req, 0, 0);
 }
 
-int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
-                   uint32_t height, int32_t x, int32_t y, uint32_t flags){
+static struct {
+    uint32_t *px;
+    uint32_t w, h;
+    int32_t sx, sy;
+    int32_t depth;
+    bool dirty;
+    int32_t dx0, dy0, dx1, dy1;
+} pc_surf;
+
+static int32_t pc_raw_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
+                           uint32_t height, int32_t x, int32_t y, uint32_t flags);
+
+void pc_surface_attach(uint32_t *pixels, uint32_t width, uint32_t height, int32_t x, int32_t y){
+    pc_surf.px=pixels;
+    pc_surf.w=width;
+    pc_surf.h=height;
+    pc_surf.sx=x;
+    pc_surf.sy=y;
+    pc_surf.depth=0;
+    pc_surf.dirty=false;
+}
+
+void pc_surface_move(int32_t x, int32_t y){
+    pc_surf.sx=x;
+    pc_surf.sy=y;
+}
+
+void pc_surface_detach(void){
+    pc_surf.px=0;
+    pc_surf.dirty=false;
+    pc_surf.depth=0;
+}
+
+uint32_t *pc_surface_pixels(uint32_t *width, uint32_t *height){
+    if(width) *width=pc_surf.w;
+    if(height) *height=pc_surf.h;
+    return pc_surf.px;
+}
+
+static void pc_surface_flush(void){
+    if(!pc_surf.px || !pc_surf.dirty) return;
+    pc_surf.dirty=false;
+    (void)pc_raw_blit(pc_surf.px+(uint64_t)pc_surf.dy0*pc_surf.w+(uint32_t)pc_surf.dx0,pc_surf.w,
+                      (uint32_t)(pc_surf.dx1-pc_surf.dx0),(uint32_t)(pc_surf.dy1-pc_surf.dy0),
+                      pc_surf.sx+pc_surf.dx0,pc_surf.sy+pc_surf.dy0,1u);
+}
+
+void pc_surface_damage(int32_t x, int32_t y, uint32_t width, uint32_t height){
+    if(!pc_surf.px || !width || !height) return;
+    int32_t x0=x<0?0:x, y0=y<0?0:y;
+    int32_t x1=x+(int32_t)width, y1=y+(int32_t)height;
+    if(x1>(int32_t)pc_surf.w) x1=(int32_t)pc_surf.w;
+    if(y1>(int32_t)pc_surf.h) y1=(int32_t)pc_surf.h;
+    if(x0>=x1 || y0>=y1) return;
+    if(!pc_surf.dirty){
+        pc_surf.dx0=x0; pc_surf.dy0=y0; pc_surf.dx1=x1; pc_surf.dy1=y1;
+        pc_surf.dirty=true;
+    } else {
+        if(x0<pc_surf.dx0) pc_surf.dx0=x0;
+        if(y0<pc_surf.dy0) pc_surf.dy0=y0;
+        if(x1>pc_surf.dx1) pc_surf.dx1=x1;
+        if(y1>pc_surf.dy1) pc_surf.dy1=y1;
+    }
+    if(pc_surf.depth==0) pc_surface_flush();
+}
+
+void pc_surface_present(void){
+    pc_surface_flush();
+}
+
+static bool pc_surface_clip(int64_t *x, int64_t *y, int64_t *w, int64_t *h, int64_t *ox, int64_t *oy){
+    int64_t x0=*x-pc_surf.sx, y0=*y-pc_surf.sy;
+    int64_t x1=x0+*w, y1=y0+*h;
+    *ox=0; *oy=0;
+    if(x0<0){ *ox=-x0; x0=0; }
+    if(y0<0){ *oy=-y0; y0=0; }
+    if(x1>(int64_t)pc_surf.w) x1=pc_surf.w;
+    if(y1>(int64_t)pc_surf.h) y1=pc_surf.h;
+    if(x0>=x1 || y0>=y1) return false;
+    *x=x0; *y=y0; *w=x1-x0; *h=y1-y0;
+    return true;
+}
+
+static int32_t pc_raw_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
+                           uint32_t height, int32_t x, int32_t y, uint32_t flags){
     struct fb_blit_request req={
         .pixels=(uint64_t)(uintptr_t)pixels,
         .stride=stride,
@@ -300,6 +383,26 @@ int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
         .y=y,
         .flags=flags};
     return (int32_t)pc_syscall(SYS_FB_BLIT,(uint64_t)(uintptr_t)&req,0,0);
+}
+
+int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
+                   uint32_t height, int32_t x, int32_t y, uint32_t flags){
+    if(!pc_surf.px || !pixels)
+        return pc_raw_blit(pixels,stride,width,height,x,y,flags);
+    int64_t bx=x, by=y, bw=width, bh=height, ox, oy;
+    if(!pc_surface_clip(&bx,&by,&bw,&bh,&ox,&oy)) return 0;
+    bool keep=(flags&1u)!=0;
+    for(int64_t row=0;row<bh;row++){
+        const uint32_t *s=pixels+(uint64_t)(row+oy)*stride+(uint64_t)ox;
+        uint32_t *d=pc_surf.px+(uint64_t)(by+row)*pc_surf.w+(uint64_t)bx;
+        if(keep){
+            for(int64_t i=0;i<bw;i++) if(s[i]>>24) d[i]=s[i];
+        } else {
+            for(int64_t i=0;i<bw;i++) d[i]=s[i]|0xFF000000u;
+        }
+    }
+    pc_surface_damage((int32_t)bx,(int32_t)by,(uint32_t)bw,(uint32_t)bh);
+    return 0;
 }
 
 int32_t pc_time_get(struct time_info *out){
@@ -438,10 +541,19 @@ bool pc_display_get_info(struct pc_display_info *info){
 }
 
 void pc_display_begin_update(void){
+    if(pc_surf.px){
+        pc_surf.depth++;
+        return;
+    }
     (void)pc_syscall(SYS_FB_BEGIN_UPDATE,0,0,0);
 }
 
 void pc_display_end_update(void){
+    if(pc_surf.px){
+        if(pc_surf.depth>0) pc_surf.depth--;
+        if(pc_surf.depth==0) pc_surface_flush();
+        return;
+    }
     (void)pc_syscall(SYS_FB_END_UPDATE,0,0,0);
 }
 
@@ -536,7 +648,18 @@ void pc_console_disable(void){
 
 void pc_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height,
                   uint32_t color){
-    (void)syscall5(SYS_DRAW_RECT,x,y,width,height,color);
+    if(!pc_surf.px){
+        (void)syscall5(SYS_DRAW_RECT,x,y,width,height,color);
+        return;
+    }
+    int64_t bx=x, by=y, bw=width, bh=height, ox, oy;
+    if(!pc_surface_clip(&bx,&by,&bw,&bh,&ox,&oy)) return;
+    uint32_t c=color|0xFF000000u;
+    for(int64_t row=0;row<bh;row++){
+        uint32_t *d=pc_surf.px+(uint64_t)(by+row)*pc_surf.w+(uint64_t)bx;
+        for(int64_t i=0;i<bw;i++) d[i]=c;
+    }
+    pc_surface_damage((int32_t)bx,(int32_t)by,(uint32_t)bw,(uint32_t)bh);
 }
 
 static void pc_rect_cb(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
