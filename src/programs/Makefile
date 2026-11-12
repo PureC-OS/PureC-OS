@@ -67,10 +67,8 @@ GENERAL_SOURCES := \
 	accounts/accounts.c \
 	accounts/accounts_core.c \
 	terminal/main.c \
-	terminal/shell.c \
+	terminal/vt.c \
 	terminal/path.c \
-	terminal/environment.c \
-	terminal/window.c \
 	nano/window.c \
 	gui_demo/main.c \
 	game/snake/main.c \
@@ -312,7 +310,7 @@ $(PROGRAM_DIR)/snake: $(OBJ_DIR)/game/snake/main.o $(LIBPGUIW) $(LIBPUREGUI) $(L
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/terminal: $(OBJ_DIR)/terminal/main.o $(OBJ_DIR)/terminal/shell.o $(OBJ_DIR)/terminal/path.o $(OBJ_DIR)/terminal/environment.o $(OBJ_DIR)/terminal/window.o $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/terminal: $(OBJ_DIR)/terminal/main.o $(OBJ_DIR)/terminal/vt.o $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
