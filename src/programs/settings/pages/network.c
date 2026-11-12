@@ -138,7 +138,10 @@ static int status_card(struct page_ctx *p, int y)
     bool online = wired || wifi_on;
     int h = 132;
     ui_card(u, p->x, y, p->w, h);
-    uint32_t col = online ? pal->success : st.status.state == WIFI_STATE_CONNECTING ? pal->warning : pal->text3;
+    uint32_t col = online ? pal->success
+                   : st.status.state == WIFI_STATE_CONNECTING ? pal->warning
+                   : st.status.state == WIFI_STATE_FAILED     ? pal->danger
+                                                              : pal->text3;
     int icon = wifi_on ? SI_WIFI : wired ? SI_ETHERNET : SI_WIFI_OFF;
     sg_rrect(u->c, p->x + 24, y + 24, 84, 84, 24, col, pal->light ? 36 : 40);
     sg_icon(u->c, icon, SG_ICON_L, p->x + 38, y + 38, col);
@@ -162,6 +165,14 @@ static int status_card(struct page_ctx *p, int y)
         fs(&f, wired->name);
         fs(&f, "  -  ");
         fip(&f, wired->ip_address);
+    } else if (st.status.has_device && st.status.state == WIFI_STATE_FAILED) {
+        fs(&t, "Connection failed");
+        int32_t e = st.status.last_error;
+        fs(&f, e == -20   ? "WPA2 handshake is not supported by the driver yet"
+               : e == -12 ? "The network did not answer in time"
+               : e == -21 ? "The access point rejected the association"
+               : e == -30 ? "The Wi-Fi firmware stopped responding"
+                          : "Could not connect to the network");
     } else if (st.status.has_device && st.status.state == WIFI_STATE_CONNECTING) {
         fs(fs(&t, "Connecting to "), st.status.ssid);
         fs(&f, "Authenticating...");
@@ -238,7 +249,7 @@ static int wifi_card(struct page_ctx *p, int y)
     y += 8;
     if (!st.status.has_device) {
         sg_text(u->c, SF_BODY, p->x + 24, y + 24, "No Wi-Fi hardware was found on this computer.", pal->text3);
-        sg_text(u->c, SF_SMALL, p->x + 24, y + 46, "Supported: Atheros AR9285, Intel AX201 (in progress).",
+        sg_text(u->c, SF_SMALL, p->x + 24, y + 46, "Supported: Atheros AR9285, Intel Wi-Fi 6 AX201.",
                 pal->text3);
         return h;
     }
