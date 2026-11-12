@@ -1,72 +1,37 @@
-#include "../../libc/include/purec.h"
-#include "../../libfs/include/purefs.h"
-#include "../terminal/path.h"
+#include "../lib/fileops.h"
 
-#define MKDIR_PATH_CAPACITY 128
-#define MKDIR_ARGUMENT_CAPACITY 256
-
-static bool space(char c){
-    return c == ' ' || c == '\t';
-}
-
-static const char *skip_spaces(const char *text){
-    while(space(*text)) text++;
-    return text;
-}
-
-int mkdir_main(void){
-    char arguments[MKDIR_ARGUMENT_CAPACITY];
-    if(pc_get_command_line(arguments, sizeof(arguments)) < 0){
-        arguments[0] = '\0';
-    }
-
-    const char *cursor = skip_spaces(arguments);
-    if(pc_strcmp(cursor, "--help") == 0 || pc_strcmp(cursor, "-h") == 0){
-        pc_write("usage: mkdir <directory>\n");
-        pc_write("Create a new directory.\n");
-        return 0;
-    }
-
-    if(!*cursor){
-        pc_write("mkdir: directory path required\n");
-        return 1;
-    }
-
-    char target[MKDIR_PATH_CAPACITY];
-    uint32_t len = 0;
-    while(cursor[len] && !space(cursor[len])){
-        if(len + 1 >= sizeof(target)){
-            pc_write("mkdir: path too long\n");
-            return 1;
+int main(int argc, char **argv)
+{
+    util_init(argc, argv);
+    struct opts o;
+    opts_begin(&o, argc, argv);
+    bool parents = false, verbose = false;
+    unsigned int mode = 0755;
+    int c;
+    while ((c = opts_next(&o, "pvm:")) != -1) {
+        switch (c) {
+        case 'p': parents = true; break;
+        case 'v': verbose = true; break;
+        case 'm': if (!util_parse_mode(o.arg, &mode, true)) return util_err("invalid mode '%s'", o.arg); break;
+        case 'L':
+            if (opts_long(&o, "parents")) { parents = true; break; }
+            if (opts_long(&o, "help")) { util_usage("[-pv] [-m MODE] DIRECTORY..."); return 0; }
+            return util_bad_option(&o, c);
+        default: return util_bad_option(&o, c);
         }
-        target[len] = cursor[len];
-        len++;
     }
-    target[len] = '\0';
-
-    char current[MKDIR_PATH_CAPACITY];
-    if(pc_getenv("PWD", current, sizeof(current)) < 0){
-        pc_copy(current, "/", sizeof(current));
+    if (!o.count) return util_err("missing operand");
+    int rc = 0;
+    for (int i = 0; i < o.count; i++) {
+        if (parents) {
+            rc |= fo_mkdirs(o.operands[i], mode, verbose);
+            continue;
+        }
+        if (mkdir(o.operands[i], mode) != 0) {
+            rc = util_err("cannot create directory '%s': %s", o.operands[i], strerror(errno));
+            continue;
+        }
+        if (verbose) printf("%s: created directory '%s'\n", prog, o.operands[i]);
     }
-
-    char path[MKDIR_PATH_CAPACITY];
-    if(!shell_path_normalize(current, target, path, sizeof(path))){
-        pc_write("mkdir: invalid path\n");
-        return 1;
-    }
-
-    int32_t status = pf_create_dir(path);
-    if(status < 0){
-        pc_write("mkdir: cannot create directory: ");
-        pc_write(target);
-        pc_write("\n");
-        return 1;
-    }
-
-    return 0;
+    return rc;
 }
-
-void _start(void){
-    pc_exit(mkdir_main());
-}
-

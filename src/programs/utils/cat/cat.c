@@ -1,105 +1,77 @@
-#include "../../libc/include/purec.h"
-#include "../../libfs/include/purefs.h"
-#include "../terminal/path.h"
+#include "../lib/common.h"
 
-#define CAT_PATH_CAPACITY 128
-#define CAT_ARGUMENT_CAPACITY 256
-#define CAT_BUFFER_CAPACITY 256
+static bool o_number, o_nonblank, o_squeeze, o_ends, o_tabs, o_visible;
+static long lineno;
 
-static bool space(char c){
-    return c == ' ' || c == '\t';
+static int cat_stream(FILE *in)
+{
+    if (!o_number && !o_nonblank && !o_squeeze && !o_ends && !o_tabs && !o_visible)
+        return util_copy_stream(in, stdout);
+    int c, prev = '\n';
+    bool blank_run = false;
+    while ((c = fgetc(in)) != EOF) {
+        if (prev == '\n') {
+            if (c == '\n') {
+                if (o_squeeze && blank_run) continue;
+                blank_run = true;
+            } else blank_run = false;
+            if (o_nonblank ? c != '\n' : o_number) printf("%6ld\t", ++lineno);
+        }
+        if (c == '\n') {
+            if (o_ends) putchar('$');
+            putchar('\n');
+        } else if (c == '\t' && o_tabs) {
+            fputs("^I", stdout);
+        } else if (o_visible && c != '\t' && (c < 32 || c == 127)) {
+            putchar('^');
+            putchar(c == 127 ? '?' : c + 64);
+        } else if (o_visible && c >= 128 && c < 160) {
+            fputs("M-^", stdout);
+            putchar(c - 128 + 64);
+        } else {
+            putchar(c);
+        }
+        prev = c;
+    }
+    return ferror(in) ? -1 : 0;
 }
 
-static const char *skip_spaces(const char *text){
-    while(space(*text)) text++;
-    return text;
+int main(int argc, char **argv)
+{
+    util_init(argc, argv);
+    struct opts o;
+    opts_begin(&o, argc, argv);
+    int c;
+    while ((c = opts_next(&o, "nbsETAvetu")) != -1) {
+        switch (c) {
+        case 'n': o_number = true; break;
+        case 'b': o_nonblank = true; break;
+        case 's': o_squeeze = true; break;
+        case 'E': o_ends = true; break;
+        case 'T': o_tabs = true; break;
+        case 'v': o_visible = true; break;
+        case 'A': o_visible = o_ends = o_tabs = true; break;
+        case 'e': o_visible = o_ends = true; break;
+        case 't': o_visible = o_tabs = true; break;
+        case 'u': break;
+        case 'L':
+            if (opts_long(&o, "number")) { o_number = true; break; }
+            if (opts_long(&o, "help")) { util_usage("[-nbsETAv] [FILE]..."); return 0; }
+            return util_bad_option(&o, c);
+        default: return util_bad_option(&o, c);
+        }
+    }
+    if (!o.count) o.operands[o.count++] = "-";
+    int rc = 0;
+    for (int i = 0; i < o.count; i++) {
+        FILE *f = util_fopen(o.operands[i]);
+        if (!f) {
+            rc = util_perr(o.operands[i]);
+            continue;
+        }
+        if (cat_stream(f) < 0) rc = util_perr(o.operands[i]);
+        util_fclose(f);
+    }
+    fflush(stdout);
+    return rc;
 }
-
-int cat_main(void){
-    char arguments[CAT_ARGUMENT_CAPACITY];
-    if(pc_get_command_line(arguments, sizeof(arguments)) < 0){
-        arguments[0] = '\0';
-    }
-
-    const char *cursor = skip_spaces(arguments);
-    if(pc_strcmp(cursor, "--help") == 0 || pc_strcmp(cursor, "-h") == 0){
-        pc_write("usage: cat <file>\n");
-        pc_write("Concatenate and print file contents.\n");
-        return 0;
-    }
-
-    if(!*cursor || pc_strcmp(cursor, "-") == 0){
-        if(pc_syscall(SYS_FD_CTL, 0, FD_CTL_KIND, 0) == FD_KIND_CONSOLE){
-            pc_write("cat: file path required\n");
-            return 1;
-        }
-        for(;;){
-            char chunk[CAT_BUFFER_CAPACITY + 1];
-            int64_t got = pc_syscall(SYS_FD_READ, 0, (uint64_t)(uintptr_t)chunk, CAT_BUFFER_CAPACITY);
-            if(got < 0){
-                pc_write("cat: read failed\n");
-                return 1;
-            }
-            if(!got) return 0;
-            pc_syscall(SYS_WRITE, (uint64_t)(uintptr_t)chunk, (uint64_t)got, 1);
-        }
-    }
-
-    char target[CAT_PATH_CAPACITY];
-    uint32_t len = 0;
-    while(cursor[len] && !space(cursor[len])){
-        if(len + 1 >= sizeof(target)){
-            pc_write("cat: path too long\n");
-            return 1;
-        }
-        target[len] = cursor[len];
-        len++;
-    }
-    target[len] = '\0';
-
-    char current[CAT_PATH_CAPACITY];
-    if(pc_getenv("PWD", current, sizeof(current)) < 0){
-        pc_copy(current, "/", sizeof(current));
-    }
-
-    char path[CAT_PATH_CAPACITY];
-    if(!shell_path_normalize(current, target, path, sizeof(path))){
-        pc_write("cat: invalid path\n");
-        return 1;
-    }
-
-    int32_t fd = pf_open(path);
-    if(fd < 0){
-        pc_write("cat: cannot open file: ");
-        pc_write(target);
-        pc_write("\n");
-        return 1;
-    }
-
-    bool wrote = false;
-    char last = '\0';
-    for(;;){
-        char buffer[CAT_BUFFER_CAPACITY];
-        int32_t count = pf_read(fd, buffer, sizeof(buffer));
-        if(count < 0){
-            (void)pf_close(fd);
-            pc_write("cat: read failed\n");
-            return 1;
-        }
-        if(!count) break;
-        for(int32_t i = 0; i < count; i++){
-            char ch[2] = {buffer[i], '\0'};
-            pc_write(ch);
-            last = buffer[i];
-        }
-        wrote = true;
-    }
-    (void)pf_close(fd);
-    if(wrote && last != '\n') pc_write("\n");
-    return 0;
-}
-
-void _start(void){
-    pc_exit(cat_main());
-}
-

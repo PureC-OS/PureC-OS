@@ -1,4 +1,4 @@
-#include "fileops.h"
+#include "../lib/fileops.h"
 
 int main(int argc, char **argv)
 {

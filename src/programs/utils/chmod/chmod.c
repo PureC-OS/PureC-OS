@@ -1,4 +1,4 @@
-#include "common.h"
+#include "../lib/common.h"
 
 static bool recursive, verbose, changes, quiet;
 

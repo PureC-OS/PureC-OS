@@ -1,5 +1,5 @@
-#include "common.h"
-#include "pager.h"
+#include "../lib/common.h"
+#include "../lib/pager.h"
 #include <ctype.h>
 
 #define MAN_DIR "/usr/share/man"

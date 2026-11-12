@@ -1,4 +1,4 @@
-#include "common.h"
+#include "../lib/common.h"
 #include <ctype.h>
 #include <regex.h>
 

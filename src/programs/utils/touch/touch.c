@@ -1,128 +1,99 @@
-#include "../../libc/include/purec.h"
-#include "../../libfs/include/purefs.h"
-#include "../terminal/path.h"
+#include "../lib/common.h"
+#include <time.h>
+#include <utime.h>
 
-#define TOUCH_PATH_CAPACITY 128
-#define TOUCH_ARGUMENT_CAPACITY 512
-#define TOUCH_TIME_NOW 0xFFFFFFFFu
-#define TOUCH_ENOENT 2
-
-static bool space(char c){
-    return c == ' ' || c == '\t';
+static bool parse_stamp(const char *text, time_t *out)
+{
+    int len = (int)strlen(text);
+    char digits[16];
+    int seconds = 0;
+    const char *dot = strchr(text, '.');
+    if (dot) {
+        seconds = atoi(dot + 1);
+        len = (int)(dot - text);
+    }
+    if (len != 8 && len != 10 && len != 12) return false;
+    memcpy(digits, text, (size_t)len);
+    digits[len] = 0;
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    time_t now = time(NULL);
+    struct tm *cur = localtime(&now);
+    int pos = 0;
+    if (len == 12) {
+        tm.tm_year = (digits[0] - '0') * 1000 + (digits[1] - '0') * 100 + (digits[2] - '0') * 10 + (digits[3] - '0') - 1900;
+        pos = 4;
+    } else if (len == 10) {
+        int yy = (digits[0] - '0') * 10 + (digits[1] - '0');
+        tm.tm_year = yy < 69 ? yy + 100 : yy;
+        pos = 2;
+    } else tm.tm_year = cur ? cur->tm_year : 126;
+    tm.tm_mon = (digits[pos] - '0') * 10 + (digits[pos + 1] - '0') - 1;
+    tm.tm_mday = (digits[pos + 2] - '0') * 10 + (digits[pos + 3] - '0');
+    tm.tm_hour = (digits[pos + 4] - '0') * 10 + (digits[pos + 5] - '0');
+    tm.tm_min = (digits[pos + 6] - '0') * 10 + (digits[pos + 7] - '0');
+    tm.tm_sec = seconds;
+    *out = mktime(&tm);
+    return true;
 }
 
-static const char *skip_spaces(const char *text){
-    while(space(*text)) text++;
-    return text;
-}
-
-static uint32_t next_word(const char **cursor, char *out, uint32_t capacity){
-    const char *text = skip_spaces(*cursor);
-    uint32_t len = 0;
-    while(text[len] && !space(text[len])){
-        if(len + 1 >= capacity) return 0xFFFFFFFFu;
-        out[len] = text[len];
-        len++;
-    }
-    out[len] = '\0';
-    *cursor = text + len;
-    return len;
-}
-
-static int touch_one(const char *target, bool no_create){
-    int32_t status = pc_utimes(target, TOUCH_TIME_NOW, TOUCH_TIME_NOW);
-    if(status >= 0) return 0;
-    if(status != -TOUCH_ENOENT){
-        pc_write("touch: cannot touch: ");
-        pc_write(target);
-        pc_write("\n");
-        return 1;
-    }
-    if(no_create) return 0;
-
-    char current[TOUCH_PATH_CAPACITY];
-    if(pc_getenv("PWD", current, sizeof(current)) < 0){
-        pc_copy(current, "/", sizeof(current));
-    }
-    char path[TOUCH_PATH_CAPACITY];
-    if(!shell_path_normalize(current, target, path, sizeof(path))){
-        pc_write("touch: invalid path: ");
-        pc_write(target);
-        pc_write("\n");
-        return 1;
-    }
-    status = pf_create_file(path);
-    if(status < 0){
-        pc_write("touch: cannot create file: ");
-        pc_write(target);
-        pc_write("\n");
-        return 1;
-    }
-    return 0;
-}
-
-int touch_main(void){
-    char arguments[TOUCH_ARGUMENT_CAPACITY];
-    if(pc_get_command_line(arguments, sizeof(arguments)) < 0){
-        arguments[0] = '\0';
-    }
-
-    const char *cursor = skip_spaces(arguments);
-    bool no_create = false;
-    bool options_done = false;
-    int files = 0;
-    int failed = 0;
-    char word[TOUCH_PATH_CAPACITY];
-
-    for(;;){
-        uint32_t len = next_word(&cursor, word, sizeof(word));
-        if(len == 0xFFFFFFFFu){
-            pc_write("touch: path too long\n");
-            return 1;
+int main(int argc, char **argv)
+{
+    util_init(argc, argv);
+    struct opts o;
+    opts_begin(&o, argc, argv);
+    bool no_create = false, only_a = false, only_m = false;
+    time_t stamp = time(NULL);
+    const char *ref = NULL;
+    int c;
+    while ((c = opts_next(&o, "camt:r:d:")) != -1) {
+        switch (c) {
+        case 'c': no_create = true; break;
+        case 'a': only_a = true; break;
+        case 'm': only_m = true; break;
+        case 't': if (!parse_stamp(o.arg, &stamp)) return util_err("invalid date format '%s'", o.arg); break;
+        case 'd': {
+            char *end;
+            long v = strtol(o.arg[0] == '@' ? o.arg + 1 : o.arg, &end, 10);
+            if (*end) return util_err("invalid date format '%s' (use @SECONDS)", o.arg);
+            stamp = (time_t)v;
+            break;
         }
-        if(len == 0) break;
-
-        if(!options_done && word[0] == '-' && word[1]){
-            if(pc_strcmp(word, "--") == 0){
-                options_done = true;
+        case 'r': ref = o.arg; break;
+        case 'L':
+            if (opts_long(&o, "no-create")) { no_create = true; break; }
+            if (opts_long(&o, "help")) { util_usage("[-cam] [-t STAMP] [-r FILE] [-d @SECONDS] FILE..."); return 0; }
+            return util_bad_option(&o, c);
+        default: return util_bad_option(&o, c);
+        }
+    }
+    if (!o.count) return util_err("missing file operand");
+    time_t ref_a = stamp, ref_m = stamp;
+    if (ref) {
+        struct stat st;
+        if (stat(ref, &st) != 0) return util_perr(ref);
+        ref_a = st.st_atime;
+        ref_m = st.st_mtime;
+    }
+    int rc = 0;
+    for (int i = 0; i < o.count; i++) {
+        const char *path = o.operands[i];
+        struct stat st;
+        bool exists = stat(path, &st) == 0;
+        if (!exists) {
+            if (no_create) continue;
+            int fd = open(path, O_WRONLY | O_CREAT, 0644);
+            if (fd < 0) {
+                rc = util_err("cannot touch '%s': %s", path, strerror(errno));
                 continue;
             }
-            if(pc_strcmp(word, "--help") == 0){
-                pc_write("usage: touch [-c] [-a] [-m] <file>...\n");
-                pc_write("Update file times to now, creating missing files.\n");
-                return 0;
-            }
-            if(pc_strcmp(word, "--no-create") == 0){
-                no_create = true;
-                continue;
-            }
-            bool valid = true;
-            for(const char *flag = word + 1; *flag; flag++){
-                if(*flag == 'c') no_create = true;
-                else if(*flag == 'a' || *flag == 'm' || *flag == 'f' || *flag == 'h'){
-                }
-                else valid = false;
-            }
-            if(!valid){
-                pc_write("touch: invalid option: ");
-                pc_write(word);
-                pc_write("\n");
-                return 1;
-            }
-            continue;
+            close(fd);
+            if (stat(path, &st) != 0) memset(&st, 0, sizeof(st));
         }
-
-        files++;
-        if(touch_one(word, no_create) != 0) failed = 1;
+        struct utimbuf times;
+        times.actime = (only_m && !only_a) ? st.st_atime : ref_a;
+        times.modtime = (only_a && !only_m) ? st.st_mtime : ref_m;
+        if (utime(path, &times) != 0) rc = util_err("setting times of '%s': %s", path, strerror(errno));
     }
-
-    if(files == 0){
-        pc_write("touch: file path required\n");
-        return 1;
-    }
-    return failed;
-}
-
-void _start(void){
-    pc_exit(touch_main());
+    return rc;
 }
