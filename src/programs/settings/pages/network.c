@@ -195,7 +195,6 @@ static int wifi_card(struct page_ctx *p, int y)
 {
     struct ui *u = p->u;
     const struct ui_palette *pal = &u->pal;
-    int y0 = y;
     int list_h = 0;
     int rows = st.count;
     int row_h = 58;
