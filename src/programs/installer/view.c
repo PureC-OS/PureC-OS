@@ -1075,10 +1075,21 @@ static void page_account(struct app *a, struct ui *u) {
 static void summary_row(struct ui *u, int32_t x, int32_t y, int32_t w,
                         const char *k, const char *v) {
     ui_text_bold(&u->c, x, y, k, C_MUTED, 8);
-    char shown[40];
+    char shown[160];
     ui_copy(shown, v, sizeof(shown));
+    int32_t room = w - 40;
+    if (ui_text_w(shown, 16) > room) {
+        uint32_t n = ui_strlen(shown);
+        while (n > 3 && ui_text_w(shown, 16) > room) {
+            shown[--n] = 0;
+            if (n >= 3) {
+                shown[n - 1] = '.';
+                shown[n - 2] = '.';
+                shown[n - 3] = '.';
+            }
+        }
+    }
     ui_text(&u->c, x, y + 14, shown, C_TEXT, 16, F_BODY);
-    (void)w;
 }
 
 static void page_review(struct app *a, struct ui *u) {
