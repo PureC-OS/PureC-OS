@@ -446,3 +446,41 @@ void pgc_line(struct pg_canvas *c, float x0, float y0, float x1, float y1, float
         }
     }
 }
+
+int pgc_text_wrap(struct pg_canvas *c, int font, int x, int y, int maxw, const char *s, uint32_t color)
+{
+    int line_h = pgc_font_h(font) + 4;
+    int cy = y;
+    char line[256];
+    while (s && *s) {
+        int n = 0, last_space = -1, w = 0;
+        const struct pgf_font *f = &pgf_fonts[font];
+        while (s[n] && s[n] != '\n' && n < (int)sizeof(line) - 1) {
+            unsigned ch = (unsigned char)s[n];
+            if (ch < 32 || ch > 126)
+                ch = '?';
+            int a = f->glyphs[ch - 32].adv;
+            if (w + a > maxw && n > 0)
+                break;
+            if (s[n] == ' ')
+                last_space = n;
+            w += a;
+            n++;
+        }
+        int take = n;
+        if (s[n] && s[n] != '\n' && last_space > 0)
+            take = last_space;
+        for (int i = 0; i < take; i++)
+            line[i] = s[i];
+        line[take] = 0;
+        if (c)
+            pgc_text(c, font, x, cy, line, color);
+        cy += line_h;
+        s += take;
+        while (*s == ' ')
+            s++;
+        if (*s == '\n')
+            s++;
+    }
+    return cy - y;
+}

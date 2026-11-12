@@ -26,6 +26,13 @@ struct pg_ui {
     bool modal;
     uint64_t now;
     int drag_x;
+    uint32_t dd_open;
+    int dd_x, dd_y, dd_w, dd_count, dd_sel;
+    const char *const *dd_labels;
+    uint32_t dd_changed;
+    int dd_result;
+    int block_x, block_y, block_w, block_h;
+    int prev_block_x, prev_block_y, prev_block_w, prev_block_h;
 };
 
 uint32_t pgu_id(const char *s, int n);
@@ -54,4 +61,12 @@ int pgu_badge(struct pg_ui *u, int x, int y, const char *text, uint32_t color);
 void pgu_kv(struct pg_ui *u, int x, int y, int w, const char *key, const char *value);
 void pgu_separator(struct pg_ui *u, int x, int y, int w);
 void pgu_icon_tile(struct pg_ui *u, int x, int y, int size, int icon, uint32_t color);
+void pgu_feed(struct pg_ui *u, const struct pg_window *w, const struct pg_event *ev);
+void pgu_frame_begin(struct pg_ui *u, struct pg_canvas *c, uint64_t now_ms);
+void pgu_frame_end(struct pg_ui *u);
+bool pgu_checkbox(struct pg_ui *u, uint32_t id, int x, int y, const char *label, bool *value);
+bool pgu_dropdown(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, const char *const *labels,
+                  int count, int *selected);
+bool pgu_tabs(struct pg_ui *u, uint32_t id, int x, int y, int w, const char *const *labels, int count,
+              int *selected);
 void pgu_signal_bars(struct pg_ui *u, int x, int y, int rssi, uint32_t color);
