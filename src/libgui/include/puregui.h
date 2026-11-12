@@ -91,6 +91,7 @@ struct pg_window {
 const char *pg_version(void);
 struct pg_theme pg_theme_default(void);
 struct pg_theme pg_theme_by_name(const char *name);
+struct pg_theme pg_theme_system(void);
 uint32_t pg_theme_count(void);
 const char *pg_theme_name_at(uint32_t index);
 bool pg_window_init(struct pg_window *window, const char *title,

@@ -65,3 +65,37 @@ struct pg_theme pg_theme_by_name(const char *name)
     }
     return pg_theme_default();
 }
+
+struct pg_theme pg_theme_system(void)
+{
+    static char name[40];
+    static bool loaded;
+    static uint64_t last;
+    struct time_info t;
+    uint64_t now = pc_time_get(&t) < 0 ? 0 : t.uptime_ms;
+    if (!loaded || now - last >= 1000) {
+        last = now;
+        loaded = true;
+        int32_t fd = pc_file_open("/config/appear.ini");
+        if (fd >= 0) {
+            char buf[512];
+            int32_t n = pc_file_read(fd, buf, sizeof(buf) - 1);
+            (void)pc_file_close(fd);
+            if (n > 0) {
+                buf[n] = 0;
+                for (int32_t i = 0; i < n; i++) {
+                    if ((i == 0 || buf[i - 1] == '\n') && buf[i] == 't' && buf[i + 1] == 'h' &&
+                        buf[i + 2] == 'e' && buf[i + 3] == 'm' && buf[i + 4] == 'e' && buf[i + 5] == '=') {
+                        int k = 0;
+                        i += 6;
+                        while (i < n && buf[i] != '\n' && buf[i] != '\r' && k < (int)sizeof(name) - 1)
+                            name[k++] = buf[i++];
+                        name[k] = 0;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    return name[0] ? pg_theme_by_name(name) : pg_theme_default();
+}

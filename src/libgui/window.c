@@ -131,7 +131,7 @@ bool pg_window_init(struct pg_window *window, const char *title,
     if (y > display.height - height)
         y = display.height - height;
     window->frame = (struct pg_rect){x, y, width, height};
-    window->theme = pg_theme_default();
+    window->theme = pg_theme_system();
     pg_font_sync();
     pc_copy(window->title, title ? title : "PureGUI", sizeof(window->title));
     window->previous_mouse_x = -1;
@@ -184,6 +184,7 @@ void pg_window_begin(struct pg_window *window)
         return;
     (void)pg_internal_sync_frame(window, pc_gui_window_state());
     surface_sync(window);
+    window->theme = pg_theme_system();
     pc_display_begin_update();
     if (window->frameless)
     {

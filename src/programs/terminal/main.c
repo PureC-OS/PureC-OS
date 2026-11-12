@@ -1,7 +1,15 @@
 #include "../../libgui/include/puregui.h"
 #include "../../libgui/include/pg_ui.h"
 #include "../../libc/include/purec.h"
+#include "../../drivers/input/keyboard.h"
 #include "vt.h"
+
+struct tty_winsize {
+    uint16_t rows;
+    uint16_t columns;
+    uint16_t xpixel;
+    uint16_t ypixel;
+};
 
 #define MAX_TABS 8
 #define TAB_BAR_H 40
@@ -432,10 +440,8 @@ static void draw_terminal(struct pg_ui *u, struct session *s)
 
 static void render(struct pg_window *w)
 {
-    struct pg_theme theme = pg_theme_by_name(0);
-    w->theme = theme;
-    pgu_palette_from_theme(&ui.pal, &w->theme);
     pg_window_begin(w);
+    pgu_palette_from_theme(&ui.pal, &w->theme);
     if (!pg_window_is_minimized(w)) {
         struct pg_canvas *c = pg_window_canvas(w);
         if (c) {
@@ -457,11 +463,8 @@ static void resize_all(const struct pg_window *w)
         if (!s->used || (s->vt.cols == cols && s->vt.rows == rows))
             continue;
         vt_resize(&s->vt, cols, rows);
-        if (!s->exited) {
+        if (!s->exited)
             set_winsize(s);
-            if (s->pid > 0)
-                (void)pc_syscall(SYS_KILL, (uint64_t)s->pid, 28, 0);
-        }
     }
 }
 
