@@ -263,7 +263,7 @@ $(UTIL_OBJECTS): $(OBJ_DIR)/utils/%.o: $(ROOT_DIR)/src/programs/utils/%.c
 define UTIL_RULE
 $(PROGRAM_DIR)/$(1): $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $$(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $$@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIBPUREFS) $(LIBPUREC)
+	$(LD) -S -T $(LINKER_SCRIPT) -o $$@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIBPUREFS) $(LIBPUREC)
 endef
 $(foreach u,$(UTILS),$(eval $(call UTIL_RULE,$(u))))
 
