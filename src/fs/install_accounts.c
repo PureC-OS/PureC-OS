@@ -69,6 +69,26 @@ bool install_account_gecos_valid(const char *text) {
   return true;
 }
 
+static bool same_text(const char *a, const char *b) {
+  uint32_t i = 0;
+  while (a[i] && a[i] == b[i])
+    i++;
+  return a[i] == b[i];
+}
+
+bool install_account_user_valid(const struct install_user *user) {
+  if (!user || !install_account_name_valid(user->name) || user->name[0] == '_')
+    return false;
+  if (same_text(user->name, "root"))
+    return false;
+  if (!bounded(user->gecos, INSTALL_GECOS_MAX) || !user->gecos[0] ||
+      !install_account_gecos_valid(user->gecos))
+    return false;
+  if (!install_account_hash_valid(user->hash))
+    return false;
+  return user->uid >= INSTALL_FIRST_UID && user->uid < 60000;
+}
+
 bool install_accounts_valid(const struct install_account_request *request) {
   if (!request || !request->present)
     return false;
@@ -76,18 +96,18 @@ bool install_accounts_valid(const struct install_account_request *request) {
     return false;
   if (!install_account_hash_valid(request->root_hash))
     return false;
-  if (!install_account_name_valid(request->user_name) ||
-      request->user_name[0] == '_')
+  if (request->user_count > INSTALL_USERS_MAX)
     return false;
-  const char *name = request->user_name;
-  if (name[0] == 'r' && name[1] == 'o' && name[2] == 'o' && name[3] == 't' &&
-      !name[4])
-    return false;
-  if (!install_account_gecos_valid(request->user_gecos))
-    return false;
-  if (!install_account_hash_valid(request->user_hash))
-    return false;
-  return request->user_uid >= INSTALL_FIRST_UID && request->user_uid < 60000;
+  for (uint32_t i = 0; i < request->user_count; i++) {
+    const struct install_user *user = &request->users[i];
+    if (!install_account_user_valid(user))
+      return false;
+    for (uint32_t j = 0; j < i; j++)
+      if (same_text(request->users[j].name, user->name) ||
+          request->users[j].uid == user->uid)
+        return false;
+  }
+  return true;
 }
 
 struct writer {
@@ -135,19 +155,23 @@ int32_t install_accounts_render(const struct install_account_request *request,
   if (!out || !install_accounts_valid(request))
     return FS_ERROR_INVALID;
   struct writer w;
+  uint32_t count = request->user_count;
 
   start(&w, out->passwd, sizeof(out->passwd));
   put_text(&w, "root:x:0:0:root:/root:" INSTALL_SHELL_DEFAULT "\n");
-  put_text(&w, request->user_name);
-  put_text(&w, ":x:");
-  put_number(&w, request->user_uid);
-  put_text(&w, ":");
-  put_number(&w, INSTALL_USERS_GID);
-  put_text(&w, ":");
-  put_text(&w, request->user_gecos);
-  put_text(&w, ":/home/");
-  put_text(&w, request->user_name);
-  put_text(&w, ":" INSTALL_SHELL_DEFAULT "\n");
+  for (uint32_t i = 0; i < count; i++) {
+    const struct install_user *u = &request->users[i];
+    put_text(&w, u->name);
+    put_text(&w, ":x:");
+    put_number(&w, u->uid);
+    put_text(&w, ":");
+    put_number(&w, INSTALL_USERS_GID);
+    put_text(&w, ":");
+    put_text(&w, u->gecos);
+    put_text(&w, ":/home/");
+    put_text(&w, u->name);
+    put_text(&w, ":" INSTALL_SHELL_DEFAULT "\n");
+  }
   if (w.failed)
     return FS_ERROR_NO_SPACE;
 
@@ -155,18 +179,36 @@ int32_t install_accounts_render(const struct install_account_request *request,
   put_text(&w, "root:");
   put_text(&w, request->root_hash);
   put_text(&w, ":::::::\n");
-  put_text(&w, request->user_name);
-  put_text(&w, ":");
-  put_text(&w, request->user_hash);
-  put_text(&w, ":::::::\n");
+  for (uint32_t i = 0; i < count; i++) {
+    put_text(&w, request->users[i].name);
+    put_text(&w, ":");
+    put_text(&w, request->users[i].hash);
+    put_text(&w, ":::::::\n");
+  }
   if (w.failed)
     return FS_ERROR_NO_SPACE;
 
   start(&w, out->group, sizeof(out->group));
-  put_text(&w, "root:x:0:\nusers:x:");
+  put_text(&w, "root:x:0:\nwheel:x:");
+  put_number(&w, INSTALL_WHEEL_GID);
+  put_text(&w, ":");
+  bool first = true;
+  for (uint32_t i = 0; i < count; i++) {
+    if (!request->users[i].admin)
+      continue;
+    if (!first)
+      put_text(&w, ",");
+    put_text(&w, request->users[i].name);
+    first = false;
+  }
+  put_text(&w, "\nusers:x:");
   put_number(&w, INSTALL_USERS_GID);
   put_text(&w, ":");
-  put_text(&w, request->user_name);
+  for (uint32_t i = 0; i < count; i++) {
+    if (i)
+      put_text(&w, ",");
+    put_text(&w, request->users[i].name);
+  }
   put_text(&w, "\n");
   if (w.failed)
     return FS_ERROR_NO_SPACE;
@@ -174,12 +216,6 @@ int32_t install_accounts_render(const struct install_account_request *request,
   start(&w, out->hostname, sizeof(out->hostname));
   put_text(&w, request->hostname);
   put_text(&w, "\n");
-  if (w.failed)
-    return FS_ERROR_NO_SPACE;
-
-  start(&w, out->home, sizeof(out->home));
-  put_text(&w, "/home/");
-  put_text(&w, request->user_name);
   if (w.failed)
     return FS_ERROR_NO_SPACE;
   return 0;
