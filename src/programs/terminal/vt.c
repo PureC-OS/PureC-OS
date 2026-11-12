@@ -6,10 +6,10 @@ void free(void *pointer);
 
 enum { S_GROUND, S_ESC, S_CSI, S_OSC, S_OSC_ESC, S_STR, S_STR_ESC, S_CHARSET };
 
-static const uint16_t dec_graphics[32] = {
+static const uint16_t dec_graphics[31] = {
     0x25C6, 0x2592, 0x2409, 0x240C, 0x240D, 0x240A, 0x00B0, 0x00B1, 0x2424, 0x240B, 0x2518,
     0x2510, 0x250C, 0x2514, 0x253C, 0x23BA, 0x23BB, 0x2500, 0x23BC, 0x23BD, 0x251C, 0x2524,
-    0x2534, 0x252C, 0x2502, 0x2264, 0x2265, 0x03C0, 0x2260, 0x00A3, 0x00B7, 0x0020,
+    0x2534, 0x252C, 0x2502, 0x2264, 0x2265, 0x03C0, 0x2260, 0x00A3, 0x00B7,
 };
 
 static void cell_clear(struct vt *vt, struct vt_cell *c)
@@ -172,30 +172,16 @@ void vt_resize(struct vt *vt, int cols, int rows)
                 push_scrollback(vt, &s[i * vt->cols]);
             vt->screen = saved;
         }
-        static struct vt_cell tmp[VT_MAX_COLS];
-        if (cols > vt->cols) {
-            for (int y = rows - 1; y >= 0; y--) {
-                int sy = y + sh;
-                for (int x = 0; x < cols; x++) {
-                    if (sy < vt->rows && x < vt->cols)
-                        tmp[x] = s[sy * vt->cols + x];
-                    else
-                        cell_clear(vt, &tmp[x]);
-                }
-                for (int x = 0; x < cols; x++)
-                    s[y * cols + x] = tmp[x];
-            }
-        } else {
-            for (int y = 0; y < rows; y++) {
-                int sy = y + sh;
-                for (int x = 0; x < cols; x++) {
-                    if (sy < vt->rows)
-                        tmp[x] = s[sy * vt->cols + x];
-                    else
-                        cell_clear(vt, &tmp[x]);
-                }
-                for (int x = 0; x < cols; x++)
-                    s[y * cols + x] = tmp[x];
+        static struct vt_cell old[VT_MAX_COLS * VT_MAX_ROWS];
+        for (int i = 0; i < vt->cols * vt->rows; i++)
+            old[i] = s[i];
+        for (int y = 0; y < rows; y++) {
+            int sy = y + sh;
+            for (int x = 0; x < cols; x++) {
+                if (sy < vt->rows && x < vt->cols)
+                    s[y * cols + x] = old[sy * vt->cols + x];
+                else
+                    cell_clear(vt, &s[y * cols + x]);
             }
         }
     }
@@ -256,8 +242,10 @@ static void reverse_index(struct vt *vt)
 static void put_char(struct vt *vt, uint32_t ch)
 {
     bool graphics = vt->gl ? vt->g1_graphics : vt->g0_graphics;
-    if (graphics && ch >= 0x5f && ch <= 0x7e)
-        ch = dec_graphics[ch - 0x5f];
+    if (graphics && ch == 0x5f)
+        ch = ' ';
+    else if (graphics && ch >= 0x60 && ch <= 0x7e)
+        ch = dec_graphics[ch - 0x60];
     if (vt->wrap_pending) {
         if (vt->autowrap) {
             vt->cx = 0;
@@ -899,8 +887,6 @@ static void feed(struct vt *vt, uint8_t c)
             return;
         }
         if (c >= 0x40 && c <= 0x7e) {
-            if (vt->param_started == false && vt->nparams && vt->params[vt->nparams - 1] != -1)
-                ;
             csi_dispatch(vt, (char)c);
             vt->state = S_GROUND;
         }
