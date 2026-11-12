@@ -201,8 +201,8 @@ int uname(struct utsname *name)
     memset(name, 0, sizeof(*name));
     strcpy(name->sysname, "PureC");
     strcpy(name->nodename, "purec");
-    strcpy(name->release, "1.0");
-    strcpy(name->version, "purec-os");
+    strcpy(name->release, "1.2.29");
+    strcpy(name->version, "#1 SMP PureC OS");
     strcpy(name->machine, "x86_64");
     char host[64];
     if (pc_getenv("HOSTNAME", host, sizeof(host)) > 0)

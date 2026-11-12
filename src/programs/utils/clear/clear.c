@@ -1,6 +1,9 @@
-#include "../../libc/include/purec.h"
+#include "../lib/common.h"
 
-void _start(void){
-    pc_write("\x1b[H\x1b[2J\x1b[3J");
-    pc_exit(0);
+int main(int argc, char **argv)
+{
+    util_init(argc, argv);
+    bool keep = argc > 1 && !strcmp(argv[1], "-x");
+    fputs(keep ? "\x1b[H\x1b[2J" : "\x1b[H\x1b[2J\x1b[3J", stdout);
+    return 0;
 }
