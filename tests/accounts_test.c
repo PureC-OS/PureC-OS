@@ -14,12 +14,13 @@ int main(void) {
   struct install_account_request request;
   memset(&request, 0, sizeof(request));
   request.present = 1;
-  request.user_uid = 1000;
+  request.user_count = 1;
+  request.users[0].uid = 1000;
   strcpy(request.hostname, "box");
   strcpy(request.root_hash, root_hash);
-  strcpy(request.user_name, "ann");
-  strcpy(request.user_gecos, "Ann");
-  strcpy(request.user_hash, user_hash);
+  strcpy(request.users[0].name, "ann");
+  strcpy(request.users[0].gecos, "Ann");
+  strcpy(request.users[0].hash, user_hash);
   struct install_account_files files;
   assert(install_accounts_render(&request, &files) == 0);
 
