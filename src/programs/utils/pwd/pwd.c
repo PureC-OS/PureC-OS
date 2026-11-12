@@ -1,17 +1,22 @@
-#include "../../libc/include/purec.h"
+#include "../lib/common.h"
 
-#define PWD_CAPACITY 256
-
-int pwd_main(void){
-    char dir[PWD_CAPACITY];
-    if(pc_getenv("PWD", dir, sizeof(dir)) < 0 || !dir[0]){
-        pc_copy(dir, "/", sizeof(dir));
+int main(int argc, char **argv)
+{
+    util_init(argc, argv);
+    bool physical = false;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "-P")) physical = true;
+        else if (!strcmp(argv[i], "-L")) physical = false;
+        else if (!strcmp(argv[i], "--help")) { util_usage("[-LP]"); return 0; }
+        else return util_err("invalid option '%s'", argv[i]);
     }
-    pc_write(dir);
-    pc_write("\n");
+    const char *env = getenv("PWD");
+    if (!physical && env && env[0] == '/') {
+        puts(env);
+        return 0;
+    }
+    char buf[UTIL_PATH];
+    if (!getcwd(buf, sizeof(buf))) return util_perr("getcwd");
+    puts(buf);
     return 0;
-}
-
-void _start(void){
-    pc_exit(pwd_main());
 }

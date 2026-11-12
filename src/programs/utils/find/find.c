@@ -1,5 +1,6 @@
 #include "../lib/common.h"
 #include <fnmatch.h>
+#include <time.h>
 
 enum { T_NAME, T_INAME, T_PATH, T_TYPE, T_SIZE, T_EMPTY, T_NEWER, T_MTIME, T_PRINT, T_PRINT0, T_EXEC, T_DELETE, T_TRUE, T_PERM };
 
