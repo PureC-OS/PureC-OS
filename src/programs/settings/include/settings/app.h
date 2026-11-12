@@ -43,6 +43,7 @@ struct page_ctx {
 
 void settings_app_init(struct settings_app *app);
 void settings_app_frame(struct settings_app *app, struct ui *u, int w, int h);
+uint64_t settings_now(void);
 void settings_toast(struct settings_app *app, const char *text, uint32_t color);
 bool settings_page_wants_live(int page);
 

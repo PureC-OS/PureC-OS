@@ -50,11 +50,19 @@ void settings_app_init(struct settings_app *app)
     app->refresh = true;
 }
 
+uint64_t settings_now(void)
+{
+    struct time_info t;
+    if (pc_time_get(&t) < 0)
+        return 0;
+    return t.uptime_ms;
+}
+
 void settings_toast(struct settings_app *app, const char *text, uint32_t color)
 {
     fmt_copy(app->toast, text, sizeof(app->toast));
     app->toast_color = color;
-    app->toast_until = pc_time_monotonic_ms() + 2600;
+    app->toast_until = settings_now() + 2600;
 }
 
 bool settings_page_wants_live(int page)
