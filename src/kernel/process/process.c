@@ -2383,6 +2383,17 @@ int32_t process_set_gid(uint32_t gid)
   return 0;
 }
 
+bool process_session_user(uint32_t *uid, uint32_t *gid)
+{
+  if (!session_active)
+    return false;
+  if (uid)
+    *uid = session_uid;
+  if (gid)
+    *gid = session_gid;
+  return true;
+}
+
 int32_t process_session_begin(uint32_t uid, uint32_t gid)
 {
   struct process *process = process_current();

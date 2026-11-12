@@ -110,6 +110,7 @@ int32_t process_session_begin(uint32_t uid, uint32_t gid);
 int32_t process_set_uid(uint32_t uid);
 int32_t process_set_gid(uint32_t gid);
 void process_grant_root(void);
+bool process_session_user(uint32_t *uid, uint32_t *gid);
 bool process_has_capability(uint32_t capability);
 uint64_t process_current_address_space(void);
 uint64_t process_heap_grow(uint64_t size);
