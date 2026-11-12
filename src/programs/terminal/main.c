@@ -28,6 +28,21 @@ struct session {
 };
 
 static struct session tabs[MAX_TABS];
+static int32_t reap_pids[32];
+static int reap_count;
+
+static void reap_pending(void)
+{
+    for (int i = 0; i < reap_count;) {
+        int32_t st;
+        int64_t r = pc_syscall(SYS_WAITPID, (uint64_t)reap_pids[i], (uint64_t)(uintptr_t)&st, 1);
+        if (r == 0) {
+            i++;
+            continue;
+        }
+        reap_pids[i] = reap_pids[--reap_count];
+    }
+}
 static int active;
 static struct pg_ui ui;
 static int font_level = 1;
@@ -227,7 +242,13 @@ static void close_tab(int i)
         (void)pc_syscall(SYS_FILE_CLOSE, (uint64_t)s->master, 0, 0);
     if (s->pid > 0) {
         int32_t st;
-        (void)pc_syscall(SYS_WAITPID, (uint64_t)s->pid, (uint64_t)(uintptr_t)&st, 1);
+        if (pc_syscall(SYS_WAITPID, (uint64_t)s->pid, (uint64_t)(uintptr_t)&st, 1) == 0) {
+            if (reap_count == (int)(sizeof(reap_pids) / sizeof(reap_pids[0])))
+                reap_pending();
+            if (reap_count < (int)(sizeof(reap_pids) / sizeof(reap_pids[0])))
+                reap_pids[reap_count++] = s->pid;
+        }
+        s->pid = 0;
     }
     vt_free(&s->vt);
     s->used = false;
@@ -280,6 +301,8 @@ static bool pump(void)
             }
         }
     }
+    if (reap_count)
+        reap_pending();
     return any;
 }
 
