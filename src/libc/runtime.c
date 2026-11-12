@@ -434,6 +434,7 @@ int32_t pc_getrandom(void *buffer, uint32_t count){
 }
 
 int32_t pc_getuid(void){ return (int32_t)pc_syscall(SYS_GETUID,0,0,0); }
+int32_t pc_sudo(const char *password){ return (int32_t)pc_syscall(SYS_SUDO,(uint64_t)(uintptr_t)password,0,0); }
 int32_t pc_getgid(void){ return (int32_t)pc_syscall(SYS_GETGID,0,0,0); }
 int32_t pc_setuid(uint32_t uid){ return (int32_t)pc_syscall(SYS_SETUID,uid,0,0); }
 int32_t pc_setgid(uint32_t gid){ return (int32_t)pc_syscall(SYS_SETGID,gid,0,0); }
