@@ -101,7 +101,6 @@
 #define SYS_DIR_LIST_LONG 288
 #define SYS_IPC_SEND 291
 #define SYS_IPC_RECV 292
-#define SYS_PANIC_TEST 299
 /* TCP sockets. a1 packs handle (low 32 bits) | timeout_ms << 32 where the
  * call can block; timeout 0 = never block, 0xFFFFFFFF = wait forever. */
 #define SYS_TCP_SOCKET 300  /* () -> handle */

@@ -2562,14 +2562,6 @@ int64_t syscall_handler(struct syscall_regs *r)
     filesystem_syscall_unlock();
     return r;
   }
-  case SYS_PANIC_TEST:
-  {
-
-    const char *msg = "SYS_PANIC_TEST called by userspace";
-    if (a1 && readable_string((const char *)(uintptr_t)a1))
-      msg = (const char *)(uintptr_t)a1;
-    KERNEL_PANIC_HERE(msg);
-  }
   case SYS_TCP_SOCKET:
     return tcp_socket_owned(process_current()->pid);
   case SYS_TCP_CONNECT:
