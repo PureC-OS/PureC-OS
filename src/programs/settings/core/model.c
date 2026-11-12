@@ -52,7 +52,9 @@ void settings_model_init(struct settings_model *model){
 }
 
 bool settings_model_load(struct settings_model *model){
-    int32_t descriptor=pf_open(SETTINGS_PATH);
+    char cfg[192];
+    pc_config_path("settings.ini",cfg,sizeof(cfg),false);
+    int32_t descriptor=pf_open(cfg);
     if(descriptor<0) return false;
     char buffer[256]={0};
     int32_t amount=pf_read(descriptor,buffer,sizeof(buffer)-1);
@@ -90,8 +92,9 @@ bool settings_model_save(const struct settings_model *model){
     out=append_text(out,"\ndevice=");
     out=append_u32(out,(uint32_t)model->device);
     out=append_text(out,"\n");
-    (void)pf_create_dir(SETTINGS_DIRECTORY);
-    return pf_write_file(SETTINGS_PATH,buffer,(uint32_t)(out-buffer))>=0;
+    char cfg[192];
+    pc_config_path("settings.ini",cfg,sizeof(cfg),true);
+    return pf_write_file(cfg,buffer,(uint32_t)(out-buffer))>=0;
 }
 
 bool settings_model_apply(struct settings_model *model){

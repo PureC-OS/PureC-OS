@@ -24,7 +24,9 @@ static struct {
 
 static void load_saved(void)
 {
-    int32_t fd = pf_open(WIFI_INI_PATH);
+    char cfg[192];
+    pc_config_path("wifi.ini", cfg, sizeof(cfg), false);
+    int32_t fd = pf_open(cfg);
     if (fd < 0)
         return;
     char buf[256];
@@ -57,8 +59,9 @@ static bool save_cfg(const char *ssid, const char *password)
     struct fmt f;
     fmt_init(&f, buf, sizeof(buf));
     fs(fs(fs(fs(fs(&f, "ssid="), ssid), "\npassword="), password), "\n");
-    (void)pf_create_dir(WIFI_INI_DIR);
-    if (pf_write_file(WIFI_INI_PATH, buf, (uint32_t)f.len) < 0)
+    char cfg[192];
+    pc_config_path("wifi.ini", cfg, sizeof(cfg), true);
+    if (pf_write_file(cfg, buf, (uint32_t)f.len) < 0)
         return false;
     fmt_copy(st.saved_ssid, ssid, sizeof(st.saved_ssid));
     fmt_copy(st.saved_pass, password, sizeof(st.saved_pass));

@@ -21,7 +21,7 @@ static void commit(struct settings_app *app, const char *what)
         settings_toast(app, what, 0xa6e3a1);
         pc_desktop_redraw();
     } else {
-        settings_toast(app, "Could not save /config/appear.ini (read-only disk?)", 0xf38ba8);
+        settings_toast(app, "Could not save ~/.config/purec/appear.ini", 0xf38ba8);
     }
 }
 
@@ -120,7 +120,7 @@ int page_appearance(struct page_ctx *p)
     int wh = 84 + wrows * (wth + 40 + wgap) + 4;
     pgu_card(u, p->x, y, p->w, wh);
     pgu_card_title(u, p->x + 20, y + 20, PGI_WALLPAPER, "Wallpaper",
-                  "PNG or BMP, stretched to the screen. Add your own as /config/wp.png");
+                  "PNG or BMP, stretched to the screen. Add your own as ~/.config/purec/wp.png");
     bool decoded_one = false;
     for (int i = 0; i < wcount; i++) {
         const char *path = appearance_wallpaper_at((uint32_t)i);
