@@ -3247,10 +3247,22 @@ static int edit_line(char *line, size_t size) {
     return 1;
 }
 
+static void reap_background_jobs(void) {
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        if (WIFSIGNALED(status)) printf("[%d] Killed (signal %d)\n", (int)pid, WTERMSIG(status));
+        else if (WEXITSTATUS(status)) printf("[%d] Exit %d\n", (int)pid, WEXITSTATUS(status));
+        else printf("[%d] Done\n", (int)pid);
+    }
+    fflush(stdout);
+}
+
 static void interactive_loop(void) {
     char line[1024];
     history_load();
     for (;;) {
+        reap_background_jobs();
         if (!edit_line(line, sizeof(line))) break;
         if (strcmp(line, "history\n") == 0) {
             for (int i = 0; i < history_count; i++) printf("%5d  %s\n", i + 1, history[i]);
