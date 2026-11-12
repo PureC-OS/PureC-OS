@@ -3,6 +3,49 @@
 
 #define PG_MINIMUM_WIDTH 160
 #define PG_MINIMUM_HEIGHT 96
+#define PG_SURFACE_MARGIN 8
+
+static uint32_t *surface_px;
+static uint64_t surface_cap;
+static uint32_t surface_w, surface_h;
+static int32_t surface_x, surface_y;
+
+static void surface_sync(struct pg_window *window){
+    if(!window || !window->registered) return;
+    uint32_t w=window->frame.width+PG_SURFACE_MARGIN;
+    uint32_t h=window->frame.height+PG_SURFACE_MARGIN;
+    if(w!=surface_w || h!=surface_h || !surface_px){
+        uint64_t need=(uint64_t)w*h;
+        if(need>surface_cap){
+            uint32_t *mem=pc_heap_grow(need*sizeof(uint32_t));
+            if(!mem){
+                pc_surface_detach();
+                surface_px=0;
+                surface_cap=0;
+                surface_w=surface_h=0;
+                return;
+            }
+            surface_px=mem;
+            surface_cap=need;
+        }
+        for(uint64_t i=0;i<need;i++) surface_px[i]=0;
+        surface_w=w;
+        surface_h=h;
+        surface_x=(int32_t)window->frame.x;
+        surface_y=(int32_t)window->frame.y;
+        pc_surface_attach(surface_px,w,h,surface_x,surface_y);
+        return;
+    }
+    if(surface_x!=(int32_t)window->frame.x || surface_y!=(int32_t)window->frame.y){
+        surface_x=(int32_t)window->frame.x;
+        surface_y=(int32_t)window->frame.y;
+        pc_surface_move(surface_x,surface_y);
+    }
+}
+
+void pg_internal_surface_sync(struct pg_window *window){
+    surface_sync(window);
+}
 
 static void update_client_rect(struct pg_window *window)
 {
@@ -69,7 +112,9 @@ bool pg_internal_update_registered_frame(struct pg_window *window)
         .height = (window->minimized && !window->server)
                       ? PG_TITLEBAR_HEIGHT + PG_WINDOW_BORDER * 2
                       : window->frame.height};
-    return pc_gui_window_update(&request);
+    bool ok = pc_gui_window_update(&request);
+    surface_sync(window);
+    return ok;
 }
 
 bool pg_window_init(struct pg_window *window, const char *title,
@@ -119,6 +164,7 @@ bool pg_window_init(struct pg_window *window, const char *title,
     window->registered = true;
     (void)pc_gui_window_set_title(window->title);
     (void)pg_internal_sync_frame(window, pc_gui_window_state());
+    surface_sync(window);
     return true;
 }
 
@@ -137,6 +183,7 @@ void pg_window_begin(struct pg_window *window)
     if (!window || !window->open)
         return;
     (void)pg_internal_sync_frame(window, pc_gui_window_state());
+    surface_sync(window);
     pc_display_begin_update();
     if (window->frameless)
     {
@@ -199,6 +246,8 @@ void pg_window_close(struct pg_window *window)
     if (!window)
         return;
     window->open = false;
+    pc_surface_detach();
+    surface_w = surface_h = 0;
     if (window->registered)
     {
         pc_gui_window_unregister();
