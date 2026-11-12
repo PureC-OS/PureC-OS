@@ -6,12 +6,14 @@
 struct pg_canvas {
     uint32_t *px;
     int w, h;
+    int stride;
     int cx0, cy0, cx1, cy1;
 };
 
 enum pg_icon_size { PG_ICON_S = 0, PG_ICON_M = 1, PG_ICON_L = 2 };
 
 void pgc_init(struct pg_canvas *c, uint32_t *px, int w, int h);
+void pgc_init_stride(struct pg_canvas *c, uint32_t *px, int w, int h, int stride);
 void pgc_clip(struct pg_canvas *c, int x, int y, int w, int h);
 void pgc_unclip(struct pg_canvas *c);
 struct pg_clip { int x0, y0, x1, y1; };

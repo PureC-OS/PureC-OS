@@ -4,10 +4,17 @@
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
 
+void pgc_init_stride(struct pg_canvas *c, uint32_t *px, int w, int h, int stride)
+{
+    pgc_init(c, px, w, h);
+    c->stride = stride;
+}
+
 void pgc_init(struct pg_canvas *c, uint32_t *px, int w, int h)
 {
     c->px = px;
     c->w = w;
+    c->stride = w;
     c->h = h;
     pgc_unclip(c);
 }
@@ -79,17 +86,17 @@ static inline void blend(struct pg_canvas *c, int x, int y, uint32_t color, uint
 {
     if (x < c->cx0 || y < c->cy0 || x >= c->cx1 || y >= c->cy1 || a == 0)
         return;
-    uint32_t *p = &c->px[y * c->w + x];
-    *p = a >= 255 ? (color & 0xffffff) : pgc_mix(*p, color, a);
+    uint32_t *p = &c->px[y * c->stride + x];
+    *p = (a >= 255 ? color : pgc_mix(*p, color, a)) | 0xFF000000u;
 }
 
 void pgc_fill(struct pg_canvas *c, int x, int y, int w, int h, uint32_t color)
 {
     int x0 = imax(x, c->cx0), y0 = imax(y, c->cy0);
     int x1 = imin(x + w, c->cx1), y1 = imin(y + h, c->cy1);
-    color &= 0xffffff;
+    color |= 0xFF000000u;
     for (int yy = y0; yy < y1; yy++) {
-        uint32_t *row = &c->px[yy * c->w];
+        uint32_t *row = &c->px[yy * c->stride];
         for (int xx = x0; xx < x1; xx++)
             row[xx] = color;
     }
@@ -104,9 +111,9 @@ void pgc_fill_a(struct pg_canvas *c, int x, int y, int w, int h, uint32_t color,
     int x0 = imax(x, c->cx0), y0 = imax(y, c->cy0);
     int x1 = imin(x + w, c->cx1), y1 = imin(y + h, c->cy1);
     for (int yy = y0; yy < y1; yy++) {
-        uint32_t *row = &c->px[yy * c->w];
+        uint32_t *row = &c->px[yy * c->stride];
         for (int xx = x0; xx < x1; xx++)
-            row[xx] = pgc_mix(row[xx], color, alpha);
+            row[xx] = pgc_mix(row[xx], color, alpha) | 0xFF000000u;
     }
 }
 
@@ -160,7 +167,7 @@ static void rrect_impl(struct pg_canvas *c, int x, int y, int w, int h, int r, u
     int x1 = imin(x + w, c->cx1), y1 = imin(y + h, c->cy1);
     for (int yy = y0; yy < y1; yy++) {
         int in_corner_rows = yy < y + r || yy >= y + h - r;
-        uint32_t *row = &c->px[yy * c->w];
+        uint32_t *row = &c->px[yy * c->stride];
         for (int xx = x0; xx < x1; xx++) {
             uint32_t cov = 255;
             if (in_corner_rows && (xx < x + r || xx >= x + w - r))
@@ -173,7 +180,7 @@ static void rrect_impl(struct pg_canvas *c, int x, int y, int w, int h, int r, u
             else if (grad == 2)
                 col = pgc_mix(c0, c1, w > 1 ? (uint32_t)((xx - x) * 255 / (w - 1)) : 0);
             uint32_t a = cov * alpha / 255;
-            row[xx] = a >= 255 ? (col & 0xffffff) : pgc_mix(row[xx], col, a);
+            row[xx] = (a >= 255 ? col : pgc_mix(row[xx], col, a)) | 0xFF000000u;
         }
     }
 }
@@ -198,7 +205,7 @@ void pgc_rrect_stroke(struct pg_canvas *c, int x, int y, int w, int h, int r, ui
     int x0 = imax(x, c->cx0), y0 = imax(y, c->cy0);
     int x1 = imin(x + w, c->cx1), y1 = imin(y + h, c->cy1);
     for (int yy = y0; yy < y1; yy++) {
-        uint32_t *row = &c->px[yy * c->w];
+        uint32_t *row = &c->px[yy * c->stride];
         int edge_row = yy == y || yy == y + h - 1;
         int corner_rows = yy < y + r || yy >= y + h - r;
         for (int xx = x0; xx < x1; xx++) {
@@ -215,7 +222,7 @@ void pgc_rrect_stroke(struct pg_canvas *c, int x, int y, int w, int h, int r, ui
             }
             uint32_t a = cov * alpha / 255;
             if (a)
-                row[xx] = a >= 255 ? (color & 0xffffff) : pgc_mix(row[xx], color, a);
+                row[xx] = (a >= 255 ? color : pgc_mix(row[xx], color, a)) | 0xFF000000u;
         }
     }
 }
@@ -385,14 +392,14 @@ void pgc_image(struct pg_canvas *c, int x, int y, int w, int h, const uint32_t *
     int x1 = imin(x + w, c->cx1), y1 = imin(y + h, c->cy1);
     for (int yy = y0; yy < y1; yy++) {
         const uint32_t *src = px + (yy - y) * w;
-        uint32_t *row = &c->px[yy * c->w];
+        uint32_t *row = &c->px[yy * c->stride];
         bool corner_rows = yy < y + r || yy >= y + h - r;
         for (int xx = x0; xx < x1; xx++) {
             uint32_t cov = 255;
             if (corner_rows && (xx < x + r || xx >= x + w - r))
                 cov = corner_cov(xx, yy, x, y, w, h, r);
             if (cov)
-                row[xx] = cov >= 255 ? (src[xx - x] & 0xffffff) : pgc_mix(row[xx], src[xx - x], cov);
+                row[xx] = (cov >= 255 ? src[xx - x] : pgc_mix(row[xx], src[xx - x], cov)) | 0xFF000000u;
         }
     }
 }
