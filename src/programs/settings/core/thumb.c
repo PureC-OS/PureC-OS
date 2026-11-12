@@ -3,6 +3,7 @@
 
 #define WP_MAX_FILE_BYTES (6u * 1024u * 1024u)
 #define THUMB_ARENA (28u * 1024u * 1024u)
+#define WP_MAX_DIM 4096u
 
 struct wp_buf {
     void *ptr;
