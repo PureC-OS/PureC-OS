@@ -39,6 +39,8 @@
 #include "kernel/diagnostics/klog.h"
 #include "lib/string.h"
 #include "net/802.11/include/802.h"
+#include "net/core/net_device.h"
+#include "net/wifi/wifi.h"
 #include "boot/install_source.h"
 #include "fs/vfs.h"
 
@@ -116,6 +118,7 @@ static const uint8_t iwx_nvm_channels_8000[IWX_NCHAN] = {
 #define IWX_EBUSY 16
 #define IWX_EIO 5
 #define IWX_ENXIO 6
+#define IWX_EHANDSHAKE 200
 
 struct iwx_dma {
     void *va;
@@ -231,6 +234,18 @@ struct iwx_sc {
     int rate_v2;
     int lmac_id;
     uint16_t assoc_aid;
+    int c_phy, c_mac, c_bind, c_sta, c_sp, c_assoc;
+    struct net_device net;
+    volatile int req_scan;
+    volatile int req_connect;
+    volatile int req_disconnect;
+    volatile int scan_ready;
+    volatile int link_up;
+    volatile int conn_failed;
+    volatile int32_t conn_error;
+    volatile int busy;
+    char req_ssid[33];
+    char req_pass[65];
     volatile int sp_started;
     volatile int sp_ended;
     int mlme_on;
@@ -2929,17 +2944,15 @@ static int iwx_build_rsn(const struct iwx_bss *b, uint8_t *out, const char **why
     return (int)(p - out);
 }
 
-static struct iwx_bss *iwx_pick_ap(struct iwx_sc *sc)
+static struct iwx_bss *iwx_pick_ap(struct iwx_sc *sc, const char *ssid)
 {
     struct iwx_bss *best = NULL;
     for (int i = 0; i < sc->nbss; i++) {
         struct iwx_bss *b = &sc->bss[i];
         if (b->ssid_len == 0 || b->ssid[0] == 0)
             continue;
-#ifdef IWX_ASSOC_SSID
-        if (strcmp(b->ssid, IWX_ASSOC_SSID) != 0)
+        if (ssid && ssid[0] && strcmp(b->ssid, ssid) != 0)
             continue;
-#endif
         int open = !b->rsn && !b->wpa && !(b->capinfo & 0x10);
         uint8_t tmp[64];
         const char *why = NULL;
@@ -2961,17 +2974,50 @@ static int iwx_cond_mlme(struct iwx_sc *sc)
 static int iwx_cond_sp(struct iwx_sc *sc) { return sc->sp_started; }
 static int iwx_cond_eapol(struct iwx_sc *sc) { return sc->eapol_seen > 0; }
 
-static int iwx_associate(struct iwx_sc *sc)
+static void iwx_teardown(struct iwx_sc *sc)
+{
+    if (sc->mq_enabled && !sc->fatal && dot11_mlme_state(&sc->mlme) == DOT11_MLME_ASSOCIATED) {
+        uint32_t before = sc->mq_txresp;
+        dot11_mlme_stop(&sc->mlme);
+        uint64_t t0 = timer_ticks();
+        while (sc->mq_txresp == before && timer_ticks() - t0 < 200 && iwx_service(sc) == 0)
+            scheduler_yield();
+        klogf(KLOG_INFO, "iwx: disassociation sent");
+    }
+    sc->mlme_on = 0;
+    sc->link_up = 0;
+    if (!sc->fatal) {
+        if (sc->c_assoc)
+            iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_MODIFY, 0);
+        if (sc->mq_enabled)
+            iwx_disable_mgmt_queue(sc);
+        if (sc->c_sp && !sc->sp_ended)
+            iwx_session_protect(sc, IWX_FW_CTXT_ACTION_REMOVE, 0);
+        if (sc->c_sta)
+            iwx_rm_sta(sc);
+        if (sc->c_bind)
+            iwx_binding(sc, IWX_FW_CTXT_ACTION_REMOVE);
+        if (sc->c_mac)
+            iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_REMOVE, 0);
+        if (sc->c_phy)
+            iwx_phy_ctxt(sc, IWX_FW_CTXT_ACTION_REMOVE);
+    }
+    sc->c_phy = sc->c_mac = sc->c_bind = sc->c_sta = sc->c_sp = sc->c_assoc = 0;
+    sc->mq_enabled = 0;
+    sc->ap = NULL;
+}
+
+static int iwx_associate(struct iwx_sc *sc, const char *ssid, bool hold)
 {
     uint8_t rsn[64];
     int rsn_len = 0;
-    int phy = 0, mac = 0, bind = 0, sta = 0, sp = 0, assoc = 0;
     uint64_t elapsed = 0;
     int err;
 
-    sc->ap = iwx_pick_ap(sc);
+    sc->ap = iwx_pick_ap(sc, ssid);
     if (!sc->ap) {
-        klogf(KLOG_ERROR, "iwx: no suitable network (open or WPA2-PSK/CCMP) found");
+        klogf(KLOG_ERROR, "iwx: network \"%s\" not found or unsupported (need open or WPA2-PSK/CCMP)",
+              ssid ? ssid : "");
         return IWX_EINVAL;
     }
     struct iwx_bss *ap = sc->ap;
@@ -3001,22 +3047,22 @@ static int iwx_associate(struct iwx_sc *sc)
 
     if ((err = iwx_phy_ctxt(sc, IWX_FW_CTXT_ACTION_ADD)))
         goto out;
-    phy = 1;
+    sc->c_phy = 1;
     if ((err = iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_ADD, 0)))
         goto out;
-    mac = 1;
+    sc->c_mac = 1;
     if ((err = iwx_binding(sc, IWX_FW_CTXT_ACTION_ADD)))
         goto out;
-    bind = 1;
+    sc->c_bind = 1;
     if ((err = iwx_add_sta(sc, 0)))
         goto out;
-    sta = 1;
+    sc->c_sta = 1;
     if ((err = iwx_enable_mgmt_queue(sc)))
         goto out;
     sc->sp_started = sc->sp_ended = 0;
     if ((err = iwx_session_protect(sc, IWX_FW_CTXT_ACTION_ADD, (uint32_t)(ap->bintval ? ap->bintval : 100) * 9)))
         goto out;
-    sp = 1;
+    sc->c_sp = 1;
     if (iwx_wait(sc, iwx_cond_sp, 500, &elapsed) == 0)
         klogf(KLOG_OK, "iwx: on channel %u after %llu ms", ap->channel, (unsigned long long)elapsed);
     else
@@ -3048,47 +3094,24 @@ static int iwx_associate(struct iwx_sc *sc)
         goto out;
     if ((err = iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_MODIFY, 1)))
         goto out;
-    assoc = 1;
+    sc->c_assoc = 1;
     sc->assoc_aid = sc->mlme.aid;
 
     if (rsn_len > 0) {
         if (iwx_wait(sc, iwx_cond_eapol, 3000, &elapsed) == 0)
-            klogf(KLOG_OK, "iwx: milestone 3: EAPOL message from AP received %llu ms after association",
+            klogf(KLOG_OK, "iwx: EAPOL message 1 from AP received %llu ms after association",
                   (unsigned long long)elapsed);
         else
             klogf(KLOG_WARN, "iwx: no EAPOL frame from AP within 3 s");
+        klogf(KLOG_WARN, "iwx: WPA2 4-way handshake is not implemented yet, disconnecting");
+        err = IWX_EHANDSHAKE;
+        goto out;
     }
     err = 0;
 
 out:
-    if (sc->mq_enabled && dot11_mlme_state(&sc->mlme) == DOT11_MLME_ASSOCIATED) {
-        uint32_t before = sc->mq_txresp;
-        dot11_mlme_stop(&sc->mlme);
-        uint64_t t0 = timer_ticks();
-        while (sc->mq_txresp == before && timer_ticks() - t0 < 200 && iwx_service(sc) == 0)
-            scheduler_yield();
-        klogf(KLOG_INFO, "iwx: disassociation sent");
-    }
-    sc->mlme_on = 0;
-    if (assoc && !sc->fatal)
-        iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_MODIFY, 0);
-    if (sc->mq_enabled && !sc->fatal)
-        iwx_disable_mgmt_queue(sc);
-    if (sp && !sc->sp_ended && !sc->fatal)
-        iwx_session_protect(sc, IWX_FW_CTXT_ACTION_REMOVE, 0);
-    if (sc->fatal) {
-        sc->mq_enabled = 0;
-        return err ? err : IWX_EIO;
-    }
-    if (sta)
-        iwx_rm_sta(sc);
-    if (bind)
-        iwx_binding(sc, IWX_FW_CTXT_ACTION_REMOVE);
-    if (mac)
-        iwx_mac_ctxt(sc, IWX_FW_CTXT_ACTION_REMOVE, 0);
-    if (phy)
-        iwx_phy_ctxt(sc, IWX_FW_CTXT_ACTION_REMOVE);
-    sc->mq_enabled = 0;
+    if (err || !hold)
+        iwx_teardown(sc);
     return err;
 }
 
@@ -3222,6 +3245,8 @@ static bool iwx_attach(struct iwx_sc *sc)
     return true;
 }
 
+static void iwx_service_loop(struct iwx_sc *sc);
+
 static void iwx_thread(void *arg)
 {
     struct iwx_sc *sc = arg;
@@ -3278,13 +3303,195 @@ static void iwx_thread(void *arg)
         return;
     }
     klogf(KLOG_OK, "iwx: milestone 2 complete: %d networks found", sc->nbss);
-    err = iwx_associate(sc);
+    iwx_service_loop(sc);
     iwx_stop_device(sc);
-    if (err)
-        klogf(KLOG_ERROR, "iwx: milestone 3 failed (%d)", err);
-    else
-        klogf(KLOG_OK, "iwx: milestone 3 complete: associated, aid %u, EAPOL frames %d", sc->assoc_aid,
-              sc->eapol_seen);
+}
+
+static int iwx_wifi_security(const struct iwx_bss *b)
+{
+    if (b->rsn && b->rsn_len >= 10) {
+        const uint8_t *ie = b->rsn_ie;
+        uint32_t off = 8;
+        uint16_t pc = (uint16_t)(ie[off] | ie[off + 1] << 8);
+        off += 2 + pc * 4u;
+        if (off + 2 <= b->rsn_len) {
+            uint16_t ac = (uint16_t)(ie[off] | ie[off + 1] << 8);
+            off += 2;
+            if (off + ac * 4u <= b->rsn_len) {
+                int psk = iwx_rsn_suite_has(ie + off, ac, 2) || iwx_rsn_suite_has(ie + off, ac, 6);
+                int sae = iwx_rsn_suite_has(ie + off, ac, 8);
+                if (psk && sae)
+                    return WIFI_SECURITY_WPA2_WPA3;
+                if (sae)
+                    return WIFI_SECURITY_WPA3;
+            }
+        }
+        return WIFI_SECURITY_WPA2;
+    }
+    if (b->rsn || b->wpa)
+        return WIFI_SECURITY_WPA2;
+    if (b->capinfo & 0x10)
+        return WIFI_SECURITY_WEP;
+    return WIFI_SECURITY_OPEN;
+}
+
+static bool iwx_net_transmit(void *ctx, const uint8_t *frame, uint16_t length)
+{
+    struct iwx_sc *sc = ctx;
+    (void)frame;
+    (void)length;
+    sc->net.stats.tx_dropped++;
+    return false;
+}
+
+static void iwx_net_poll(void *ctx, uint32_t budget)
+{
+    (void)ctx;
+    (void)budget;
+}
+
+static bool iwx_net_link_up(void *ctx)
+{
+    return ((struct iwx_sc *)ctx)->link_up != 0;
+}
+
+static const struct net_device_ops iwx_net_ops = {
+    .transmit = iwx_net_transmit,
+    .poll = iwx_net_poll,
+    .link_up = iwx_net_link_up,
+};
+
+static bool iwx_wifi_scan(void *ctx)
+{
+    struct iwx_sc *sc = ctx;
+    if (sc->fatal || sc->link_up || sc->busy || sc->scan_ready)
+        return false;
+    sc->req_scan = 1;
+    return true;
+}
+
+static bool iwx_wifi_connect(void *ctx, const char *ssid, const char *password)
+{
+    struct iwx_sc *sc = ctx;
+    if (sc->fatal || sc->req_connect)
+        return false;
+    strncpy(sc->req_ssid, ssid, sizeof(sc->req_ssid) - 1);
+    sc->req_ssid[sizeof(sc->req_ssid) - 1] = 0;
+    strncpy(sc->req_pass, password ? password : "", sizeof(sc->req_pass) - 1);
+    sc->req_pass[sizeof(sc->req_pass) - 1] = 0;
+    sc->conn_failed = 0;
+    sc->req_connect = 1;
+    return true;
+}
+
+static bool iwx_wifi_disconnect(void *ctx)
+{
+    struct iwx_sc *sc = ctx;
+    sc->req_disconnect = 1;
+    return true;
+}
+
+static void iwx_wifi_poll(void *ctx, uint64_t now_ms)
+{
+    struct iwx_sc *sc = ctx;
+    (void)now_ms;
+    if (sc->scan_ready) {
+        for (int i = 0; i < sc->nbss; i++) {
+            const struct iwx_bss *b = &sc->bss[i];
+            if (!b->ssid_len || !b->ssid[0])
+                continue;
+            struct wifi_network n;
+            memset(&n, 0, sizeof(n));
+            memcpy(n.ssid, b->ssid, b->ssid_len);
+            memcpy(n.bssid, b->bssid, 6);
+            n.rssi = b->rssi;
+            n.channel = b->channel;
+            n.security = (uint8_t)iwx_wifi_security(b);
+            (void)wifi_report_scan_result(&n);
+        }
+        wifi_notify_scan_done();
+        sc->scan_ready = 0;
+    }
+    if (sc->conn_failed) {
+        sc->conn_failed = 0;
+        wifi_notify_connect_failed(sc->conn_error);
+    }
+    if (sc->link_up && sc->ap)
+        wifi_update_rssi(sc->ap->rssi);
+}
+
+static bool iwx_wifi_is_connected(void *ctx)
+{
+    return ((struct iwx_sc *)ctx)->link_up != 0;
+}
+
+static const struct wifi_ops iwx_wifi_ops = {
+    .scan = iwx_wifi_scan,
+    .connect = iwx_wifi_connect,
+    .disconnect = iwx_wifi_disconnect,
+    .poll = iwx_wifi_poll,
+    .is_connected = iwx_wifi_is_connected,
+};
+
+static void iwx_service_loop(struct iwx_sc *sc)
+{
+    memcpy(sc->net.mac, sc->mac, 6);
+    strncpy(sc->net.name, "wlan0", sizeof(sc->net.name) - 1);
+    sc->net.mtu = NET_ETHERNET_MTU;
+    sc->net.ops = &iwx_net_ops;
+    sc->net.driver_context = sc;
+    sc->net.cached_link_up = false;
+    if (!net_device_register(&sc->net)) {
+        klogf(KLOG_ERROR, "iwx: net_device_register failed");
+        return;
+    }
+    if (!wifi_device_register(&sc->net, &iwx_wifi_ops, sc, "wlan0")) {
+        klogf(KLOG_ERROR, "iwx: wifi_device_register failed");
+        return;
+    }
+    sc->scan_ready = 1;
+    klogf(KLOG_OK, "iwx: wlan0 ready, waiting for scan and connect requests");
+    for (;;) {
+        if (iwx_service(sc) < 0) {
+            klogf(KLOG_ERROR, "iwx: firmware died, Wi-Fi disabled until reboot");
+            sc->link_up = 0;
+            sc->conn_error = -30;
+            sc->conn_failed = 1;
+            return;
+        }
+        if (sc->req_disconnect) {
+            sc->req_disconnect = 0;
+            if (sc->ap || sc->link_up) {
+                klogf(KLOG_INFO, "iwx: disconnect requested");
+                sc->busy = 1;
+                iwx_teardown(sc);
+                sc->busy = 0;
+            }
+        }
+        if (sc->req_connect) {
+            sc->busy = 1;
+            sc->req_connect = 0;
+            if (sc->ap || sc->link_up)
+                iwx_teardown(sc);
+            klogf(KLOG_INFO, "iwx: connect requested to \"%s\"", sc->req_ssid);
+            int err = iwx_associate(sc, sc->req_ssid, true);
+            if (err) {
+                sc->conn_error = err == IWX_EHANDSHAKE ? -20 : -21;
+                sc->conn_failed = 1;
+            } else {
+                sc->link_up = 1;
+            }
+            sc->busy = 0;
+        }
+        if (sc->req_scan && !sc->link_up && !sc->ap) {
+            sc->busy = 1;
+            sc->req_scan = 0;
+            if (iwx_scan(sc) == 0 || sc->nbss)
+                sc->scan_ready = 1;
+            sc->busy = 0;
+        }
+        scheduler_sleep(5);
+    }
 }
 
 bool iwx_start(void)
