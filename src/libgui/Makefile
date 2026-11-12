@@ -3,7 +3,7 @@ include $(ROOT_DIR)/mk/toolchain.mk
 
 OBJ_DIR := $(BIN_DIR)/obj/libgui
 LIB_DIR := $(BIN_DIR)/lib
-CORE_SOURCES := theme.c draw.c window.c event.c
+CORE_SOURCES := theme.c draw.c window.c event.c canvas.c ui.c
 CORE_OBJECTS := $(CORE_SOURCES:%.c=$(OBJ_DIR)/%.o)
 WIDGET_OBJECT := $(OBJ_DIR)/widgets.o
 CORE_TARGET := $(LIB_DIR)/libpuregui.a

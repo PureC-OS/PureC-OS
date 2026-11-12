@@ -136,6 +136,9 @@ void pg_window_text_sized(struct pg_window *window, uint32_t x, uint32_t y,
 #define PG_FONT_BOLD 2
 void pg_set_font_face(uint32_t face);
 void pg_font_sync(void);
+struct pg_canvas;
+struct pg_canvas *pg_window_canvas(struct pg_window *window);
+void pg_window_damage(struct pg_window *window, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 bool pg_window_poll_event(struct pg_window *window, struct pg_event *event);
 bool pg_window_poll_key_event(struct pg_window *window, struct key_event *event);
 int32_t pg_window_take_wheel(struct pg_window *window);
