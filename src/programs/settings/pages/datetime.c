@@ -108,17 +108,28 @@ int page_datetime(struct page_ctx *p)
     offset_str(&f, have ? t.tz_minutes : 0);
     sg_text(u->c, SF_BODY, p->x + 40, y + 162, zl, sg_mix(0xffffff, pal->accent, 70));
     int ax = p->x + p->w - 130, ay = y + 110;
-    sg_circle(u->c, ax, ay, 74, 0xffffff, 26);
-    sg_circle(u->c, ax, ay, 66, 0xffffff, 18);
-    for (int i = 0; i < 12; i++) {
-        static const int dx[12] = {0, 29, 50, 58, 50, 29, 0, -29, -50, -58, -50, -29};
-        static const int dyy[12] = {-58, -50, -29, 0, 29, 50, 58, 50, 29, 0, -29, -50};
-        sg_circle(u->c, ax + dx[i], ay + dyy[i], i % 3 == 0 ? 3 : 2, 0xffffff, 200);
+    const float tau = 6.2831853f;
+    sg_circle(u->c, ax, ay + 3, 80, 0x000000, 40);
+    sg_circle(u->c, ax, ay, 80, 0xffffff, 34);
+    sg_circle(u->c, ax, ay, 72, sg_mix(pal->accent, 0x0c0a1d, 170), 255);
+    for (int i = 0; i < 60; i++) {
+        float ang = (float)i / 60.0f * tau;
+        float s0 = sg_sin(ang), c0 = sg_cos(ang);
+        float r0 = i % 5 == 0 ? 56.0f : 62.0f;
+        sg_line(u->c, (float)ax + s0 * r0, (float)ay - c0 * r0, (float)ax + s0 * 66.0f,
+                (float)ay - c0 * 66.0f, i % 5 == 0 ? 2.6f : 1.2f, i % 5 == 0 ? 0xffffff : 0x9aa0c0);
     }
-    sg_ring(u->c, ax, ay, 46, 5, (uint32_t)(((hh % 12) * 60 + mi) * 1000 / 720), 0xffffff, 0x000000);
-    sg_ring(u->c, ax, ay, 36, 4, (uint32_t)(mi * 1000 / 60), sg_mix(0xffffff, pal->accent, 120),
-            0x000000);
-    sg_circle(u->c, ax, ay, 26, sg_mix(pal->accent, 0x0c0a1d, 140), 255);
+    float ah = ((float)(hh % 12) + (float)mi / 60.0f) / 12.0f * tau;
+    float am = ((float)mi + (float)ss / 60.0f) / 60.0f * tau;
+    float as = (float)ss / 60.0f * tau;
+    sg_line(u->c, (float)ax, (float)ay, (float)ax + sg_sin(ah) * 34.0f, (float)ay - sg_cos(ah) * 34.0f, 5.5f,
+            0xffffff);
+    sg_line(u->c, (float)ax, (float)ay, (float)ax + sg_sin(am) * 50.0f, (float)ay - sg_cos(am) * 50.0f, 3.5f,
+            0xe8e8f4);
+    sg_line(u->c, (float)ax - sg_sin(as) * 12.0f, (float)ay + sg_cos(as) * 12.0f,
+            (float)ax + sg_sin(as) * 58.0f, (float)ay - sg_cos(as) * 58.0f, 1.6f, pal->danger);
+    sg_circle(u->c, ax, ay, 5, pal->danger, 255);
+    sg_circle(u->c, ax, ay, 2, 0xffffff, 255);
     u->animating = true;
     y += h + 16;
 

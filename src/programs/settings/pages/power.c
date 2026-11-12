@@ -4,6 +4,8 @@
 
 static struct {
     struct battery_info bat;
+    struct thermal_info th;
+    bool have_th;
     bool have;
     uint64_t last;
 } st;
@@ -17,6 +19,9 @@ static void refresh(struct settings_app *app)
     for (unsigned i = 0; i < sizeof(st.bat); i++)
         ((char *)&st.bat)[i] = 0;
     st.have = pc_syscall(SYS_BATTERY_INFO, (uint64_t)(uintptr_t)&st.bat, 0, 0) >= 0 && st.bat.present;
+    for (unsigned i = 0; i < sizeof(st.th); i++)
+        ((char *)&st.th)[i] = 0;
+    st.have_th = pc_syscall(SYS_THERMAL_INFO, (uint64_t)(uintptr_t)&st.th, 0, 0) >= 0 && st.th.available;
 }
 
 static void battery_shape(struct ui *u, int x, int y, uint32_t pct, bool charging, uint32_t col)
@@ -66,8 +71,10 @@ int page_power(struct page_ctx *p)
             fs(&f, "On battery");
         if (st.bat.remaining_minutes && st.bat.remaining_minutes != 0xffffffffu) {
             fs(&f, "  -  ");
-            fu(&f, st.bat.remaining_minutes / 60);
-            fs(&f, " h ");
+            if (st.bat.remaining_minutes >= 60) {
+                fu(&f, st.bat.remaining_minutes / 60);
+                fs(&f, " h ");
+            }
             fu(&f, st.bat.remaining_minutes % 60);
             fs(&f, st.bat.charging ? " min until full" : " min left");
         }
@@ -126,6 +133,36 @@ int page_power(struct page_ctx *p)
         if (clicked)
             app->confirm = acts[i].confirm;
     }
-    y += bh;
+    y += bh + 16;
+
+    int th = 128;
+    ui_card(u, p->x, y, p->w, th);
+    ui_card_title(u, p->x + 20, y + 20, SI_THERMOMETER, "Thermals",
+                  st.have_th ? "Reported by ACPI thermal zones" : "No thermal sensors reported");
+    if (st.have_th) {
+        int t10 = st.th.temperature_deci_c;
+        fmt_init(&f, a, sizeof(a));
+        fi(&f, t10 / 10);
+        fc(&f, '.');
+        fu(&f, (uint64_t)((t10 < 0 ? -t10 : t10) % 10));
+        fs(&f, " C");
+        uint32_t tc = t10 >= 850 ? pal->danger : t10 >= 700 ? pal->warning : pal->success;
+        sg_text(u->c, SF_TITLE, p->x + 24, y + 78, a, tc);
+        fmt_init(&f, b, sizeof(b));
+        fs(&f, st.th.thermal_zone[0] ? st.th.thermal_zone : "CPU");
+        sg_text(u->c, SF_SMALL, p->x + 34 + sg_text_w(SF_TITLE, a), y + 88, b, pal->text3);
+        if (st.th.fan_count) {
+            fmt_init(&f, b, sizeof(b));
+            fu(&f, st.th.fan_rpm);
+            fs(&f, " RPM");
+            int fx = p->x + p->w / 2;
+            sg_icon(u->c, SI_FAN, SG_ICON_S, fx, y + 82, pal->info);
+            sg_text(u->c, SF_TITLE, fx + 26, y + 78, b, pal->text);
+        }
+    } else {
+        sg_text(u->c, SF_BODY, p->x + 24, y + 80, "Temperature readings are not available on this machine.",
+                pal->text3);
+    }
+    y += th;
     return y - p->y;
 }

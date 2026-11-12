@@ -48,8 +48,10 @@ static void hero(struct page_ctx *p, int y)
     uint32_t c0 = sg_mix(pal->accent, 0x1e1b4b, 120);
     uint32_t c1 = sg_mix(pal->accent, 0x0f766e, 150);
     sg_rrect_grad(u->c, p->x, y, p->w, h, 16, c0, c1, true);
+    struct sg_clip saved = sg_clip_push(u->c, p->x + 16, y, p->w - 16, h);
     for (int i = 0; i < 5; i++)
-        sg_circle(u->c, p->x + p->w - 90 + i * 14, y + 30 + i * 22, 70 - i * 9, 0xffffff, 10);
+        sg_circle(u->c, p->x + p->w - 70 - i * 26, y + h - 10 - i * 8, 120 - i * 18, 0xffffff, 9);
+    sg_clip_pop(u->c, saved);
     sg_rrect(u->c, p->x + 28, y + 35, 80, 80, 22, 0xffffff, 36);
     sg_text_center(u->c, SF_HERO, p->x + 28, y + 51, 80, "P", 0xffffff);
     sg_text(u->c, SF_HERO, p->x + 132, y + 32, "PureC OS", 0xffffff);

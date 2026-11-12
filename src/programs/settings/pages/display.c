@@ -17,6 +17,21 @@ static void aspect(struct fmt *f, uint32_t w, uint32_t h)
 {
     uint32_t g = gcd(w, h);
     uint32_t aw = w / g, ah = h / g;
+    if (aw > 21) {
+        static const uint32_t known[][2] = {{16, 9}, {16, 10}, {4, 3}, {5, 4}, {21, 9}, {3, 2}};
+        uint32_t best = 0, bestd = 0xffffffffu;
+        for (uint32_t i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
+            uint32_t a1 = w * known[i][1], a2 = h * known[i][0];
+            uint32_t dd = a1 > a2 ? a1 - a2 : a2 - a1;
+            if (dd < bestd) {
+                bestd = dd;
+                best = i;
+            }
+        }
+        fc(f, '~');
+        aw = known[best][0];
+        ah = known[best][1];
+    }
     if (aw == 8 && ah == 5) {
         aw = 16;
         ah = 10;

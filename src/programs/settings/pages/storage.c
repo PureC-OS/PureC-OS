@@ -53,7 +53,7 @@ int page_storage(struct page_ctx *p)
     refresh(p->app);
     int y = p->y;
     struct fmt f;
-    char a[64], b[64];
+    char a[128], b[96];
 
     int h = 190;
     ui_card(u, p->x, y, p->w, h);
