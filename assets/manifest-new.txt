@@ -47,6 +47,7 @@
 /bin/env /bin/env - 1 bin/programs/env
 /bin/uname /bin/uname - 1 bin/programs/uname
 /bin/whoami /bin/whoami - 1 bin/programs/whoami
+/bin/sudo /bin/sudo - 1 bin/programs/sudo
 /bin/id /bin/id - 1 bin/programs/id
 /bin/hostname /bin/hostname - 1 bin/programs/hostname
 /bin/date /bin/date - 1 bin/programs/date
@@ -129,6 +130,7 @@
 /usr/share/man/env.1 /usr/share/man/env.1 - 0 assets/man/env.1
 /usr/share/man/uname.1 /usr/share/man/uname.1 - 0 assets/man/uname.1
 /usr/share/man/whoami.1 /usr/share/man/whoami.1 - 0 assets/man/whoami.1
+/usr/share/man/sudo.8 /usr/share/man/sudo.8 - 0 assets/man/sudo.8
 /usr/share/man/id.1 /usr/share/man/id.1 - 0 assets/man/id.1
 /usr/share/man/hostname.1 /usr/share/man/hostname.1 - 0 assets/man/hostname.1
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
