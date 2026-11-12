@@ -99,6 +99,53 @@ struct iwx_bss {
 #define IWX_FW_CTXT_INVALID 0xffffffffu
 #endif
 #define IWX_MQ_ID 1
+#define IWX_SWQ_SLOTS 64
+#define IWX_SWQ_BYTES 2048
+
+struct iwx_swq {
+    volatile uint32_t head;
+    volatile uint32_t tail;
+    uint16_t len[IWX_SWQ_SLOTS];
+    uint8_t data[IWX_SWQ_SLOTS][IWX_SWQ_BYTES];
+};
+
+static struct iwx_swq iwx_txsw, iwx_rxsw;
+
+static bool iwx_swq_put(struct iwx_swq *q, const uint8_t *p, uint32_t len)
+{
+    uint32_t h = q->head;
+    if (h - q->tail >= IWX_SWQ_SLOTS || len > IWX_SWQ_BYTES)
+        return false;
+    uint32_t i = h % IWX_SWQ_SLOTS;
+    for (uint32_t k = 0; k < len; k++)
+        q->data[i][k] = p[k];
+    q->len[i] = (uint16_t)len;
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    q->head = h + 1;
+    return true;
+}
+
+static const uint8_t *iwx_swq_peek(struct iwx_swq *q, uint32_t *len)
+{
+    uint32_t t = q->tail;
+    if (t == q->head)
+        return 0;
+    __atomic_thread_fence(__ATOMIC_ACQUIRE);
+    uint32_t i = t % IWX_SWQ_SLOTS;
+    *len = q->len[i];
+    return q->data[i];
+}
+
+static void iwx_swq_pop(struct iwx_swq *q)
+{
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    q->tail = q->tail + 1;
+}
+
+static void iwx_swq_reset(struct iwx_swq *q)
+{
+    q->tail = q->head;
+}
 #define IWX_STATION_ID 0
 #define IWX_MQ_BUF 1024
 #define IWX_EXP2(x) ((1 << (x)) - 1)
@@ -244,6 +291,10 @@ struct iwx_sc {
     volatile int conn_failed;
     volatile int32_t conn_error;
     volatile int busy;
+    volatile int link_lost;
+    volatile int lost_report;
+    uint16_t tx_seq;
+    uint32_t data_logged;
     char req_ssid[33];
     char req_pass[65];
     volatile int sp_started;
@@ -1406,7 +1457,14 @@ static void iwx_rx_tx_resp(struct iwx_sc *sc, const struct iwx_rx_packet *pkt, u
     if (qid == IWX_MQ_ID)
         sc->mq_tail_hw = (int)(le32toh(ssn) & 0xffff);
     sc->mq_txresp++;
-    klogf(st == IWX_TX_STATUS_SUCCESS || st == IWX_TX_STATUS_DIRECT_DONE ? KLOG_INFO : KLOG_WARN,
+    bool ok = st == IWX_TX_STATUS_SUCCESS || st == IWX_TX_STATUS_DIRECT_DONE;
+    if (ok)
+        sc->net.stats.tx_packets += sc->link_up ? 1 : 0;
+    else if (sc->link_up)
+        sc->net.stats.tx_errors++;
+    if (ok && sc->link_up)
+        return;
+    klogf(ok ? KLOG_INFO : KLOG_WARN,
           "iwx: tx done q%d idx %d: status 0x%02x (%s) frames %u retries %u rts_fail %u rate 0x%08x ssn %u",
           qid, pkt->hdr.idx, st,
           st == IWX_TX_STATUS_SUCCESS ? "ok" : st == IWX_TX_STATUS_DIRECT_DONE ? "direct" : "FAILED",
@@ -1509,9 +1567,12 @@ static void iwx_rx_data(struct iwx_sc *sc, const uint8_t *frame, uint32_t len)
     const uint8_t *llc = frame + hdrlen;
     static const uint8_t eapol_snap[8] = {0xaa, 0xaa, 0x03, 0x00, 0x00, 0x00, 0x88, 0x8e};
     if (memcmp(llc, eapol_snap, 8) != 0) {
-        static int logged;
-        if (logged++ < 8)
-            klogf(KLOG_INFO, "iwx: data frame from AP fc 0x%02x%02x len %u (not EAPOL)", fc1, fc0, len);
+        if (sc->link_up) {
+            if (!iwx_swq_put(&iwx_rxsw, frame, len))
+                sc->net.stats.rx_dropped++;
+        } else if (sc->data_logged++ < 4) {
+            klogf(KLOG_INFO, "iwx: data frame from AP fc 0x%02x%02x len %u before link up", fc1, fc0, len);
+        }
         return;
     }
     const uint8_t *ep = llc + 8;
@@ -1613,7 +1674,10 @@ static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
             break;
         }
         sc->pkts++;
-        if (code != IWX_REPLY_RX_MPDU_CMD)
+        if (code != IWX_REPLY_RX_MPDU_CMD && code != IWX_TX_CMD && code != IWX_STATISTICS_NOTIFICATION &&
+            code != IWX_MISSED_BEACONS_NOTIFICATION &&
+            code != IWX_WIDE_ID(IWX_DATA_PATH_GROUP, IWX_RX_NO_DATA_NOTIF) &&
+            code != IWX_WIDE_ID(IWX_DATA_PATH_GROUP, 0xf8))
             klogf(KLOG_INFO, "iwx: rx[%d] pkt code 0x%x len %u qid 0x%x idx %d flags 0x%x", ridx,
                   code, len, qid, idx, pkt->hdr.flags);
 
@@ -1639,6 +1703,20 @@ static void iwx_rx_pkt(struct iwx_sc *sc, int ridx)
         case IWX_TX_CMD:
             iwx_rx_tx_resp(sc, pkt, len);
             break;
+        case IWX_STATISTICS_NOTIFICATION:
+        case IWX_WIDE_ID(IWX_DATA_PATH_GROUP, IWX_RX_NO_DATA_NOTIF):
+        case IWX_WIDE_ID(IWX_DATA_PATH_GROUP, 0xf8):
+            break;
+        case IWX_MISSED_BEACONS_NOTIFICATION: {
+            const struct iwx_missed_beacons_notif *m = (const void *)pkt->data;
+            uint32_t missed = le32toh(m->consec_missed_beacons_since_last_rx);
+            if (sc->link_up && !sc->link_lost && missed >= 20) {
+                klogf(KLOG_WARN, "iwx: %u beacons missed in a row (%u/%u received), link lost", missed,
+                      le32toh(m->num_recvd_beacons), le32toh(m->num_expected_beacons));
+                sc->link_lost = 1;
+            }
+            break;
+        }
         case IWX_WIDE_ID(IWX_MAC_CONF_GROUP, IWX_SESSION_PROTECTION_NOTIF): {
             const struct iwx_session_prot_notif *n = (const void *)pkt->data;
             klogf(KLOG_INFO, "iwx: session protection: mac %u status %u %s conf %u",
@@ -2809,11 +2887,26 @@ static uint32_t iwx_mgmt_rate(struct iwx_sc *sc)
     return r;
 }
 
+static uint32_t iwx_data_rate(struct iwx_sc *sc)
+{
+    uint32_t r = IWX_RATE_MCS_ANT_A_MSK;
+    if (sc->ap->channel <= 14)
+        r |= sc->rate_v2 ? (IWX_RATE_MCS_CCK_MSK | 3) : (IWX_RATE_MCS_CCK_MSK_V1 | IWX_RATE_11M_PLCP);
+    else
+        r |= sc->rate_v2 ? (IWX_RATE_MCS_LEGACY_OFDM_MSK | 4) : IWX_RATE_24M_PLCP;
+    return r;
+}
+
 static bool iwx_tx_frame(struct iwx_sc *sc, const uint8_t *frame, uint16_t len, int eapol)
 {
     const uint32_t hdrlen = 24;
-    if (!sc->mq_enabled || len < hdrlen || len - hdrlen > IWX_MQ_BUF)
+    if (!sc->mq_enabled || !sc->ap || len < hdrlen || len - hdrlen > IWX_MQ_BUF)
         return false;
+    uint32_t inflight = (uint32_t)(sc->mq_cur_hw - sc->mq_tail_hw) & 0xffff;
+    if (inflight >= IWX_TX_RING_COUNT - 8)
+        return false;
+    bool is_data = (frame[0] & 0x0c) == 0x08;
+    uint32_t rate = is_data ? iwx_data_rate(sc) : iwx_mgmt_rate(sc);
     int idx = sc->mq_cur;
     struct iwx_device_cmd *cmd = (struct iwx_device_cmd *)sc->mq_cmd.va + idx;
     uint64_t cmd_pa = sc->mq_cmd.pa + (uint64_t)idx * sizeof(struct iwx_device_cmd);
@@ -2834,7 +2927,7 @@ static bool iwx_tx_frame(struct iwx_sc *sc, const uint8_t *frame, uint16_t len, 
     tx->len = htole16(len);
     tx->flags = htole16(flags);
     tx->offload_assist = htole32(IWX_TX_CMD_OFFLD_MH_SIZE((hdrlen / 2) & IWX_TX_CMD_OFFLD_MH_MASK));
-    tx->rate_n_flags = htole32(iwx_mgmt_rate(sc));
+    tx->rate_n_flags = htole32(rate);
     memcpy(tx->hdr, frame, hdrlen);
     if (body)
         memcpy(buf, frame + hdrlen, body);
@@ -2864,8 +2957,9 @@ static bool iwx_tx_frame(struct iwx_sc *sc, const uint8_t *frame, uint16_t len, 
     iwx_mb();
     sc->mq_cur = (sc->mq_cur + 1) % IWX_TX_RING_COUNT;
     sc->mq_cur_hw = (int)((uint32_t)(sc->mq_cur_hw + 1) % sc->max_tfd_queue_size);
-    klogf(KLOG_INFO, "iwx: tx q%d idx %d: fc 0x%02x%02x len %u rate 0x%08x flags 0x%x", IWX_MQ_ID, idx,
-          frame[1], frame[0], len, iwx_mgmt_rate(sc), flags);
+    if (!is_data)
+        klogf(KLOG_INFO, "iwx: tx q%d idx %d: fc 0x%02x%02x len %u rate 0x%08x flags 0x%x", IWX_MQ_ID, idx,
+              frame[1], frame[0], len, rate, flags);
     iwx_write(sc, IWX_HBUS_TARG_WRPTR, (uint32_t)(IWX_MQ_ID << 16 | sc->mq_cur_hw));
     return true;
 }
@@ -3338,16 +3432,62 @@ static int iwx_wifi_security(const struct iwx_bss *b)
 static bool iwx_net_transmit(void *ctx, const uint8_t *frame, uint16_t length)
 {
     struct iwx_sc *sc = ctx;
-    (void)frame;
-    (void)length;
-    sc->net.stats.tx_dropped++;
-    return false;
+    if (!sc->link_up || !iwx_swq_put(&iwx_txsw, frame, length)) {
+        sc->net.stats.tx_dropped++;
+        return false;
+    }
+    sc->net.stats.tx_bytes += length;
+    return true;
 }
 
 static void iwx_net_poll(void *ctx, uint32_t budget)
 {
-    (void)ctx;
-    (void)budget;
+    struct iwx_sc *sc = ctx;
+    static uint8_t eth[IWX_SWQ_BYTES];
+    uint32_t n = 0;
+    while (n < (budget ? budget : 32)) {
+        uint32_t len = 0;
+        const uint8_t *frame = iwx_swq_peek(&iwx_rxsw, &len);
+        if (!frame)
+            break;
+        const struct iwx_bss *ap = sc->ap;
+        uint16_t elen = ap ? dot11_data_to_ethernet(frame, (uint16_t)len, ap->bssid, eth, sizeof(eth)) : 0;
+        iwx_swq_pop(&iwx_rxsw);
+        n++;
+        if (!elen) {
+            sc->net.stats.rx_dropped++;
+            continue;
+        }
+        sc->net.stats.rx_packets++;
+        sc->net.stats.rx_bytes += elen;
+        if (!net_device_receive(&sc->net, eth, elen))
+            sc->net.stats.rx_dropped++;
+    }
+}
+
+static void iwx_drain_tx(struct iwx_sc *sc)
+{
+    static uint8_t buf[IWX_SWQ_BYTES + 64];
+    for (int n = 0; n < 32; n++) {
+        uint32_t len = 0;
+        const uint8_t *eth = iwx_swq_peek(&iwx_txsw, &len);
+        if (!eth)
+            return;
+        if (!sc->link_up || !sc->ap) {
+            iwx_swq_pop(&iwx_txsw);
+            continue;
+        }
+        uint16_t seq = (uint16_t)(sc->tx_seq++ << 4);
+        uint16_t flen = dot11_ethernet_to_data(eth, (uint16_t)len, sc->ap->bssid, seq, buf, sizeof(buf));
+        if (!flen) {
+            iwx_swq_pop(&iwx_txsw);
+            sc->net.stats.tx_dropped++;
+            continue;
+        }
+        if (!iwx_tx_frame(sc, buf, flen, 0))
+            return;
+        iwx_swq_pop(&iwx_txsw);
+    }
 }
 
 static bool iwx_net_link_up(void *ctx)
@@ -3364,7 +3504,7 @@ static const struct net_device_ops iwx_net_ops = {
 static bool iwx_wifi_scan(void *ctx)
 {
     struct iwx_sc *sc = ctx;
-    if (sc->fatal || sc->link_up || sc->busy || sc->scan_ready)
+    if (sc->fatal || sc->link_up || sc->scan_ready)
         return false;
     sc->req_scan = 1;
     return true;
@@ -3416,6 +3556,10 @@ static void iwx_wifi_poll(void *ctx, uint64_t now_ms)
         sc->conn_failed = 0;
         wifi_notify_connect_failed(sc->conn_error);
     }
+    if (sc->lost_report) {
+        sc->lost_report = 0;
+        (void)wifi_disconnect();
+    }
     if (sc->link_up && sc->ap)
         wifi_update_rssi(sc->ap->rssi);
 }
@@ -3459,6 +3603,22 @@ static void iwx_service_loop(struct iwx_sc *sc)
             sc->conn_failed = 1;
             return;
         }
+        if (sc->link_up && !sc->link_lost && dot11_mlme_state(&sc->mlme) != DOT11_MLME_ASSOCIATED) {
+            klogf(KLOG_WARN, "iwx: access point ended the association (%s, reason %u)",
+                  dot11_mlme_fail_name(sc->mlme.fail_reason), sc->mlme.last_status);
+            sc->link_lost = 1;
+        }
+        if (sc->link_lost) {
+            sc->busy = 1;
+            iwx_teardown(sc);
+            iwx_swq_reset(&iwx_txsw);
+            iwx_swq_reset(&iwx_rxsw);
+            sc->link_lost = 0;
+            sc->lost_report = 1;
+            sc->busy = 0;
+        }
+        if (sc->link_up)
+            iwx_drain_tx(sc);
         if (sc->req_disconnect) {
             sc->req_disconnect = 0;
             if (sc->ap || sc->link_up) {
@@ -3479,7 +3639,11 @@ static void iwx_service_loop(struct iwx_sc *sc)
                 sc->conn_error = err == IWX_EHANDSHAKE ? -20 : -21;
                 sc->conn_failed = 1;
             } else {
+                iwx_swq_reset(&iwx_txsw);
+                iwx_swq_reset(&iwx_rxsw);
+                sc->tx_seq = 0;
                 sc->link_up = 1;
+                klogf(KLOG_OK, "iwx: link up on \"%s\", data path enabled", sc->req_ssid);
             }
             sc->busy = 0;
         }
