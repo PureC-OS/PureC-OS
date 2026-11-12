@@ -153,10 +153,6 @@ static bool alloc_buffers(void) {
 static bool start_installation(void) {
     const struct storage_device_info *disk = &app.disks[app.selected];
     struct install_account_request accounts;
-    if (app.same_root) {
-        pc_copy(app.s.root_password, app.s.user_password,
-                sizeof(app.s.root_password));
-    }
     bool built = setup_build_request(&app.s, &accounts);
     setup_wipe(&app.s);
     for (uint32_t i = 0; i < sizeof(app.user_pass2); i++)

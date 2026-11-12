@@ -38,8 +38,11 @@ enum {
     ID_SAME,
     ID_ERASE,
     ID_REVEAL,
+    ID_ADMIN,
+    ID_ADDUSER,
     ID_DISK0 = 100,
-    ID_TZ0 = 200
+    ID_TZ0 = 200,
+    ID_USER0 = 300
 };
 
 enum { STYLE_PRIMARY = 0, STYLE_SECONDARY, STYLE_DANGER };
@@ -76,7 +79,7 @@ static void layout(const struct ui *u) {
 }
 
 static void register_focus(struct ui *u, int32_t id) {
-    if (u->id_new_count < 24)
+    if (u->id_new_count < 48)
         u->ids_new[u->id_new_count++] = id;
 }
 
@@ -306,18 +309,27 @@ static bool streq(const char *a, const char *b) {
     return *a == *b;
 }
 
-static bool account_ok(const struct app *a) {
-    if (!user_ok(a->s.user_name))
+static bool draft_empty(const struct app *a) {
+    return !a->s.user_gecos[0] && !a->s.user_name[0] &&
+           !a->s.user_password[0] && !a->user_pass2[0];
+}
+
+static bool draft_ok(const struct app *a) {
+    if (a->s.user_count >= INSTALL_USERS_MAX)
+        return false;
+    if (!user_ok(a->s.user_name) || setup_user_taken(&a->s, a->s.user_name))
         return false;
     if (!a->s.user_gecos[0] || !install_account_gecos_valid(a->s.user_gecos))
         return false;
-    if (!a->s.user_password[0] ||
-        !streq(a->s.user_password, a->user_pass2))
-        return false;
-    if (!a->same_root &&
-        (!a->s.root_password[0] || !streq(a->s.root_password, a->root_pass2)))
-        return false;
-    return true;
+    return a->s.user_password[0] && streq(a->s.user_password, a->user_pass2);
+}
+
+static bool root_ok(const struct app *a) {
+    return a->s.root_password[0] && streq(a->s.root_password, a->root_pass2);
+}
+
+static bool account_ok(const struct app *a) {
+    return root_ok(a) && draft_empty(a);
 }
 
 static bool disk_usable(const struct storage_device_info *d) {
@@ -387,7 +399,7 @@ static void go(struct app *a, struct ui *u, enum app_page page) {
     if (page == PAGE_COMPUTER)
         u->focus = ID_HOST;
     else if (page == PAGE_ACCOUNT)
-        u->focus = ID_FULLNAME;
+        u->focus = ID_ROOTPASS;
     if (page == PAGE_REVIEW)
         a->erase_ok = false;
 }

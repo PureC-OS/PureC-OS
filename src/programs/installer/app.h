@@ -40,9 +40,9 @@ struct ui {
     uint32_t frame;
     int32_t active;
     int32_t focus;
-    int32_t ids[24];
+    int32_t ids[48];
     int32_t id_count;
-    int32_t ids_new[24];
+    int32_t ids_new[48];
     int32_t id_new_count;
     bool dirty;
     bool caret_on;
