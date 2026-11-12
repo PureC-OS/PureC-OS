@@ -18,6 +18,7 @@
 #include "../../fs/install.h"
 #include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
+#include "sudo.h"
 #include "../../gfx/blit.h"
 #include "../../gfx/compositor.h"
 #include "../../lib/string.h"
@@ -1417,6 +1418,18 @@ int64_t syscall_handler(struct syscall_regs *r)
     return (int64_t)process_current_uid();
   case SYS_GETGID:
     return (int64_t)process_current_gid();
+  case SYS_SUDO:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1))
+      return -KERR_FAULT;
+    if (!filesystem_syscall_acquire())
+      return -1;
+    int32_t result = sudo_elevate((const char *)(uintptr_t)a1);
+    filesystem_syscall_unlock();
+    if (result < 0)
+      scheduler_sleep(1500);
+    return result;
+  }
   case SYS_SETUID:
     return process_set_uid((uint32_t)a1);
   case SYS_SETGID:

@@ -197,6 +197,7 @@
 #define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
 #define SYS_SHM_UNLINK 392       /* (name) */
 #define SYS_MADVISE 393          /* (address, length, advice) */
+#define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
 #define TIME_ZONE_GET 0
