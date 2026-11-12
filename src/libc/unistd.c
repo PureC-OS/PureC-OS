@@ -595,9 +595,20 @@ int mkdir(const char *path, unsigned int mode)
     }
     char abs[512];
     path = resolve_user_path(path, abs, sizeof(abs));
-    if (pc_directory_create(path) < 0)
+    int32_t status = pc_directory_create(path);
+    if (status < 0)
     {
-        errno = EEXIST;
+        switch (status)
+        {
+        case -14: errno = EACCES; break;
+        case -10: errno = EROFS; break;
+        case -2: errno = ENOENT; break;
+        case -7: errno = ENOTDIR; break;
+        case -4: errno = ENOSPC; break;
+        case -3: errno = EINVAL; break;
+        case -1: errno = EIO; break;
+        default: errno = EEXIST; break;
+        }
         return -1;
     }
     return 0;

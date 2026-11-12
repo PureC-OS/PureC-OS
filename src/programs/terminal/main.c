@@ -131,15 +131,20 @@ static bool spawn(struct session *s, int cols, int rows)
     set_winsize(s);
     const char *shell = find_shell();
     static struct process_environment_variable vars[ENV_MAX];
-    static char entries[ENV_MAX + 8][ENV_ENTRY];
-    char *envp[ENV_MAX + 8];
+    static char entries[ENV_MAX + 12][ENV_ENTRY];
+    char *envp[ENV_MAX + 12];
     int n = 0;
     bool have_path = false, have_home = false;
+    static struct user_info who;
+    bool known = pc_user_lookup(0, (uint32_t)pc_getuid(), &who) == 0;
     int32_t listed = pc_listenv(vars, ENV_MAX);
     for (int32_t i = 0; i < listed && n < ENV_MAX; i++) {
         if (!vars[i].used)
             continue;
         if (pc_strcmp(vars[i].name, "TERM") == 0 || pc_strcmp(vars[i].name, "COLORTERM") == 0)
+            continue;
+        if (known && (pc_strcmp(vars[i].name, "HOME") == 0 || pc_strcmp(vars[i].name, "USER") == 0 ||
+                      pc_strcmp(vars[i].name, "LOGNAME") == 0 || pc_strcmp(vars[i].name, "SHELL") == 0))
             continue;
         if (pc_strcmp(vars[i].name, "PATH") == 0)
             have_path = true;
@@ -166,7 +171,21 @@ static bool spawn(struct session *s, int cols, int rows)
         envp[n] = entries[n];
         n++;
     }
-    if (!have_home) {
+    if (known) {
+        static const char *keys[4] = {"HOME=", "USER=", "LOGNAME=", "SHELL="};
+        const char *values[4] = {who.home, who.name, who.name, who.shell};
+        for (int k = 0; k < 4; k++) {
+            if (!values[k][0])
+                continue;
+            pc_copy(entries[n], keys[k], ENV_ENTRY);
+            uint32_t len = pc_strlen(entries[n]);
+            for (uint32_t j = 0; values[k][j] && len + 1 < ENV_ENTRY; j++)
+                entries[n][len++] = values[k][j];
+            entries[n][len] = 0;
+            envp[n] = entries[n];
+            n++;
+        }
+    } else if (!have_home) {
         pc_copy(entries[n], "HOME=/root", ENV_ENTRY);
         envp[n] = entries[n];
         n++;
@@ -192,6 +211,8 @@ static bool spawn(struct session *s, int cols, int rows)
         (void)pc_syscall(SYS_DUP2, (uint64_t)fds[1], 2, 0);
         if (fds[1] > 2)
             (void)pc_syscall(SYS_FILE_CLOSE, (uint64_t)fds[1], 0, 0);
+        if (known && who.home[0])
+            (void)pc_syscall(SYS_CHDIR, (uint64_t)(uintptr_t)who.home, 0, 0);
         (void)pc_syscall(SYS_EXECVE, (uint64_t)(uintptr_t)shell, (uint64_t)(uintptr_t)argv,
                          (uint64_t)(uintptr_t)envp);
         pc_exit(127);
