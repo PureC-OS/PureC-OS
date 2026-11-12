@@ -585,6 +585,25 @@ int fileno(FILE *stream)
     return fd;
 }
 
+int __purec_fs_errno(int32_t status, int fallback)
+{
+    switch (status)
+    {
+    case -14: return EACCES;
+    case -10: return EROFS;
+    case -2: return ENOENT;
+    case -5: return EEXIST;
+    case -6: return EISDIR;
+    case -7: return ENOTDIR;
+    case -4: return ENOSPC;
+    case -12: return ENOTEMPTY;
+    case -9: return EBUSY;
+    case -3: return EINVAL;
+    case -1: return EIO;
+    }
+    return fallback;
+}
+
 int mkdir(const char *path, unsigned int mode)
 {
     (void)mode;
@@ -598,17 +617,7 @@ int mkdir(const char *path, unsigned int mode)
     int32_t status = pc_directory_create(path);
     if (status < 0)
     {
-        switch (status)
-        {
-        case -14: errno = EACCES; break;
-        case -10: errno = EROFS; break;
-        case -2: errno = ENOENT; break;
-        case -7: errno = ENOTDIR; break;
-        case -4: errno = ENOSPC; break;
-        case -3: errno = EINVAL; break;
-        case -1: errno = EIO; break;
-        default: errno = EEXIST; break;
-        }
+        errno = __purec_fs_errno(status, EEXIST);
         return -1;
     }
     return 0;
@@ -671,9 +680,10 @@ int unlink(const char *path)
     }
     char abs[512];
     path = resolve_user_path(path, abs, sizeof(abs));
-    if (pc_file_delete(path) < 0)
+    int32_t status = pc_file_delete(path);
+    if (status < 0)
     {
-        errno = ENOENT;
+        errno = __purec_fs_errno(status, ENOENT);
         return -1;
     }
     return 0;

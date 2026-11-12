@@ -550,12 +550,15 @@ void perror(const char *prefix) {
     fputc('\n', stderr);
 }
 
+int __purec_fs_errno(int32_t status, int fallback);
+
 int remove(const char *path) {    if (!path) { errno = EINVAL; return -1; }
     char abs[512];
     if (path[0] != '/') {
         if (realpath(path, abs)) path = abs;
     }
-    if (pc_file_delete(path) < 0) { errno = ENOENT; return -1; }
+    int32_t status = pc_file_delete(path);
+    if (status < 0) { errno = __purec_fs_errno(status, ENOENT); return -1; }
     return 0;
 }
 
@@ -574,7 +577,8 @@ int rename(const char *old_path, const char *new_path) {
     for (const char *p = new_path; *p; p++) {
         if (*p == '/') base = p + 1;
     }
-    if (pc_file_rename(old_path, base) < 0) { errno = ENOENT; return -1; }
+    int32_t status = pc_file_rename(old_path, base);
+    if (status < 0) { errno = __purec_fs_errno(status, ENOENT); return -1; }
     return 0;
 }
 
