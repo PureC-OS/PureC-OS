@@ -1248,8 +1248,13 @@ int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
   if (ops->stat_ex && mount_ready(resolved.mount) &&
       !is_klog_path(resolved.path)) {
     status = ops->stat_ex(resolved.mount->context, resolved.relative, out);
-    if (status < 0 && !is_virtual_dir(resolved.path))
+    const void *probe = 0;
+    uint32_t probe_size = 0;
+    if (status < 0 && !is_virtual_dir(resolved.path) &&
+        !overlay_find(resolved.path, &probe, &probe_size) && !overlay_dir(resolved.path))
       return status;
+    if (status < 0)
+      memset(out, 0, sizeof(*out));
     filled = status >= 0;
   }
   if (!filled) {
@@ -1266,7 +1271,7 @@ int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
                            &info) >= 0) {
         out->size = info.size;
         out->is_directory = info.is_directory;
-      } else if (is_virtual_dir(resolved.path)) {
+      } else if (is_virtual_dir(resolved.path) || overlay_dir(resolved.path)) {
         out->is_directory = 1;
       } else {
         return FS_ERROR_NOT_FOUND;
