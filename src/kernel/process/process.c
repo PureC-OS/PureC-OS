@@ -529,6 +529,17 @@ uint32_t process_oom_candidates(struct oom_candidate *out, uint32_t capacity)
   return count;
 }
 
+static uint32_t spawn_parent_pid(const struct process *self)
+{
+  struct process *current = process_current();
+  if (current && current != self &&
+      current->address_space != vmm_kernel_address_space())
+    return current->pid;
+  if (self->pid != 1 && process_find_by_pid(1))
+    return 1;
+  return 0;
+}
+
 static bool session_active;
 static uint32_t session_uid;
 static uint32_t session_gid;
@@ -584,8 +595,7 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
       return -1;
     }
   }
-  process->parent_pid =
-      (uint32_t)(process_current_pid() > 0 ? process_current_pid() : 0);
+  process->parent_pid = spawn_parent_pid(process);
   process->state = PROCESS_READY;
   process->entry = loaded.entry;
   process->user_stack_top = USER_STACK_TOP - 24;
@@ -1592,6 +1602,10 @@ static void process_terminate(int32_t status, int32_t signal)
       signal_notify_child_exit(parent);
       parent_waiter = parent->thread_id;
       parent_child_waiter = parent->child_waiter_tid;
+    }
+    else if (process->parent_pid != 1)
+    {
+      process->parent_pid = 1;
     }
     if (process->waiter_thread_id >= 0)
       scheduler_unblock(process->waiter_thread_id);
