@@ -62,6 +62,14 @@
 #define IWX_NUM_5GHZ_CHANNELS 37
 #define IWX_NCHAN (IWX_NUM_2GHZ_CHANNELS + IWX_NUM_5GHZ_CHANNELS)
 #define IWX_MAX_BSS 64
+#define IWX_SCAN_DWELL_ACTIVE 10
+#define IWX_SCAN_DWELL_PASSIVE 110
+#define IWX_SCAN_ADWELL_MAX_BUDGET_FULL_SCAN 300
+#define IWX_SCAN_ADWELL_DEFAULT_HB_N_APS 8
+#define IWX_SCAN_ADWELL_DEFAULT_LB_N_APS 2
+#define IWX_SCAN_ADWELL_DEFAULT_N_APS_SOCIAL 10
+#define IWX_SCAN_ADWELL_N_APS_GO_FRIENDLY 10
+#define IWX_SCAN_ADWELL_N_APS_SOCIAL_CHS 2
 
 struct iwx_bss {
     uint8_t bssid[6];
@@ -1847,12 +1855,14 @@ static void iwx_set_mac_addr_from_csr(struct iwx_sc *sc)
     iwx_nic_unlock(sc);
 }
 
-static void iwx_init_channel_map(struct iwx_sc *sc, const uint32_t *profile, uint32_t nprofile)
+static void iwx_init_channel_map(struct iwx_sc *sc, const void *profile, uint32_t nprofile)
 {
     int n2 = 0, n5 = 0, npassive = 0;
     sc->nchan = 0;
     for (uint32_t i = 0; i < nprofile && i < IWX_NCHAN; i++) {
-        uint32_t f = le32toh(profile[i]);
+        uint32_t f;
+        memcpy(&f, (const uint8_t *)profile + i * 4, 4);
+        f = le32toh(f);
         int is5 = i >= IWX_NUM_2GHZ_CHANNELS;
         if (is5 && !sc->nvm_5ghz)
             f &= ~IWX_NVM_CHANNEL_VALID;
@@ -1916,7 +1926,7 @@ static void iwx_nvm_get(struct iwx_sc *sc)
     sc->nvm_lar = le32toh(rsp->regulatory.lar_enabled) &&
                   isset(sc->enabled_capa, IWX_UCODE_TLV_CAPA_LAR_SUPPORT);
     if (plen >= sizeof(struct iwx_nvm_get_info_rsp))
-        iwx_init_channel_map(sc, rsp->regulatory.channel_profile, IWX_NCHAN);
+        iwx_init_channel_map(sc, (const uint8_t *)rsp + offsetof(struct iwx_nvm_get_info_rsp, regulatory.channel_profile), IWX_NCHAN);
 }
 
 static int iwx_run_init_mvm_ucode(struct iwx_sc *sc, int readnvm)
@@ -2015,7 +2025,7 @@ static int iwx_send_update_mcc(struct iwx_sc *sc)
     }
     const struct iwx_rx_packet *pkt = (const void *)sc->resp_storage;
     uint32_t plen = iwx_rx_packet_payload_len(pkt);
-    const uint32_t *channels;
+    const void *channels;
     uint32_t n, status;
     uint16_t mcc;
     size_t fixed;
@@ -2027,7 +2037,7 @@ static int iwx_send_update_mcc(struct iwx_sc *sc)
         n = le32toh(r->n_channels);
         status = le32toh(r->status);
         mcc = le16toh(r->mcc);
-        channels = r->channels;
+        channels = (const uint8_t *)r + fixed;
     } else {
         const struct iwx_mcc_update_resp_v3 *r = (const void *)pkt->data;
         fixed = sizeof(*r);
@@ -2036,7 +2046,7 @@ static int iwx_send_update_mcc(struct iwx_sc *sc)
         n = le32toh(r->n_channels);
         status = le32toh(r->status);
         mcc = le16toh(r->mcc);
-        channels = r->channels;
+        channels = (const uint8_t *)r + fixed;
     }
     if (plen != fixed + n * sizeof(uint32_t))
         goto bad;
