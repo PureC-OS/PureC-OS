@@ -337,6 +337,21 @@ static bool overlay_find(const char *path, const void **data, uint32_t *size) {
   return initramfs_is_mounted() && initramfs_find(path, data, size);
 }
 
+static bool overlay_take(const struct vfs_resolved *resolved, const void **data,
+                         uint32_t *size) {
+  if (!overlay_find(resolved->path, data, size))
+    return false;
+  if (strncmp(resolved->path, "/etc/", 5) != 0)
+    return true;
+  const struct vfs_fs_ops *ops = resolved->mount->ops;
+  struct file_stat_info info;
+  if (ops->stat && mount_ready(resolved->mount) &&
+      ops->stat(resolved->mount->context, resolved->relative, &info) >= 0 &&
+      !info.is_directory)
+    return false;
+  return true;
+}
+
 static uint32_t klog_visible_size(void) {
   uint64_t total = klog_total_bytes();
   return total > VFS_KLOG_WINDOW ? VFS_KLOG_WINDOW : (uint32_t)total;
@@ -472,7 +487,7 @@ int32_t vfs_open(const char *path) {
   }
   const void *data = 0;
   uint32_t size = 0;
-  if (overlay_find(resolved.path, &data, &size)) {
+  if (overlay_take(&resolved, &data, &size)) {
     h->type = VFS_HANDLE_MEMORY;
     h->data = data;
     h->size = size;
@@ -864,7 +879,7 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   }
   const void *data = 0;
   uint32_t size = 0;
-  if (overlay_find(resolved.path, &data, &size)) {
+  if (overlay_take(&resolved, &data, &size)) {
     out->size = size;
     out->is_directory = 0;
     return 0;
