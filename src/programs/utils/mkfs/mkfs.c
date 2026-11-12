@@ -1,4 +1,4 @@
-#include "../../libc/include/purec.h"
+#include "libc/include/purec.h"
 
 #define MKFS_DEVICE_CAPACITY 12
 #define MKFS_ARGUMENT_CAPACITY 256

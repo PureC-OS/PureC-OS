@@ -1,4 +1,4 @@
-#include "../../libc/include/purec.h"
+#include "libc/include/purec.h"
 #define EAT_CHUNK (1024ULL * 1024ULL)
 #define EAT_DEFAULT_MB 1024
 #define EAT_MAX_MB 4096
