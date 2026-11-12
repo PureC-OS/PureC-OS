@@ -2418,6 +2418,8 @@ static int exec_external(char **argv) {
         free_environment(env);
         return 127;
     }
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
     execve(path, argv, env);
     int code = errno == ENOEXEC ? 126 : 126;
     if (errno == ENOEXEC) {
@@ -2922,6 +2924,8 @@ int main(int argc, char **argv) {
     positional_count = argc - i;
     if (isatty(0) || interactive) {
         interactive = true;
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
         interactive_loop();
         fflush(0);
         return last_status;
