@@ -117,6 +117,13 @@ GENERAL_CPP_SOURCES := \
 	hexedit/src/input/input.cpp \
 	hexedit/src/editor/editor.cpp \
 	hexedit/src/window/window.cpp
+UTILS := ls cat cp mv rm mkdir rmdir touch chmod stat find tree du df install realpath basename dirname \
+	grep head tail wc sort uniq cut tr tee cmp diff nl rev seq yes xargs xxd \
+	echo pwd env uname whoami id hostname date uptime sleep true false kill ps free which \
+	clear reboot ping man less help cd
+UTIL_LIB_OBJECTS := $(OBJ_DIR)/utils/lib/common.o $(OBJ_DIR)/utils/lib/pager.o $(OBJ_DIR)/utils/lib/fileops.o
+UTIL_OBJECTS := $(foreach u,$(UTILS),$(OBJ_DIR)/utils/$(u)/$(u).o) $(UTIL_LIB_OBJECTS)
+UTIL_TARGETS := $(UTILS:%=$(PROGRAM_DIR)/%)
 PLAIN_OBJECTS := $(PLAIN_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_OBJECTS := $(GENERAL_SOURCES:%.c=$(OBJ_DIR)/%.o)
 GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
@@ -144,7 +151,6 @@ TARGETS := \
   	$(PROGRAM_DIR)/hello \
   	$(PROGRAM_DIR)/forktest \
   	$(PROGRAM_DIR)/sh \
-  	$(PROGRAM_DIR)/box \
   	$(PROGRAM_DIR)/proctest \
   	$(PROGRAM_DIR)/thrtest \
   	$(PROGRAM_DIR)/posixtest \
@@ -155,29 +161,15 @@ TARGETS := \
   	$(PROGRAM_DIR)/httpsget \
   	$(PROGRAM_DIR)/fputest \
   	$(PROGRAM_DIR)/gltest \
-	$(PROGRAM_DIR)/cd \
-	$(PROGRAM_DIR)/help \
-	$(PROGRAM_DIR)/ls \
-	$(PROGRAM_DIR)/cat \
-	$(PROGRAM_DIR)/touch \
-	$(PROGRAM_DIR)/mkdir \
-	$(PROGRAM_DIR)/rm \
 	$(PROGRAM_DIR)/mkfs \
-	$(PROGRAM_DIR)/pwd \
-	$(PROGRAM_DIR)/clear \
-	$(PROGRAM_DIR)/ping \
- 	$(PROGRAM_DIR)/echo \
  	$(PROGRAM_DIR)/battery \
  	$(PROGRAM_DIR)/burn \
  	$(PROGRAM_DIR)/eat \
  	$(PROGRAM_DIR)/cpuinfo \
  	$(PROGRAM_DIR)/raminfo \
  	$(PROGRAM_DIR)/hddcheck \
-	$(PROGRAM_DIR)/reboot \
-	$(PROGRAM_DIR)/poweroff \
-	$(PROGRAM_DIR)/shutdown \
-	$(PROGRAM_DIR)/halt \
-	$(PROGRAM_DIR)/lua
+	$(PROGRAM_DIR)/lua \
+	$(UTIL_TARGETS)
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
@@ -235,7 +227,7 @@ $(PROGRAM_DIR)/echo-dyn: $(OBJ_DIR)/echo/echo-pic.o $(LIB_DIR)/libpurec.so $(DYN
 	@mkdir -p $(@D)
 	$(LD) $(DYN_LINK_FLAGS) -o $@ $(OBJ_DIR)/echo/echo-pic.o $(DYN_LD_STUB) $(LIB_DIR)/libpurec.so
 
-$(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/echo/echo.c
+$(OBJ_DIR)/echo/echo-pic.o: $(ROOT_DIR)/src/programs/utils/test/echo_dyn/echo.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(USER_SO_CFLAGS) -c $< -o $@
 
@@ -261,6 +253,19 @@ $(PROGRAM_DIR)/dltest-dyn: $(OBJ_DIR)/dltest/main-pic.o $(OBJ_DIR)/dltest/crt0-p
 	@mkdir -p $(@D)
 	$(LD) $(DYN_LINK_FLAGS) -o $@ $(OBJ_DIR)/dltest/crt0-pic.o $(OBJ_DIR)/dltest/main-pic.o $(DYN_LD_STUB) $(LIB_DIR)/libpurec.so
 endif
+
+-include $(UTIL_OBJECTS:.o=.d)
+
+$(UTIL_OBJECTS): $(OBJ_DIR)/utils/%.o: $(ROOT_DIR)/src/programs/utils/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+define UTIL_RULE
+$(PROGRAM_DIR)/$(1): $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $$(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $$@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIBPUREFS) $(LIBPUREC)
+endef
+$(foreach u,$(UTILS),$(eval $(call UTIL_RULE,$(u))))
 
 $(LIBPUREGUI) $(LIBPGUIW):
 	$(MAKE) -C $(ROOT_DIR)/src/libgui
@@ -309,7 +314,7 @@ $(PROGRAM_DIR)/system: $(OBJ_DIR)/system/main.o $(OBJ_DIR)/system/commands.o $(O
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/gui-demo: $(OBJ_DIR)/gui_demo/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/gui-demo: $(OBJ_DIR)/utils/test/gui_demo/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
@@ -384,57 +389,24 @@ $(PROGRAM_DIR)/burn: $(OBJ_DIR)/burn/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/eat: $(OBJ_DIR)/eat/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/eat: $(OBJ_DIR)/utils/test/eat/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/cd: $(OBJ_DIR)/cd/cd.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+
+
+
+
+
+
+
+$(PROGRAM_DIR)/mkfs: $(OBJ_DIR)/utils/mkfs/mkfs.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/help: $(OBJ_DIR)/help/help.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/ls: $(OBJ_DIR)/ls/ls.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/cat: $(OBJ_DIR)/cat/cat.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/touch: $(OBJ_DIR)/touch/touch.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/mkdir: $(OBJ_DIR)/mkdir/mkdir.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/rm: $(OBJ_DIR)/rm/rm.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/mkfs: $(OBJ_DIR)/mkfs/mkfs.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/pwd: $(OBJ_DIR)/pwd/pwd.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/clear: $(OBJ_DIR)/clear/clear.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/ping: $(OBJ_DIR)/ping/ping.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/echo: $(OBJ_DIR)/echo/echo.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/battery: $(OBJ_DIR)/battery/battery.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -452,21 +424,9 @@ $(PROGRAM_DIR)/hddcheck: $(OBJ_DIR)/hddcheck/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/reboot: $(OBJ_DIR)/reboot/reboot.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/poweroff: $(OBJ_DIR)/poweroff/poweroff.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/shutdown: $(OBJ_DIR)/shutdown/shutdown.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-$(PROGRAM_DIR)/halt: $(OBJ_DIR)/halt/halt.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 
 
@@ -519,13 +479,13 @@ $(TCCRT_LIB): $(TCCRT_OBJECTS)
 	$(AR) rcs $@ $^
 endif
 
-$(OBJ_DIR)/hello/main.o: $(ROOT_DIR)/src/programs/hello/main.c
+$(OBJ_DIR)/utils/test/hello/main.o: $(ROOT_DIR)/src/programs/utils/test/hello/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
-$(PROGRAM_DIR)/hello: $(OBJ_DIR)/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/hello: $(OBJ_DIR)/utils/test/hello/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/hello/main.o $(LIBPUREFS) $(LIBPUREC)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/test/hello/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/forktest/main.o: $(ROOT_DIR)/src/programs/forktest/main.c
 	@mkdir -p $(@D)
@@ -543,13 +503,7 @@ $(PROGRAM_DIR)/sh: $(OBJ_DIR)/sh/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPURE
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/sh/main.o $(LIBPUREFS) $(LIBPUREC)
 
-$(OBJ_DIR)/box/main.o: $(ROOT_DIR)/src/programs/box/main.c
-	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
-$(PROGRAM_DIR)/box: $(OBJ_DIR)/box/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/box/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/journalctl/main.o: $(ROOT_DIR)/src/programs/journalctl/main.c
 	@mkdir -p $(@D)
@@ -559,26 +513,26 @@ $(PROGRAM_DIR)/journalctl: $(OBJ_DIR)/journalctl/main.o $(LIB_DIR)/crt0.o $(LIBP
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/journalctl/main.o $(LIBPUREFS) $(LIBPUREC)
 
-$(OBJ_DIR)/httpget/main.o: $(ROOT_DIR)/src/programs/httpget/main.c
+$(OBJ_DIR)/utils/test/httpget/main.o: $(ROOT_DIR)/src/programs/utils/test/httpget/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
-$(PROGRAM_DIR)/httpget: $(OBJ_DIR)/httpget/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/httpget: $(OBJ_DIR)/utils/test/httpget/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpget/main.o $(LIBPUREFS) $(LIBPUREC)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/test/httpget/main.o $(LIBPUREFS) $(LIBPUREC)
 
 LIBWOLF := $(LIB_DIR)/libwolf.a
 
 $(LIBWOLF):
 	$(MAKE) -C $(ROOT_DIR)/wolfssl lib
 
-$(OBJ_DIR)/httpsget/main.o: $(ROOT_DIR)/src/programs/httpsget/main.c $(LIBWOLF)
+$(OBJ_DIR)/utils/test/httpsget/main.o: $(ROOT_DIR)/src/programs/utils/test/httpsget/main.c $(LIBWOLF)
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec -DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
-$(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/httpsget/main.o $(LIB_DIR)/crt0.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/utils/test/httpsget/main.o $(LIB_DIR)/crt0.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/test/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
 
 CURL_DIR := $(ROOT_DIR)/curl
 CURL_PRESENT := $(wildcard $(CURL_DIR)/lib/curl_setup.h)
