@@ -31,6 +31,12 @@ struct pg_theme {
     uint32_t accent;
     uint32_t danger;
     uint32_t shadow;
+    uint32_t surface;
+    uint32_t surface_alt;
+    uint32_t success;
+    uint32_t warning;
+    uint32_t info;
+    uint32_t on_accent;
 };
 
 enum pg_event_type {
