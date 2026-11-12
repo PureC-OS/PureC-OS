@@ -477,10 +477,29 @@ int getloadavg(double loadavg[], int count)
 
 int statvfs(const char *path, struct statvfs *info)
 {
-    (void)path;
-    (void)info;
-    errno = ENOSYS;
-    return -1;
+    if (!path || !info)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    struct ext2_super_info super;
+    if (pc_ext2_super(&super) < 0 || !super.block_size)
+    {
+        errno = ENOSYS;
+        return -1;
+    }
+    memset(info, 0, sizeof(*info));
+    info->f_bsize = super.block_size;
+    info->f_frsize = super.block_size;
+    info->f_blocks = super.total_blocks;
+    info->f_bfree = super.free_blocks;
+    info->f_bavail = super.free_blocks;
+    info->f_files = super.total_inodes;
+    info->f_ffree = super.free_inodes;
+    info->f_favail = super.free_inodes;
+    info->f_fsid = super.magic;
+    info->f_namemax = 255;
+    return 0;
 }
 
 int fstatvfs(int fd, struct statvfs *info)
