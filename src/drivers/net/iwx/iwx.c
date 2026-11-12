@@ -1891,8 +1891,8 @@ static void iwx_nvm_get(struct iwx_sc *sc)
 
     iwx_set_mac_addr_from_csr(sc);
     klogf(iwx_is_valid_mac_addr(sc->mac) ? KLOG_OK : KLOG_WARN,
-          "iwx: MAC address %02x:%02x:%02x:xx:xx:xx%s", sc->mac[0], sc->mac[1], sc->mac[2],
-          iwx_is_valid_mac_addr(sc->mac) ? "" : " (invalid)");
+          "iwx: MAC address %02x:%02x:%02x:%02x:%02x:%02x%s", sc->mac[0], sc->mac[1], sc->mac[2],
+          sc->mac[3], sc->mac[4], sc->mac[5], iwx_is_valid_mac_addr(sc->mac) ? "" : " (invalid)");
 
     int err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO), &cmd,
                            sizeof(cmd), sc->resp_storage, sizeof(sc->resp_storage), &got);
@@ -2321,8 +2321,9 @@ static int iwx_scan(struct iwx_sc *sc)
         const struct iwx_bss *b = &sc->bss[i];
         int hidden = b->ssid_len == 0 || b->ssid[0] == 0;
         const char *sec = b->rsn ? "WPA2/3" : b->wpa ? "WPA" : (b->capinfo & 0x10) ? "WEP" : "open";
-        klogf(KLOG_INFO, "iwx:  [%2d] ch %3u %4d dBm %-6s %02x:%02x:%02x:xx:xx:%02x \"%s\"%s",
-              i, b->channel, b->rssi, sec, b->bssid[0], b->bssid[1], b->bssid[2], b->bssid[5],
+        klogf(KLOG_INFO, "iwx:  [%2d] ch %3u %4d dBm %-6s %02x:%02x:%02x:%02x:%02x:%02x \"%s\"%s",
+              i, b->channel, b->rssi, sec, b->bssid[0], b->bssid[1], b->bssid[2], b->bssid[3],
+              b->bssid[4], b->bssid[5],
               hidden ? "" : b->ssid, hidden ? " (hidden)" : "");
     }
     return 0;
@@ -2503,9 +2504,9 @@ static void iwx_thread(void *arg)
         klogf(KLOG_ERROR, "iwx: init firmware run failed (%d)", err);
         return;
     }
-    klogf(KLOG_OK, "iwx: milestone 1 complete: hw rev 0x%x, fw %u.%08x.%u, address %02x:%02x:%02x:xx:xx:xx",
+    klogf(KLOG_OK, "iwx: milestone 1 complete: hw rev 0x%x, fw %u.%08x.%u, address %02x:%02x:%02x:%02x:%02x:%02x",
           sc->hw_rev & IWX_CSR_HW_REV_TYPE_MSK, sc->fw_major, sc->fw_minor, sc->fw_api,
-          sc->mac[0], sc->mac[1], sc->mac[2]);
+          sc->mac[0], sc->mac[1], sc->mac[2], sc->mac[3], sc->mac[4], sc->mac[5]);
 
     err = iwx_start_hw(sc);
     if (err) {
