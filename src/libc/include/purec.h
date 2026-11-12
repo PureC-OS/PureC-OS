@@ -113,6 +113,8 @@ void pc_surface_detach(void);
 uint32_t *pc_surface_pixels(uint32_t *width, uint32_t *height);
 void pc_surface_damage(int32_t x, int32_t y, uint32_t width, uint32_t height);
 void pc_surface_present(void);
+int32_t pc_openpty(int32_t fds[2]);
+int32_t pc_tty_ioctl(int32_t fd, uint32_t request, void *argument);
 void pc_display_begin_update(void);
 void pc_display_end_update(void);
 void pc_display_clear(uint32_t color);

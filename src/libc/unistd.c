@@ -619,7 +619,7 @@ int fstat(int fd, struct stat *info)
     memset(info, 0, sizeof(*info));
     info->st_nlink = 1;
     info->st_blksize = 4096;
-    if (kind == FD_KIND_CONSOLE)
+    if (kind == FD_KIND_CONSOLE || kind == FD_KIND_PTY)
     {
         info->st_dev = 2;
         info->st_ino = 1;
@@ -698,7 +698,7 @@ int isatty(int fd)
         errno = EBADF;
         return 0;
     }
-    if (kind != FD_KIND_CONSOLE)
+    if (kind != FD_KIND_CONSOLE && kind != FD_KIND_PTY)
     {
         errno = ENOTTY;
         return 0;

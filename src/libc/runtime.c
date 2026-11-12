@@ -540,6 +540,14 @@ bool pc_display_get_info(struct pc_display_info *info){
     return true;
 }
 
+int32_t pc_openpty(int32_t fds[2]){
+    return (int32_t)pc_syscall(SYS_OPENPTY,(uint64_t)(uintptr_t)fds,0,0);
+}
+
+int32_t pc_tty_ioctl(int32_t fd, uint32_t request, void *argument){
+    return (int32_t)pc_syscall(SYS_TTY_IOCTL,request,(uint64_t)(uintptr_t)argument,(uint64_t)fd);
+}
+
 void pc_display_begin_update(void){
     if(pc_surf.px){
         pc_surf.depth++;

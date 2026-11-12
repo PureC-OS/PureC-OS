@@ -37,11 +37,28 @@ static int require_console(int fd)
         errno = EBADF;
         return -1;
     }
-    if (kind != FD_KIND_CONSOLE)
+    if (kind != FD_KIND_CONSOLE && kind != FD_KIND_PTY)
     {
         errno = ENOTTY;
         return -1;
     }
+    return 0;
+}
+
+int openpty(int *amaster, int *aslave, char *name, const struct termios *mode, const struct winsize *size)
+{
+    int32_t fds[2];
+    int64_t r = pc_syscall(SYS_OPENPTY, (uint64_t)(uintptr_t)fds, 0, 0);
+    if (r < 0)
+        return syscall_result(r);
+    if (name)
+        name[0] = 0;
+    if (mode)
+        (void)tcsetattr(fds[1], TCSANOW, mode);
+    if (size)
+        (void)ioctl(fds[0], TIOCSWINSZ, (void *)size);
+    *amaster = fds[0];
+    *aslave = fds[1];
     return 0;
 }
 
@@ -54,7 +71,7 @@ int ioctl(int fd, unsigned long request, ...)
     if (require_console(fd) < 0)
         return -1;
     return syscall_result(pc_syscall(SYS_TTY_IOCTL, (uint64_t)request,
-                                     (uint64_t)(uintptr_t)argument, 0));
+                                     (uint64_t)(uintptr_t)argument, (uint64_t)fd));
 }
 
 int tcgetattr(int fd, struct termios *mode)

@@ -6,7 +6,7 @@ import sys
 MAGIC = 0x505552454B53594D
 NAME_LEN = 56
 CAP = 8192
-AREA_SIZE = 262208
+AREA_SIZE = 8192 * 64 + 64
 
 
 def section_info(kernel):
