@@ -22,6 +22,9 @@ ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/sr
 	acpi/AML/uACPI/source/default_handlers.c
 ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include -I$(ACPI_DIR)/AML/uACPI/include
+CRYPT_DIR := $(ROOT_DIR)/libxcrypt
+CPPFLAGS += -I$(CRYPT_DIR)/include
+CRYPT_OBJECTS := $(OBJ_DIR)/xcrypt/sha512.o $(OBJ_DIR)/xcrypt/crypt_sha512.o
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
 E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
@@ -80,6 +83,7 @@ C_SOURCES := \
 	arch/x86_64/fpu/fpu.c \
 	arch/x86_64/mmio.c \
 	kernel/syscall/syscall.c \
+	kernel/syscall/sudo.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \
 	drivers/interrupts/pic.c \
@@ -197,7 +201,7 @@ GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
 IO_OBJECT := $(BIN_DIR)/io/io.o
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ) $(IO_OBJECT)
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(CRYPT_OBJECTS) $(GEN_STAMP_OBJ) $(IO_OBJECT)
 
 BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -237,6 +241,10 @@ $(GEN_STAMP_OBJ): $(GEN_STAMP)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/xcrypt/%.o: $(CRYPT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
