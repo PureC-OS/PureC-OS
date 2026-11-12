@@ -38,6 +38,7 @@
 /sbin/mkfs /sbin/mkfs - 1 bin/programs/mkfs
 /bin/pwd /bin/pwd - 1 bin/programs/pwd
 /bin/clear /bin/clear - 1 bin/programs/clear
+/bin/ping /bin/ping - 1 bin/programs/ping
 /bin/echo /bin/echo - 1 bin/programs/echo
 /bin/echo-dyn /bin/echo-dyn - 0 bin/programs/echo-dyn
 /bin/dltest-dyn /bin/dltest-dyn - 0 bin/programs/dltest-dyn

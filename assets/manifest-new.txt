@@ -34,6 +34,7 @@
 /bin/mkfs /bin/mkfs - 1 bin/programs/mkfs
 /bin/pwd /bin/pwd - 1 bin/programs/pwd
 /bin/clear /bin/clear - 1 bin/programs/clear
+/bin/ping /bin/ping - 1 bin/programs/ping
 /bin/echo /bin/echo - 1 bin/programs/echo
 /bin/battery /bin/battery - 1 bin/programs/battery
 /bin/cpuinfo /bin/cpuinfo - 1 bin/programs/cpuinfo
