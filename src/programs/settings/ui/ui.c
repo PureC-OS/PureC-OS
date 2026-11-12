@@ -283,7 +283,7 @@ bool ui_textbox(struct ui *u, uint32_t id, int x, int y, int w, int h, char *buf
     for (; n < len && n < (int)sizeof(shown) - 1; n++)
         shown[n] = password ? '*' : buf[n];
     shown[n] = 0;
-    sg_clip(u->c, x + 10, y, w - 20, h);
+    struct sg_clip saved = sg_clip_push(u->c, x + 10, y, w - 20, h);
     int tw = 0;
     if (len)
         tw = sg_text(u->c, SF_BODY, x + 12, ty, shown, p->text);
@@ -291,7 +291,7 @@ bool ui_textbox(struct ui *u, uint32_t id, int x, int y, int w, int h, char *buf
         sg_text(u->c, SF_BODY, x + 12, ty, placeholder, p->text3);
     if (focused && ((u->now / 500) & 1) == 0)
         sg_fill(u->c, x + 13 + tw, y + 8, 2, h - 16, p->accent);
-    sg_unclip(u->c);
+    sg_clip_pop(u->c, saved);
     if (focused)
         u->animating = true;
     return submitted;

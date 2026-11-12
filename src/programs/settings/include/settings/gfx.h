@@ -14,6 +14,9 @@ enum sg_icon_size { SG_ICON_S = 0, SG_ICON_M = 1, SG_ICON_L = 2 };
 void sg_init(struct sg_canvas *c, uint32_t *px, int w, int h);
 void sg_clip(struct sg_canvas *c, int x, int y, int w, int h);
 void sg_unclip(struct sg_canvas *c);
+struct sg_clip { int x0, y0, x1, y1; };
+struct sg_clip sg_clip_push(struct sg_canvas *c, int x, int y, int w, int h);
+void sg_clip_pop(struct sg_canvas *c, struct sg_clip saved);
 
 uint32_t sg_mix(uint32_t a, uint32_t b, uint32_t t);
 uint32_t sg_lighten(uint32_t c, int amount);

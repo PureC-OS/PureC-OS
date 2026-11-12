@@ -156,13 +156,10 @@ int page_appearance(struct page_ctx *p)
     int py = y + 142;
     sg_rrect(u->c, p->x + 24, py, p->w - 48, 74, 10, pal->light ? 0xffffff : pal->bg, 255);
     sg_rrect_stroke(u->c, p->x + 24, py, p->w - 48, 74, 10, pal->border, 140);
-    sg_clip(u->c, p->x + 30, py, p->w - 60, 74);
+    struct sg_clip saved = sg_clip_push(u->c, p->x + 30, py, p->w - 60, 74);
     int sz = (int)a->font_size;
     sg_bitfont(u->c, face, p->x + 40, py + 37 - sz / 2, "The quick brown fox jumps 0123", pal->text, sz);
-    sg_unclip(u->c);
-    if (u->c->cy0 > 0 || u->c->cy1 < u->c->h)
-        sg_unclip(u->c);
-    sg_clip(u->c, 0, p->y - 8 > 0 ? p->y - 8 : 0, u->c->w, u->c->h);
+    sg_clip_pop(u->c, saved);
     sg_text(u->c, SF_MEDIUM, p->x + 24, py + 94, "Size", pal->text);
     fmt_init(&f, buf, sizeof(buf));
     fu(&f, a->font_size);

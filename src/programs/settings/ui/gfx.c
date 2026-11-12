@@ -28,6 +28,28 @@ void sg_unclip(struct sg_canvas *c)
     c->cy1 = c->h;
 }
 
+struct sg_clip sg_clip_push(struct sg_canvas *c, int x, int y, int w, int h)
+{
+    struct sg_clip saved = {c->cx0, c->cy0, c->cx1, c->cy1};
+    c->cx0 = imax(c->cx0, x);
+    c->cy0 = imax(c->cy0, y);
+    c->cx1 = imin(c->cx1, x + w);
+    c->cy1 = imin(c->cy1, y + h);
+    if (c->cx1 < c->cx0)
+        c->cx1 = c->cx0;
+    if (c->cy1 < c->cy0)
+        c->cy1 = c->cy0;
+    return saved;
+}
+
+void sg_clip_pop(struct sg_canvas *c, struct sg_clip saved)
+{
+    c->cx0 = saved.x0;
+    c->cy0 = saved.y0;
+    c->cx1 = saved.x1;
+    c->cy1 = saved.y1;
+}
+
 uint32_t sg_mix(uint32_t a, uint32_t b, uint32_t t)
 {
     if (t >= 255)
