@@ -1847,6 +1847,31 @@ static void iwx_set_mac_addr_from_csr(struct iwx_sc *sc)
     iwx_nic_unlock(sc);
 }
 
+static void iwx_init_channel_map(struct iwx_sc *sc, const uint32_t *profile, uint32_t nprofile)
+{
+    int n2 = 0, n5 = 0, npassive = 0;
+    sc->nchan = 0;
+    for (uint32_t i = 0; i < nprofile && i < IWX_NCHAN; i++) {
+        uint32_t f = le32toh(profile[i]);
+        int is5 = i >= IWX_NUM_2GHZ_CHANNELS;
+        if (is5 && !sc->nvm_5ghz)
+            f &= ~IWX_NVM_CHANNEL_VALID;
+        if (!(f & IWX_NVM_CHANNEL_VALID))
+            continue;
+        sc->chan_num[sc->nchan] = iwx_nvm_channels_8000[i];
+        sc->chan_band[sc->nchan] = is5 ? IWX_PHY_BAND_5 : IWX_PHY_BAND_24;
+        sc->chan_passive[sc->nchan] = !(f & IWX_NVM_CHANNEL_ACTIVE);
+        npassive += sc->chan_passive[sc->nchan];
+        if (is5)
+            n5++;
+        else
+            n2++;
+        sc->nchan++;
+    }
+    klogf(KLOG_INFO, "iwx: channel map: %d channels (2G %d, 5G %d, passive-only %d)",
+          sc->nchan, n2, n5, npassive);
+}
+
 static void iwx_nvm_get(struct iwx_sc *sc)
 {
     struct iwx_nvm_get_info cmd = {0};
