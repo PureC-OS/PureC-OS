@@ -106,7 +106,9 @@ static int command_font(const char *arguments){
     else if(pc_strcmp(arguments,"bold")==0) pc_copy(want,"bold",sizeof(want));
     char buf[512];
     buf[0]='\0';
-    int32_t fd=pc_file_open("/config/appear.ini");
+    char cfg[192];
+    pc_config_path("appear.ini",cfg,sizeof(cfg),false);
+    int32_t fd=pc_file_open(cfg);
     int32_t n=0;
     if(fd>=0){
         n=pc_file_read(fd,buf,sizeof(buf)-1);
@@ -174,7 +176,8 @@ static int command_font(const char *arguments){
             }
         }
         *w='\0';
-        if(pc_file_write("/config/appear.ini",out,(uint32_t)(w-out))<0){
+        pc_config_path("appear.ini",cfg,sizeof(cfg),true);
+        if(pc_file_write(cfg,out,(uint32_t)(w-out))<0){
             pc_write("font: write failed\n");
             return 1;
         }
