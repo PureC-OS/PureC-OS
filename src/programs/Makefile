@@ -70,7 +70,7 @@ GENERAL_SOURCES := \
 	terminal/vt.c \
 	terminal/path.c \
 	nano/window.c \
-	gui_demo/main.c \
+	utils/test/gui_demo/main.c \
 	game/snake/main.c \
 	game/tetris/main.c \
 	game/puzzle15/puzzle15.c \
@@ -102,28 +102,13 @@ GENERAL_SOURCES := \
   	imgview/main.c \
   	fputest/main.c \
   	gltest/main.c \
-  	cd/cd.c \
-	help/help.c \
-	ls/ls.c \
-	cat/cat.c \
-	touch/touch.c \
-	mkdir/mkdir.c \
-	rm/rm.c \
-	mkfs/mkfs.c \
-	pwd/pwd.c \
-	clear/clear.c \
-	ping/ping.c \
- 	echo/echo.c \
+	utils/mkfs/mkfs.c \
  	battery/battery.c \
  	burn/main.c \
- 	eat/main.c \
+ 	utils/test/eat/main.c \
  	cpuinfo/main.c \
  	raminfo/main.c \
- 	hddcheck/main.c \
-	reboot/reboot.c \
-	poweroff/poweroff.c \
-	shutdown/shutdown.c \
-	halt/halt.c
+ 	hddcheck/main.c
 GENERAL_CPP_SOURCES := \
 	hexedit/src/main/main.cpp \
 	hexedit/src/buffer/buffer.cpp \
