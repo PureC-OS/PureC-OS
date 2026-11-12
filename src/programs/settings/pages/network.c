@@ -122,7 +122,7 @@ static void connect(struct settings_app *app, const struct wifi_network_info *n,
     int32_t rc = pc_wifi_connect(n->ssid, pass);
     if (rc == 0) {
         (void)save_cfg(n->ssid, pass);
-        settings_toast(app, "Connecting...", app->toast_color ? app->toast_color : 0x89b4fa);
+        settings_toast(app, "Connecting...", 0x89b4fa);
         st.selected[0] = 0;
     } else {
         settings_toast(app, "Connection failed", 0xf38ba8);

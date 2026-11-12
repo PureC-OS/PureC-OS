@@ -10,16 +10,17 @@ static struct {
     int tone;
 } st;
 
-static void refresh(struct settings_app *app)
+static void refresh(struct settings_app *app, const struct ui *u)
 {
     uint64_t now = settings_now();
     if (!app->refresh && now - st.last < 1000)
         return;
     st.last = now;
     st.have = pc_audio_get_status(&st.status);
-    if (st.have && !app->model.muted && (int)st.status.volume != app->model.volume &&
-        p_unused_drag_guard(app) == 0)
+    if (st.have && u->active != ui_id("vol", 0)) {
         app->model.volume = (int)st.status.volume;
+        app->model.muted = st.status.muted ? 1 : 0;
+    }
 }
 
 static void commit(struct settings_app *app, bool save)
@@ -46,7 +47,7 @@ int page_sound(struct page_ctx *p)
     struct settings_app *app = p->app;
     struct ui *u = p->u;
     const struct ui_palette *pal = &u->pal;
-    refresh(app);
+    refresh(app, u);
     int y = p->y;
 
     int h = 176;
