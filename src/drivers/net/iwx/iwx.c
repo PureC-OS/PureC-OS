@@ -1881,8 +1881,8 @@ static void iwx_nvm_get(struct iwx_sc *sc)
 
     iwx_set_mac_addr_from_csr(sc);
     klogf(iwx_is_valid_mac_addr(sc->mac) ? KLOG_OK : KLOG_WARN,
-          "iwx: MAC address %02x:%02x:%02x:%02x:%02x:%02x%s", sc->mac[0], sc->mac[1], sc->mac[2],
-          sc->mac[3], sc->mac[4], sc->mac[5], iwx_is_valid_mac_addr(sc->mac) ? "" : " (invalid)");
+          "iwx: MAC address %02x:%02x:%02x:xx:xx:xx%s", sc->mac[0], sc->mac[1], sc->mac[2],
+          iwx_is_valid_mac_addr(sc->mac) ? "" : " (invalid)");
 
     int err = iwx_send_cmd(sc, IWX_WIDE_ID(IWX_REGULATORY_AND_NVM_GROUP, IWX_NVM_GET_INFO), &cmd,
                            sizeof(cmd), sc->resp_storage, sizeof(sc->resp_storage), &got);
@@ -2487,15 +2487,33 @@ static void iwx_thread(void *arg)
         iwx_stop_device(sc);
         return;
     }
-    err = iwx_run_init_mvm_ucode(sc);
+    err = iwx_run_init_mvm_ucode(sc, 1);
     iwx_stop_device(sc);
     if (err) {
         klogf(KLOG_ERROR, "iwx: init firmware run failed (%d)", err);
         return;
     }
-    klogf(KLOG_OK, "iwx: milestone 1 complete: hw rev 0x%x, fw %u.%08x.%u, address %02x:%02x:%02x:%02x:%02x:%02x",
+    klogf(KLOG_OK, "iwx: milestone 1 complete: hw rev 0x%x, fw %u.%08x.%u, address %02x:%02x:%02x:xx:xx:xx",
           sc->hw_rev & IWX_CSR_HW_REV_TYPE_MSK, sc->fw_major, sc->fw_minor, sc->fw_api,
-          sc->mac[0], sc->mac[1], sc->mac[2], sc->mac[3], sc->mac[4], sc->mac[5]);
+          sc->mac[0], sc->mac[1], sc->mac[2]);
+
+    err = iwx_start_hw(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: runtime start_hw failed (%d)", err);
+        iwx_stop_device(sc);
+        return;
+    }
+    err = iwx_run_init_mvm_ucode(sc, 0);
+    if (!err)
+        err = iwx_runtime_config(sc);
+    if (!err)
+        err = iwx_scan(sc);
+    iwx_stop_device(sc);
+    if (err) {
+        klogf(KLOG_ERROR, "iwx: milestone 2 failed (%d)", err);
+        return;
+    }
+    klogf(KLOG_OK, "iwx: milestone 2 complete: %d networks found", sc->nbss);
 }
 
 bool iwx_start(void)
