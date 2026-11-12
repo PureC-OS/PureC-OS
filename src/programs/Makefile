@@ -112,6 +112,7 @@ GENERAL_SOURCES := \
 	mkfs/mkfs.c \
 	pwd/pwd.c \
 	clear/clear.c \
+	ping/ping.c \
  	echo/echo.c \
  	battery/battery.c \
  	burn/main.c \
@@ -179,6 +180,7 @@ TARGETS := \
 	$(PROGRAM_DIR)/mkfs \
 	$(PROGRAM_DIR)/pwd \
 	$(PROGRAM_DIR)/clear \
+	$(PROGRAM_DIR)/ping \
  	$(PROGRAM_DIR)/echo \
  	$(PROGRAM_DIR)/battery \
  	$(PROGRAM_DIR)/burn \
@@ -438,6 +440,10 @@ $(PROGRAM_DIR)/pwd: $(OBJ_DIR)/pwd/pwd.o $(LIBPUREC) $(LINKER_SCRIPT)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/clear: $(OBJ_DIR)/clear/clear.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
+
+$(PROGRAM_DIR)/ping: $(OBJ_DIR)/ping/ping.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
