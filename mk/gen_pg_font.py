@@ -93,57 +93,53 @@ def c_bytes(data, indent="    "):
 def main(path):
     fonts = [render_font(*f) for f in FONTS]
     icons = render_icons()
-    o = []
-    o.append("#pragma once")
-    o.append("#include <stdint.h>")
-    o.append("")
-    o.append("struct pgf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };")
-    o.append("struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; };")
-    o.append("")
+    h = ["#pragma once", "#include <stdint.h>", "",
+         "struct pgf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };",
+         "struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; };", "",
+         "enum pgf_font_id {"]
     for f in fonts:
-        n = f["name"].lower()
-        o.append("static const uint8_t %s_bits[] = {" % n)
-        o.append(c_bytes(f["data"]) if f["data"] else "    0,")
-        o.append("};")
-        o.append("static const struct pgf_glyph %s_glyphs[95] = {" % n)
-        for g in f["glyphs"]:
-            o.append("    {%d,%d,%d,%d,%d,%d}," % g)
-        o.append("};")
-    o.append("")
-    o.append("enum pgf_font_id {")
-    for f in fonts:
-        o.append("    %s," % f["name"])
-    o.append("    PGF_COUNT")
-    o.append("};")
-    o.append("static const struct pgf_font pgf_fonts[PGF_COUNT] = {")
-    for f in fonts:
-        n = f["name"].lower()
-        o.append("    {%d,%d,%s_glyphs,%s_bits}," % (f["ascent"], f["height"], n, n))
-    o.append("};")
-    o.append("")
-    o.append("enum pgf_icon_id {")
+        h.append("    %s," % f["name"])
+    h += ["    PGF_COUNT", "};", "extern const struct pgf_font pgf_fonts[PGF_COUNT];", "", "enum pgf_icon_id {"]
     for icon in ICONS:
-        o.append("    PGI_%s," % icon.upper())
-    o.append("    PGI_COUNT")
-    o.append("};")
-    o.append("#define PGF_ICON_SIZES %d" % len(ICON_SIZES))
-    o.append("static const uint8_t pgf_icon_size[PGF_ICON_SIZES] = {%s};" % ",".join(map(str, ICON_SIZES)))
+        h.append("    PGI_%s," % icon.upper())
+    h += ["    PGI_COUNT", "};", "#define PGF_ICON_SIZES %d" % len(ICON_SIZES),
+          "extern const uint8_t pgf_icon_size[PGF_ICON_SIZES];",
+          "extern const uint8_t pgf_icon_bits[];",
+          "extern const uint32_t pgf_icon_off[PGF_ICON_SIZES][PGI_COUNT];"]
+    c = ['#include "include/pg_font_data.h"', ""]
+    for f in fonts:
+        n = f["name"].lower()
+        c.append("static const uint8_t %s_bits[] = {" % n)
+        c.append(c_bytes(f["data"]) if f["data"] else "    0,")
+        c.append("};")
+        c.append("static const struct pgf_glyph %s_glyphs[95] = {" % n)
+        for gl in f["glyphs"]:
+            c.append("    {%d,%d,%d,%d,%d,%d}," % gl)
+        c.append("};")
+    c.append("const struct pgf_font pgf_fonts[PGF_COUNT] = {")
+    for f in fonts:
+        n = f["name"].lower()
+        c.append("    {%d,%d,%s_glyphs,%s_bits}," % (f["ascent"], f["height"], n, n))
+    c.append("};")
+    c.append("const uint8_t pgf_icon_size[PGF_ICON_SIZES] = {%s};" % ",".join(map(str, ICON_SIZES)))
     blob = bytearray()
     offs = []
     for icon, size, bits in icons:
         offs.append(len(blob))
         blob += bits
-    o.append("static const uint8_t pgf_icon_bits[] = {")
-    o.append(c_bytes(blob))
-    o.append("};")
-    o.append("static const uint32_t pgf_icon_off[PGF_ICON_SIZES][PGI_COUNT] = {")
-    for s in range(len(ICON_SIZES)):
-        o.append("    {" + ",".join(str(offs[s * len(ICONS) + i]) for i in range(len(ICONS))) + "},")
-    o.append("};")
+    c.append("const uint8_t pgf_icon_bits[] = {")
+    c.append(c_bytes(blob))
+    c.append("};")
+    c.append("const uint32_t pgf_icon_off[PGF_ICON_SIZES][PGI_COUNT] = {")
+    for si in range(len(ICON_SIZES)):
+        c.append("    {" + ",".join(str(offs[si * len(ICONS) + i]) for i in range(len(ICONS))) + "},")
+    c.append("};")
     with open(path, "w") as fh:
-        fh.write("\n".join(o) + "\n")
-    print("wrote %s: %d font bytes, %d icon bytes" % (
-        path, sum(len(f["data"]) for f in fonts), len(blob)))
+        fh.write("\n".join(h) + "\n")
+    cpath = path.replace("include/pg_font_data.h", "font_data.c")
+    with open(cpath, "w") as fh:
+        fh.write("\n".join(c) + "\n")
+    print("wrote %s and %s" % (path, cpath))
 
 
 if __name__ == "__main__":

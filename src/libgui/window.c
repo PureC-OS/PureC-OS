@@ -1,6 +1,5 @@
 #include "internal.h"
 #include "../libc/include/purec.h"
-#include "include/pg_canvas.h"
 
 #define PG_MINIMUM_WIDTH 160
 #define PG_MINIMUM_HEIGHT 96
@@ -391,27 +390,10 @@ void pg_window_clear(struct pg_window *window, uint32_t color)
                      window->client.width, window->client.height, color);
 }
 
-struct pg_canvas *pg_window_canvas(struct pg_window *window)
+bool pg_internal_surface_info(uint32_t **px, uint32_t *w, uint32_t *h)
 {
-    static struct pg_canvas canvas;
-    if (!window || !window->open)
-        return 0;
-    surface_sync(window);
-    if (!surface_px)
-        return 0;
-    uint32_t ox = window->client.x - window->frame.x, oy = window->client.y - window->frame.y;
-    if (ox + window->client.width > surface_w || oy + window->client.height > surface_h)
-        return 0;
-    pgc_init_stride(&canvas, surface_px + (uint64_t)oy * surface_w + ox, (int)window->client.width,
-                    (int)window->client.height, (int)surface_w);
-    pc_surface_damage((int32_t)ox, (int32_t)oy, window->client.width, window->client.height);
-    return &canvas;
-}
-
-void pg_window_damage(struct pg_window *window, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
-{
-    if (!window)
-        return;
-    pc_surface_damage((int32_t)(window->client.x - window->frame.x + x),
-                      (int32_t)(window->client.y - window->frame.y + y), width, height);
+    *px = surface_px;
+    *w = surface_w;
+    *h = surface_h;
+    return surface_px != 0;
 }
