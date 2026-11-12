@@ -2,7 +2,7 @@
 #include <stdint.h>
 
 struct pgf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };
-struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; };
+struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; uint16_t ext_count; const uint32_t *ext_cp; const struct pgf_glyph *ext; };
 
 enum pgf_font_id {
     PGF_SMALL,
@@ -12,6 +12,12 @@ enum pgf_font_id {
     PGF_TITLE,
     PGF_HERO,
     PGF_DIGITS,
+    PGF_MONO_S,
+    PGF_MONO_S_BOLD,
+    PGF_MONO,
+    PGF_MONO_BOLD,
+    PGF_MONO_L,
+    PGF_MONO_L_BOLD,
     PGF_COUNT
 };
 extern const struct pgf_font pgf_fonts[PGF_COUNT];

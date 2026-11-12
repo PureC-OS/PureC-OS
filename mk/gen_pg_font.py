@@ -4,6 +4,10 @@ from PIL import Image, ImageDraw, ImageFont
 from fontTools.ttLib import TTFont
 
 NOTO = "/usr/share/fonts/noto/NotoSans-%s.ttf"
+MONO = "/usr/share/fonts/TTF/JetBrainsMonoNerdFontMono-%s.ttf"
+TEXT_EXTRA = list(range(0x0400, 0x0460)) + [0x2014, 0x2013, 0x2026, 0x00AB, 0x00BB, 0x2022, 0x00B0,
+                                             0x2116, 0x00B7, 0x2190, 0x2191, 0x2192, 0x2193, 0x00A9]
+MONO_EXTRA = TEXT_EXTRA + list(range(0x2500, 0x2580)) + list(range(0x2580, 0x25A0)) + [0x25B2, 0x25BC, 0x25C6, 0x25CF]
 NERD = "/usr/share/fonts/TTF/JetBrainsMonoNerdFontPropo-Regular.ttf"
 ASCII = "".join(chr(c) for c in range(32, 127))
 
@@ -15,6 +19,12 @@ FONTS = [
     ("PGF_TITLE", "Bold", 24, ASCII),
     ("PGF_HERO", "Bold", 34, ASCII),
     ("PGF_DIGITS", "Medium", 60, "0123456789: "),
+    ("PGF_MONO_S", "mono:Regular", 14, ASCII),
+    ("PGF_MONO_S_BOLD", "mono:Bold", 14, ASCII),
+    ("PGF_MONO", "mono:Regular", 16, ASCII),
+    ("PGF_MONO_BOLD", "mono:Bold", 16, ASCII),
+    ("PGF_MONO_L", "mono:Regular", 19, ASCII),
+    ("PGF_MONO_L_BOLD", "mono:Bold", 19, ASCII),
 ]
 
 ICONS = [
@@ -36,24 +46,32 @@ ICON_SIZES = [18, 28, 56]
 
 
 def render_font(name, style, size, chars):
-    font = ImageFont.truetype(NOTO % style, size)
+    mono = style.startswith("mono:")
+    path = MONO % style[5:] if mono else NOTO % style
+    font = ImageFont.truetype(path, size)
     ascent, descent = font.getmetrics()
-    glyphs = []
     data = bytearray()
-    for ch in ASCII:
-        if ch not in chars:
-            glyphs.append((0, 0, 0, 0, 0, 0))
-            continue
-        adv = int(round(font.getlength(ch)))
+    cell_adv = int(round(font.getlength("M"))) if mono else 0
+
+    def glyph(ch):
+        adv = cell_adv if mono else int(round(font.getlength(ch)))
         l, t, r, b = font.getbbox(ch, anchor="ls")
         w, h = max(0, r - l), max(0, b - t)
         off = len(data)
         if w and h:
             img = Image.new("L", (w, h), 0)
             ImageDraw.Draw(img).text((-l, -t), ch, font=font, fill=255, anchor="ls")
-            data += img.tobytes()
-        glyphs.append((off, w, h, l, t + ascent, adv))
-    return dict(name=name, ascent=ascent, height=ascent + descent, glyphs=glyphs, data=data)
+            data.extend(img.tobytes())
+        return (off, w, h, max(-128, min(127, l)), max(-128, min(127, t + ascent)), adv)
+
+    glyphs = [glyph(ch) if ch in chars else (0, 0, 0, 0, 0, 0) for ch in ASCII]
+    extra = []
+    if chars == ASCII:
+        cmap = TTFont(path).getBestCmap()
+        for cp in (MONO_EXTRA if mono else TEXT_EXTRA):
+            if cp in cmap:
+                extra.append((cp, glyph(chr(cp))))
+    return dict(name=name, ascent=ascent, height=ascent + descent, glyphs=glyphs, data=data, extra=extra)
 
 
 def render_icons():
@@ -95,7 +113,7 @@ def main(path):
     icons = render_icons()
     h = ["#pragma once", "#include <stdint.h>", "",
          "struct pgf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };",
-         "struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; };", "",
+         "struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; uint16_t ext_count; const uint32_t *ext_cp; const struct pgf_glyph *ext; };", "",
          "enum pgf_font_id {"]
     for f in fonts:
         h.append("    %s," % f["name"])
@@ -116,10 +134,19 @@ def main(path):
         for gl in f["glyphs"]:
             c.append("    {%d,%d,%d,%d,%d,%d}," % gl)
         c.append("};")
+        if f["extra"]:
+            c.append("static const uint32_t %s_ext_cp[%d] = {%s};" % (n, len(f["extra"]), ",".join(str(cp) for cp, _ in f["extra"])))
+            c.append("static const struct pgf_glyph %s_ext[%d] = {" % (n, len(f["extra"])))
+            for _, gl in f["extra"]:
+                c.append("    {%d,%d,%d,%d,%d,%d}," % gl)
+            c.append("};")
     c.append("const struct pgf_font pgf_fonts[PGF_COUNT] = {")
     for f in fonts:
         n = f["name"].lower()
-        c.append("    {%d,%d,%s_glyphs,%s_bits}," % (f["ascent"], f["height"], n, n))
+        if f["extra"]:
+            c.append("    {%d,%d,%s_glyphs,%s_bits,%d,%s_ext_cp,%s_ext}," % (f["ascent"], f["height"], n, n, len(f["extra"]), n, n))
+        else:
+            c.append("    {%d,%d,%s_glyphs,%s_bits,0,0,0}," % (f["ascent"], f["height"], n, n))
     c.append("};")
     c.append("const uint8_t pgf_icon_size[PGF_ICON_SIZES] = {%s};" % ",".join(map(str, ICON_SIZES)))
     blob = bytearray()
