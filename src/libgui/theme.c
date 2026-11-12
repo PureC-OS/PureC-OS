@@ -76,7 +76,9 @@ struct pg_theme pg_theme_system(void)
     if (!loaded || now - last >= 1000) {
         last = now;
         loaded = true;
-        int32_t fd = pc_file_open("/config/appear.ini");
+        char cfg[192];
+        pc_config_path("appear.ini", cfg, sizeof(cfg), false);
+        int32_t fd = pc_file_open(cfg);
         if (fd >= 0) {
             char buf[512];
             int32_t n = pc_file_read(fd, buf, sizeof(buf) - 1);

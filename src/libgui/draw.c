@@ -51,7 +51,9 @@ static uint32_t pg_streq(const char *a, const char *b)
 
 void pg_font_sync(void)
 {
-    int32_t fd = pc_file_open("/config/appear.ini");
+    char cfg[192];
+    pc_config_path("appear.ini", cfg, sizeof(cfg), false);
+    int32_t fd = pc_file_open(cfg);
     if (fd < 0)
         return;
     char buf[512];
