@@ -2,6 +2,17 @@
 #include "settings/fmt.h"
 #include "../../../libc/include/purec.h"
 #include "../../../libfs/include/purefs.h"
+#include "settings/thumb.h"
+
+#define THUMB_MAX 24
+#define THUMB_W 220
+#define THUMB_H 124
+
+static struct thumb {
+    int state;
+    int w, h;
+    uint32_t px[THUMB_W * THUMB_H];
+} thumbs[THUMB_MAX];
 
 static void commit(struct settings_app *app, const char *what)
 {
@@ -99,35 +110,66 @@ int page_appearance(struct page_ctx *p)
     y += ch + 16;
 
     int wcount = (int)appearance_wallpaper_count();
-    int row_h = 54;
-    int wh = 84 + wcount * row_h + 10;
+    if (wcount > THUMB_MAX)
+        wcount = THUMB_MAX;
+    int wcols = p->w > 700 ? 4 : 3;
+    int wgap = 14;
+    int ww = (p->w - 48 - wgap * (wcols - 1)) / wcols;
+    int wth = ww * 9 / 16;
+    int wrows = (wcount + wcols - 1) / wcols;
+    int wh = 84 + wrows * (wth + 40 + wgap) + 4;
     ui_card(u, p->x, y, p->w, wh);
     ui_card_title(u, p->x + 20, y + 20, SI_WALLPAPER, "Wallpaper",
-                  "BMP or PNG, stretched. Add your own as /config/wp.png");
-    int yy = y + 80;
+                  "PNG or BMP, stretched to the screen. Add your own as /config/wp.png");
+    bool decoded_one = false;
     for (int i = 0; i < wcount; i++) {
         const char *path = appearance_wallpaper_at((uint32_t)i);
+        int cx = p->x + 24 + (i % wcols) * (ww + wgap);
+        int cy = y + 84 + (i / wcols) * (wth + 40 + wgap);
         bool sel = fmt_streq(a->wallpaper, path);
-        if (ui_row(u, ui_id("wp", i), p->x + 10, yy, p->w - 20, row_h - 6, sel) && !sel) {
+        uint32_t id = ui_id("wp", i);
+        bool clicked = ui_click(u, id, cx, cy, ww, wth + 32);
+        bool hot = u->hot == id;
+        if (sel || hot)
+            sg_rrect(u->c, cx - 4, cy - 4, ww + 8, wth + 8, 13, sel ? pal->accent : pal->surface3, 255);
+        if (!path[0]) {
+            struct pg_theme t = pg_theme_by_name(a->theme);
+            sg_rrect(u->c, cx, cy, ww, wth, 10, t.desktop, 255);
+            sg_icon(u->c, SI_TEXTURE_BOX, SG_ICON_M, cx + (ww - 28) / 2, cy + (wth - 28) / 2,
+                    sg_mix(t.desktop, t.text, 120));
+        } else {
+            struct thumb *th = &thumbs[i];
+            bool visible = cy + wth > u->c->cy0 && cy < u->c->cy1;
+            if (th->state != 0 && (th->w != ww || th->h != wth))
+                th->state = 0;
+            if (th->state == 0 && visible && !decoded_one) {
+                decoded_one = true;
+                th->w = ww;
+                th->h = wth;
+                th->state = ww <= THUMB_W && wth <= THUMB_H &&
+                                    thumb_decode_file(path, th->px, (uint32_t)ww, (uint32_t)wth)
+                                ? 1
+                                : 2;
+            }
+            if (th->state == 1) {
+                sg_image(u->c, cx, cy, ww, wth, th->px, 10);
+            } else {
+                sg_rrect_grad(u->c, cx, cy, ww, wth, 10, sg_mix(pal->accent, 0x0f172a, 150),
+                              sg_mix(pal->info, 0x0f172a, 140), true);
+                sg_icon(u->c, th->state == 2 ? SI_ALERT_CIRCLE : SI_WALLPAPER, SG_ICON_M, cx + (ww - 28) / 2,
+                        cy + (wth - 28) / 2, 0xffffff);
+                if (th->state == 0)
+                    u->animating = true;
+            }
+        }
+        sg_text_fit(u->c, sel ? SF_MEDIUM : SF_BODY, cx + 2, cy + wth + 10, ww - 26,
+                    path[0] ? basename_of(path) : "Solid color", sel ? pal->text : pal->text2);
+        if (sel)
+            sg_icon(u->c, SI_CHECK_CIRCLE, SG_ICON_S, cx + ww - 18, cy + wth + 8, pal->accent);
+        if (clicked && !sel) {
             fmt_copy(a->wallpaper, path, sizeof(a->wallpaper));
             commit(app, "Wallpaper changed");
         }
-        int tx = p->x + 26;
-        if (path[0]) {
-            sg_rrect_grad(u->c, tx, yy + 7, 56, 34, 6, sg_mix(pal->accent, 0x0f172a, 140),
-                          sg_mix(pal->info, 0x0f172a, 120), true);
-            sg_icon(u->c, SI_WALLPAPER, SG_ICON_S, tx + 19, yy + 15, 0xffffff);
-        } else {
-            struct pg_theme t = pg_theme_by_name(a->theme);
-            sg_rrect(u->c, tx, yy + 7, 56, 34, 6, t.desktop, 255);
-            sg_rrect_stroke(u->c, tx, yy + 7, 56, 34, 6, pal->border, 200);
-        }
-        sg_text_fit(u->c, SF_MEDIUM, tx + 72, yy + 7, p->w - 200, path[0] ? basename_of(path) : "Solid color",
-                    pal->text);
-        sg_text_fit(u->c, SF_SMALL, tx + 72, yy + 27, p->w - 200, path[0] ? path : "Uses the theme desktop color",
-                    pal->text3);
-        ui_radio(u, p->x + p->w - 48, yy + 15, sel);
-        yy += row_h;
     }
     y += wh + 16;
 

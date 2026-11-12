@@ -377,3 +377,65 @@ void sg_bitfont(struct sg_canvas *c, int face, int x, int y, const char *s, uint
     gfx_draw_text(s, (uint32_t)x, (uint32_t)y, color, (uint32_t)size, (gfx_font_face_t)face,
                   bitfont_rect, c);
 }
+
+void sg_image(struct sg_canvas *c, int x, int y, int w, int h, const uint32_t *px, int r)
+{
+    r = imin(r, imin(w, h) / 2);
+    int x0 = imax(x, c->cx0), y0 = imax(y, c->cy0);
+    int x1 = imin(x + w, c->cx1), y1 = imin(y + h, c->cy1);
+    for (int yy = y0; yy < y1; yy++) {
+        const uint32_t *src = px + (yy - y) * w;
+        uint32_t *row = &c->px[yy * c->w];
+        bool corner_rows = yy < y + r || yy >= y + h - r;
+        for (int xx = x0; xx < x1; xx++) {
+            uint32_t cov = 255;
+            if (corner_rows && (xx < x + r || xx >= x + w - r))
+                cov = corner_cov(xx, yy, x, y, w, h, r);
+            if (cov)
+                row[xx] = cov >= 255 ? (src[xx - x] & 0xffffff) : sg_mix(row[xx], src[xx - x], cov);
+        }
+    }
+}
+
+float sg_sin(float a)
+{
+    const float pi = 3.14159265f, tau = 6.2831853f;
+    while (a > pi)
+        a -= tau;
+    while (a < -pi)
+        a += tau;
+    float s = a < 0 ? -1.0f : 1.0f;
+    float x = a < 0 ? -a : a;
+    if (x > pi / 2)
+        x = pi - x;
+    float x2 = x * x;
+    float r = x * (1.0f - x2 / 6.0f * (1.0f - x2 / 20.0f * (1.0f - x2 / 42.0f * (1.0f - x2 / 72.0f))));
+    return s * r;
+}
+
+float sg_cos(float a) { return sg_sin(a + 1.5707963f); }
+
+void sg_line(struct sg_canvas *c, float x0, float y0, float x1, float y1, float width, uint32_t color)
+{
+    float hw = width / 2.0f;
+    int bx0 = (int)((x0 < x1 ? x0 : x1) - hw - 1), bx1 = (int)((x0 > x1 ? x0 : x1) + hw + 2);
+    int by0 = (int)((y0 < y1 ? y0 : y1) - hw - 1), by1 = (int)((y0 > y1 ? y0 : y1) + hw + 2);
+    float dx = x1 - x0, dy = y1 - y0;
+    float len2 = dx * dx + dy * dy;
+    for (int yy = imax(by0, c->cy0); yy < imin(by1, c->cy1); yy++) {
+        for (int xx = imax(bx0, c->cx0); xx < imin(bx1, c->cx1); xx++) {
+            float px = (float)xx + 0.5f - x0, py = (float)yy + 0.5f - y0;
+            float t = len2 > 0 ? (px * dx + py * dy) / len2 : 0;
+            if (t < 0)
+                t = 0;
+            if (t > 1)
+                t = 1;
+            float ex = px - t * dx, ey = py - t * dy;
+            float d = sg_sqrt(ex * ex + ey * ey);
+            float cov = hw + 0.5f - d;
+            if (cov <= 0)
+                continue;
+            blend(c, xx, yy, color, cov >= 1 ? 255 : (uint32_t)(cov * 255.0f));
+        }
+    }
+}

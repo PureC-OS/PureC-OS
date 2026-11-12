@@ -43,6 +43,10 @@ void sg_text_center(struct sg_canvas *c, int font, int x, int y, int w, const ch
 int sg_font_h(int font);
 
 void sg_icon(struct sg_canvas *c, int icon, int size, int x, int y, uint32_t color);
+void sg_image(struct sg_canvas *c, int x, int y, int w, int h, const uint32_t *px, int r);
+void sg_line(struct sg_canvas *c, float x0, float y0, float x1, float y1, float width, uint32_t color);
+float sg_sin(float a);
+float sg_cos(float a);
 int sg_icon_px(int size);
 
 void sg_bitfont(struct sg_canvas *c, int face, int x, int y, const char *s, uint32_t color, int size);

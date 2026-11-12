@@ -88,6 +88,7 @@ GENERAL_SOURCES := \
   	settings/core/display.c \
   	settings/core/app.c \
   	settings/core/fmt.c \
+  	settings/core/thumb.c \
   	settings/ui/gfx.c \
   	settings/ui/ui.c \
   	settings/pages/about.c \
@@ -333,7 +334,7 @@ $(PROGRAM_DIR)/files: $(OBJ_DIR)/files/main.o $(OBJ_DIR)/files/app.o $(OBJ_DIR)/
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-SETTINGS_OBJECTS := $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/model.o $(OBJ_DIR)/settings/core/personalization.o $(OBJ_DIR)/settings/core/display.o $(OBJ_DIR)/settings/core/app.o $(OBJ_DIR)/settings/core/fmt.o $(OBJ_DIR)/settings/ui/gfx.o $(OBJ_DIR)/settings/ui/ui.o $(OBJ_DIR)/settings/pages/about.o $(OBJ_DIR)/settings/pages/network.o $(OBJ_DIR)/settings/pages/sound.o $(OBJ_DIR)/settings/pages/display.o $(OBJ_DIR)/settings/pages/appearance.o $(OBJ_DIR)/settings/pages/storage.o $(OBJ_DIR)/settings/pages/datetime.o $(OBJ_DIR)/settings/pages/power.o
+SETTINGS_OBJECTS := $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/model.o $(OBJ_DIR)/settings/core/personalization.o $(OBJ_DIR)/settings/core/display.o $(OBJ_DIR)/settings/core/app.o $(OBJ_DIR)/settings/core/fmt.o $(OBJ_DIR)/settings/core/thumb.o $(OBJ_DIR)/settings/ui/gfx.o $(OBJ_DIR)/settings/ui/ui.o $(OBJ_DIR)/settings/pages/about.o $(OBJ_DIR)/settings/pages/network.o $(OBJ_DIR)/settings/pages/sound.o $(OBJ_DIR)/settings/pages/display.o $(OBJ_DIR)/settings/pages/appearance.o $(OBJ_DIR)/settings/pages/storage.o $(OBJ_DIR)/settings/pages/datetime.o $(OBJ_DIR)/settings/pages/power.o
 $(PROGRAM_DIR)/settings: $(SETTINGS_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
