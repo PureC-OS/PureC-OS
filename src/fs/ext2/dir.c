@@ -427,7 +427,7 @@ int32_t ext2_dir_add_entry(uint32_t dir_ino, const char *name, uint32_t ino, uin
                     ext2_free_block(nb);
                     return -4;
                 }
-                uint8_t zero[4096] = {0};
+                static const uint8_t zero[4096];
                 if (!ext2_write_block(sind, zero))
                 {
                     ext2_free_block(sind);
