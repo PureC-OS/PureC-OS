@@ -26,6 +26,8 @@
 #define SIGTTOU 22
 #define SIGNAL_COUNT 32
 
+#define SIGNAL_FLAG_NOCLDWAIT 2u
+
 #define SIGNAL_BLOCK 0
 #define SIGNAL_UNBLOCK 1
 #define SIGNAL_SETMASK 2
@@ -39,6 +41,7 @@ int32_t signal_send(uint32_t pid, int32_t sig);
 int32_t signal_send_kernel(uint32_t pid, int32_t sig);
 void signal_raise_current(int32_t sig);
 void signal_notify_child_exit(struct process *parent);
+bool signal_children_discarded(const struct process *parent);
 bool signal_pending_current(void);
 void signal_deliver(struct syscall_regs *regs);
 void signal_fault(int32_t sig, struct syscall_regs *regs);

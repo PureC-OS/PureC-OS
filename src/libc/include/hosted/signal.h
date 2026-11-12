@@ -41,6 +41,7 @@ typedef int sig_atomic_t;
 #define SA_NODEFER 0x40000000
 #define SA_RESETHAND 0x80000000
 #define SA_NOCLDSTOP 1
+#define SA_NOCLDWAIT 2
 
 // Minimal siginfo for TCC's -run backtrace sources to compile.
 // Never populated on PureC OS (no delivery); handlers stay unarmed.

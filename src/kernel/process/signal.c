@@ -126,6 +126,14 @@ int32_t signal_send_kernel(uint32_t pid, int32_t sig) {
   return 0;
 }
 
+bool signal_children_discarded(const struct process *parent) {
+  if (!parent || !parent->signals)
+    return false;
+  const struct ksigaction *action = &parent->signals->actions[SIGCHLD];
+  return action->handler == SIGNAL_ACTION_IGNORE ||
+         (action->flags & SIGNAL_FLAG_NOCLDWAIT) != 0;
+}
+
 void signal_notify_child_exit(struct process *parent) {
   if (!action_ignored(parent, SIGCHLD) ||
       (parent->signals &&

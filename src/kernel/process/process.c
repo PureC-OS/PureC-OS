@@ -1597,7 +1597,13 @@ static void process_terminate(int32_t status, int32_t signal)
     klogf(KLOG_INFO, "process: pid=%u exited status=%d signal=%d", process->pid,
           status, signal);
     struct process *parent = process_find_by_pid(process->parent_pid);
-    if (parent)
+    if (parent && parent->pid != 1 && signal_children_discarded(parent))
+    {
+      process->parent_pid = 1;
+      parent_waiter = parent->thread_id;
+      parent_child_waiter = parent->child_waiter_tid;
+    }
+    else if (parent)
     {
       signal_notify_child_exit(parent);
       parent_waiter = parent->thread_id;
