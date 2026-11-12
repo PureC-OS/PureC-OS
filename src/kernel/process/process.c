@@ -219,6 +219,19 @@ static struct process *process_find_by_pid(uint32_t pid)
   return NULL;
 }
 
+uint32_t process_pids_with_stdin(bool (*match)(int32_t object, void *ctx), void *ctx, uint32_t *pids,
+                                 uint32_t capacity)
+{
+  uint32_t n = 0;
+  MUTEX_SCOPE(&process_mutex);
+  for (uint32_t b = 0; b < PHASH_SIZE; b++)
+    for (struct process *p = phash_buckets[b]; p; p = p->hnext)
+      if (p->state != PROCESS_FREE && p->state != PROCESS_EXITED && n < capacity &&
+          match(p->descriptors[0], ctx))
+        pids[n++] = p->pid;
+  return n;
+}
+
 struct process *process_lookup_by_pid(uint32_t pid)
 {
   return process_find_by_pid(pid);

@@ -55,6 +55,7 @@ C_SOURCES := \
 	kernel/time/tz.c \
 	kernel/ipc/ipc.c \
 	kernel/ipc/pipe.c \
+	kernel/ipc/pty.c \
 	kernel/ipc/evfd.c \
 	kernel/ipc/unix.c \
 	kernel/process/signal.c \

@@ -1,3 +1,4 @@
+#include "../ipc/pty.h"
 #include "../../io/io_sched.h"
 #include "syscall.h"
 #include "../../drivers/audio/audio.h"
@@ -1059,7 +1060,37 @@ int64_t syscall_handler(struct syscall_regs *r)
       return -KERR_FAULT;
     return tty_read((void *)(uintptr_t)a1, (uint32_t)a2);
   case SYS_TTY_IOCTL:
+  {
+    int32_t pty_id;
+    bool pty_master;
+    int32_t object = fd_object((int32_t)a3);
+    if (object >= 0 && ofd_pty_info(object, &pty_id, &pty_master))
+    {
+      uint32_t req = (uint32_t)a1;
+      uint64_t need = req == TTY_TCGETS ? sizeof(struct tty_termios)
+                      : (req == TTY_TCSETS || req == TTY_TCSETSW || req == TTY_TCSETSF) ? sizeof(struct tty_termios)
+                      : (req == TTY_TIOCGWINSZ || req == TTY_TIOCSWINSZ) ? sizeof(struct tty_winsize)
+                      : req == TTY_FIONREAD ? sizeof(int32_t) : 0;
+      if (need && (req == TTY_TCGETS || req == TTY_TIOCGWINSZ || req == TTY_FIONREAD
+                       ? !writable((void *)(uintptr_t)a2, need)
+                       : !readable((const void *)(uintptr_t)a2, need)))
+        return -KERR_FAULT;
+      return pty_ioctl(pty_id, pty_master, req, a2);
+    }
     return tty_ioctl_request((uint32_t)a1, a2);
+  }
+  case SYS_OPENPTY:
+  {
+    if (!writable((void *)(uintptr_t)a1, 2 * sizeof(int32_t)))
+      return -KERR_FAULT;
+    int32_t pair[2];
+    int32_t made = fd_openpty(pair, (uint32_t)a2);
+    if (made < 0)
+      return made;
+    ((int32_t *)(uintptr_t)a1)[0] = pair[0];
+    ((int32_t *)(uintptr_t)a1)[1] = pair[1];
+    return 0;
+  }
   case SYS_MMAP:
   {
     const uint64_t legacy_size = offsetof(struct kernel_mmap_args, fd);

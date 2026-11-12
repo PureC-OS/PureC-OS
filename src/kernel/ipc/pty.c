@@ -8,6 +8,7 @@
 #include "../sync/mutex.h"
 #include "../syscall/syscall.h"
 #include "../tty/tty.h"
+#include "../process/ofd.h"
 
 #define PTY_MAX 32
 #define PTY_RING 8192u
@@ -40,6 +41,7 @@ struct pty {
 };
 
 static mutex_t pty_mutex;
+static void signal_foreground(int32_t id, int32_t sig, uint32_t fallback_pid);
 static struct pty ptys[PTY_MAX];
 
 static void waiters_add(int32_t *list, int32_t tid)
@@ -176,8 +178,25 @@ void pty_release(int32_t id, bool master)
     }
     mutex_unlock(&pty_mutex);
     wake_all(wake, n);
-    if (hup_pid)
-        (void)signal_send_kernel(hup_pid, SIGHUP);
+    if (master)
+        signal_foreground(id, SIGHUP, hup_pid);
+}
+
+static bool stdin_is_slave(int32_t object, void *ctx)
+{
+    int32_t id;
+    bool master;
+    return object >= 0 && ofd_pty_info(object, &id, &master) && !master && id == *(int32_t *)ctx;
+}
+
+static void signal_foreground(int32_t id, int32_t sig, uint32_t fallback_pid)
+{
+    uint32_t pids[32];
+    uint32_t n = process_pids_with_stdin(stdin_is_slave, &id, pids, 32);
+    for (uint32_t i = 0; i < n; i++)
+        (void)signal_send_kernel(pids[i], sig);
+    if (!n && fallback_pid)
+        (void)signal_send_kernel(fallback_pid, sig);
 }
 
 static void out_put(struct pty *p, uint8_t c)
@@ -423,8 +442,8 @@ int32_t pty_write(int32_t id, bool master, const void *buffer, uint32_t count, b
     n += waiters_take(p->master_waiters, wake + n);
     mutex_unlock(&pty_mutex);
     wake_all(wake, n);
-    if (sig && sig_pid)
-        (void)signal_send_kernel(sig_pid, (int32_t)sig);
+    if (sig)
+        signal_foreground(id, (int32_t)sig, sig_pid);
     return (int32_t)count;
 }
 

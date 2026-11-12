@@ -15,7 +15,8 @@ enum ofd_kind
   OFD_SOCKET,
   OFD_EVENT,
   OFD_UNIX,
-  OFD_SHM
+  OFD_SHM,
+  OFD_PTY
 };
 
 #define OFD_STATUS_MASK 03003U
@@ -31,6 +32,8 @@ int32_t ofd_create_unix(int32_t unix_id, uint32_t flags);
 int32_t ofd_unix_id(int32_t ofd);
 int32_t ofd_create_shm(int32_t shm_id, uint32_t flags);
 int32_t ofd_shm_id(int32_t ofd);
+int32_t ofd_create_pty(int32_t pty_id, bool master);
+bool ofd_pty_info(int32_t ofd, int32_t *pty_id, bool *master);
 void ofd_ref(int32_t ofd);
 void ofd_release(int32_t ofd);
 int32_t ofd_vfs_handle(int32_t ofd);

@@ -198,6 +198,7 @@
 #define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
 #define SYS_SHM_UNLINK 392       /* (name) */
 #define SYS_MADVISE 393          /* (address, length, advice) */
+#define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
 #define TIME_ZONE_GET 0
 #define TIME_ZONE_SET 1
@@ -216,6 +217,7 @@
 #define FD_KIND_PIPE 2
 #define FD_KIND_SOCKET 3
 #define FD_KIND_EVENT 4
+#define FD_KIND_PTY 5
 
 #define TTY_TCGETS 0x5401u
 #define TTY_TCSETS 0x5402u
@@ -226,6 +228,7 @@
 #define TTY_TIOCSWINSZ 0x5414u
 #define TTY_FIONREAD 0x541Bu
 #define TTY_RAW_ACTIVE 0x7F01u
+#define TTY_TIOCSPGRP_PID 0x5410u
 
 #define KPOLLIN 0x001
 #define KPOLLOUT 0x004
