@@ -103,7 +103,7 @@ int main(int argc, char **argv)
     int i = 0, j = 0;
     while (i < n || j < m) {
         if (i < n && j < m && eq(a.v[pre + i], b.v[pre + j])) { ops[k] = OP_EQ; ai[k] = pre + i; bi[k] = pre + j; k++; i++; j++; }
-        else if (j < m && (i == n || L(i, j + 1) >= L(i + 1, j))) { ops[k] = OP_ADD; ai[k] = pre + i; bi[k] = pre + j; k++; j++; }
+        else if (j < m && (i == n || L(i, j + 1) > L(i + 1, j))) { ops[k] = OP_ADD; ai[k] = pre + i; bi[k] = pre + j; k++; j++; }
         else { ops[k] = OP_DEL; ai[k] = pre + i; bi[k] = pre + j; k++; i++; }
     }
     for (int s = 0; s < suf; s++) { ops[k] = OP_EQ; ai[k] = a.n - suf + s; bi[k] = b.n - suf + s; k++; }

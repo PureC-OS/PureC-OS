@@ -14,6 +14,7 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "-n") && i + 1 < argc) max_args = atol(argv[++i]);
         else if (!strncmp(argv[i], "-n", 2) && argv[i][2]) max_args = atol(argv[i] + 2);
         else if (!strcmp(argv[i], "-I") && i + 1 < argc) replace = argv[++i];
+        else if (!strncmp(argv[i], "-I", 2)) replace = argv[i] + 2;
         else if (!strcmp(argv[i], "-0")) null_sep = true;
         else if (!strcmp(argv[i], "-t")) verbose = true;
         else if (!strcmp(argv[i], "-r")) no_empty = true;
