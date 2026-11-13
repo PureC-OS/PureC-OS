@@ -241,9 +241,17 @@ int main(int argc, char **argv)
                "  ip dhcp start|stop dev NAME            control DHCP\n");
         return argc < 2 ? 1 : 0;
     }
-    const char *object = argv[1];
-    int rest = argc - 2;
-    char **args = argv + 2;
+    int first = 1;
+    while (first < argc && argv[first][0] == '-' && argv[first][1]) {
+        if (strcmp(argv[first], "-c") == 0 || strcmp(argv[first], "-color") == 0)
+            color = true;
+        first++;
+    }
+    if (first >= argc)
+        return util_err("missing object, try \"ip --help\"");
+    const char *object = argv[first];
+    int rest = argc - first - 1;
+    char **args = argv + first + 1;
     if (is(object, "address"))
         return addr_cmd(rest, args);
     if (is(object, "link"))
