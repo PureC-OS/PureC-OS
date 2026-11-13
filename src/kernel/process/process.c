@@ -260,6 +260,21 @@ bool process_socket_owner(int32_t sock_id, uint32_t *pid, uint32_t *uid,
   return false;
 }
 
+bool process_name_of(uint32_t pid, uint32_t *uid, char *name, uint32_t capacity)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *p = process_find_by_pid(pid);
+  if (!p || p->state == PROCESS_FREE)
+    return false;
+  *uid = p->uid;
+  if (name && capacity)
+  {
+    strncpy(name, p->name, capacity - 1);
+    name[capacity - 1] = '\0';
+  }
+  return true;
+}
+
 struct process *process_lookup_by_pid(uint32_t pid)
 {
   return process_find_by_pid(pid);

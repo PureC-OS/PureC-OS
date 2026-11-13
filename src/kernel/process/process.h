@@ -172,5 +172,6 @@ struct process_proc_info {
 bool process_proc_info_get(uint32_t pid, struct process_proc_info *out);
 bool process_socket_owner(int32_t sock_id, uint32_t *pid, uint32_t *uid,
                           uint32_t *fd, char *name, uint32_t capacity);
+bool process_name_of(uint32_t pid, uint32_t *uid, char *name, uint32_t capacity);
 void process_table_lock(void);
 void process_table_unlock(void);
