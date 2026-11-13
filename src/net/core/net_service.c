@@ -1,3 +1,4 @@
+#include "loopback.h"
 #include "net_service.h"
 #include "net_device.h"
 #include "../link/ethernet.h"
@@ -42,11 +43,12 @@ bool net_service_init(void){
     bool pcnet_ready=pcnet_am79c970a_init();
     bool wifi_ready=ar9285_init();
     ready=em_ready||gc_ready||pcnet_ready||wifi_ready;
+    (void)loopback_init();
     if(!ready) klog(KLOG_WARN,"net: no supported network adapter found");
     else {
         for(uint32_t index=0;index<net_device_count();index++){
             struct net_device *dev=net_device_get(index);
-            if(!dev) continue;
+            if(!dev || dev->loopback) continue;
             if(dev->name[0]=='w' && dev->name[1]=='l' && dev->name[2]=='a' && dev->name[3]=='n')
                 continue;
             (void)dhcp_start(dev);

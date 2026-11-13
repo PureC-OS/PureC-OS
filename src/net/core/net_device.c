@@ -124,11 +124,11 @@ bool net_device_dequeue(struct net_device *device, struct net_frame *frame){
 struct net_device *net_device_default(void){
     for(uint32_t index=0;index<net_device_count();index++){
         struct net_device *candidate=net_device_get(index);
-        if(candidate && candidate->cached_link_up) return candidate;
+        if(candidate && !candidate->loopback && candidate->cached_link_up) return candidate;
     }
     for(uint32_t index=0;index<net_device_count();index++){
         struct net_device *candidate=net_device_get(index);
-        if(candidate) return candidate;
+        if(candidate && !candidate->loopback) return candidate;
     }
     return 0;
 }
