@@ -1,0 +1,40 @@
+NAME
+       ntpd - network time synchronization daemon
+
+SYNOPSIS
+       **ntpd** [**-q**]
+
+DESCRIPTION
+       Keeps the system clock in step with NTP servers (RFC 5905 client
+       mode). Listens on UDP 123 (ntp) and asks every configured server for
+       the time at once. From the replies with the smallest round-trip delay
+       the median offset is taken.
+
+       The first correction, and any offset of 128 ms or more, steps the
+       clock at once. Smaller offsets are slewed: the clock runs 0.05%
+       faster or slower until the difference is gone, so time never jumps
+       backwards. Offsets over 1000 s after the first sync are ignored as
+       bogus. The hardware clock (RTC) is updated after every step and every
+       11 minutes while synchronized.
+
+       The poll interval starts at 2^minpoll seconds and grows up to
+       2^maxpoll while the clock stays within 50 ms. Servers that answer
+       with a DENY or RSTR kiss-o'-death code are not asked again.
+
+       Started and restarted by netd(8). Needs root or the NET_BIND and
+       SYS_TIME capabilities.
+
+OPTIONS
+       **-q**     Synchronize once and exit (0 on success).
+
+FILES
+       /etc/ntp.conf      servers and poll limits
+       /run/dhcp/*.lease  "ntp=" lines from DHCP option 42
+       /run/ntpd/status   current server, stratum, offset, delay, peers
+
+EXAMPLES
+       cat /run/ntpd/status
+       journalctl | grep ntpd
+
+SEE ALSO
+       netd(8), date(1), ss(8)
