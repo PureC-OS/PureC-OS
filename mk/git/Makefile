@@ -32,12 +32,16 @@ GIT_MAKE := $(MAKE) -C $(GIT_SRC) \
 .PHONY: all git-core remote-http templates clean
 all: git-core remote-http templates
 
+LIBS_STAMP := $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a $(STAGE)/lib/libcurl.a
+
 git-core:
+	@for l in $(LIBS_STAMP); do [ $(GIT_SRC)/git -nt $$l ] || rm -f $(GIT_SRC)/git; done
 	$(GIT_MAKE) git
 	@mkdir -p $(PROGRAM_DIR)
 	cp $(GIT_SRC)/git $(PROGRAM_DIR)/git
 
 remote-http:
+	@for l in $(LIBS_STAMP); do [ $(GIT_SRC)/git-remote-http -nt $$l ] || rm -f $(GIT_SRC)/git-remote-http; done
 	$(GIT_MAKE) git-remote-http
 	@mkdir -p $(PROGRAM_DIR)
 	cp $(GIT_SRC)/git-remote-http $(PROGRAM_DIR)/git-remote-http
