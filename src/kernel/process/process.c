@@ -1590,6 +1590,7 @@ static void process_terminate(int32_t status, int32_t signal)
       }
     }
     window_manager_unregister(process->pid);
+    display_owner_release(process->pid);
     gop_console_release(process->pid);
     tty_process_exit(process->pid);
     tcp_release_owner(process->pid);
