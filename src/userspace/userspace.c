@@ -1,3 +1,4 @@
+#include "../drivers/display/display_owner.h"
 #include "userspace.h"
 #include "personalization.h"
 #include "display_mode.h"
@@ -635,6 +636,12 @@ void userspace_input_thread(void *arg){
         usb_mouse_poll();
         mouse_flush_pending();
         keyboard_poll();
+        if(display_owner_active()){
+            display_owner_pump();
+            reap_detached_programs();
+            scheduler_sleep(2);
+            continue;
+        }
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
@@ -658,6 +665,10 @@ void userspace_keyboard_thread(void *arg){
     (void)arg;
     klog(KLOG_INFO, "sched: desktop keyboard thread started");
     for(;;){
+        if(display_owner_active()){
+            scheduler_sleep(10);
+            continue;
+        }
         if(external_program_has_input_focus() || window_manager_has_focus()){
             scheduler_sleep(10);
             continue;
@@ -741,6 +752,12 @@ void userspace_run(void){
         usb_mouse_poll();
         mouse_flush_pending();
         keyboard_poll();
+        if(display_owner_active()){
+            display_owner_pump();
+            reap_detached_programs();
+            scheduler_sleep(2);
+            continue;
+        }
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
