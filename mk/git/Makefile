@@ -29,8 +29,8 @@ GIT_MAKE := $(MAKE) -C $(GIT_SRC) \
 	NO_GITWEB=YesPlease NO_SVN_TESTS=YesPlease NO_NSEC=YesPlease NO_PRECOMPILED_HEADER=YesPlease \
 	USE_LIBPCRE=  NO_CURL=
 
-.PHONY: all git-core remote-http clean
-all: git-core remote-http
+.PHONY: all git-core remote-http templates clean
+all: git-core remote-http templates
 
 git-core:
 	$(GIT_MAKE) git
@@ -41,6 +41,12 @@ remote-http:
 	$(GIT_MAKE) git-remote-http
 	@mkdir -p $(PROGRAM_DIR)
 	cp $(GIT_SRC)/git-remote-http $(PROGRAM_DIR)/git-remote-http
+
+templates:
+	$(GIT_MAKE) -C $(GIT_SRC)/templates
+	@mkdir -p $(BIN_DIR)/git-templates/info
+	cp $(GIT_SRC)/templates/blt/description $(BIN_DIR)/git-templates/description
+	cp $(GIT_SRC)/templates/blt/info/exclude $(BIN_DIR)/git-templates/info/exclude
 
 clean:
 	$(GIT_MAKE) clean
