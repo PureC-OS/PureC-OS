@@ -37,9 +37,7 @@ enum net_ping_status net_ping_target(const char *target, uint16_t sequence,
     if(!ipv4_get_config(device,&config) || !config.configured)
         return NET_PING_NOT_CONFIGURED;
     uint32_t address;
-    enum dns_result resolved=dns_resolve_ipv4(device,host,timeout_ms,&address);
-    if(resolved==DNS_RESULT_BUSY) return NET_PING_BUSY;
-    if(resolved!=DNS_RESULT_OK) return NET_PING_RESOLVE_FAILED;
+    if(!ipv4_parse_address(host,&address)) return NET_PING_RESOLVE_FAILED;
     struct icmp_ping_reply icmp_reply;
     enum icmp_ping_status status=icmp_ping(
         device,address,sequence,timeout_ms,&icmp_reply);

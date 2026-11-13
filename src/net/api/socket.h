@@ -65,4 +65,3 @@ int32_t sock_setopt(int32_t id, int32_t level, int32_t name,
                     const void *value, uint32_t length);
 int32_t sock_getopt(int32_t id, int32_t level, int32_t name, void *value,
                     uint32_t *length);
-int32_t sock_resolve(const char *name, uint32_t timeout_ms, uint32_t *address_be);

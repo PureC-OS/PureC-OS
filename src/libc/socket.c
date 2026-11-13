@@ -675,17 +675,30 @@ static int name_lookup(const char *node, uint32_t *out, int max)
     }
     if (answered)
         return -EAI_NONAME;
-    uint32_t address_be;
-    int64_t code = pc_syscall(SYS_DNS_RESOLVE, (uint64_t)(uintptr_t)node, 5000,
-                              (uint64_t)(uintptr_t)&address_be);
-    if (code == -ENOENT || code == -EINVAL)
-        return -EAI_NONAME;
-    if (code == -ETIMEDOUT || code == -EINTR || code == -ENETUNREACH)
-        return -EAI_AGAIN;
-    if (code < 0)
-        return -EAI_FAIL;
-    out[0] = address_be;
-    return 1;
+    struct net_if_info infos[NET_IF_MAX_COUNT];
+    int found = pc_net_if_list(infos, NET_IF_MAX_COUNT);
+    uint32_t tried[NET_IF_MAX_COUNT];
+    int tried_count = 0;
+    for (int i = 0; i < found && i < NET_IF_MAX_COUNT; i++)
+    {
+        uint32_t server = infos[i].dns_server;
+        if (!server || (server >> 24) == 127)
+            continue;
+        bool seen = false;
+        for (int k = 0; k < tried_count; k++)
+            if (tried[k] == server)
+                seen = true;
+        if (seen)
+            continue;
+        tried[tried_count++] = server;
+        int rcode = -1;
+        n = dns_query(htonl(server), node, out, max, &rcode);
+        if (n > 0)
+            return n;
+        if (n == 0 && (rcode == 0 || rcode == 3))
+            return -EAI_NONAME;
+    }
+    return -EAI_AGAIN;
 }
 
 int getaddrinfo(const char *node, const char *service,

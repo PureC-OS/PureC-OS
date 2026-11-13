@@ -23,12 +23,6 @@ static const char *const public_ping_targets[] = {
     "1.1.1.1",
 };
 
-static const char *const dns_targets[] = {
-    "google.com",
-    "cloudflare.com",
-    "example.com",
-};
-
 struct qemu_test_probe {
     bool present;
 };
@@ -45,14 +39,6 @@ bool qemu_network_test_requested(void) {
     struct qemu_test_probe probe = {0};
     pci_enumerate(find_qemu_test_device, &probe);
     return probe.present;
-}
-
-static void log_dns(const char *hostname, uint32_t address) {
-    klogf(KLOG_OK,
-          "[NETTEST] DNS PASS host=%s address=%u.%u.%u.%u",
-          hostname,
-          (address >> 24) & 255, (address >> 16) & 255,
-          (address >> 8) & 255, address & 255);
 }
 
 static void fail(const char *stage, int32_t status) {
@@ -77,25 +63,6 @@ static enum net_ping_status ping_target(const char *target, uint16_t sequence) {
         if (attempt + 1 < QEMU_TEST_QUERY_ATTEMPTS) scheduler_sleep(100);
     }
     return last_status;
-}
-
-static bool resolve_once(struct net_device *device, const char *hostname) {
-    for (uint32_t attempt = 0; attempt < QEMU_TEST_QUERY_ATTEMPTS; attempt++) {
-        uint32_t address = 0;
-        enum dns_result result = dns_resolve_ipv4(
-            device, hostname, QEMU_TEST_QUERY_TIMEOUT_MS, &address);
-        if (result == DNS_RESULT_OK) {
-            log_dns(hostname, address);
-            return true;
-        }
-        if (attempt + 1 == QEMU_TEST_QUERY_ATTEMPTS) {
-            klogf(KLOG_ERROR, "[NETTEST] DNS FAIL host=%s status=%d",
-                  hostname, result);
-            return false;
-        }
-        scheduler_sleep(100);
-    }
-    return false;
 }
 
 void qemu_network_test_thread(void *argument) {
@@ -146,15 +113,6 @@ void qemu_network_test_thread(void *argument) {
         failed_checks++;
     }
 
-    bool dns_ok = true;
-    for (uint32_t index = 0;
-         index < sizeof(dns_targets) / sizeof(dns_targets[0]); index++) {
-        if (!resolve_once(device, dns_targets[index])) {
-            dns_ok = false;
-            failed_checks++;
-        }
-    }
-
     for (uint32_t index = 0;
          index < sizeof(public_ping_targets) / sizeof(public_ping_targets[0]);
          index++) {
@@ -162,7 +120,7 @@ void qemu_network_test_thread(void *argument) {
         enum net_ping_status status = ping_target(
             target, (uint16_t)(index * 10 + 11));
         if (status == NET_PING_OK) continue;
-        if (status == NET_PING_TIMEOUT && gateway_ok && dns_ok) {
+        if (status == NET_PING_TIMEOUT && gateway_ok) {
             klogf(KLOG_WARN,
                   "[NETTEST] PING UNAVAILABLE target=%s status=%d reason=host-icmp-egress",
                   target, status);

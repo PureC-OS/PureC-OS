@@ -2755,17 +2755,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   case SYS_RECVFROM:
     return socket_syscall(n, a1, a2, a3, r->rsi, r->rdi);
   case SYS_DNS_RESOLVE:
-  {
-    if (!readable_string((const char *)(uintptr_t)a1) ||
-        !writable((void *)(uintptr_t)a3, sizeof(uint32_t)))
-      return -KERR_FAULT;
-    uint32_t address = 0;
-    int32_t result = sock_resolve((const char *)(uintptr_t)a1, (uint32_t)a2, &address);
-    if (result < 0)
-      return result;
-    *(uint32_t *)(uintptr_t)a3 = address;
-    return 0;
-  }
+    return -KERR_NOSYS;
   case SYS_NET_CONFIGURE:
   {
     if (process_current_uid() != 0 && !process_has_capability(PROCESS_CAP_NET_ADMIN))

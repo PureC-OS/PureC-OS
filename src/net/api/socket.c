@@ -7,7 +7,6 @@
 #include "../../lib/string.h"
 #include "../config/dhcp.h"
 #include "../core/net_device.h"
-#include "../name/dns.h"
 #include "../transport/tcp.h"
 #include "../transport/udp_endpoint.h"
 #include "../../kernel/process/process.h"
@@ -660,47 +659,4 @@ int32_t sock_getopt(int32_t id, int32_t level, int32_t name, void *value,
     *(int32_t *)value = result;
     *length = sizeof(int32_t);
     return 0;
-}
-
-int32_t sock_resolve(const char *name, uint32_t timeout_ms,
-                     uint32_t *address_be)
-{
-    struct net_device *device = net_device_default();
-    if (!device)
-        return -KERR_NETUNREACH;
-    if (timeout_ms < 100)
-        timeout_ms = 100;
-    uint64_t started = timer_ticks();
-    for (;;)
-    {
-        uint32_t address = 0;
-        enum dns_result result = dns_resolve_ipv4(device, name, timeout_ms, &address);
-        if (result == DNS_RESULT_OK)
-        {
-            *address_be = __builtin_bswap32(address);
-            return 0;
-        }
-        if (result == DNS_RESULT_BUSY)
-        {
-            if (timer_ticks() - started >= timeout_ms)
-                return -KERR_TIMEDOUT;
-            if (signal_pending_current())
-                return -KERR_INTR;
-            scheduler_sleep(10);
-            continue;
-        }
-        switch (result)
-        {
-        case DNS_RESULT_INVALID:
-            return -KERR_INVAL;
-        case DNS_RESULT_NOT_FOUND:
-            return -KERR_NOENT;
-        case DNS_RESULT_TIMEOUT:
-            return -KERR_TIMEDOUT;
-        case DNS_RESULT_NO_SERVER:
-            return -KERR_NETUNREACH;
-        default:
-            return -KERR_IO;
-        }
-    }
 }
