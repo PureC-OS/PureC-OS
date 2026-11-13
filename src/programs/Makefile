@@ -120,7 +120,7 @@ GENERAL_CPP_SOURCES := \
 UTILS := ls cat cp mv rm mkdir rmdir touch chmod stat find tree du df install realpath basename dirname \
 	grep head tail wc sort uniq cut tr tee cmp diff nl rev seq yes xargs xxd \
 	echo pwd env uname whoami id hostname date uptime sleep true false kill ps free which \
-	clear reboot ping man less help cd sudo ip
+	clear reboot ping man less help cd sudo ip host
 UTIL_LIB_OBJECTS := $(OBJ_DIR)/utils/lib/common.o $(OBJ_DIR)/utils/lib/pager.o $(OBJ_DIR)/utils/lib/fileops.o
 UTIL_OBJECTS := $(foreach u,$(UTILS),$(OBJ_DIR)/utils/$(u)/$(u).o) $(UTIL_LIB_OBJECTS)
 UTIL_TARGETS := $(UTILS:%=$(PROGRAM_DIR)/%)
@@ -157,6 +157,7 @@ TARGETS := \
   	$(PROGRAM_DIR)/fbtest \
   	$(PROGRAM_DIR)/udptest \
   	$(PROGRAM_DIR)/netd \
+  	$(PROGRAM_DIR)/resolved \
   	$(PROGRAM_DIR)/dhcpc \
   	$(PROGRAM_DIR)/memhog \
   	$(PROGRAM_DIR)/memtest \
@@ -594,6 +595,14 @@ $(OBJ_DIR)/thrtest/main.o: $(ROOT_DIR)/src/programs/thrtest/main.c
 $(PROGRAM_DIR)/thrtest: $(OBJ_DIR)/thrtest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/thrtest/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/resolved/main.o: $(ROOT_DIR)/src/programs/resolved/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/resolved: $(OBJ_DIR)/resolved/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/resolved/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/netd/main.o: $(ROOT_DIR)/src/programs/netd/main.c
 	@mkdir -p $(@D)
