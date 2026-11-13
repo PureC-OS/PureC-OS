@@ -580,21 +580,13 @@ int remove(const char *path) {    if (!path) { errno = EINVAL; return -1; }
 
 int rename(const char *old_path, const char *new_path) {
     if (!old_path || !new_path) { errno = EINVAL; return -1; }
-    char abs_old[512];
-    char abs_new[512];
-    if (old_path[0] != '/') {
-        if (realpath(old_path, abs_old)) old_path = abs_old;
+    int64_t status = pc_syscall(SYS_RENAME_PATH, (uint64_t)(uintptr_t)old_path,
+                                (uint64_t)(uintptr_t)new_path, 0);
+    if (status < 0) {
+        if (status == -8) errno = EXDEV;
+        else errno = __purec_fs_errno((int32_t)status, ENOENT);
+        return -1;
     }
-    if (new_path[0] != '/') {
-        if (realpath(new_path, abs_new)) new_path = abs_new;
-    }
-    // pc_file_rename takes (path, new_name); extract the basename.
-    const char *base = new_path;
-    for (const char *p = new_path; *p; p++) {
-        if (*p == '/') base = p + 1;
-    }
-    int32_t status = pc_file_rename(old_path, base);
-    if (status < 0) { errno = __purec_fs_errno(status, ENOENT); return -1; }
     return 0;
 }
 
