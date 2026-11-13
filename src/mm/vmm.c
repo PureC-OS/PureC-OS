@@ -10,6 +10,8 @@
 static spinlock_t vmm_lock = SPINLOCK_INIT;
 static uint64_t vmm_create_address_space_locked(void);
 static void vmm_destroy_address_space_locked(uint64_t address_space);
+static bool range_valid(uint64_t address_space, uint64_t virtual_address,
+                        uint64_t page_count);
 static bool vmm_map_page_locked(uint64_t address_space,
                                 uint64_t virtual_address,
                                 uint64_t physical_address, uint64_t flags);
@@ -200,6 +202,11 @@ static uint64_t clone_table_level(uint64_t source_physical, unsigned level)
     if (level == 1)
     {
       uint64_t frame = entry & PAGE_ADDRESS_MASK;
+      if (entry & VMM_PAGE_DEVICE)
+      {
+        destination[index] = entry;
+        continue;
+      }
       if (!pmm_frame_ref(frame))
       {
         vmm_destroy_table_level(physical, level);
@@ -238,7 +245,10 @@ static void vmm_destroy_table_level(uint64_t physical, unsigned level)
       continue;
     }
     if (level == 1)
-      pmm_free_page(table[index] & PAGE_ADDRESS_MASK);
+    {
+      if (!(table[index] & VMM_PAGE_DEVICE))
+        pmm_free_page(table[index] & PAGE_ADDRESS_MASK);
+    }
     else
       vmm_destroy_table_level(table[index] & PAGE_ADDRESS_MASK, level - 1);
   }
@@ -293,7 +303,10 @@ static void vmm_destroy_address_space_locked(uint64_t address_space)
         for (uint16_t pt_index = 0; pt_index < 512; pt_index++)
         {
           if (pt[pt_index] & VMM_PAGE_PRESENT)
-            pmm_free_page(pt[pt_index] & PAGE_ADDRESS_MASK);
+          {
+            if (!(pt[pt_index] & VMM_PAGE_DEVICE))
+              pmm_free_page(pt[pt_index] & PAGE_ADDRESS_MASK);
+          }
           else if (pt[pt_index] & VMM_PAGE_SWAPENT)
             swap_free(SWAP_SLOT_OF(pt[pt_index]));
         }
@@ -329,7 +342,7 @@ static bool vmm_map_page_locked(uint64_t address_space,
     return false;
   pt[index] = (physical_address & PAGE_ADDRESS_MASK) | VMM_PAGE_PRESENT |
               (flags & (VMM_PAGE_WRITABLE | VMM_PAGE_USER | VMM_PAGE_ANON |
-                        VMM_PAGE_SHARED)) |
+                        VMM_PAGE_SHARED | VMM_PAGE_DEVICE)) |
               (nx_enabled ? flags & VMM_PAGE_NX : 0);
   return true;
 }
@@ -656,6 +669,43 @@ int vmm_map_shared_page(uint64_t address_space, uint64_t virtual_address,
   return ok ? 1 : -1;
 }
 
+bool vmm_map_device_range(uint64_t address_space, uint64_t virtual_address,
+                          uint64_t physical_address, uint64_t page_count,
+                          uint64_t flags)
+{
+  if (!address_space || address_space == kernel_address_space ||
+      (virtual_address & (PMM_PAGE_SIZE - 1)) ||
+      (physical_address & (PMM_PAGE_SIZE - 1)) ||
+      !range_valid(address_space, virtual_address, page_count))
+    return false;
+  uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
+  bool ok = true;
+  uint64_t done = 0;
+  for (; done < page_count; done++)
+  {
+    uint64_t va = virtual_address + done * PMM_PAGE_SIZE;
+    if (!vmm_map_page_locked(address_space, va,
+                             physical_address + done * PMM_PAGE_SIZE,
+                             (flags & ~(VMM_PAGE_ANON | VMM_PAGE_SHARED)) |
+                                 VMM_PAGE_DEVICE | VMM_PAGE_USER))
+    {
+      ok = false;
+      break;
+    }
+  }
+  if (!ok)
+    for (uint64_t i = 0; i < done; i++)
+    {
+      uint64_t *slot = user_slot_locked(address_space,
+                                        virtual_address + i * PMM_PAGE_SIZE);
+      if (slot)
+        *slot = 0;
+      invalidate_local_page(virtual_address + i * PMM_PAGE_SIZE);
+    }
+  spin_unlock_irqrestore(&vmm_lock, irq_flags);
+  return ok;
+}
+
 int vmm_map_zero_page(uint64_t address_space, uint64_t virtual_address,
                       uint64_t flags)
 {
@@ -740,10 +790,13 @@ uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
     uint64_t *slot = user_slot_skip_locked(address_space, address, &next);
     if (slot && (*slot & VMM_PAGE_PRESENT))
     {
-      frames[held++] = *slot & PAGE_ADDRESS_MASK;
+      bool device = (*slot & VMM_PAGE_DEVICE) != 0;
+      if (!device)
+        frames[held++] = *slot & PAGE_ADDRESS_MASK;
       *slot = 0;
       invalidate_local_page(address);
-      freed++;
+      if (!device)
+        freed++;
     }
     else if (slot && (*slot & VMM_PAGE_SWAPENT))
     {

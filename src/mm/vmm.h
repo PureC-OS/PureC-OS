@@ -10,6 +10,7 @@
 #define VMM_PAGE_SWAPENT (1ULL << 10)
 #define VMM_PAGE_ANON (1ULL << 11)
 #define VMM_PAGE_SHARED (1ULL << 52)
+#define VMM_PAGE_DEVICE (1ULL << 53)
 #define VMM_PAGE_NX (1ULL << 63)
 
 void vmm_init(void);
@@ -44,6 +45,9 @@ bool vmm_protect_range(uint64_t address_space, uint64_t virtual_address,
                        uint64_t page_count, uint64_t flags, bool populate);uint64_t vmm_page_flags(uint64_t address_space, uint64_t virtual_address);
 int vmm_map_zero_page(uint64_t address_space, uint64_t virtual_address,
                       uint64_t flags);
+bool vmm_map_device_range(uint64_t address_space, uint64_t virtual_address,
+                          uint64_t physical_address, uint64_t page_count,
+                          uint64_t flags);
 uint32_t vmm_swap_reclaim(uint32_t want_pages);
 void vmm_swap_pause(void);
 void vmm_swap_resume(void);
