@@ -22,6 +22,7 @@ typedef void (*udp_handler)(const struct udp_datagram *datagram);
 bool udp_init(void);
 bool udp_bind(uint16_t port, udp_handler handler);
 bool udp_port_bound(uint16_t port);
+bool udp_unbind(uint16_t port);
 enum ipv4_send_result udp_send(struct net_device *device,
                                uint32_t destination_address,
                                uint16_t source_port, uint16_t destination_port,
