@@ -34,7 +34,7 @@ enum net_ping_status net_ping_target(const char *target, uint16_t sequence,
     struct net_device *device=net_device_default();
     if(!device) return NET_PING_NO_INTERFACE;
     struct ipv4_interface_config config;
-    if(!ipv4_get_config(device,&config) || !dhcp_is_bound(device))
+    if(!ipv4_get_config(device,&config) || !config.configured)
         return NET_PING_NOT_CONFIGURED;
     uint32_t address;
     enum dns_result resolved=dns_resolve_ipv4(device,host,timeout_ms,&address);

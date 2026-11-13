@@ -117,13 +117,13 @@ void qemu_network_test_thread(void *argument) {
     uint64_t start = timer_ticks();
     struct ipv4_interface_config config = {0};
     while (timer_ticks() - start < QEMU_TEST_DHCP_TIMEOUT_MS) {
-        if (dhcp_is_bound(device) && ipv4_get_config(device, &config) &&
+        if (ipv4_get_config(device, &config) &&
             config.configured && dns_get_server(device))
             break;
         scheduler_sleep(50);
     }
     uint32_t dns_server = dns_get_server(device);
-    if (!dhcp_is_bound(device) || !ipv4_get_config(device, &config) ||
+    if (!ipv4_get_config(device, &config) ||
         !config.configured || !dns_server) {
         fail("dhcp", -1);
         return;

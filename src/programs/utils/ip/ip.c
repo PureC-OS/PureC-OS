@@ -39,6 +39,15 @@ static int prefix_of(uint32_t mask)
     return n;
 }
 
+static bool dynamic_lease(const struct net_if_info *f)
+{
+    if (f->dhcp_bound)
+        return true;
+    char path[64];
+    snprintf(path, sizeof(path), "/run/dhcp/%s.lease", f->name);
+    return util_exists(path);
+}
+
 static int load(struct net_if_info *list, int cap)
 {
     int n = pc_net_if_list(list, (uint32_t)cap);
@@ -74,7 +83,7 @@ static int show_link(bool addresses)
             char a[16];
             addr_text(f->ip_address, a, sizeof(a));
             printf("    inet %s%s/%d%s %s\n", paint(C_CYAN), a, prefix_of(f->netmask), paint(C_RESET),
-                   lo ? "scope host" : (f->dhcp_bound ? "dynamic" : "static"));
+                   lo ? "scope host" : (dynamic_lease(f) ? "dynamic" : "static"));
         }
         if (f->dns_server) {
             char d[16];
@@ -99,7 +108,7 @@ static int show_route(void)
             continue;
         char g[16];
         addr_text(f->gateway, g, sizeof(g));
-        printf("default via %s dev %s%s\n", g, f->name, f->dhcp_bound ? " proto dhcp" : "");
+        printf("default via %s dev %s%s\n", g, f->name, dynamic_lease(f) ? " proto dhcp" : "");
     }
     for (int i = 0; i < n; i++) {
         const struct net_if_info *f = &list[i];
