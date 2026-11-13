@@ -18,6 +18,8 @@
 
 **libc**: `memmem`, `sigfillset`, `NSIG`, `setsid`, `getsid`, `getpgid`, `getpass` (без эха через termios, читает `/dev/tty`), `struct itimerval`, `setitimer`/`getitimer` (пока заглушки, как `alarm`: прогресс git не обновляется по таймеру), `EOVERFLOW`, `SCNuMAX` и родственные.
 
+**Права на `/dev`**: у devfs не было своих прав, и все устройства выглядели как файлы root с `rw-r--r--`. Обычный пользователь не мог открыть `/dev/null` на запись, и git падал на старте с «could not open '/dev/null' for reading and writing: Permission denied». Теперь как в Linux: `null`, `zero`, `full`, `random`, `urandom` — `rw-rw-rw-`, `kmsg` — `rw-r--r--`, диски — `rw-------` (только root). Права устройств не меняются через `chmod`.
+
 **Ограничения**: SSH-адреса (`git@github.com:...`) не работают — нет ssh-клиента, только HTTPS. Шаблонов `git init` нет.
 
 ### NetSurf: скачивание файлов в `~/Downloads`
