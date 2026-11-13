@@ -23,6 +23,7 @@ static uint32_t scale_num = 1, scale_den = 1;
 static uint32_t phys_w, phys_h;
 static volatile bool front_user_owned;
 static volatile uint32_t front_generation;
+static void dirty_expand(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 static uint32_t xmap_tab[GOP_MAX_PHYS_W];
 static uint32_t line_tab[GOP_MAX_PHYS_W];
 
