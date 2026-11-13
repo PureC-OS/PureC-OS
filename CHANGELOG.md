@@ -18,9 +18,15 @@
 
 **libc**: `memmem`, `sigfillset`, `NSIG`, `setsid`, `getsid`, `getpgid`, `getpass` (без эха через termios, читает `/dev/tty`), `struct itimerval`, `setitimer`/`getitimer` (пока заглушки, как `alarm`: прогресс git не обновляется по таймеру), `EOVERFLOW`, `SCNuMAX` и родственные.
 
+**`fstat` отдаёт настоящие права**: раньше `fstat` заполнял только тип файла, а права были нулевыми (`stat` при этом работал правильно). Git копирует права старого конфига на `config.lock`, ставил ему `0000` и сам же не мог туда писать: «failed to write new configuration file .git/config.lock». Теперь `fstat` берёт права, владельца и времена из ядра, как `stat`.
+
+**`fclose(stdout)`**: на `stdin`/`stdout`/`stderr` всегда возвращал `EINVAL`. Теперь, как в POSIX, сбрасывает буфер, закрывает дескриптор и возвращает 0. Ушла ошибка git «close failed on standard output: Invalid argument», и читатель трубы получает конец данных, когда программа закрывает stdout.
+
+**Шаблоны `git init`**: в образе `/usr/share/git-core/templates` (`description`, `info/exclude`), предупреждения «templates not found» больше нет. `make -C mk/git` сам перелинковывает git, если изменилась libc.
+
 **Права на `/dev`**: у devfs не было своих прав, и все устройства выглядели как файлы root с `rw-r--r--`. Обычный пользователь не мог открыть `/dev/null` на запись, и git падал на старте с «could not open '/dev/null' for reading and writing: Permission denied». Теперь как в Linux: `null`, `zero`, `full`, `random`, `urandom` — `rw-rw-rw-`, `kmsg` — `rw-r--r--`, диски — `rw-------` (только root). Права устройств не меняются через `chmod`.
 
-**Ограничения**: SSH-адреса (`git@github.com:...`) не работают — нет ssh-клиента, только HTTPS. Шаблонов `git init` нет.
+**Ограничения**: SSH-адреса (`git@github.com:...`) не работают — нет ssh-клиента, только HTTPS.
 
 ### NetSurf: скачивание файлов в `~/Downloads`
 Раньше браузер не мог скачать ни одного файла: во framebuffer-версии NetSurf нет своего обработчика загрузок, и ядро браузера отменяло каждую загрузку через встроенную заглушку.
