@@ -1927,17 +1927,17 @@ int64_t syscall_handler(struct syscall_regs *r)
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
-      return -KERR_FAULT;
+      return FS_ERROR_INVALID;
     char old_abs[512];
     char new_abs[512];
     int32_t resolved = process_resolve_path((const char *)(uintptr_t)a1, old_abs,
                                             sizeof(old_abs));
     if (resolved < 0)
-      return resolved;
+      return FS_ERROR_NOT_FOUND;
     resolved = process_resolve_path((const char *)(uintptr_t)a2, new_abs,
                                     sizeof(new_abs));
     if (resolved < 0)
-      return resolved;
+      return FS_ERROR_NOT_FOUND;
     if (!filesystem_syscall_acquire())
       return FS_ERROR_BUSY;
     int32_t result = vfs_rename_path(old_abs, new_abs);
