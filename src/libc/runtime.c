@@ -482,6 +482,11 @@ int32_t pc_config_path(const char *name, char *out, uint32_t capacity, bool for_
     return 1;
 }
 
+int32_t pc_display_claim(void){ return (int32_t)pc_syscall(SYS_DISPLAY_CLAIM,0,0,0); }
+int32_t pc_display_release(void){ return (int32_t)pc_syscall(SYS_DISPLAY_RELEASE,0,0,0); }
+int32_t pc_fb_map(struct fb_map_info *out){ return (int32_t)pc_syscall(SYS_FB_MAP,(uint64_t)(uintptr_t)out,0,0); }
+int32_t pc_input_open(void){ return (int32_t)pc_syscall(SYS_INPUT_OPEN,0,0,0); }
+int32_t pc_fb_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h){ return (int32_t)syscall5(SYS_FB_DAMAGE,x,y,w,h,0); }
 int32_t pc_sudo(const char *password){ return (int32_t)pc_syscall(SYS_SUDO,(uint64_t)(uintptr_t)password,0,0); }
 int32_t pc_getgid(void){ return (int32_t)pc_syscall(SYS_GETGID,0,0,0); }
 int32_t pc_setuid(uint32_t uid){ return (int32_t)pc_syscall(SYS_SETUID,uid,0,0); }
