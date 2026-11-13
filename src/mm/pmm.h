@@ -13,6 +13,7 @@ uint64_t pmm_allocate_contiguous(uint64_t page_count);
 void pmm_free_contiguous(uint64_t physical_address, uint64_t page_count);
 void pmm_free_page(uint64_t physical_address);
 void *pmm_physical_to_virtual(uint64_t physical_address);
+uint64_t pmm_virtual_to_physical(uint64_t virtual_address);
 uint64_t pmm_total_bytes(void);
 uint64_t pmm_free_bytes(void);
 bool pmm_is_ready(void);
