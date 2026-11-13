@@ -1458,6 +1458,27 @@ int64_t syscall_handler(struct syscall_regs *r)
     return (int64_t)process_current_uid();
   case SYS_GETGID:
     return (int64_t)process_current_gid();
+  case SYS_KLOG_WRITE:
+  {
+    const char *message = (const char *)(uintptr_t)a2;
+    if (!readable_string(message))
+      return -KERR_FAULT;
+    char text[240];
+    uint32_t n = 0;
+    while (message[n] && n + 1 < sizeof(text))
+    {
+      char c = message[n];
+      text[n++] = (c == '\n' || c == '\r') ? ' ' : c;
+    }
+    while (n && text[n - 1] == ' ')
+      n--;
+    text[n] = '\0';
+    static const enum klog_level levels[4] = {KLOG_INFO, KLOG_OK, KLOG_WARN, KLOG_ERROR};
+    struct process *self = process_current();
+    klogf(levels[a1 < 4 ? a1 : 0], "%s[%d]: %s", self ? self->name : "?",
+          process_current_pid(), text);
+    return 0;
+  }
   case SYS_DISPLAY_CLAIM:
   {
     if (!process_has_capability(PROCESS_CAP_DISPLAY) && process_current_uid() != 0)

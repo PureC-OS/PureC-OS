@@ -5,6 +5,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
+#include <syslog.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
@@ -437,13 +438,13 @@ int main(void)
     local.sin_addr.s_addr = htonl(0x7F000001U);
     if (listen_fd < 0 || upstream_fd < 0 ||
         bind(listen_fd, (struct sockaddr *)&local, sizeof(local)) < 0) {
-        printf("resolved: cannot bind 127.0.0.1:53: %s\n", strerror(errno));
+        syslog(LOG_INFO, "cannot bind 127.0.0.1:53: %s\n", strerror(errno));
         return 1;
     }
     signal(SIGTERM, on_term);
     signal(SIGINT, on_term);
     load_upstreams();
-    printf("resolved: listening on 127.0.0.1:53, %u upstream server(s)\n", upstream_count);
+    syslog(LOG_INFO, "listening on 127.0.0.1:53, %u upstream server(s)\n", upstream_count);
     while (!stop) {
         struct pollfd fds[2] = {{.fd = listen_fd, .events = POLLIN}, {.fd = upstream_fd, .events = POLLIN}};
         int ready = poll(fds, 2, 250);
@@ -455,7 +456,7 @@ int main(void)
         }
         expire();
     }
-    printf("resolved: stopped (served %lu, cache hits %lu, forwarded %lu)\n", served, hits,
+    syslog(LOG_INFO, "stopped (served %lu, cache hits %lu, forwarded %lu)\n", served, hits,
            forwarded);
     return 0;
 }

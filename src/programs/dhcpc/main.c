@@ -6,6 +6,7 @@
 #include <stdarg.h>
 #include <sys/stat.h>
 #include <stdio.h>
+#include <syslog.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -56,13 +57,12 @@ static void ip_text(uint32_t a, char *out)
 
 static void say(const char *fmt, ...)
 {
+    char text[200];
     va_list ap;
     va_start(ap, fmt);
-    printf("dhcpc[%s]: ", ifname);
-    vprintf(fmt, ap);
-    printf("\n");
-    fflush(stdout);
+    vsnprintf(text, sizeof(text), fmt, ap);
     va_end(ap);
+    syslog(LOG_INFO, "%s: %s", ifname, text);
 }
 
 static bool iface(struct net_if_info *out)

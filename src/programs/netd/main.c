@@ -2,10 +2,12 @@
 #include <errno.h>
 #include <signal.h>
 #include <stdio.h>
+#include <syslog.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #define DHCPC_PATH "/bin/dhcpc"
 #define RESOLVED_PATH "/bin/resolved"
@@ -68,16 +70,16 @@ static void start(struct child *c)
         const char *path = resolver ? RESOLVED_PATH : DHCPC_PATH;
         char *args[3] = {(char *)(resolver ? "resolved" : "dhcpc"), resolver ? 0 : c->name, 0};
         execv(path, args);
-        printf("netd: cannot run %s: %s\n", path, strerror(errno));
+        syslog(LOG_INFO, "cannot run %s: %s\n", path, strerror(errno));
         _exit(127);
     }
     if (pid < 0) {
-        printf("netd: fork failed for %s\n", c->name);
+        syslog(LOG_INFO, "fork failed for %s\n", c->name);
         c->retry_at = time(0) + 5;
         return;
     }
     c->pid = pid;
-    printf("netd: started %s%s%s (pid %d)\n", resolver ? "resolved" : "dhcpc for ",
+    syslog(LOG_INFO, "started %s%s%s (pid %d)\n", resolver ? "resolved" : "dhcpc for ",
            resolver ? "" : c->name, resolver ? " on 127.0.0.1:53" : "", (int)pid);
 }
 
@@ -96,13 +98,13 @@ static void reap(void)
             c->failures++;
             if (c->failures >= 3 && is_resolver(c)) {
                 c->given_up = true;
-                printf("netd: resolved keeps failing, programs fall back to kernel DNS\n");
+                syslog(LOG_INFO, "resolved keeps failing, programs fall back to kernel DNS\n");
                 continue;
             }
             if (c->failures >= 3) {
                 c->given_up = true;
                 kernel_dhcp(c->name, NET_CFG_DHCP_START);
-                printf("netd: dhcpc for %s keeps failing, giving %s back to kernel DHCP\n",
+                syslog(LOG_INFO, "dhcpc for %s keeps failing, giving %s back to kernel DHCP\n",
                        c->name, c->name);
                 continue;
             }
@@ -110,7 +112,7 @@ static void reap(void)
             if (delay > 60)
                 delay = 60;
             c->retry_at = time(0) + delay;
-            printf("netd: dhcpc for %s exited (status %d), restart in %u s\n", c->name,
+            syslog(LOG_INFO, "dhcpc for %s exited (status %d), restart in %u s\n", c->name,
                    WIFEXITED(status) ? WEXITSTATUS(status) : -1, delay);
         }
     }
@@ -136,10 +138,17 @@ static void scan(void)
 
 int main(void)
 {
-    setvbuf(stdout, 0, _IOLBF, 0);
+    int null_fd = open("/dev/null", O_RDWR);
+    if (null_fd >= 0) {
+        dup2(null_fd, 0);
+        dup2(null_fd, 1);
+        dup2(null_fd, 2);
+        if (null_fd > 2)
+            close(null_fd);
+    }
     signal(SIGTERM, on_term);
     signal(SIGINT, on_term);
-    printf("netd: started (pid %d)\n", (int)getpid());
+    syslog(LOG_INFO, "started (pid %d)\n", (int)getpid());
     while (!stop) {
         reap();
         scan();
@@ -152,6 +161,6 @@ int main(void)
         reap();
         sleep(0);
     }
-    printf("netd: stopped\n");
+    syslog(LOG_INFO, "stopped\n");
     return 0;
 }

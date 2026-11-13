@@ -205,6 +205,7 @@
 #define SYS_SENDTO 403            /* (fd, buf, len, flags, const sockaddr_in *dst|0) -> bytes */
 #define SYS_RECVFROM 404          /* (fd, buf, len, flags, sockaddr_in *src|0) -> bytes */
 #define SYS_NET_CONFIGURE 405     /* (const struct net_if_config *) -> 0; root or NET_ADMIN */
+#define SYS_KLOG_WRITE 406        /* (level 0..3, const char *message) -> 0; appends to the kernel journal */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
