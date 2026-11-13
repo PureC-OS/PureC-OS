@@ -242,9 +242,24 @@ static int fflush_nolock(FILE *stream) {
 }
 
 static int fclose_nolock(FILE *stream) {
-    if (!stream || stream == stdin || stream == stdout || stream == stderr) {
+    if (!stream) {
         errno = EINVAL;
         return EOF;
+    }
+    if (stream == stdin || stream == stdout || stream == stderr) {
+        int result = stream->writable ? flush_write(stream) : 0;
+        if (stream->fd < 0) {
+            errno = EBADF;
+            return EOF;
+        }
+        if (pc_syscall(SYS_FILE_CLOSE, (uint64_t)stream->fd, 0, 0) < 0) {
+            errno = EBADF;
+            result = EOF;
+        }
+        stream->fd = -1;
+        stream->length = 0;
+        stream->position = 0;
+        return result ? EOF : 0;
     }
     bool known = false;
     for (uint32_t i = 0; i < FOPEN_MAX; i++) {
