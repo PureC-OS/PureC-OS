@@ -250,8 +250,33 @@ static struct vfs_mount *meta_mount(const char *path, const char **relative,
   return mount;
 }
 
+static bool overlay_file_meta(const char *path, struct vfs_perm_meta *meta) {
+  const void *data = 0;
+  uint32_t size = 0;
+  if (!initramfs_is_mounted() || !initramfs_find(path, &data, &size))
+    return false;
+  const char *relative;
+  char buffer[2];
+  struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
+  if (strncmp(path, "/etc/", 5) == 0 && mount &&
+      mount->ops->get_meta(mount->context, relative, meta) >= 0)
+    return true;
+  if (vfs_perm_get(path, meta))
+    return true;
+  const uint8_t *bytes = (const uint8_t *)data;
+  bool elf = size >= 4 && bytes[0] == 0x7F && bytes[1] == 'E' &&
+             bytes[2] == 'L' && bytes[3] == 'F';
+  bool script = size >= 2 && bytes[0] == '#' && bytes[1] == '!';
+  meta->mode = (elf || script) ? 0755u : 0644u;
+  meta->uid = 0;
+  meta->gid = 0;
+  return true;
+}
+
 static void effective_meta(const char *path, bool directory,
                            struct vfs_perm_meta *meta) {
+  if (!directory && overlay_file_meta(path, meta))
+    return;
   const char *relative;
   char buffer[2];
   struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
