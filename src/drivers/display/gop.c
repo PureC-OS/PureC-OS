@@ -4,6 +4,7 @@
 #include "../../gfx/text.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
+#include "../../mm/vmm.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../kernel/process/scheduler.h"
 #include "../../kernel/process/process.h"
@@ -20,6 +21,8 @@ static struct gop_state gop = {0};
 #define GOP_MAX_PHYS_W 8192
 static uint32_t scale_num = 1, scale_den = 1;
 static uint32_t phys_w, phys_h;
+static volatile bool front_user_owned;
+static volatile uint32_t front_generation;
 static uint32_t xmap_tab[GOP_MAX_PHYS_W];
 static uint32_t line_tab[GOP_MAX_PHYS_W];
 
@@ -49,6 +52,7 @@ static void write_scaled_span(uint32_t ly, uint32_t lx0, const uint32_t *src,
 }
 
 void gop_front_notify(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    if(front_user_owned) return;
     if(!svga_is_available() || !w || !h) return;
     if(!scale_active()){ svga_update(x,y,w,h); return; }
     uint32_t px0=scale_up(x), py0=scale_up(y);
@@ -308,6 +312,7 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
     phys_h=height;
     gop.pitch=pitch_pixels;
     gop.bpp=bpp;
+    front_generation++;
     gop.framebuffer_bytes=(uint64_t)pitch_pixels
         *((uint64_t)(bpp==24 ? 3 : (bpp==16 ? 2 : 4)))*height;
     gop.protocol_name="VBE live mode";
@@ -324,6 +329,45 @@ void gop_retarget_front(void *address, uint32_t pitch_pixels){
     if(!address || !pitch_pixels) return;
     gop.addr=(uint32_t*)address;
     gop.pitch=pitch_pixels;
+    front_generation++;
+}
+
+bool gop_user_owned(void){ return front_user_owned; }
+
+void gop_kernel_reclaim(void){ front_user_owned=false; }
+
+void gop_set_user_owned(bool owned){
+    if(front_user_owned==owned) return;
+    front_user_owned=owned;
+    if(!owned && gop.available && backbuffer){
+        dirty_expand(0,0,gop.width,gop.height);
+        gop_present_forced();
+        gop_front_notify(0,0,gop.width,gop.height);
+    }
+}
+
+bool gop_front_physical(struct gop_front_info *out){
+    if(!out || !gop.available || !gop.addr) return false;
+    uint64_t virt=(uint64_t)(uintptr_t)gop.addr;
+    uint64_t phys=pmm_virtual_to_physical(virt);
+    if(!phys) phys=vmm_translate(vmm_kernel_address_space(), virt);
+    if(!phys) return false;
+    out->physical=phys;
+    out->width=phys_w;
+    out->height=phys_h;
+    out->pitch_bytes=gop.pitch*(gop.bpp==24 ? 3U : (gop.bpp==16 ? 2U : 4U));
+    out->bpp=gop.bpp;
+    out->bytes=(uint64_t)out->pitch_bytes*phys_h;
+    out->generation=front_generation;
+    return true;
+}
+
+void gop_user_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    if(!front_user_owned || !svga_is_available() || !w || !h) return;
+    if(x>=phys_w || y>=phys_h) return;
+    if(w>phys_w-x) w=phys_w-x;
+    if(h>phys_h-y) h=phys_h-y;
+    svga_update(x,y,w,h);
 }
 
 static uint32_t gcd32(uint32_t a, uint32_t b){
@@ -582,6 +626,7 @@ bool gop_flush_needed(void){
 }
 
 static void gop_present_nolock(void){
+    if(front_user_owned) return;
     if(!gop.available || !gop.addr || !backbuffer) return;
     if(!dirty_valid) return;
     if(dirty_x0>=gop.width || dirty_y0>=gop.height){
@@ -638,6 +683,7 @@ static void gop_present_nolock(void){
 }
 
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
+    if(front_user_owned) return;
     if(!gop.available || !gop.addr || !backbuffer || !w || !h) return;
     if(x>=gop.width || y>=gop.height) return;
     if(x+w>gop.width) w=gop.width-x;
@@ -687,6 +733,7 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
 }
 
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
+    if(front_user_owned) return;
     front_write_32(x, y, color);
 }
 
@@ -724,6 +771,7 @@ bool gop_draw_pixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
 }
 
 void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count){
+    if(front_user_owned) return;
     if(!gop.available || !gop.addr || !pixels || x>=gop.width || y>=gop.height) return;
     if(count>gop.width-x) count=gop.width-x;
     if(scale_active()){
