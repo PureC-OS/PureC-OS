@@ -1,0 +1,31 @@
+NAME
+       chmod - change file mode bits
+
+SYNOPSIS
+       chmod [-Rvcf] MODE FILE...
+
+DESCRIPTION
+       Change the permission bits of each FILE. MODE is an octal number (755,
+       0644) or a symbolic list of [ugoa][+-=][rwxXst] clauses separated by
+       commas.
+
+OPTIONS
+       -R
+           change files and directories recursively
+
+       -v
+           output a diagnostic for every file processed
+
+       -c
+           like -v but report only when a change is made
+
+       -f
+           suppress most error messages
+
+EXAMPLES
+       chmod 755 script.sh
+       chmod u+x,go-w file
+       chmod -R a+rX /root/share
+
+SEE ALSO
+       ls(1), stat(1)

@@ -153,10 +153,6 @@ static bool alloc_buffers(void) {
 static bool start_installation(void) {
     const struct storage_device_info *disk = &app.disks[app.selected];
     struct install_account_request accounts;
-    if (app.same_root) {
-        pc_copy(app.s.root_password, app.s.user_password,
-                sizeof(app.s.root_password));
-    }
     bool built = setup_build_request(&app.s, &accounts);
     setup_wipe(&app.s);
     for (uint32_t i = 0; i < sizeof(app.user_pass2); i++)
@@ -343,6 +339,14 @@ static int installer_main(void) {
             ui.caret_on = caret;
             if (app.page == PAGE_COMPUTER || app.page == PAGE_ACCOUNT)
                 dirty = true;
+        }
+        if (app.page == PAGE_TIME) {
+            struct time_info now;
+            static int64_t shown_second = -1;
+            if (pc_time_get(&now) == 0 && now.unix_seconds != shown_second) {
+                shown_second = now.unix_seconds;
+                dirty = true;
+            }
         }
 
         if (app.page == PAGE_INSTALL) {

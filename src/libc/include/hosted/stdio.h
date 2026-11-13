@@ -31,6 +31,9 @@
 #define _IOLBF 1
 #define _IOFBF 2
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct file_impl FILE;
 
 extern FILE *stdin;
@@ -89,3 +92,6 @@ int setvbuf(FILE *stream, char *buffer, int mode, size_t size);
 void setbuf(FILE *stream, char *buffer);
 int remove(const char *path);
 int rename(const char *old_path, const char *new_path);
+#ifdef __cplusplus
+}
+#endif

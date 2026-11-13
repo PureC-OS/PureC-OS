@@ -3,6 +3,9 @@
 
 #include "sys/types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef unsigned char cc_t;
 typedef unsigned int speed_t;
 typedef unsigned int tcflag_t;
@@ -142,3 +145,6 @@ int cfsetispeed(struct termios *mode, speed_t speed);
 int cfsetospeed(struct termios *mode, speed_t speed);
 int cfsetspeed(struct termios *mode, speed_t speed);
 void cfmakeraw(struct termios *mode);
+#ifdef __cplusplus
+}
+#endif

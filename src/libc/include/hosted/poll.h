@@ -1,6 +1,11 @@
 #pragma once
+#include "signal.h"
+#include "time.h"
 // PureC hosted libc: poll over console, pipe and file descriptors.
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef unsigned long nfds_t;
 
 struct pollfd {
@@ -21,3 +26,8 @@ struct pollfd {
 #define POLLWRBAND 0x200
 
 int poll(struct pollfd *fds, nfds_t count, int timeout);
+int ppoll(struct pollfd *fds, nfds_t count, const struct timespec *timeout,
+          const sigset_t *mask);
+#ifdef __cplusplus
+}
+#endif

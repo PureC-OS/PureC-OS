@@ -22,10 +22,31 @@
 #define CRT0_ENV_NAME 32
 #define CRT0_ENV_VALUE 128
 
-int main(int argc, char *argv[]);
+int main(int argc, char *argv[], char *envp[]);
 void exit(int status) __attribute__((noreturn));
 
 extern char **environ;
+
+extern void (*__init_array_start[])(void) __attribute__((weak));
+extern void (*__init_array_end[])(void) __attribute__((weak));
+
+/* Identifies this executable to __cxa_atexit (C++ static destructors). */
+void *__dso_handle __attribute__((visibility("hidden")));
+
+/* Set once the .init_array constructors have run, so wrappers can skip a second run. */
+int __purec_init_array_done;
+
+static void crt0_run_constructors(void) {
+    if (__purec_init_array_done)
+        return;
+    __purec_init_array_done = 1;
+    void (**entry)(void) = __init_array_start;
+    void (**end)(void) = __init_array_end;
+    if (!entry || !end)
+        return;
+    for (; entry < end; entry++)
+        (*entry)();
+}
 
 static char crt0_cmdline[CRT0_CMDLINE];
 static char *crt0_argv[CRT0_MAX_ARGS];
@@ -63,13 +84,36 @@ __asm__(
     "    call crt0_main\n"
     "    hlt\n");
 
+extern char __tdata_start[] __attribute__((weak));
+extern char __tdata_end[] __attribute__((weak));
+extern char __tbss_start[] __attribute__((weak));
+extern char __tbss_end[] __attribute__((weak));
+extern char __tls_align[] __attribute__((weak));
+void __tls_init_main(const void *image, size_t filesz, size_t memsz,
+                     size_t alignment);
+
+void __pc_note_stack_top(uintptr_t top);
+
+static void crt0_init_tls(void) {
+    if (!__tdata_start || !__tbss_start || !__tbss_end)
+        return;
+    size_t filesz = __tdata_end > __tdata_start ? (size_t)(__tdata_end - __tdata_start) : 0;
+    char *start = filesz ? __tdata_start : __tbss_start;
+    if (__tbss_end <= start)
+        return;
+    __tls_init_main(start, filesz, (size_t)(__tbss_end - start), (size_t)__tls_align);
+}
+
 void crt0_main(uint64_t *frame) {
     int argc = 0;
+    __pc_note_stack_top(((uintptr_t)frame + 4095u) & ~(uintptr_t)4095u);
+    crt0_init_tls();
     if (frame[0] > 0) {
         char **vector = (char **)(frame + 1);
         int count = (int)frame[0];
         environ = vector + count + 1;
-        int status = main(count, vector);
+        crt0_run_constructors();
+        int status = main(count, vector, environ);
         exit(status);
     }
     crt0_build_environ();
@@ -98,6 +142,7 @@ void crt0_main(uint64_t *frame) {
         }
     }
     crt0_argv[argc] = 0;
-    int status = main(argc, crt0_argv);
+    crt0_run_constructors();
+    int status = main(argc, crt0_argv, environ);
     exit(status);
 }

@@ -26,13 +26,51 @@ static int result_errno(int64_t result) {
     return (int)result;
 }
 
+#define ATFORK_MAX 32
+static void (*atfork_prepare[ATFORK_MAX])(void);
+static void (*atfork_parent[ATFORK_MAX])(void);
+static void (*atfork_child[ATFORK_MAX])(void);
+static int atfork_count;
+
+int pthread_atfork(void (*prepare)(void), void (*parent)(void), void (*child)(void))
+{
+    if (atfork_count >= ATFORK_MAX)
+        return ENOMEM;
+    atfork_prepare[atfork_count] = prepare;
+    atfork_parent[atfork_count] = parent;
+    atfork_child[atfork_count] = child;
+    atfork_count++;
+    return 0;
+}
+
+void __pc_atfork_run(int stage)
+{
+    if (stage == 0)
+    {
+        for (int i = atfork_count - 1; i >= 0; i--)
+            if (atfork_prepare[i])
+                atfork_prepare[i]();
+        return;
+    }
+    for (int i = 0; i < atfork_count; i++)
+    {
+        void (*handler)(void) = stage == 1 ? atfork_parent[i] : atfork_child[i];
+        if (handler)
+            handler();
+    }
+}
+
+
 pid_t fork(void) {
     fflush(0);
+    __pc_atfork_run(0);
     int64_t result = pc_syscall(SYS_FORK, 0, 0, 0);
     if (result < 0) {
+        __pc_atfork_run(1);
         errno = result == -1 ? EAGAIN : (int)-result;
         return -1;
     }
+    __pc_atfork_run(result == 0 ? 2 : 1);
     return (pid_t)result;
 }
 

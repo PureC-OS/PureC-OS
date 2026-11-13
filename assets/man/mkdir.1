@@ -1,0 +1,24 @@
+NAME
+       mkdir - make directories
+
+SYNOPSIS
+       mkdir [OPTION]... DIRECTORY...
+
+DESCRIPTION
+       Create the DIRECTORY(ies), if they do not already exist.
+
+OPTIONS
+       -p, --parents
+           no error if existing, make parent directories as needed
+
+       -m MODE
+           set file mode (as in chmod), default 755
+
+       -v
+           print a message for each created directory
+
+EXAMPLES
+       mkdir -p /root/work/src
+
+SEE ALSO
+       rmdir(1), chmod(1)

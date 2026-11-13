@@ -1,0 +1,28 @@
+NAME
+       tr - translate or delete characters
+
+SYNOPSIS
+       tr [-dsc] SET1 [SET2]
+
+DESCRIPTION
+       Translate, squeeze and/or delete characters from standard input. SETs
+       may contain ranges (a-z), escapes (\n \t) and classes ([:upper:]
+       [:digit:] [:space:] ...).
+
+OPTIONS
+       -d
+           delete characters in SET1
+
+       -s
+           squeeze repeated characters into one
+
+       -c
+           use the complement of SET1
+
+EXAMPLES
+       echo hello | tr a-z A-Z
+       tr -d '\r' < dos.txt > unix.txt
+       tr -s ' '
+
+SEE ALSO
+       cut(1)

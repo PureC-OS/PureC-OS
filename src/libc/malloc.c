@@ -8,6 +8,7 @@
 #include "include/hosted/string.h"
 #include "include/hosted/errno.h"
 #include "include/purec.h"
+#include "pthread_impl.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -21,7 +22,8 @@
 #define SMALL_LIMIT 1024
 #define MAX_REQUEST ((size_t)1 << 46)
 
-struct chunk {
+struct chunk
+{
     size_t prev_size;
     size_t size;
     struct chunk *fd;
@@ -75,10 +77,13 @@ static void bin_remove(struct chunk *c)
 static struct chunk *bin_find(size_t need)
 {
     unsigned b = bin_index(need);
-    if (b < 64) {
+    if (b < 64)
+    {
         if (bins[b])
             return bins[b];
-    } else {
+    }
+    else
+    {
         for (struct chunk *c = bins[b]; c; c = c->fd)
             if (chunk_size(c) >= need)
                 return c;
@@ -88,7 +93,8 @@ static struct chunk *bin_find(size_t need)
         return 0;
     unsigned word = start >> 6;
     uint64_t mask = bin_map[word] & (~(uint64_t)0 << (start & 63));
-    while (!mask) {
+    while (!mask)
+    {
         if (++word >= NBINS / 64)
             return 0;
         mask = bin_map[word];
@@ -104,7 +110,8 @@ static int heap_extend(size_t need)
     request = (request + 15) & ~(size_t)15;
     request += 16;
     uint8_t *arena = (uint8_t *)pc_heap_grow(request);
-    if (!arena) {
+    if (!arena)
+    {
         errno = ENOMEM;
         return 0;
     }
@@ -127,21 +134,24 @@ static inline size_t request_to_chunk(size_t size)
     return need < MIN_CHUNK ? MIN_CHUNK : need;
 }
 
-void *malloc(size_t size)
+static void *malloc_locked(size_t size)
 {
     if (!size)
         size = 1;
-    if (size > MAX_REQUEST) {
+    if (size > MAX_REQUEST)
+    {
         errno = ENOMEM;
         return 0;
     }
     size_t need = request_to_chunk(size);
     struct chunk *c = bin_find(need);
-    if (!c) {
+    if (!c)
+    {
         if (!heap_extend(need))
             return 0;
         c = bin_find(need);
-        if (!c) {
+        if (!c)
+        {
             errno = ENOMEM;
             return 0;
         }
@@ -150,7 +160,8 @@ void *malloc(size_t size)
     size_t total = chunk_size(c);
     size_t remainder = total - need;
     size_t prev_flag = c->size & F_PREV;
-    if (remainder >= MIN_CHUNK) {
+    if (remainder >= MIN_CHUNK)
+    {
         c->size = need | prev_flag | F_INUSE;
         struct chunk *rest = (struct chunk *)((uint8_t *)c + need);
         rest->size = remainder | F_PREV;
@@ -158,14 +169,16 @@ void *malloc(size_t size)
         after->prev_size = remainder;
         after->size &= ~(size_t)F_PREV;
         bin_insert(rest);
-    } else {
+    }
+    else
+    {
         c->size = total | prev_flag | F_INUSE;
         chunk_next(c)->size |= F_PREV;
     }
     return (uint8_t *)c + HDR;
 }
 
-void free(void *pointer)
+static void free_locked(void *pointer)
 {
     if (!pointer)
         return;
@@ -173,14 +186,16 @@ void free(void *pointer)
     size_t size = chunk_size(c);
     size_t prev_flag = c->size & F_PREV;
     struct chunk *after = (struct chunk *)((uint8_t *)c + size);
-    if (!prev_flag) {
+    if (!prev_flag)
+    {
         struct chunk *before = (struct chunk *)((uint8_t *)c - c->prev_size);
         bin_remove(before);
         size += chunk_size(before);
         prev_flag = before->size & F_PREV;
         c = before;
     }
-    if (!(after->size & F_INUSE)) {
+    if (!(after->size & F_INUSE))
+    {
         bin_remove(after);
         size += chunk_size(after);
         after = (struct chunk *)((uint8_t *)c + size);
@@ -191,9 +206,41 @@ void free(void *pointer)
     bin_insert(c);
 }
 
+static void *realloc_locked(void *pointer, size_t size);
+static void *aligned_alloc_locked(size_t alignment, size_t size);
+static struct pc_rlock heap_lock;
+
+static inline void heap_enter(void)
+{
+    if (__pc_threaded)
+        __pc_rlock_lock(&heap_lock);
+}
+
+static inline void heap_leave(void)
+{
+    if (__pc_threaded)
+        __pc_rlock_unlock(&heap_lock);
+}
+
+void *malloc(size_t size)
+{
+    heap_enter();
+    void *result = malloc_locked(size);
+    heap_leave();
+    return result;
+}
+
+void free(void *pointer)
+{
+    heap_enter();
+    free_locked(pointer);
+    heap_leave();
+}
+
 void *calloc(size_t count, size_t size)
 {
-    if (count && size > (size_t)-1 / count) {
+    if (count && size > (size_t)-1 / count)
+    {
         errno = ENOMEM;
         return 0;
     }
@@ -206,13 +253,31 @@ void *calloc(size_t count, size_t size)
 
 void *realloc(void *pointer, size_t size)
 {
+    heap_enter();
+    void *result = realloc_locked(pointer, size);
+    heap_leave();
+    return result;
+}
+
+void *aligned_alloc(size_t alignment, size_t size)
+{
+    heap_enter();
+    void *result = aligned_alloc_locked(alignment, size);
+    heap_leave();
+    return result;
+}
+
+static void *realloc_locked(void *pointer, size_t size)
+{
     if (!pointer)
-        return malloc(size);
-    if (!size) {
-        free(pointer);
+        return malloc_locked(size);
+    if (!size)
+    {
+        free_locked(pointer);
         return 0;
     }
-    if (size > MAX_REQUEST) {
+    if (size > MAX_REQUEST)
+    {
         errno = ENOMEM;
         return 0;
     }
@@ -222,13 +287,16 @@ void *realloc(void *pointer, size_t size)
     size_t prev_flag = c->size & F_PREV;
     struct chunk *after = (struct chunk *)((uint8_t *)c + current);
 
-    if (need <= current) {
+    if (need <= current)
+    {
         size_t remainder = current - need;
-        if (remainder >= MIN_CHUNK) {
+        if (remainder >= MIN_CHUNK)
+        {
             c->size = need | prev_flag | F_INUSE;
             struct chunk *rest = (struct chunk *)((uint8_t *)c + need);
             size_t rest_size = remainder;
-            if (!(after->size & F_INUSE)) {
+            if (!(after->size & F_INUSE))
+            {
                 bin_remove(after);
                 rest_size += chunk_size(after);
                 after = (struct chunk *)((uint8_t *)c + need + rest_size);
@@ -241,32 +309,89 @@ void *realloc(void *pointer, size_t size)
         return pointer;
     }
 
-    if (!(after->size & F_INUSE) && current + chunk_size(after) >= need) {
+    if (!(after->size & F_INUSE) && current + chunk_size(after) >= need)
+    {
         size_t total = current + chunk_size(after);
         bin_remove(after);
         struct chunk *beyond = (struct chunk *)((uint8_t *)c + total);
         size_t remainder = total - need;
-        if (remainder >= MIN_CHUNK) {
+        if (remainder >= MIN_CHUNK)
+        {
             c->size = need | prev_flag | F_INUSE;
             struct chunk *rest = (struct chunk *)((uint8_t *)c + need);
             rest->size = remainder | F_PREV;
             beyond->prev_size = remainder;
             beyond->size &= ~(size_t)F_PREV;
             bin_insert(rest);
-        } else {
+        }
+        else
+        {
             c->size = total | prev_flag | F_INUSE;
             beyond->size |= F_PREV;
         }
         return pointer;
     }
 
-    void *fresh = malloc(size);
+    void *fresh = malloc_locked(size);
     if (!fresh)
         return 0;
     size_t copy = current - HDR;
     memcpy(fresh, pointer, copy < size ? copy : size);
-    free(pointer);
+    free_locked(pointer);
     return fresh;
+}
+
+static void *aligned_alloc_locked(size_t alignment, size_t size)
+{
+    if (alignment == 0 || (alignment & (alignment - 1)))
+    {
+        errno = EINVAL;
+        return 0;
+    }
+    if (!size)
+        size = 1;
+    if (alignment <= HDR)
+        return malloc_locked(size);
+    if (size > MAX_REQUEST || alignment > MAX_REQUEST)
+    {
+        errno = ENOMEM;
+        return 0;
+    }
+    uint8_t *raw = (uint8_t *)malloc_locked(size + alignment + MIN_CHUNK);
+    if (!raw)
+        return 0;
+    uintptr_t aligned = ((uintptr_t)raw + alignment - 1) & ~(uintptr_t)(alignment - 1);
+    if (aligned != (uintptr_t)raw && aligned - (uintptr_t)raw < MIN_CHUNK)
+        aligned += alignment;
+    uint8_t *pointer = (uint8_t *)aligned;
+    if (pointer != raw)
+    {
+        struct chunk *head = (struct chunk *)(raw - HDR);
+        struct chunk *body = (struct chunk *)(pointer - HDR);
+        size_t total = chunk_size(head);
+        size_t lead = (size_t)(pointer - raw);
+        size_t prev_flag = head->size & F_PREV;
+        head->size = lead | prev_flag | F_INUSE;
+        body->size = (total - lead) | F_PREV | F_INUSE;
+        free_locked(raw);
+    }
+    return realloc_locked(pointer, size);
+}
+
+void *memalign(size_t alignment, size_t size)
+{
+    return aligned_alloc(alignment, size);
+}
+
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+    if (alignment < sizeof(void *) || (alignment & (alignment - 1)))
+        return EINVAL;
+    void *pointer = aligned_alloc(alignment, size);
+    if (!pointer)
+        return ENOMEM;
+    *memptr = pointer;
+    return 0;
 }
 
 size_t malloc_usable_size(void *pointer)

@@ -1,3 +1,5 @@
+#include "../kernel/time/tz.h"
+#include "../kernel/time/wallclock.h"
 #include "install.h"
 #include "ext2/include/ext2_block.h"
 #include "ext2/include/ext2_dir.h"
@@ -681,7 +683,7 @@ static int32_t install_write_accounts(void)
 {
     if (!pending_accounts.present)
         return 0;
-    struct install_account_files files;
+    static struct install_account_files files;
     int32_t status = install_accounts_render(&pending_accounts, &files);
     if (status < 0)
     {
@@ -700,19 +702,47 @@ static int32_t install_write_accounts(void)
     status = write_account_file("/etc/hostname", files.hostname, 0644);
     if (status < 0)
         return status;
+    if (pending_accounts.timezone[0])
+    {
+        char zone[sizeof(pending_accounts.timezone) + 2];
+        uint32_t n = 0;
+        while (n < sizeof(pending_accounts.timezone) - 1 && pending_accounts.timezone[n])
+        {
+            zone[n] = pending_accounts.timezone[n];
+            n++;
+        }
+        zone[n] = '\n';
+        zone[n + 1] = 0;
+        if (tz_find(pending_accounts.timezone) >= 0)
+        {
+            status = write_account_file("/etc/timezone", zone, 0644);
+            if (status < 0)
+                return status;
+            (void)wallclock_set_zone(pending_accounts.timezone);
+        }
+        else
+            klogf(KLOG_WARN, "install: unknown timezone '%s' ignored", pending_accounts.timezone);
+    }
     status = payload_mkdir("/root");
     if (status < 0)
         return status;
     status = ext2_meta_set("/root", 0700, 0, 0);
     if (status < 0)
         return status;
-    status = payload_mkdir(files.home);
-    if (status < 0)
-        return status;
-    status = ext2_meta_set(files.home, 0700, pending_accounts.user_uid,
-                           INSTALL_USERS_GID);
-    if (status < 0)
-        return status;
+    for (uint32_t i = 0; i < pending_accounts.user_count; i++)
+    {
+        const struct install_user *user = &pending_accounts.users[i];
+        char home[INSTALL_USER_MAX + 8] = "/home/";
+        strncpy(home + 6, user->name, sizeof(home) - 7);
+        status = payload_mkdir(home);
+        if (status < 0)
+            return status;
+        status = ext2_meta_set(home, 0700, user->uid, INSTALL_USERS_GID);
+        if (status < 0)
+            return status;
+        klogf(KLOG_OK, "install: user %s uid=%u%s", user->name, user->uid,
+              user->admin ? " (wheel)" : "");
+    }
     memset(&pending_accounts, 0, sizeof(pending_accounts));
     memset(&files, 0, sizeof(files));
     klog(KLOG_OK, "install: accounts written");

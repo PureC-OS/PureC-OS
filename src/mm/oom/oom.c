@@ -3,7 +3,6 @@
 #define OOM_PAGE_SIZE 4096ULL
 #define OOM_RESERVE_MIN_PAGES (8ULL * 1024ULL * 1024ULL / OOM_PAGE_SIZE)
 #define OOM_RESERVE_MAX_PAGES (64ULL * 1024ULL * 1024ULL / OOM_PAGE_SIZE)
-#define OOM_PROC_CAP_PAGES (512ULL * 1024ULL * 1024ULL / OOM_PAGE_SIZE)
 static bool oom_ready;
 static uint64_t oom_reserve_pages;
 static uint64_t oom_proc_limit_pages;
@@ -18,10 +17,7 @@ void oom_init(void)
         reserve = OOM_RESERVE_MAX_PAGES;
     }
     uint64_t usable = total_pages > reserve ? total_pages - reserve : 0;
-    uint64_t per_proc = usable / 2;
-    if (per_proc > OOM_PROC_CAP_PAGES) {
-        per_proc = OOM_PROC_CAP_PAGES;
-    }
+    uint64_t per_proc = usable;
     if (per_proc < OOM_RESERVE_MIN_PAGES) {
         per_proc = OOM_RESERVE_MIN_PAGES;
     }

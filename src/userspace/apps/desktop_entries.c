@@ -1,3 +1,4 @@
+#include "../user_config.h"
 #include "desktop_entries.h"
 #include "../../fs/vfs.h"
 #include "../../fs/types/fs_types.h"
@@ -300,8 +301,10 @@ static void save_layout(void) {
         text[len++] = '\n';
     }
     if (!vfs_is_root_mounted() || !filesystem_syscall_acquire()) return;
-    (void)vfs_create_directory(LAYOUT_DIR);
-    (void)vfs_write_file(LAYOUT_PATH, text, len);
+    char path[192];
+    user_config_path("desktop.ini", path, sizeof(path), true);
+    if (vfs_write_file(path, text, len) >= 0)
+        user_config_claim(path);
     filesystem_syscall_unlock();
 }
 
@@ -316,7 +319,11 @@ static uint32_t parse_num(const char **p) {
 
 static void load_layout(void) {
     uint32_t size = 0;
-    if (read_whole_file(LAYOUT_PATH, &size) < 0) return;
+    char path[192];
+    if (!vfs_is_root_mounted() || !filesystem_syscall_acquire()) return;
+    user_config_path("desktop.ini", path, sizeof(path), false);
+    filesystem_syscall_unlock();
+    if (read_whole_file(path, &size) < 0) return;
     const char *p = (const char *)g_file_buf;
     const char *end = p + size;
     while (p < end) {

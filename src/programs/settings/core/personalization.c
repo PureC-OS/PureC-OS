@@ -88,7 +88,9 @@ static void wp_list_ensure(void){
     wp_list_loaded=true;
     wp_list_count=0;
     char buffer[WP_LIST_BUFFER];
-    int32_t fd=pf_open(WP_LIST_USER);
+    char cfg[192];
+    pc_config_path("wplist.ini",cfg,sizeof(cfg),false);
+    int32_t fd=pf_open(cfg);
     if(fd<0) fd=pf_open(WP_LIST_SHIPPED);
     int32_t amount=-1;
     if(fd>=0){
@@ -156,7 +158,9 @@ const char *appearance_font_name_at(uint32_t index){
 bool appearance_load(struct personalization_settings *s){
     if(!s) return false;
     appearance_defaults(s);
-    int32_t descriptor=pf_open(APPEAR_PATH);
+    char cfg[192];
+    pc_config_path("appear.ini",cfg,sizeof(cfg),false);
+    int32_t descriptor=pf_open(cfg);
     if(descriptor<0) return false;
     char buffer[512]={0};
     int32_t amount=pf_read(descriptor,buffer,sizeof(buffer)-1);
@@ -204,6 +208,7 @@ int32_t appearance_save(const struct personalization_settings *s){
     if(size>APPEAR_MAX_FONT_SIZE) size=APPEAR_MAX_FONT_SIZE;
     out=append_u32(out,size);
     out=append_text(out,"\n");
-    (void)pf_create_dir(APPEAR_DIRECTORY);
-    return pf_write_file(APPEAR_PATH,buffer,(uint32_t)(out-buffer));
+    char cfg[192];
+    pc_config_path("appear.ini",cfg,sizeof(cfg),true);
+    return pf_write_file(cfg,buffer,(uint32_t)(out-buffer));
 }

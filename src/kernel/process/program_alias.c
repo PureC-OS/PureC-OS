@@ -3,7 +3,7 @@
 
 static const char *system_program_names[] = {
     "disks", "usbscan", "mkfs.ext2", "install", "setup", "update",
-    "dmesg", "savelog", "uname", "about", "systeminfo", "htop",
+    "dmesg", "savelog", "about", "systeminfo", "htop",
     "font", "snake", "mouse", "debug"};
 
 bool program_alias_resolve(const char *requested_path,

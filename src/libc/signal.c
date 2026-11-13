@@ -47,6 +47,16 @@ int sigaction(int signum, const struct sigaction *action,
     return 0;
 }
 
+int sigaltstack(const stack_t *stack, stack_t *previous) {
+    int64_t result = pc_syscall(SYS_SIGALTSTACK, (uint64_t)(uintptr_t)stack,
+                                (uint64_t)(uintptr_t)previous, 0);
+    if (result < 0) {
+        errno = (int)-result;
+        return -1;
+    }
+    return 0;
+}
+
 sighandler_t signal(int signum, sighandler_t handler) {
     struct sigaction action;
     struct sigaction previous;

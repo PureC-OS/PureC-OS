@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>JS test</title>
+<style>
+div.t{padding:6px;margin:4px;background:#fcc;font-family:sans-serif}
+div.t.ok{background:#cfc}
+</style></head>
+<body>
+<h3>JavaScript (Duktape) - all blocks must turn green</h3>
+<div class="t" id="t1">1. basic script: not run</div>
+<div class="t" id="t2">2. DOM create/append: not run</div>
+<div class="t" id="t3">3. style/class change: not run</div>
+<div class="t" id="t4">4. JSON + Array + Math: not run</div>
+<div class="t" id="t5">5. setTimeout (wait 1 s): not run</div>
+<div class="t" id="t6">6. event listener click dispatch: not run</div>
+<div class="t" id="t7">7. {{ message }} template filled by JS</div>
+<script>
+function ok(id, text){var e=document.getElementById(id);e.className="t ok";e.textContent=text;}
+function bad(id, text){document.getElementById(id).textContent=text;}
+ok("t1","1. basic script: OK");
+try{
+ var d=document.createElement("span");d.textContent="child";
+ document.getElementById("t2").appendChild(d);
+ if(document.getElementById("t2").lastChild.textContent==="child")ok("t2","2. DOM create/append: OK");
+}catch(e){bad("t2","2. FAIL "+e);}
+try{
+ var e3=document.getElementById("t3");e3.className="t";e3.style.color="#006";e3.className="t ok";
+ ok("t3","3. style/class change: OK");
+}catch(e){bad("t3","3. FAIL "+e);}
+try{
+ var o=JSON.parse('{"a":[1,2,3]}');var s=o.a.map(function(x){return x*2;}).join(",");
+ if(s==="2,4,6"&&JSON.stringify(o)==='{"a":[1,2,3]}'&&Math.max(1,7,3)===7)ok("t4","4. JSON + Array + Math: OK");
+ else bad("t4","4. FAIL "+s);
+}catch(e){bad("t4","4. FAIL "+e);}
+try{setTimeout(function(){ok("t5","5. setTimeout: OK");},1000);}catch(e){bad("t5","5. FAIL "+e);}
+try{
+ var b=document.getElementById("t6");
+ b.addEventListener("click",function(){ok("t6","6. event listener: OK");});
+ var ev=document.createEvent("Event");ev.initEvent("click",true,true);b.dispatchEvent(ev);
+}catch(e){bad("t6","6. FAIL "+e);}
+try{document.getElementById("t7").textContent="7. template filled by JS";ok("t7","7. template filled by JS: OK");}catch(e){bad("t7","7. FAIL "+e);}
+</script>
+</body></html>

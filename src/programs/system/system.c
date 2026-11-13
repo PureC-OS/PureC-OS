@@ -106,7 +106,9 @@ static int command_font(const char *arguments){
     else if(pc_strcmp(arguments,"bold")==0) pc_copy(want,"bold",sizeof(want));
     char buf[512];
     buf[0]='\0';
-    int32_t fd=pc_file_open("/config/appear.ini");
+    char cfg[192];
+    pc_config_path("appear.ini",cfg,sizeof(cfg),false);
+    int32_t fd=pc_file_open(cfg);
     int32_t n=0;
     if(fd>=0){
         n=pc_file_read(fd,buf,sizeof(buf)-1);
@@ -174,7 +176,8 @@ static int command_font(const char *arguments){
             }
         }
         *w='\0';
-        if(pc_file_write("/config/appear.ini",out,(uint32_t)(w-out))<0){
+        pc_config_path("appear.ini",cfg,sizeof(cfg),true);
+        if(pc_file_write(cfg,out,(uint32_t)(w-out))<0){
             pc_write("font: write failed\n");
             return 1;
         }
@@ -217,11 +220,11 @@ int system_platform_command(const char *name, const char *arguments){
        || pc_strcmp(name,"update")==0 || pc_strcmp(name,"mkfs.ext2")==0)
         return run_program("/bin/installer",arguments);
     if(pc_strcmp(name,"uname")==0){
-        pc_write("PureC OS 0.1.0 x86_64\n");
+        pc_write("PureC OS 1.2.29 x86_64\n");
         return 0;
     }
     if(pc_strcmp(name,"about")==0){
-        pc_write("PureC userspace 0.3.0, standalone system programs\n");
+        pc_write("PureC userspace 1.2.29, standalone system programs\n");
         return 0;
     }
     if(pc_strcmp(name,"systeminfo")==0) return command_systeminfo();

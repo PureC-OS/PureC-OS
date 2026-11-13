@@ -22,6 +22,9 @@ ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/sr
 	acpi/AML/uACPI/source/default_handlers.c
 ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include -I$(ACPI_DIR)/AML/uACPI/include
+CRYPT_DIR := $(ROOT_DIR)/libxcrypt
+CPPFLAGS += -I$(CRYPT_DIR)/include
+CRYPT_OBJECTS := $(OBJ_DIR)/xcrypt/sha512.o $(OBJ_DIR)/xcrypt/crypt_sha512.o
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
 E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
@@ -52,13 +55,21 @@ C_SOURCES := \
 	kernel/time/civil.c \
 	kernel/time/rtc.c \
 	kernel/time/wallclock.c \
+	kernel/time/tz.c \
 	kernel/ipc/ipc.c \
 	kernel/ipc/pipe.c \
+	kernel/ipc/pty.c \
+	kernel/ipc/evfd.c \
+	kernel/ipc/inputdev.c \
+	kernel/ipc/unix.c \
 	kernel/process/signal.c \
+	kernel/process/futex.c \
+	kernel/process/vma.c \
 	kernel/process/fdtable.c \
 	kernel/process/ofd.c \
 	kernel/tty/tty.c \
 	mm/pmm.c \
+	mm/shm.c \
 	mm/vmm.c \
 	mm/oom/oom.c \
 	mm/oom/oom_account.c \
@@ -73,21 +84,26 @@ C_SOURCES := \
 	arch/x86_64/fpu/fpu.c \
 	arch/x86_64/mmio.c \
 	kernel/syscall/syscall.c \
+	kernel/syscall/sudo.c \
+	userspace/user_config.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \
 	drivers/interrupts/pic.c \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	drivers/display/display_owner.c \
 	drivers/display/console_vt.c \
 	gfx/compositor.c \
 	gfx/blit.c \
 	drivers/display/vbe.c \
 	drivers/display/svga.c \
+	drivers/display/svga3d.c \
 	drivers/mouse/ps2_mouse.c \
 	drivers/mouse/usb_mouse.c \
 	drivers/mouse/vbox_mouse.c \
 	drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.c \
+	drivers/net/iwx/iwx.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
 	kernel/diagnostics/boot_diag.c \
@@ -116,12 +132,15 @@ C_SOURCES := \
 	net/link/arp.c \
 	net/network/ipv4.c \
 	net/transport/udp.c \
+	net/transport/udp_endpoint.c \
+	net/core/loopback.c \
 	net/transport/tcp.c \
 	net/name/dns.c \
 	net/config/dhcp.c \
 	net/diagnostics/icmp.c \
 	net/api/ping.c \
 	net/api/socket.c \
+	net/api/sockstat.c \
 	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
 	drivers/usb/xhci.c \
@@ -188,7 +207,7 @@ GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
 IO_OBJECT := $(BIN_DIR)/io/io.o
-OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(GEN_STAMP_OBJ) $(IO_OBJECT)
+OBJECTS := $(C_OBJECTS) $(CPP_OBJECTS) $(ASM_OBJECTS) $(ACPI_OBJECTS) $(CRYPT_OBJECTS) $(GEN_STAMP_OBJ) $(IO_OBJECT)
 
 BUILD_UUID := $(shell cat /proc/sys/kernel/random/uuid 2>/dev/null)
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -228,6 +247,10 @@ $(GEN_STAMP_OBJ): $(GEN_STAMP)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
+
+$(OBJ_DIR)/xcrypt/%.o: $(CRYPT_DIR)/src/%.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) $(DEPFLAGS) $(KERNEL_CFLAGS) -c $< -o $@
 

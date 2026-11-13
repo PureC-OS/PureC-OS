@@ -26,6 +26,8 @@
 #define SIGTTOU 22
 #define SIGNAL_COUNT 32
 
+#define SIGNAL_FLAG_NOCLDWAIT 2u
+
 #define SIGNAL_BLOCK 0
 #define SIGNAL_UNBLOCK 1
 #define SIGNAL_SETMASK 2
@@ -33,10 +35,13 @@
 struct process;
 struct syscall_regs;
 struct ksigaction;
+struct kernel_stack;
 
 int32_t signal_send(uint32_t pid, int32_t sig);
+int32_t signal_send_kernel(uint32_t pid, int32_t sig);
 void signal_raise_current(int32_t sig);
 void signal_notify_child_exit(struct process *parent);
+bool signal_children_discarded(const struct process *parent);
 bool signal_pending_current(void);
 void signal_deliver(struct syscall_regs *regs);
 void signal_fault(int32_t sig, struct syscall_regs *regs);
@@ -49,3 +54,5 @@ void signal_exec_reset(struct process *process);
 bool signal_clone(struct process *child, const struct process *parent);
 void signal_free(struct process *process);
 int32_t signal_pause(void);
+int32_t signal_altstack(const struct kernel_stack *stack, struct kernel_stack *old,
+                        uint64_t rsp);

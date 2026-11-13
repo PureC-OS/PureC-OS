@@ -15,16 +15,51 @@ NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+.PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
-	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-qemu-toolchain
+	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-compositor test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-window-manager
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-compositor test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-window-manager test-malloc test-fenv
 	@echo "All host tests passed"
+
+test-malloc:
+	@mkdir -p $(BIN_DIR)/tests
+	cc -std=gnu11 -O1 -Wall -Wextra -g -ffreestanding -fno-builtin \
+		-Dmalloc=pc_malloc -Dfree=pc_free -Dcalloc=pc_calloc -Drealloc=pc_realloc \
+		-Daligned_alloc=pc_aligned_alloc -Dposix_memalign=pc_posix_memalign \
+		-Dmemalign=pc_memalign -Dmalloc_usable_size=pc_malloc_usable_size -Derrno=pc_errno \
+		-c src/libc/malloc.c -o $(BIN_DIR)/tests/malloc_impl.o
+	cc -std=gnu11 -O1 -Wall -Wextra -g -fsanitize=address,undefined tests/malloc_test.c \
+		$(BIN_DIR)/tests/malloc_impl.o -o $(BIN_DIR)/tests/malloc_test
+	$(BIN_DIR)/tests/malloc_test
+
+test-vma:
+	@mkdir -p $(BIN_DIR)/tests
+	cc -std=gnu11 -O1 -Wall -Wextra -g -fsanitize=address,undefined -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
+		tests/vma_test.c src/kernel/process/vma.c -o $(BIN_DIR)/tests/vma_test
+	$(BIN_DIR)/tests/vma_test
+
+cmake-test:
+	cmake -G Ninja -S tests/cmake -B $(BIN_DIR)/cmake-test \
+		-DCMAKE_TOOLCHAIN_FILE=$(ROOT_DIR)/mk/sysroot/toolchain.cmake
+	cmake --build $(BIN_DIR)/cmake-test
+	@mkdir -p $(BIN_DIR)/programs
+	cp $(BIN_DIR)/cmake-test/ctest $(BIN_DIR)/programs/cmaketest
+
+test-fenv:
+	@mkdir -p $(BIN_DIR)/tests
+	cc -std=gnu11 -O0 -Wall -Wextra -g -ffreestanding -fno-builtin \
+		-Dfeclearexcept=pc_feclearexcept -Dfetestexcept=pc_fetestexcept -Dferaiseexcept=pc_feraiseexcept \
+		-Dfegetround=pc_fegetround -Dfesetround=pc_fesetround -Dfegetenv=pc_fegetenv \
+		-Dfesetenv=pc_fesetenv -Dfeholdexcept=pc_feholdexcept -Dfeupdateenv=pc_feupdateenv \
+		-Dfegetexceptflag=pc_fegetexceptflag -Dfesetexceptflag=pc_fesetexceptflag \
+		-c src/libc/fenv.c -o $(BIN_DIR)/tests/fenv_impl.o
+	cc -std=gnu11 -O0 -Wall -Wextra -g tests/fenv_test.c $(BIN_DIR)/tests/fenv_impl.o -o $(BIN_DIR)/tests/fenv_test
+	$(BIN_DIR)/tests/fenv_test
 
 test-box:
 	@mkdir -p $(BIN_DIR)/tests
@@ -231,6 +266,12 @@ test-libm:
 	cc -std=gnu11 -O1 -Wall -Wextra -c tests/libm_test.c -o $(BIN_DIR)/tests/libm_test.o
 	cc $(BIN_DIR)/tests/libm_test.o $(BIN_DIR)/tests/libm_math.o $(BIN_DIR)/tests/libm_libm.o -lm -o $(BIN_DIR)/tests/libm_test
 	$(BIN_DIR)/tests/libm_test
+
+test-tz:
+	@mkdir -p $(BIN_DIR)/tests
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src tests/tz_test.c \
+		src/kernel/time/tz.c src/kernel/time/civil.c -o $(BIN_DIR)/tests/tz_test
+	$(BIN_DIR)/tests/tz_test
 
 test-civil:
 	@mkdir -p $(BIN_DIR)/tests
@@ -492,3 +533,19 @@ help:
 	@echo "  NOTE: external repos must be fetched first:"
 	@echo "        ./purec.py setup"
 	@echo ""
+
+qt-core-test:
+	cmake -G Ninja -S tests/qt-core -B $(BIN_DIR)/qt-core-test \
+		-DCMAKE_TOOLCHAIN_FILE=$(ROOT_DIR)/mk/sysroot/toolchain.cmake \
+		-DQT_HOST_PATH=/usr -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake
+	cmake --build $(BIN_DIR)/qt-core-test
+	@mkdir -p $(BIN_DIR)/programs
+	cp $(BIN_DIR)/qt-core-test/qtcoretest $(BIN_DIR)/programs/qtcoretest
+
+qt-apps:
+	cmake -G Ninja -S qt-apps -B $(BIN_DIR)/qt-apps \
+		-DCMAKE_TOOLCHAIN_FILE=$(ROOT_DIR)/mk/sysroot/toolchain.cmake \
+		-DQT_HOST_PATH=/usr -DQT_HOST_PATH_CMAKE_DIR=/usr/lib/cmake
+	cmake --build $(BIN_DIR)/qt-apps
+	@mkdir -p $(BIN_DIR)/programs
+	cp $(BIN_DIR)/qt-apps/terminal/qt-terminal $(BIN_DIR)/programs/qt-terminal

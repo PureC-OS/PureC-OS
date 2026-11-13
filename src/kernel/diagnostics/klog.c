@@ -349,11 +349,18 @@ static void klog_vprintf_internal(const char *fmt, va_list ap)
       break;
     char pad = ' ';
     int width = 0;
-    if (*p == '0')
+    bool left = false;
+    for (;; p++)
     {
-      pad = '0';
-      p++;
+      if (*p == '-')
+        left = true;
+      else if (*p == '0')
+        pad = '0';
+      else
+        break;
     }
+    if (left)
+      pad = ' ';
     while (*p >= '0' && *p <= '9')
     {
       width = width * 10 + (*p - '0');
@@ -379,11 +386,14 @@ static void klog_vprintf_internal(const char *fmt, va_list ap)
         s = "(null)";
       int len = strlen(s);
       int pad_len = width - len;
-      if (width > 0 && pad_len > 0)
+      if (!left && width > 0 && pad_len > 0)
         for (int i = 0; i < pad_len; i++)
           klog_putc_raw(' ');
       while (*s)
         klog_putc_raw(*s++);
+      if (left && pad_len > 0)
+        for (int i = 0; i < pad_len; i++)
+          klog_putc_raw(' ');
     }
     else if (spec == 'c')
     {
@@ -435,12 +445,15 @@ static void klog_vprintf_internal(const char *fmt, va_list ap)
       }
       else
       {
-        if (pad_len > 0)
+        if (pad_len > 0 && !left)
           for (int i = 0; i < pad_len; i++)
             klog_putc_raw(pad);
         if (!(pad == '0' && neg))
           for (int i = len - 1; i >= 0; i--)
             klog_putc_raw(buf[i]);
+        if (pad_len > 0 && left)
+          for (int i = 0; i < pad_len; i++)
+            klog_putc_raw(' ');
       }
     }
     else if (spec == 'u')
@@ -463,11 +476,14 @@ static void klog_vprintf_internal(const char *fmt, va_list ap)
           v /= 10;
         }
       int pad_len = width - len;
-      if (pad_len > 0)
+      if (pad_len > 0 && !left)
         for (int i = 0; i < pad_len; i++)
           klog_putc_raw(pad);
       for (int i = len - 1; i >= 0; i--)
         klog_putc_raw(buf[i]);
+      if (pad_len > 0 && left)
+        for (int i = 0; i < pad_len; i++)
+          klog_putc_raw(' ');
     }
     else if (spec == 'x' || spec == 'X')
     {
@@ -491,11 +507,14 @@ static void klog_vprintf_internal(const char *fmt, va_list ap)
           v >>= 4;
         }
       int pad_len = width - len;
-      if (pad_len > 0)
+      if (pad_len > 0 && !left)
         for (int i = 0; i < pad_len; i++)
           klog_putc_raw(pad);
       for (int i = len - 1; i >= 0; i--)
         klog_putc_raw(buf[i]);
+      if (pad_len > 0 && left)
+        for (int i = 0; i < pad_len; i++)
+          klog_putc_raw(' ');
     }
     else if (spec == 'p')
     {

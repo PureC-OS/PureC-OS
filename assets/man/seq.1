@@ -1,0 +1,27 @@
+NAME
+       seq - print a sequence of numbers
+
+SYNOPSIS
+       seq [-w] [-s SEP] [-f FORMAT] [FIRST [INCREMENT]] LAST
+
+DESCRIPTION
+       Print numbers from FIRST to LAST in steps of INCREMENT (both default to
+       1).
+
+OPTIONS
+       -w
+           equalize width by padding with leading zeroes
+
+       -s SEP
+           use SEP to separate numbers
+
+       -f FORMAT
+           use printf style floating-point FORMAT
+
+EXAMPLES
+       seq 5
+       seq 0 0.5 2
+       seq -w 1 10
+
+SEE ALSO
+       yes(1)

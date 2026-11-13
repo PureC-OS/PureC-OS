@@ -69,6 +69,9 @@ static int32_t drag_offset_x;
 static int32_t drag_offset_y;
 static uint32_t click_pid;
 static uint64_t click_tick;
+static uint32_t cursor_locked_shape;
+static bool cursor_locked;
+static uint8_t cursor_buttons;
 
 struct wm_guard {
     bool preempt;
@@ -472,6 +475,49 @@ bool window_manager_handle_pointer(int32_t x, int32_t y, bool pressed,
     return consumed;
 }
 
+static bool resizable(const struct managed_window *window){
+    return !window->minimized && !window->maximized
+        && !(window->flags&(GUI_WINDOW_FLAG_FIXED|GUI_WINDOW_FLAG_POPUP
+                            |GUI_WINDOW_FLAG_NORESIZE));
+}
+
+static uint32_t shape_for_edges(uint32_t edges){
+    bool horizontal=(edges&(GUI_EDGE_LEFT|GUI_EDGE_RIGHT))!=0;
+    bool vertical=(edges&(GUI_EDGE_TOP|GUI_EDGE_BOTTOM))!=0;
+    if(horizontal && vertical){
+        bool nwse=((edges&GUI_EDGE_LEFT) && (edges&GUI_EDGE_TOP))
+            || ((edges&GUI_EDGE_RIGHT) && (edges&GUI_EDGE_BOTTOM));
+        return nwse ? COMPOSITOR_CURSOR_NWSE : COMPOSITOR_CURSOR_NESW;
+    }
+    if(horizontal) return COMPOSITOR_CURSOR_EW;
+    if(vertical) return COMPOSITOR_CURSOR_NS;
+    return COMPOSITOR_CURSOR_ARROW;
+}
+
+void window_manager_update_cursor(int32_t x, int32_t y, uint8_t buttons){
+    struct wm_guard guard=wm_enter();
+    bool held=(buttons&1)!=0;
+    bool pressed=held && !(cursor_buttons&1);
+    cursor_buttons=buttons;
+    uint32_t shape=COMPOSITOR_CURSOR_ARROW;
+    if(held && cursor_locked && !pressed){
+        shape=cursor_locked_shape;
+    } else {
+        struct managed_window *top=registry_suspended ? 0 : top_window_at(x,y);
+        if(top && resizable(top)){
+            struct gui_window_request frame=visible_frame(top);
+            shape=shape_for_edges(gui_resize_edges(
+                (int32_t)frame.x,(int32_t)frame.y,(int32_t)frame.width,
+                (int32_t)frame.height,x,y));
+        }
+        cursor_locked=pressed && shape!=COMPOSITOR_CURSOR_ARROW;
+        cursor_locked_shape=shape;
+    }
+    if(!held) cursor_locked=false;
+    wm_leave(guard);
+    compositor_cursor_set_shape(shape);
+}
+
 uint32_t window_manager_pointer(int32_t x, int32_t y, uint8_t buttons,
                                 bool *focus_changed){
     struct wm_guard guard=wm_enter();
@@ -635,6 +681,11 @@ bool window_manager_server_mode(void){
 void window_manager_set_work_area(int32_t x, int32_t y, uint32_t width,
                                   uint32_t height){
     struct wm_guard guard=wm_enter();
+    if(work_x==(x<0 ? 0 : x) && work_y==(y<0 ? 0 : y)
+       && work_w==width && work_h==height){
+        wm_leave(guard);
+        return;
+    }
     work_x=x<0 ? 0 : x;
     work_y=y<0 ? 0 : y;
     work_w=width;

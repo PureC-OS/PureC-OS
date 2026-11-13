@@ -6,6 +6,9 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef long time_t;
 typedef long clock_t;
 
@@ -23,6 +26,8 @@ struct tm {
     int tm_isdst;
 };
 
+typedef int clockid_t;
+typedef void *timer_t;
 #define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
 
@@ -31,8 +36,21 @@ struct timespec {
     long tv_nsec;
 };
 
+struct itimerspec {
+    struct timespec it_interval;
+    struct timespec it_value;
+};
+
 int clock_gettime(int clock_id, struct timespec *out);
+int clock_settime(int clock_id, const struct timespec *value);
 int nanosleep(const struct timespec *request, struct timespec *remaining);
+#define TIMER_ABSTIME 1
+extern char *tzname[2];
+extern long timezone;
+extern int daylight;
+void tzset(void);
+int clock_nanosleep(int clock_id, int flags, const struct timespec *request,
+                    struct timespec *remaining);
 struct tm *gmtime_r(const time_t *value, struct tm *result);
 struct tm *localtime_r(const time_t *value, struct tm *result);
 time_t timegm(struct tm *parts);
@@ -48,4 +66,7 @@ char *ctime(const time_t *value);
 size_t strftime(char *buffer, size_t capacity, const char *format,
                 const struct tm *parts);
 
+#ifdef __cplusplus
+}
+#endif
 #endif

@@ -7,6 +7,7 @@
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/syscall/syscall.h"
 #include "../lib/string.h"
+#include "user_config.h"
 
 static struct personalization g_current;
 static bool g_has_current;
@@ -22,7 +23,12 @@ static const struct {
     {"dracula",         {0x282A36,0x2E3247,0x44475A,0x6272A4,0xF8F8F2,0x9AA0B2,0xBD93F9,0xFF5555,0x1A1B26}},
     {"light",           {0xE6E9EF,0xEFF1F5,0xDCE0E8,0xBCC0CC,0x4C4F69,0x8C8FA1,0x1E66F5,0xD20F39,0x9CA0B0}},
     {"tokyo-night",     {0x1A1B26,0x24283B,0x292E42,0x565F89,0xC0CAF5,0x9AA5CE,0x7AA2F7,0xF7768E,0x101014}},
-    {"tokyo-day",       {}},
+    {"gruvbox-dark",    {0x1D2021,0x282828,0x3C3836,0x504945,0xEBDBB2,0xA89984,0xFABD2F,0xFB4934,0x0F0F0F}},
+    {"one-dark",        {0x21252B,0x282C34,0x2C313A,0x3E4451,0xABB2BF,0x7F848E,0x61AFEF,0xE06C75,0x15171C}},
+    {"rose-pine",       {0x191724,0x1F1D2E,0x26233A,0x403D52,0xE0DEF4,0x908CAA,0xC4A7E7,0xEB6F92,0x0F0E17}},
+    {"everforest",      {0x232A2E,0x2D353B,0x343F44,0x475258,0xD3C6AA,0x9DA9A0,0xA7C080,0xE67E80,0x1A1F22}},
+    {"solarized-light", {0xEEE8D5,0xFDF6E3,0xEEE8D5,0xD3CBB7,0x586E75,0x93A1A1,0x268BD2,0xDC322F,0xB8B0A0}},
+    {"github-dark",     {0x010409,0x0D1117,0x161B22,0x30363D,0xE6EDF3,0x8B949E,0x2F81F7,0xF85149,0x000000}},
 
 };
 
@@ -98,7 +104,9 @@ bool personalization_load(struct personalization *p){
     personalization_defaults(p);
     if(!vfs_is_root_mounted()) return true;
     if(!filesystem_syscall_acquire()) return true;
-    int32_t fd=vfs_open(PERSONALIZATION_PATH);
+    char path[192];
+    user_config_path("appear.ini",path,sizeof(path),false);
+    int32_t fd=vfs_open(path);
     char buffer[512];
     int32_t total=0;
     if(fd>=0){
@@ -115,13 +123,13 @@ bool personalization_load(struct personalization *p){
     if(fd<0){
         if(g_had_config)
             klogf(KLOG_WARN,"personalization: lost '%s' rc=%d",
-                PERSONALIZATION_PATH,fd);
+                path,fd);
         g_had_config=false;
         return true;
     }
     if(!g_had_config)
         klogf(KLOG_OK,"personalization: found '%s' bytes=%d",
-            PERSONALIZATION_PATH,total);
+            path,total);
     g_had_config=true;
     if(total<=0) return true;
     buffer[total]='\0';

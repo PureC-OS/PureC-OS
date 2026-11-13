@@ -3,6 +3,12 @@
 #include "../../kernel/core/system_info.h"
 #include "../../kernel/diagnostics/klog.h"
 
+#ifndef AUDIO_VERBOSE
+#define AUDIO_VERBOSE 0
+#endif
+#define audio_dbg(msg) do { if (AUDIO_VERBOSE) klog(KLOG_DEBUG, msg); } while (0)
+#define audio_dbgf(...) do { if (AUDIO_VERBOSE) klogf(KLOG_DEBUG, __VA_ARGS__); } while (0)
+
 #define PIT_CHANNEL2_PORT 0x42
 #define PIT_COMMAND_PORT  0x43
 #define SPEAKER_PORT      0x61
@@ -77,12 +83,12 @@ static uint8_t clamp_volume(uint8_t volume) {
 
 static void pc_speaker_off(void) {
     uint8_t state = inb(SPEAKER_PORT);
-    klogf(KLOG_DEBUG, "audio: PC speaker off port=0x61 before=0x%02x", state);
+    audio_dbgf("audio: PC speaker off port=0x61 before=0x%02x", state);
     outb(SPEAKER_PORT, state & (uint8_t)~0x03);
 }
 
 static void pc_speaker_tone(uint32_t frequency_hz) {
-    klogf(KLOG_DEBUG, "audio: PC speaker tone request freq=%u volume=%u mute=%u",
+    audio_dbgf("audio: PC speaker tone request freq=%u volume=%u mute=%u",
           frequency_hz, master_bus.volume, master_bus.muted ? 1 : 0);
     if (frequency_hz == 0 || master_bus.muted || master_bus.volume == 0) {
         pc_speaker_off();
@@ -103,7 +109,7 @@ static void pc_speaker_tone(uint32_t frequency_hz) {
 }
 
 static void stop_test_sound(void) {
-    klogf(KLOG_DEBUG, "audio: test stop backend=%u step=%u",
+    audio_dbgf("audio: test stop backend=%u step=%u",
           master_bus.active_backend, master_bus.test_step);
     master_bus.test_active = false;
     master_bus.test_step = 0;
@@ -113,7 +119,7 @@ static void stop_test_sound(void) {
 }
 
 static void start_pc_speaker_test(void) {
-    klog(KLOG_DEBUG, "audio: PC speaker test sequence begin");
+    audio_dbg("audio: PC speaker test sequence begin");
     master_bus.test_active = true;
     master_bus.test_step = 0;
     master_bus.next_step_ms = system_info_uptime_ms() + test_durations_ms[0];
@@ -122,7 +128,7 @@ static void start_pc_speaker_test(void) {
 
 void audio_stop_tone(void) {
     if (master_bus.sfx_active) {
-        klog(KLOG_DEBUG, "audio: sfx tone stop");
+        audio_dbg("audio: sfx tone stop");
     }
     master_bus.sfx_active = false;
     master_bus.sfx_end_ms = 0;
@@ -160,7 +166,7 @@ void audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms) {
     }
     master_bus.sfx_active = true;
     master_bus.sfx_end_ms = system_info_uptime_ms() + duration_ms;
-    klogf(KLOG_DEBUG, "audio: sfx tone start freq=%u dur=%u", frequency_hz, duration_ms);
+    audio_dbgf("audio: sfx tone start freq=%u dur=%u", frequency_hz, duration_ms);
 }
 
 static void pcm_reset_locked(void) {
@@ -245,14 +251,14 @@ bool audio_pcm_start(void) {
         return false;
     }
     pcm_playing = true;
-    klogf(KLOG_DEBUG, "audio: PCM stream start staged=%u eos=%u",
+    audio_dbgf("audio: PCM stream start staged=%u eos=%u",
           pcm_count, pcm_eos ? 1 : 0);
     return true;
 }
 
 void audio_pcm_stop_stream(void) {
     if (pcm_playing) {
-        klog(KLOG_DEBUG, "audio: PCM stream stop");
+        audio_dbg("audio: PCM stream stop");
     }
     hda_pcm_stop();
     pcm_reset_locked();
@@ -276,7 +282,7 @@ static void audio_pcm_update(void) {
         if (pcm_stop_at == 0) {
             pcm_stop_at = now + PCM_DRAIN_TAIL_MS;
         } else if (now >= pcm_stop_at) {
-            klog(KLOG_DEBUG, "audio: PCM stream drained");
+            audio_dbg("audio: PCM stream drained");
             hda_pcm_stop();
             pcm_reset_locked();
         }
@@ -337,7 +343,7 @@ void audio_get_status(struct audio_status *status) {
     struct hda_output_device_info device = {0};
     uint32_t hda_selected = hda_selected_output_device();
     bool have_hda_device = hda_get_output_device(hda_selected, &device);
-    klogf(KLOG_DEBUG, "audio: status volume=%u mute=%u backend=%u available=0x%x pcm=%u test=%u devices=%u selected=%u codec=%u dac=%u pin=%u",
+    audio_dbgf("audio: status volume=%u mute=%u backend=%u available=0x%x pcm=%u test=%u devices=%u selected=%u codec=%u dac=%u pin=%u",
           master_bus.volume, master_bus.muted ? 1 : 0, master_bus.active_backend,
           master_bus.available_backends, master_bus.pcm_ready ? 1 : 0,
           master_bus.test_active ? 1 : 0, 1U + hda_output_device_count(),
@@ -374,7 +380,7 @@ void audio_set_volume(uint8_t volume) {
               master_bus.volume, next_volume);
     }
     master_bus.volume = next_volume;
-    klogf(KLOG_DEBUG, "audio: master state volume=%u mute=%u test=%u",
+    audio_dbgf("audio: master state volume=%u mute=%u test=%u",
           master_bus.volume, master_bus.muted ? 1 : 0,
           master_bus.test_active ? 1 : 0);
     if (master_bus.volume > 0) {
@@ -393,7 +399,7 @@ void audio_set_muted(bool muted) {
         klogf(KLOG_INFO, "audio: master mute=%u", muted ? 1 : 0);
     }
     master_bus.muted = muted;
-    klogf(KLOG_DEBUG, "audio: master state volume=%u mute=%u test=%u",
+    audio_dbgf("audio: master state volume=%u mute=%u test=%u",
           master_bus.volume, master_bus.muted ? 1 : 0,
           master_bus.test_active ? 1 : 0);
     if (master_bus.muted) {

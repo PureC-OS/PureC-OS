@@ -15,6 +15,7 @@
 #include <uacpi/namespace.h>
 #include <uacpi/types.h>
 #include <uacpi/uacpi.h>
+#include <uacpi/utilities.h>
 
 #define INTEL_VENDOR_ID 0x8086
 #define PCI_CLASS_SERIAL_BUS 0x0C
@@ -165,6 +166,15 @@ static volatile bool irq_pending;
 static volatile uint32_t irq_count;
 static int touchpad_tid = -1;
 
+struct dw_timing {
+    bool valid;
+    uint16_t hcnt;
+    uint16_t lcnt;
+    uint32_t sda_hold;
+};
+
+static struct dw_timing acpi_ss_timing, acpi_fs_timing;
+
 struct acpi_target {
     bool found;
     char name[5];
@@ -237,12 +247,18 @@ static bool dw_setup(uint32_t speed_hz)
     uint32_t con = DW_CON_MASTER | DW_CON_RESTART_EN | DW_CON_SLAVE_DISABLE;
     con |= speed_hz > 100000 ? DW_CON_SPEED_FAST : DW_CON_SPEED_STD;
     dw_write(DW_CON, con);
-    dw_write(DW_SS_HCNT, scl_hcnt(4000, LPSS_SDA_FALL_NS));
-    dw_write(DW_SS_LCNT, scl_lcnt(4700, LPSS_SCL_FALL_NS));
-    dw_write(DW_FS_HCNT, scl_hcnt(600, LPSS_SDA_FALL_NS));
-    dw_write(DW_FS_LCNT, scl_lcnt(1300, LPSS_SCL_FALL_NS));
+    dw_write(DW_SS_HCNT, acpi_ss_timing.valid ? acpi_ss_timing.hcnt : scl_hcnt(4000, LPSS_SDA_FALL_NS));
+    dw_write(DW_SS_LCNT, acpi_ss_timing.valid ? acpi_ss_timing.lcnt : scl_lcnt(4700, LPSS_SCL_FALL_NS));
+    dw_write(DW_FS_HCNT, acpi_fs_timing.valid ? acpi_fs_timing.hcnt : scl_hcnt(600, LPSS_SDA_FALL_NS));
+    dw_write(DW_FS_LCNT, acpi_fs_timing.valid ? acpi_fs_timing.lcnt : scl_lcnt(1300, LPSS_SCL_FALL_NS));
+    const struct dw_timing *active = speed_hz > 100000 ? &acpi_fs_timing : &acpi_ss_timing;
     if (dw_read(DW_COMP_VERSION) >= DW_SDA_HOLD_MIN_VERSION)
-        dw_write(DW_SDA_HOLD, (LPSS_CLOCK_HZ / 1000000U * LPSS_SDA_HOLD_NS + 500U) / 1000U);
+    {
+        uint32_t hold = (LPSS_CLOCK_HZ / 1000000U * LPSS_SDA_HOLD_NS + 500U) / 1000U;
+        if (active->valid && active->sda_hold)
+            hold = active->sda_hold;
+        dw_write(DW_SDA_HOLD, hold);
+    }
     dw_write(DW_TX_TL, 0);
     dw_write(DW_RX_TL, 0);
     dw_write(DW_INTR_MASK, 0);
@@ -577,7 +593,7 @@ static bool hid_start(uint16_t address, uint16_t descriptor_register)
         return false;
     if (!hid_command(address, HID_PWR_ON, HID_OPCODE_SET_POWER))
         return false;
-    busy_wait_ms(2);
+    busy_wait_ms(60);
     if (!hid_command(address, 0, HID_OPCODE_RESET))
         return false;
     bool acknowledged = hid_wait_reset_ack(address, 1000);
@@ -664,7 +680,13 @@ static bool acpi_visitor(const struct acpi_namespace_device *device, void *conte
     struct acpi_target *target = context;
     if (target->found || !device->has_i2c)
         return true;
-    if (strcmp(device->hid, "PNP0C50") != 0 && strcmp(device->hid, "ACPI0C50") != 0)
+    bool hid_match = strcmp(device->hid, "PNP0C50") == 0 || strcmp(device->hid, "ACPI0C50") == 0;
+    bool cid_match = strcmp(device->cid, "PNP0C50") == 0 || strcmp(device->cid, "ACPI0C50") == 0;
+    if (!hid_match && !cid_match)
+        return true;
+    klogf(KLOG_INFO, "i2c-hid: candidate %s hid=%s cid=%s sta=0x%x addr=0x%02x irq=%u ctrl=%s", device->name,
+          device->hid, device->cid, device->status, device->i2c_address, device->irq, device->i2c_controller);
+    if ((device->status & 0x03) != 0x03)
         return true;
     target->found = true;
     memcpy(target->name, device->name, 5);
@@ -679,7 +701,8 @@ static void collect_controllers(const struct pci_device_info *pci, void *context
 {
     struct controller_set *c = context;
     if (c->count == MAX_CONTROLLERS || pci->vendor_id != INTEL_VENDOR_ID ||
-        pci->class_code != PCI_CLASS_SERIAL_BUS || pci->subclass != PCI_SUBCLASS_SERIAL_OTHER)
+        pci->class_code != PCI_CLASS_SERIAL_BUS || pci->subclass != PCI_SUBCLASS_SERIAL_OTHER ||
+        pci->slot == 0x1f)
         return;
     struct candidate *entry = &c->list[c->count++];
     entry->pci = *pci;
@@ -908,11 +931,171 @@ static bool read_input(uint16_t address)
     return true;
 }
 
+static void pci_set_d0(const struct pci_device_info *pci)
+{
+    uint32_t status = pci_read_config32(pci->bus, pci->slot, pci->function, 0x04) >> 16;
+    if (!(status & 0x10))
+        return;
+    uint8_t cap = (uint8_t)(pci_read_config32(pci->bus, pci->slot, pci->function, 0x34) & 0xFC);
+    for (uint32_t guard = 0; cap && guard < 48; guard++)
+    {
+        uint32_t header = pci_read_config32(pci->bus, pci->slot, pci->function, cap);
+        if ((header & 0xFF) == 0x01)
+        {
+            uint32_t pmcsr = pci_read_config32(pci->bus, pci->slot, pci->function, (uint8_t)(cap + 4));
+            uint32_t state = pmcsr & 0x3;
+            if (state != 0)
+            {
+                pci_write_config16(pci->bus, pci->slot, pci->function, (uint8_t)(cap + 4),
+                                   (uint16_t)(pmcsr & ~0x3U));
+                busy_wait_ms(10);
+            }
+            klogf(KLOG_INFO, "i2c-hid: controller %02x:%02x.%u power D%u -> D%u", pci->bus, pci->slot, pci->function,
+                  state, pci_read_config32(pci->bus, pci->slot, pci->function, (uint8_t)(cap + 4)) & 0x3);
+            return;
+        }
+        cap = (uint8_t)((header >> 8) & 0xFC);
+    }
+}
+
+static const char *path_last_segment(const char *path)
+{
+    const char *last = path;
+    for (const char *p = path; *p; p++)
+        if (*p == '.' || *p == '\\' || *p == '^')
+            last = p + 1;
+    return last;
+}
+
+static bool acpi_read_timing(uacpi_namespace_node *node, const char *method, struct dw_timing *out)
+{
+    memset(out, 0, sizeof(*out));
+    uacpi_object *pkg = NULL;
+    if (uacpi_eval_simple_package(node, method, &pkg) != UACPI_STATUS_OK || !pkg)
+        return false;
+    uacpi_object_array arr;
+    bool ok = false;
+    if (uacpi_object_get_package(pkg, &arr) == UACPI_STATUS_OK && arr.count >= 3)
+    {
+        uacpi_u64 v[3] = {0, 0, 0};
+        ok = true;
+        for (int i = 0; i < 3; i++)
+            if (!arr.objects[i] || uacpi_object_get_integer(arr.objects[i], &v[i]) != UACPI_STATUS_OK)
+                ok = false;
+        if (ok && v[0] && v[1] && v[0] <= 0xFFFF && v[1] <= 0xFFFF)
+        {
+            out->hcnt = (uint16_t)v[0];
+            out->lcnt = (uint16_t)v[1];
+            out->sda_hold = (uint32_t)v[2];
+            out->valid = true;
+        }
+    }
+    uacpi_object_unref(pkg);
+    return out->valid;
+}
+
+static void acpi_controller_prepare(const char *controller_path)
+{
+    if (!controller_path[0] || !acpi_uacpi_full_ready())
+        return;
+    const char *seg = path_last_segment(controller_path);
+    if (strlen(seg) != 4)
+        return;
+    struct { const char *name; uacpi_namespace_node *node; } search = {seg, NULL};
+    uacpi_namespace_node *start = NULL;
+    if (uacpi_namespace_node_find(NULL, controller_path, &start) == UACPI_STATUS_OK && start)
+        search.node = start;
+    else
+        (void)uacpi_namespace_for_each_child(uacpi_namespace_root(), find_node, NULL,
+                                             UACPI_OBJECT_DEVICE_BIT, UACPI_MAX_DEPTH_ANY, &search);
+    if (!search.node)
+    {
+        klogf(KLOG_WARN, "i2c-hid: controller node %s not found", controller_path);
+        return;
+    }
+    uacpi_status ps0 = uacpi_eval(search.node, "_PS0", NULL, NULL);
+    acpi_read_timing(search.node, "SSCN", &acpi_ss_timing);
+    acpi_read_timing(search.node, "FMCN", &acpi_fs_timing);
+    klogf(KLOG_INFO, "i2c-hid: controller %s _PS0=%s SSCN=%s %u/%u FMCN=%s %u/%u hold=%u", controller_path,
+          uacpi_status_to_string(ps0), acpi_ss_timing.valid ? "yes" : "no", acpi_ss_timing.hcnt,
+          acpi_ss_timing.lcnt, acpi_fs_timing.valid ? "yes" : "no", acpi_fs_timing.hcnt, acpi_fs_timing.lcnt,
+          acpi_fs_timing.sda_hold);
+}
+
+struct bar_scan {
+    uint64_t lo, hi;
+    bool clash;
+};
+
+static void bar_clash_visitor(const struct pci_device_info *pci, void *context)
+{
+    struct bar_scan *scan = context;
+    for (uint8_t i = 0; i < 6; i++)
+    {
+        uint64_t base = pci_read_bar(pci->bus, pci->slot, pci->function, i);
+        if (base && !(base & 1) && (base & ~0xFULL) >= scan->lo && (base & ~0xFULL) < scan->hi)
+            scan->clash = true;
+    }
+}
+
+static uint64_t next_bar_address;
+
+static uint64_t assign_bar0(const struct pci_device_info *pci)
+{
+    uint32_t low = pci_read_config32(pci->bus, pci->slot, pci->function, 0x10);
+    bool is64 = (low & 0x6) == 0x4;
+    if (low & 1)
+        return 0;
+    if (!next_bar_address)
+    {
+        uint64_t min = 0, max = 0;
+        if (!is64 || !acpi_pci_root_mem64_window(&min, &max))
+        {
+            klogf(KLOG_WARN, "i2c-hid: %02x:%02x.%u BAR0 unassigned and no 64-bit PCI window", pci->bus, pci->slot,
+                  pci->function);
+            return 0;
+        }
+        uint64_t candidate = ((max + 1) & ~0xFFFFFULL) - 0x100000ULL;
+        bool ok = false;
+        for (uint32_t tries = 0; tries < 32 && candidate > min + 0x100000ULL; tries++)
+        {
+            struct bar_scan scan = {candidate, candidate + 0x100000ULL, false};
+            pci_enumerate(bar_clash_visitor, &scan);
+            if (!scan.clash)
+            {
+                ok = true;
+                break;
+            }
+            candidate -= 0x1000000ULL;
+        }
+        if (!ok)
+        {
+            klog(KLOG_WARN, "i2c-hid: no free MMIO range for BAR0");
+            return 0;
+        }
+        klogf(KLOG_INFO, "i2c-hid: PCI window 0x%llx-0x%llx, BAR pool at 0x%llx", (unsigned long long)min,
+              (unsigned long long)max, (unsigned long long)candidate);
+        next_bar_address = candidate;
+    }
+    uint64_t address = next_bar_address;
+    next_bar_address += 0x1000;
+    uint32_t command = pci_read_config32(pci->bus, pci->slot, pci->function, 0x04) & 0xFFFF;
+    pci_write_config16(pci->bus, pci->slot, pci->function, 0x04, (uint16_t)(command & ~0x6U));
+    pci_write_config32(pci->bus, pci->slot, pci->function, 0x10, (uint32_t)address | (low & 0xF));
+    pci_write_config32(pci->bus, pci->slot, pci->function, 0x14, (uint32_t)(address >> 32));
+    pci_write_config16(pci->bus, pci->slot, pci->function, 0x04, (uint16_t)(command | 0x6U));
+    uint64_t readback = pci_read_bar(pci->bus, pci->slot, pci->function, 0);
+    klogf(KLOG_INFO, "i2c-hid: %02x:%02x.%u BAR0 was unassigned, set 0x%llx readback 0x%llx", pci->bus, pci->slot,
+          pci->function, (unsigned long long)address, (unsigned long long)readback);
+    return readback;
+}
+
 static bool bring_up(const struct acpi_target *target, uint16_t descriptor_register)
 {
     struct controller_set controllers;
     memset(&controllers, 0, sizeof(controllers));
     controller_from_path(target->controller, &controllers.preferred_slot, &controllers.preferred_function);
+    acpi_controller_prepare(target->controller);
     pci_enumerate(collect_controllers, &controllers);
     klogf(KLOG_INFO, "i2c-hid: %u Intel serial-bus controller(s), ACPI path '%s'", controllers.count, target->controller);
     for (uint32_t pass = 0; pass < controllers.count; pass++)
@@ -928,7 +1111,17 @@ static bool bring_up(const struct acpi_target *target, uint16_t descriptor_regis
             break;
         struct pci_device_info pci = controllers.list[best].pci;
         controllers.list[best].order = 0xFFFFFFFFU;
+        pci_set_d0(&pci);
         uint64_t bar = pci_read_bar(pci.bus, pci.slot, pci.function, 0);
+        if (!(bar & ~0xFULL) && !(bar & 1))
+            bar = assign_bar0(&pci);
+        if ((bar & 1) || !(bar & ~0xFULL))
+        {
+            klogf(KLOG_WARN, "i2c-hid: skip %02x:%02x.%u id=%04x:%04x bar0=0x%08x", pci.bus, pci.slot, pci.function,
+                  pci.vendor_id, pci.device_id, pci_read_config32(pci.bus, pci.slot, pci.function, 0x10));
+            continue;
+        }
+        bar = pci_read_bar(pci.bus, pci.slot, pci.function, 0);
         if ((bar & 1) || !(bar & ~0xFULL))
             continue;
         controller_bar = bar & ~0xFULL;

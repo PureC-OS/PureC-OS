@@ -233,7 +233,7 @@ static uint32_t ext2_alloc_run_internal(uint32_t want, uint32_t *count, bool zer
             uint32_t abs = g * g_vol.blocks_per_group + b;
             if (zero)
             {
-                uint8_t zero_block[4096] = {0};
+                static const uint8_t zero_block[4096];
                 for (uint32_t i = 0; i < n; i++)
                     ext2_write_block(abs + i, zero_block);
             }

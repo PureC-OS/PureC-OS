@@ -1,0 +1,36 @@
+NAME
+       install - copy files and set attributes
+
+SYNOPSIS
+       install [OPTION]... SOURCE DEST
+       install [OPTION]... SOURCE... DIRECTORY
+       install -d [OPTION]... DIRECTORY...
+
+DESCRIPTION
+       Copy files and set their permission bits; mostly used by makefiles.
+
+OPTIONS
+       -d
+           treat all arguments as directory names and create them
+
+       -D
+           create all leading components of DEST
+
+       -m MODE
+           set permission mode (default 755)
+
+       -t DIR
+           copy all SOURCE arguments into DIR
+
+       -v
+           print the name of each file or directory
+
+       -c, -C, -p, -s, -o, -g
+           accepted for compatibility
+
+EXAMPLES
+       install -m 644 man.1 /usr/share/man/
+       install -D prog /root/bin/prog
+
+SEE ALSO
+       cp(1), chmod(1), make(1)

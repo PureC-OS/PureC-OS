@@ -21,6 +21,23 @@ void gop_init_from_limine(struct limine_framebuffer *fb, uint64_t firmware_type)
 void gop_init_from_multiboot(void *mbi);
 bool gop_apply_live(void *address, uint32_t width, uint32_t height,
                     uint32_t pitch_pixels, uint8_t bpp);
+void gop_retarget_front(void *address, uint32_t pitch_pixels);
+
+struct gop_front_info {
+    uint64_t physical;
+    uint64_t bytes;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch_bytes;
+    uint32_t bpp;
+    uint32_t generation;
+};
+
+bool gop_user_owned(void);
+void gop_kernel_reclaim(void);
+void gop_set_user_owned(bool owned);
+bool gop_front_physical(struct gop_front_info *out);
+void gop_user_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 bool gop_set_scale_percent(uint32_t percent);
 uint32_t gop_get_scale_percent(void);
 uint32_t gop_get_physical_width(void);

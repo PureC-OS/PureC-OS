@@ -1,0 +1,24 @@
+NAME
+       basename - strip directory and suffix from file names
+
+SYNOPSIS
+       basename NAME [SUFFIX]
+       basename -a [-s SUFFIX] NAME...
+
+DESCRIPTION
+       Print NAME with any leading directory components removed, and a trailing
+       SUFFIX if given.
+
+OPTIONS
+       -a
+           support multiple arguments
+
+       -s SUFFIX
+           remove a trailing SUFFIX; implies -a
+
+EXAMPLES
+       basename /usr/bin/ls
+       basename main.c .c
+
+SEE ALSO
+       dirname(1), realpath(1)

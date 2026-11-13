@@ -303,6 +303,41 @@ static void test_initial_tx_failure_is_reported(void) {
     CHECK(f.failed_count == 1);
 }
 
+static void test_rsn_association_carries_ie_and_privacy(void) {
+    struct fixture f;
+    uint8_t frame[256];
+    const uint8_t rates[] = {0x82, 0x84, 0x8B, 0x96};
+    const uint8_t rsn[] = {DOT11_IE_RSN, 20, 1, 0, 0x00, 0x0f, 0xac, 4, 1, 0, 0x00, 0x0f,
+                           0xac, 4, 1, 0, 0x00, 0x0f, 0xac, 2, 0, 0};
+    const uint8_t bad[] = {DOT11_IE_RSN, 5, 1, 0};
+    fixture_init(&f);
+    CHECK(!dot11_mlme_set_rsn_ie(&f.mlme, bad, sizeof(bad)));
+    CHECK(dot11_mlme_set_rsn_ie(&f.mlme, rsn, sizeof(rsn)));
+    CHECK(dot11_mlme_start_open(&f.mlme, "TestNet", ap, 6, 0));
+
+    uint16_t len = make_beacon(frame, ap, DOT11_CAP_ESS | DOT11_CAP_PRIVACY,
+                               rates, sizeof(rates), true);
+    CHECK(dot11_mlme_input(&f.mlme, frame, len, 10));
+    CHECK(f.mlme.state == DOT11_MLME_AUTH_SENT);
+    CHECK(f.failed_count == 0);
+
+    len = make_auth_resp(frame, ap, DOT11_STATUS_SUCCESS);
+    CHECK(dot11_mlme_input(&f.mlme, frame, len, 20));
+    CHECK(f.tx_count == 2);
+    CHECK(frame_stype(f.tx_frames[1]) == DOT11_STYPE_ASSOC_REQ);
+    CHECK(get_le16(f.tx_frames[1] + HDR_LEN) & DOT11_CAP_PRIVACY);
+    uint8_t ie_len = 0;
+    const uint8_t *ie = find_ie(f.tx_frames[1], f.tx_lens[1], HDR_LEN + 4,
+                                DOT11_IE_RSN, &ie_len);
+    CHECK(ie != NULL);
+    CHECK(ie_len == sizeof(rsn) - 2);
+    CHECK(memcmp(ie, rsn + 2, sizeof(rsn) - 2) == 0);
+
+    len = make_assoc_resp(frame, DOT11_STATUS_SUCCESS, 1);
+    CHECK(dot11_mlme_input(&f.mlme, frame, len, 30));
+    CHECK(f.mlme.state == DOT11_MLME_ASSOCIATED);
+}
+
 int main(void) {
     test_bss_parser_rejects_malformed_elements();
     test_association_uses_selected_bss_profile();
@@ -310,6 +345,7 @@ int main(void) {
     test_timeout_retries_are_bounded();
     test_deauth_requires_selected_ap();
     test_initial_tx_failure_is_reported();
+    test_rsn_association_carries_ie_and_privacy();
     if (failures) {
         fprintf(stderr, "dot11 association tests: %d failure(s)\n", failures);
         return 1;

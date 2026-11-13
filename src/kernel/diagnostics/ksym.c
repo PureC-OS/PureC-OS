@@ -2,7 +2,7 @@
 
 #define KSYM_MAGIC 0x505552454B53594DULL
 #define KSYM_NAME_LEN 56
-#define KSYM_CAP 4096
+#define KSYM_CAP 8192
 
 struct ksym_entry
 {

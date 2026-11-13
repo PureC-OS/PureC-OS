@@ -270,10 +270,32 @@ static int32_t store_meta(const char *path, const struct vfs_perm_meta *meta) {
   return vfs_perm_set(path, meta);
 }
 
+static int32_t check_traverse(const char *path) {
+  uint32_t uid = process_current_uid();
+  if (uid == 0 || !path || path[0] != '/')
+    return 0;
+  char prefix[VFS_PATH_MAX];
+  uint32_t gid = process_current_gid();
+  for (uint32_t i = 1; path[i] && i < sizeof(prefix); i++) {
+    if (path[i] != '/')
+      continue;
+    memcpy(prefix, path, i);
+    prefix[i] = '\0';
+    struct vfs_perm_meta meta;
+    effective_meta(prefix, true, &meta);
+    if (!vfs_perm_allowed(uid, gid, &meta, VFS_PERM_X))
+      return FS_ERROR_DENIED;
+  }
+  return 0;
+}
+
 static int32_t check_access(const char *path, bool directory, uint32_t want) {
   uint32_t uid = process_current_uid();
   if (uid == 0)
     return 0;
+  int32_t walk = check_traverse(path);
+  if (walk < 0)
+    return walk;
   struct vfs_perm_meta meta;
   effective_meta(path, directory, &meta);
   return vfs_perm_allowed(uid, process_current_gid(), &meta, want)
@@ -335,6 +357,21 @@ static bool is_klog_path(const char *path) {
 
 static bool overlay_find(const char *path, const void **data, uint32_t *size) {
   return initramfs_is_mounted() && initramfs_find(path, data, size);
+}
+
+static bool overlay_take(const struct vfs_resolved *resolved, const void **data,
+                         uint32_t *size) {
+  if (!overlay_find(resolved->path, data, size))
+    return false;
+  if (strncmp(resolved->path, "/etc/", 5) != 0)
+    return true;
+  const struct vfs_fs_ops *ops = resolved->mount->ops;
+  struct file_stat_info info;
+  if (ops->stat && mount_ready(resolved->mount) &&
+      ops->stat(resolved->mount->context, resolved->relative, &info) >= 0 &&
+      !info.is_directory)
+    return false;
+  return true;
 }
 
 static uint32_t klog_visible_size(void) {
@@ -447,15 +484,17 @@ const char *vfs_root_device_name(void) {
   return ext2_device_name();
 }
 
-int32_t vfs_open(const char *path) {
+static int32_t vfs_open_checked(const char *path, bool check) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
   if (status < 0)
     return status;
-  status = check_access(resolved.path, false, VFS_PERM_R);
-  if (status < 0)
-    return status;
+  if (check) {
+    status = check_access(resolved.path, false, VFS_PERM_R);
+    if (status < 0)
+      return status;
+  }
   int32_t idx = allocate_handle();
   if (idx < 0)
     return idx;
@@ -472,7 +511,7 @@ int32_t vfs_open(const char *path) {
   }
   const void *data = 0;
   uint32_t size = 0;
-  if (overlay_find(resolved.path, &data, &size)) {
+  if (overlay_take(&resolved, &data, &size)) {
     h->type = VFS_HANDLE_MEMORY;
     h->data = data;
     h->size = size;
@@ -497,6 +536,12 @@ int32_t vfs_open(const char *path) {
   h->backend_descriptor = backend;
   h->mount = resolved.mount;
   return VFS_FD_BASE + idx;
+}
+
+int32_t vfs_open(const char *path) { return vfs_open_checked(path, true); }
+
+int32_t vfs_open_trusted(const char *path) {
+  return vfs_open_checked(path, false);
 }
 
 int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
@@ -825,12 +870,47 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
   return (int64_t)h->position;
 }
 
+
+#define VFS_OVERLAY_MAX 512
+static struct fs_directory_entry_long overlay_entries[VFS_OVERLAY_MAX];
+
+static bool overlay_dir(const char *path) {
+  return !live_mode && initramfs_is_mounted() && initramfs_directory_exists(path);
+}
+
+static int32_t overlay_list(const char *path) {
+  if (live_mode || !initramfs_is_mounted())
+    return 0;
+  char directory[VFS_PATH_MAX];
+  uint32_t length = (uint32_t)strlen(path);
+  if (length + 2 > sizeof(directory))
+    return 0;
+  memcpy(directory, path, length);
+  if (!length || directory[length - 1] != '/')
+    directory[length++] = '/';
+  directory[length] = 0;
+  int32_t n = initramfs_list_long(directory, overlay_entries, VFS_OVERLAY_MAX);
+  return n > 0 ? n : 0;
+}
+
+int32_t vfs_access_dir(const char *path) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  return check_access(resolved.path, true, VFS_PERM_X);
+}
+
 int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!out)
     return FS_ERROR_INVALID;
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  status = check_traverse(resolved.path);
   if (status < 0)
     return status;
   out->reserved = 0;
@@ -841,7 +921,7 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   }
   const void *data = 0;
   uint32_t size = 0;
-  if (overlay_find(resolved.path, &data, &size)) {
+  if (overlay_take(&resolved, &data, &size)) {
     out->size = size;
     out->is_directory = 0;
     return 0;
@@ -850,7 +930,7 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   int32_t result = FS_ERROR_NOT_FOUND;
   if (ops->stat && mount_ready(resolved.mount))
     result = ops->stat(resolved.mount->context, resolved.relative, out);
-  if (result < 0 && is_virtual_dir(resolved.path)) {
+  if (result < 0 && (is_virtual_dir(resolved.path) || overlay_dir(resolved.path))) {
     out->size = 0;
     out->is_directory = 1;
     out->reserved = FS_NODE_FILE;
@@ -982,6 +1062,9 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
   int32_t status = resolve(path, &resolved);
   if (status < 0)
     return status;
+  status = check_access(resolved.path, true, VFS_PERM_R);
+  if (status < 0)
+    return status;
   const struct vfs_fs_ops *ops = resolved.mount->ops;
   int32_t backend = FS_ERROR_UNSUPPORTED;
   if (ops->list && mount_ready(resolved.mount))
@@ -992,9 +1075,19 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
                                             VFS_MOUNT_MAX);
   child_count += virtual_children(resolved.path, children + child_count, 8);
   bool is_root = path_equals(resolved.path, "/");
-  if (backend < 0 && !is_root && !child_count && !is_virtual_dir(resolved.path))
+  bool extra = overlay_dir(resolved.path);
+  if (backend < 0 && !is_root && !child_count && !extra && !is_virtual_dir(resolved.path))
     return backend;
   uint32_t count = backend > 0 ? (uint32_t)backend : 0;
+  int32_t overlay_count = extra || is_root ? overlay_list(resolved.path) : 0;
+  for (int32_t i = 0; i < overlay_count && count < capacity; i++) {
+    if ((is_root && !(overlay_entries[i].attributes & FS_ATTRIBUTE_DIRECTORY)) || short_has(entries, count, overlay_entries[i].name))
+      continue;
+    copy_name(entries[count].name, overlay_entries[i].name);
+    entries[count].size = overlay_entries[i].size;
+    entries[count].attributes = overlay_entries[i].attributes;
+    count++;
+  }
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
     if (short_has(entries, count, children[i]))
       continue;
@@ -1026,6 +1119,9 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
   int32_t status = resolve(path, &resolved);
   if (status < 0)
     return status;
+  status = check_access(resolved.path, true, VFS_PERM_R);
+  if (status < 0)
+    return status;
   const struct vfs_fs_ops *ops = resolved.mount->ops;
   int32_t backend = FS_ERROR_UNSUPPORTED;
   if (ops->list_long && mount_ready(resolved.mount))
@@ -1036,9 +1132,17 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
                                             VFS_MOUNT_MAX);
   child_count += virtual_children(resolved.path, children + child_count, 8);
   bool is_root = path_equals(resolved.path, "/");
-  if (backend < 0 && !is_root && !child_count && !is_virtual_dir(resolved.path))
+  bool extra = overlay_dir(resolved.path);
+  if (backend < 0 && !is_root && !child_count && !extra && !is_virtual_dir(resolved.path))
     return backend;
   uint32_t count = backend > 0 ? (uint32_t)backend : 0;
+  int32_t overlay_count = extra || is_root ? overlay_list(resolved.path) : 0;
+  for (int32_t i = 0; i < overlay_count && count < capacity; i++) {
+    if ((is_root && !(overlay_entries[i].attributes & FS_ATTRIBUTE_DIRECTORY)) || long_has(entries, count, overlay_entries[i].name))
+      continue;
+    entries[count] = overlay_entries[i];
+    count++;
+  }
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
     if (long_has(entries, count, children[i]))
       continue;
@@ -1201,14 +1305,22 @@ int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
   int32_t status = resolve(path, &resolved);
   if (status < 0)
     return status;
+  status = check_traverse(resolved.path);
+  if (status < 0)
+    return status;
   const struct vfs_fs_ops *ops = resolved.mount->ops;
   memset(out, 0, sizeof(*out));
   bool filled = false;
   if (ops->stat_ex && mount_ready(resolved.mount) &&
       !is_klog_path(resolved.path)) {
     status = ops->stat_ex(resolved.mount->context, resolved.relative, out);
-    if (status < 0 && !is_virtual_dir(resolved.path))
+    const void *probe = 0;
+    uint32_t probe_size = 0;
+    if (status < 0 && !is_virtual_dir(resolved.path) &&
+        !overlay_find(resolved.path, &probe, &probe_size) && !overlay_dir(resolved.path))
       return status;
+    if (status < 0)
+      memset(out, 0, sizeof(*out));
     filled = status >= 0;
   }
   if (!filled) {
@@ -1225,7 +1337,7 @@ int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
                            &info) >= 0) {
         out->size = info.size;
         out->is_directory = info.is_directory;
-      } else if (is_virtual_dir(resolved.path)) {
+      } else if (is_virtual_dir(resolved.path) || overlay_dir(resolved.path)) {
         out->is_directory = 1;
       } else {
         return FS_ERROR_NOT_FOUND;

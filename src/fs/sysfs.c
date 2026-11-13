@@ -147,7 +147,7 @@ static void generate(const struct node *node, char *out, uint32_t capacity) {
   out[0] = '\0';
   switch (node->kind) {
   case KIND_KERNEL_VERSION:
-    kformat(out, capacity, "PureC OS kernel 1.1.0 (x86_64)\n");
+    kformat(out, capacity, "PureC OS kernel 1.2.29 (x86_64)\n");
     break;
   case KIND_CPU_ONLINE:
     kformat(out, capacity, "%d\n", cpu_is_online(index) ? 1 : 0);

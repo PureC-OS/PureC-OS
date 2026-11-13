@@ -2,6 +2,9 @@
 // PureC hosted libc: ctype, phase 1 of the TCC migration foundation.
 // Classification is pure ASCII-range checks, no locale tables needed.
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 int isalpha(int c);
 int isupper(int c);
 int islower(int c);
@@ -18,3 +21,6 @@ int tolower(int c);
 int toupper(int c);
 int isascii(int c);
 int toascii(int c);
+#ifdef __cplusplus
+}
+#endif

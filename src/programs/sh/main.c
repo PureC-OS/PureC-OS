@@ -12,6 +12,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <termios.h>
 
 extern char **environ;
 
@@ -2123,7 +2124,7 @@ static bool is_builtin(const char *name) {
         "cd", "pwd", "echo", "printf", "exit", "export", "readonly", "unset",
         "set", "shift", "read", "test", "[", "true", "false", ":", ".", "source",
         "eval", "exec", "wait", "return", "break", "continue", "trap", "umask",
-        "ulimit", "type", "command", "hash", "local", "kill", "times", "getopts"};
+        "ulimit", "type", "command", "hash", "local", "kill", "times", "getopts", "history"};
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
         if (strcmp(name, names[i]) == 0) return true;
     return false;
@@ -2152,6 +2153,7 @@ static int find_in_path(const char *name, char *out, size_t size) {
 }
 
 static int builtin_dispatch(int argc, char **argv, bool *handled);
+static int builtin_history(int argc, char **argv);
 
 static int run_function(struct function *fn, int argc, char **argv) {
     char **saved = positional;
@@ -2173,6 +2175,7 @@ static int run_function(struct function *fn, int argc, char **argv) {
 static int builtin_dispatch(int argc, char **argv, bool *handled) {
     const char *name = argv[0];
     *handled = true;
+    if (strcmp(name, "history") == 0) return builtin_history(argc, argv);
     if (strcmp(name, "echo") == 0) return builtin_echo(argc, argv);
     if (strcmp(name, "printf") == 0) return builtin_printf(argc, argv);
     if (strcmp(name, "true") == 0 || strcmp(name, ":") == 0) return 0;
@@ -2418,6 +2421,8 @@ static int exec_external(char **argv) {
         free_environment(env);
         return 127;
     }
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
     execve(path, argv, env);
     int code = errno == ENOEXEC ? 126 : 126;
     if (errno == ENOEXEC) {
@@ -2862,13 +2867,408 @@ static int read_console_line(char *line, size_t size) {
     }
 }
 
+#define HIST_MAX 500
+static char *history[HIST_MAX];
+static int history_count;
+static char history_path[512];
+
+static void out_str(const char *s) { write(1, s, strlen(s)); }
+
+static void expand_prompt(const char *ps1, char *out, size_t cap) {
+    size_t n = 0;
+    char tmp[512];
+    for (const char *p = ps1; *p && n + 1 < cap; p++) {
+        const char *ins = 0;
+        if (*p == '\\' && p[1]) {
+            p++;
+            switch (*p) {
+            case 'u': ins = var_get("USER"); if (!ins) ins = getuid() == 0 ? "root" : "user"; break;
+            case 'h': case 'H': ins = "purec"; break;
+            case 'w': case 'W': {
+                if (!getcwd(tmp, sizeof(tmp))) strcpy(tmp, "?");
+                const char *home = var_get("HOME");
+                size_t hl = home ? strlen(home) : 0;
+                if (*p == 'W') {
+                    char *slash = strrchr(tmp, '/');
+                    ins = (slash && slash[1]) ? slash + 1 : tmp;
+                } else if (hl > 1 && strncmp(tmp, home, hl) == 0 && (tmp[hl] == '/' || !tmp[hl])) {
+                    static char shown[512];
+                    snprintf(shown, sizeof(shown), "~%s", tmp + hl);
+                    ins = shown;
+                } else ins = tmp;
+                break;
+            }
+            case '$': ins = getuid() == 0 ? "#" : "$"; break;
+            case 'e': case 'E': ins = "\x1b"; break;
+            case 'n': ins = "\r\n"; break;
+            case '\\': ins = "\\"; break;
+            case '[': case ']': ins = ""; break;
+            default: tmp[0] = '\\'; tmp[1] = *p; tmp[2] = 0; ins = tmp; break;
+            }
+            while (*ins && n + 1 < cap) out[n++] = *ins++;
+            continue;
+        }
+        out[n++] = *p;
+    }
+    out[n] = 0;
+}
+
+static void history_add(const char *line) {
+    size_t len = strlen(line);
+    while (len && (line[len - 1] == '\n' || line[len - 1] == ' ')) len--;
+    if (!len) return;
+    if (history_count && strlen(history[history_count - 1]) == len &&
+        strncmp(history[history_count - 1], line, len) == 0) return;
+    char *copy = malloc(len + 1);
+    if (!copy) return;
+    memcpy(copy, line, len);
+    copy[len] = 0;
+    if (history_count == HIST_MAX) {
+        free(history[0]);
+        memmove(history, history + 1, sizeof(history[0]) * (HIST_MAX - 1));
+        history_count--;
+    }
+    history[history_count++] = copy;
+    if (history_path[0]) {
+        int fd = open(history_path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+        if (fd >= 0) {
+            write(fd, copy, len);
+            write(fd, "\n", 1);
+            close(fd);
+        }
+    }
+}
+
+static int builtin_history(int argc, char **argv) {
+    if (argc > 1 && strcmp(argv[1], "-c") == 0) {
+        for (int i = 0; i < history_count; i++) free(history[i]);
+        history_count = 0;
+        if (history_path[0]) {
+            int fd = open(history_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+            if (fd >= 0) close(fd);
+        }
+        return 0;
+    }
+    int start = 0;
+    if (argc > 1) {
+        int n = atoi(argv[1]);
+        if (n > 0 && n < history_count) start = history_count - n;
+    }
+    for (int i = start; i < history_count; i++) {
+        const char *line = history[i];
+        size_t len = strlen(line);
+        while (len && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
+        printf("%5d  %.*s\n", i + 1, (int)len, line);
+    }
+    return 0;
+}
+
+static void history_load(void) {
+    const char *home = var_get("HOME");
+    if (!home || !*home) return;
+    snprintf(history_path, sizeof(history_path), "%s/.sh_history", home);
+    FILE *f = fopen(history_path, "r");
+    if (!f) return;
+    char buf[1024];
+    char saved = history_path[0];
+    history_path[0] = 0;
+    while (fgets(buf, sizeof(buf), f)) history_add(buf);
+    history_path[0] = saved;
+    fclose(f);
+}
+
+struct editor {
+    char buf[1024];
+    size_t len, pos;
+    char prompt[512];
+};
+
+static void ed_redraw(struct editor *e) {
+    char seq[32];
+    out_str("\r");
+    out_str(e->prompt);
+    write(1, e->buf, e->len);
+    out_str("\x1b[K");
+    if (e->len > e->pos) {
+        snprintf(seq, sizeof(seq), "\x1b[%luD", (unsigned long)(e->len - e->pos));
+        out_str(seq);
+    }
+}
+
+static void ed_insert(struct editor *e, const char *text, size_t n) {
+    if (e->len + n >= sizeof(e->buf) - 2) return;
+    memmove(e->buf + e->pos + n, e->buf + e->pos, e->len - e->pos);
+    memcpy(e->buf + e->pos, text, n);
+    e->len += n;
+    e->pos += n;
+}
+
+static int complete_candidates(const char *prefix, bool command, char out[][256], int cap) {
+    int n = 0;
+    size_t pl = strlen(prefix);
+    char dir[512], base[256];
+    const char *slash = strrchr(prefix, '/');
+    if (command && !slash) {
+        static const char *names[] = {"cd", "pwd", "echo", "exit", "export", "unset", "set", "type",
+                                      "source", "history", "kill", "wait", "test", "read", "true", "false"};
+        for (size_t i = 0; i < sizeof(names) / sizeof(names[0]) && n < cap; i++)
+            if (strncmp(names[i], prefix, pl) == 0) snprintf(out[n++], 256, "%s", names[i]);
+        const char *path = var_get("PATH");
+        char paths[1024];
+        snprintf(paths, sizeof(paths), "%s", path ? path : "/bin");
+        for (char *p = strtok(paths, ":"); p && n < cap; p = strtok(0, ":")) {
+            DIR *d = opendir(p);
+            if (!d) continue;
+            struct dirent *ent;
+            while ((ent = readdir(d)) && n < cap) {
+                if (ent->d_name[0] == '.' || strncmp(ent->d_name, prefix, pl) != 0) continue;
+                bool dup = false;
+                for (int k = 0; k < n; k++) if (strcmp(out[k], ent->d_name) == 0) dup = true;
+                if (!dup) snprintf(out[n++], 256, "%s", ent->d_name);
+            }
+            closedir(d);
+        }
+        return n;
+    }
+    if (slash) {
+        size_t dl = (size_t)(slash - prefix) + 1;
+        snprintf(dir, sizeof(dir), "%.*s", (int)dl, prefix);
+        snprintf(base, sizeof(base), "%s", slash + 1);
+    } else {
+        strcpy(dir, "");
+        snprintf(base, sizeof(base), "%s", prefix);
+    }
+    DIR *d = opendir(dir[0] ? dir : ".");
+    if (!d) return 0;
+    size_t bl = strlen(base);
+    struct dirent *ent;
+    while ((ent = readdir(d)) && n < cap) {
+        if (strncmp(ent->d_name, base, bl) != 0) continue;
+        if (ent->d_name[0] == '.' && base[0] != '.') continue;
+        if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) continue;
+        char full[768];
+        snprintf(full, sizeof(full), "%s%s", dir, ent->d_name);
+        struct stat st;
+        bool is_dir = stat(full, &st) == 0 && S_ISDIR(st.st_mode);
+        snprintf(out[n++], 256, "%s%s%s", dir, ent->d_name, is_dir ? "/" : "");
+    }
+    closedir(d);
+    return n;
+}
+
+static void ed_complete(struct editor *e) {
+    size_t start = e->pos;
+    while (start > 0 && e->buf[start - 1] != ' ' && e->buf[start - 1] != '|' && e->buf[start - 1] != ';' &&
+           e->buf[start - 1] != '&')
+        start--;
+    size_t first = 0;
+    while (first < start && e->buf[first] == ' ') first++;
+    bool command = true;
+    for (size_t i = first; i < start; i++)
+        if (e->buf[i] != ' ') command = false;
+    if (start > 0 && (e->buf[start - 1] == '|' || e->buf[start - 1] == ';' || e->buf[start - 1] == '&'))
+        command = true;
+    char prefix[256];
+    size_t pl = e->pos - start;
+    if (pl >= sizeof(prefix)) return;
+    memcpy(prefix, e->buf + start, pl);
+    prefix[pl] = 0;
+    static char cands[128][256];
+    int n = complete_candidates(prefix, command, cands, 128);
+    if (n == 0) {
+        out_str("\a");
+        return;
+    }
+    size_t common = strlen(cands[0]);
+    for (int i = 1; i < n; i++) {
+        size_t k = 0;
+        while (k < common && cands[i][k] == cands[0][k]) k++;
+        common = k;
+    }
+    if (common > pl) {
+        ed_insert(e, cands[0] + pl, common - pl);
+        if (n == 1 && cands[0][common - 1] != '/') ed_insert(e, " ", 1);
+        ed_redraw(e);
+        return;
+    }
+    if (n == 1) {
+        if (cands[0][strlen(cands[0]) - 1] != '/') ed_insert(e, " ", 1);
+        ed_redraw(e);
+        return;
+    }
+    out_str("\r\n");
+    for (int i = 0; i < n; i++) {
+        const char *name = cands[i];
+        const char *sl = strrchr(name, '/');
+        if (sl && sl[1]) name = sl + 1;
+        else if (sl && !sl[1]) {
+            const char *p = sl;
+            while (p > cands[i] && p[-1] != '/') p--;
+            name = p;
+        }
+        out_str(name);
+        out_str(i + 1 < n ? "  " : "\r\n");
+    }
+    ed_redraw(e);
+}
+
+static int edit_line(char *line, size_t size) {
+    struct termios orig, raw;
+    if (tcgetattr(0, &orig) < 0) {
+        const char *ps1 = var_get("PS1");
+        char prompt[512];
+        expand_prompt(ps1 ? ps1 : "$ ", prompt, sizeof(prompt));
+        out_str(prompt);
+        return read_console_line(line, size);
+    }
+    raw = orig;
+    raw.c_lflag &= ~(ICANON | ECHO | ISIG | IEXTEN);
+    raw.c_iflag &= ~(ICRNL | IXON);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(0, TCSANOW, &raw);
+    struct editor e;
+    memset(&e, 0, sizeof(e));
+    const char *ps1 = var_get("PS1");
+    expand_prompt(ps1 ? ps1 : "$ ", e.prompt, sizeof(e.prompt));
+    out_str(e.prompt);
+    int hist = history_count;
+    char stash[1024] = "";
+    int result = 1;
+    for (;;) {
+        unsigned char c;
+        ssize_t got = read(0, &c, 1);
+        if (got < 0 && errno == EINTR) continue;
+        if (got <= 0) { result = 0; break; }
+        if (c == '\r' || c == '\n') {
+            out_str("\r\n");
+            break;
+        }
+        if (c == 3) {
+            out_str("^C\r\n");
+            e.len = e.pos = 0;
+            hist = history_count;
+            out_str(e.prompt);
+            continue;
+        }
+        if (c == 4) {
+            if (!e.len) { out_str("\r\n"); result = 0; break; }
+            if (e.pos < e.len) {
+                memmove(e.buf + e.pos, e.buf + e.pos + 1, e.len - e.pos - 1);
+                e.len--;
+                ed_redraw(&e);
+            }
+            continue;
+        }
+        if (c == 127 || c == 8) {
+            if (e.pos) {
+                memmove(e.buf + e.pos - 1, e.buf + e.pos, e.len - e.pos);
+                e.pos--;
+                e.len--;
+                ed_redraw(&e);
+            }
+            continue;
+        }
+        if (c == 1) { e.pos = 0; ed_redraw(&e); continue; }
+        if (c == 5) { e.pos = e.len; ed_redraw(&e); continue; }
+        if (c == 2) { if (e.pos) e.pos--; ed_redraw(&e); continue; }
+        if (c == 6) { if (e.pos < e.len) e.pos++; ed_redraw(&e); continue; }
+        if (c == 11) { e.len = e.pos; ed_redraw(&e); continue; }
+        if (c == 21) {
+            memmove(e.buf, e.buf + e.pos, e.len - e.pos);
+            e.len -= e.pos;
+            e.pos = 0;
+            ed_redraw(&e);
+            continue;
+        }
+        if (c == 23) {
+            size_t p = e.pos;
+            while (p && e.buf[p - 1] == ' ') p--;
+            while (p && e.buf[p - 1] != ' ') p--;
+            memmove(e.buf + p, e.buf + e.pos, e.len - e.pos);
+            e.len -= e.pos - p;
+            e.pos = p;
+            ed_redraw(&e);
+            continue;
+        }
+        if (c == 12) {
+            out_str("\x1b[H\x1b[2J");
+            ed_redraw(&e);
+            continue;
+        }
+        if (c == 9) { ed_complete(&e); continue; }
+        if (c == 27) {
+            unsigned char s1 = 0, s2 = 0;
+            if (read(0, &s1, 1) <= 0) continue;
+            if (s1 != '[' && s1 != 'O') continue;
+            if (read(0, &s2, 1) <= 0) continue;
+            int num = 0;
+            while (s2 >= '0' && s2 <= '9') {
+                num = num * 10 + (s2 - '0');
+                if (read(0, &s2, 1) <= 0) break;
+            }
+            if (s2 == 'A' || s2 == 'B') {
+                if (s2 == 'A' && hist > 0) {
+                    if (hist == history_count) { memcpy(stash, e.buf, e.len); stash[e.len] = 0; }
+                    hist--;
+                } else if (s2 == 'B' && hist < history_count) {
+                    hist++;
+                } else continue;
+                const char *src = hist == history_count ? stash : history[hist];
+                e.len = e.pos = strlen(src) < sizeof(e.buf) - 2 ? strlen(src) : sizeof(e.buf) - 2;
+                memcpy(e.buf, src, e.len);
+                ed_redraw(&e);
+            } else if (s2 == 'C') { if (e.pos < e.len) e.pos++; ed_redraw(&e); }
+            else if (s2 == 'D') { if (e.pos) e.pos--; ed_redraw(&e); }
+            else if (s2 == 'H' || (s2 == '~' && (num == 1 || num == 7))) { e.pos = 0; ed_redraw(&e); }
+            else if (s2 == 'F' || (s2 == '~' && (num == 4 || num == 8))) { e.pos = e.len; ed_redraw(&e); }
+            else if (s2 == '~' && num == 3 && e.pos < e.len) {
+                memmove(e.buf + e.pos, e.buf + e.pos + 1, e.len - e.pos - 1);
+                e.len--;
+                ed_redraw(&e);
+            }
+            continue;
+        }
+        if (c >= 32) {
+            char ch = (char)c;
+            ed_insert(&e, &ch, 1);
+            if (e.pos == e.len) write(1, &ch, 1);
+            else ed_redraw(&e);
+        }
+    }
+    tcsetattr(0, TCSANOW, &orig);
+    if (!result && !e.len) return 0;
+    size_t n = e.len < size - 2 ? e.len : size - 2;
+    memcpy(line, e.buf, n);
+    line[n] = 0;
+    history_add(line);
+    line[n++] = '\n';
+    line[n] = 0;
+    return 1;
+}
+
+static void reap_background_jobs(void) {
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        if (WIFSIGNALED(status)) printf("[%d] Killed (signal %d)\n", (int)pid, WTERMSIG(status));
+        else if (WEXITSTATUS(status)) printf("[%d] Exit %d\n", (int)pid, WEXITSTATUS(status));
+        else printf("[%d] Done\n", (int)pid);
+    }
+    fflush(stdout);
+}
+
 static void interactive_loop(void) {
     char line[1024];
+    history_load();
     for (;;) {
-        const char *ps1 = var_get("PS1");
-        const char *prompt = ps1 ? ps1 : "$ ";
-        write(1, prompt, strlen(prompt));
-        if (!read_console_line(line, sizeof(line))) break;
+        reap_background_jobs();
+        if (!edit_line(line, sizeof(line))) break;
+        if (strcmp(line, "history\n") == 0) {
+            for (int i = 0; i < history_count; i++) printf("%5d  %s\n", i + 1, history[i]);
+            fflush(stdout);
+            continue;
+        }
         last_status = run_string(line);
     }
 }
@@ -2922,6 +3322,8 @@ int main(int argc, char **argv) {
     positional_count = argc - i;
     if (isatty(0) || interactive) {
         interactive = true;
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
         interactive_loop();
         fflush(0);
         return last_status;

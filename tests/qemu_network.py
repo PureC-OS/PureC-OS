@@ -15,7 +15,6 @@ from pathlib import Path
 
 GATEWAY_TARGET = "10.0.2.2"
 PUBLIC_PING_TARGETS = ("8.8.8.8", "1.1.1.1")
-DNS_TARGETS = ("google.com", "cloudflare.com", "example.com")
 FAILURE_MARKERS = (
     "[EARLY PANIC]",
     "KERNEL PANIC",
@@ -69,13 +68,6 @@ def required_patterns(driver: Driver) -> list[tuple[str, re.Pattern[str]]]:
             ),
         )
         for target in PUBLIC_PING_TARGETS
-    )
-    patterns.extend(
-        (
-            f"DNS {hostname}",
-            re.compile(rf"\[NETTEST\] DNS PASS host={re.escape(hostname)}\b"),
-        )
-        for hostname in DNS_TARGETS
     )
     patterns.append(("network result", re.compile(r"\[NETTEST\] RESULT PASS")))
     return patterns

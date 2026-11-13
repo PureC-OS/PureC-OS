@@ -77,6 +77,7 @@ int getnameinfo(const struct sockaddr *address, socklen_t length, char *host,
 struct hostent *gethostbyname(const char *name);
 const char *hstrerror(int code);
 struct servent *getservbyname(const char *name, const char *protocol);
+struct servent *getservbyport(int port, const char *protocol);
 
 #ifdef __cplusplus
 }

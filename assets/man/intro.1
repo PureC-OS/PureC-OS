@@ -1,0 +1,27 @@
+NAME
+       intro - introduction to PureC OS commands
+
+SYNOPSIS
+       man intro
+
+DESCRIPTION
+       PureC OS is a 64-bit operating system written in C. Commands are small
+       programs in /bin, /usr/bin and /sbin that read text, write text and can
+       be combined with pipes in sh(1). Every command has a manual page; man -k
+       WORD searches them.
+
+COMMANDS
+       Files     ls cat cp mv rm mkdir rmdir touch chmod stat find tree du df install realpath basename dirname
+       Text      grep head tail wc sort uniq cut tr tee cmp diff nl rev seq xxd less echo
+       System    ps kill free uptime date uname whoami id hostname env which sleep clear
+       Power     reboot poweroff shutdown halt
+       Network   ping curl
+       Help      man help apropos whatis
+
+EXAMPLES
+       ls -l | grep .c | sort
+       find / -name "*.txt" | xargs wc -l
+       man -k .
+
+SEE ALSO
+       help(1), man(1), sh(1)

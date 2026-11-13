@@ -1,0 +1,101 @@
+NAME
+       grep - print lines that match patterns
+
+SYNOPSIS
+       grep [OPTION]... PATTERN [FILE]...
+       grep [OPTION]... -e PATTERN... [FILE]...
+       egrep ...  (same as grep -E)
+       fgrep ...  (same as grep -F)
+
+DESCRIPTION
+       Search each FILE (standard input when none, the current directory
+       with -r) for lines matching PATTERN and print them. PATTERN is a POSIX basic
+       regular expression by default. On a terminal, matches are highlighted in
+       red, file names in magenta and line numbers in green.
+
+OPTIONS
+       -E
+           PATTERN is an extended regular expression: + ? | ( ) { } are special
+
+       -F
+           PATTERN is a fixed string
+
+       -G
+           PATTERN is a basic regular expression (default)
+
+       -e PATTERN
+           use PATTERN; may be given several times
+
+       -f FILE
+           read patterns from FILE, one per line
+
+       -i, --ignore-case
+           ignore case distinctions
+
+       -v, --invert-match
+           select non-matching lines
+
+       -w, --word-regexp
+           match only whole words
+
+       -x, --line-regexp
+           match only whole lines
+
+       -c, --count
+           print only a count of matching lines per file
+
+       -l, --files-with-matches
+           print only names of files with matches
+
+       -L, --files-without-match
+           print only names of files without matches
+
+       -n, --line-number
+           prefix each line with its line number
+
+       -b
+           prefix each line with its byte offset
+
+       -o, --only-matching
+           print only the matched parts of lines
+
+       -h, -H
+           suppress or force the file name prefix
+
+       -r, -R, --recursive
+           search directories recursively
+
+       -q, --quiet
+           print nothing; exit 0 on the first match
+
+       -s
+           suppress error messages about unreadable files
+
+       -m NUM
+           stop after NUM matching lines
+
+       -A NUM, -B NUM, -C NUM, -NUM
+           print NUM lines of trailing, leading or surrounding context
+
+       --color[=WHEN]
+           highlight matches: always, auto (default) or never
+
+REGULAR EXPRESSIONS
+       .  any character        [abc] [^abc] [a-z] [[:digit:]]  bracket expressions
+       ^ $  start and end of line   *  zero or more     \+ \?  (BRE) / + ?  (ERE)
+       \{m,n\} (BRE) / {m,n} (ERE)  repetition     \( \) (BRE) / ( ) (ERE)  group
+       \| (BRE) / | (ERE)  alternation    \1..\9  back reference
+       \w \W \s \S \d \D  word, space and digit classes
+       \b \B \< \>  word boundaries
+
+EXIT STATUS
+       0 if a line was selected, 1 if no lines were selected, 2 if an error occurred.
+
+EXAMPLES
+       grep -rn TODO /root/work
+       grep -E '^(int|void) ' main.c
+       ps | grep sh
+       grep -c '' file   (count lines)
+
+SEE ALSO
+       find(1), less(1), sort(1)

@@ -1,0 +1,34 @@
+NAME
+       date - print the system date and time
+
+SYNOPSIS
+       date [-uRI] [-d @SECONDS] [+FORMAT]
+
+DESCRIPTION
+       Display the current time in the given FORMAT. The time zone is set in
+       Settings.
+
+OPTIONS
+       -u
+           print Coordinated Universal Time
+
+       -R
+           RFC 5322 format
+
+       -I
+           ISO 8601 date
+
+       -d @SECONDS
+           display the given Unix time instead of now
+
+       +FORMAT
+           strftime format: %Y year, %m month, %d day, %H:%M:%S time, %a/%A
+           weekday, %b/%B month name, %s seconds since 1970, %Z zone, %%
+
+EXAMPLES
+       date
+       date '+%Y-%m-%d %H:%M'
+       date -d @0 -u
+
+SEE ALSO
+       uptime(1)

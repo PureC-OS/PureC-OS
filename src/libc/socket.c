@@ -7,7 +7,12 @@
 #include "include/hosted/stdio.h"
 #include "include/hosted/stdlib.h"
 #include "include/hosted/string.h"
+#include "include/hosted/strings.h"
+#include "include/hosted/sys/time.h"
+#include "../libc/include/purec.h"
 #include "include/hosted/sys/socket.h"
+#include "include/hosted/sys/uio.h"
+#include "include/hosted/unistd.h"
 
 int64_t pc_syscall(uint64_t number, uint64_t argument1, uint64_t argument2,
                    uint64_t argument3);
@@ -115,20 +120,50 @@ ssize_t recv(int fd, void *buffer, size_t length, int flags)
                                        (uint64_t)(uint32_t)flags));
 }
 
+static int64_t syscall_five(uint64_t number, uint64_t argument1,
+                            uint64_t argument2, uint64_t argument3,
+                            uint64_t argument4, uint64_t argument5)
+{
+    int64_t result;
+    __asm__ volatile("int $0x80"
+                     : "=a"(result)
+                     : "a"(number), "b"(argument1), "c"(argument2),
+                       "d"(argument3), "S"(argument4), "D"(argument5)
+                     : "r10", "r8", "memory");
+    return result;
+}
+
 ssize_t sendto(int fd, const void *buffer, size_t length, int flags,
                const struct sockaddr *address, socklen_t address_length)
 {
-    (void)address;
-    (void)address_length;
-    return send(fd, buffer, length, flags);
+    if (address && address_length < (socklen_t)sizeof(struct sockaddr_in))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    return size_result_of(syscall_five(SYS_SENDTO, (uint64_t)fd,
+                                       (uint64_t)(uintptr_t)buffer, length,
+                                       (uint64_t)(uint32_t)flags,
+                                       (uint64_t)(uintptr_t)address));
 }
 
 ssize_t recvfrom(int fd, void *buffer, size_t length, int flags,
                  struct sockaddr *address, socklen_t *address_length)
 {
-    ssize_t got = recv(fd, buffer, length, flags);
+    struct sockaddr_in source;
+    memset(&source, 0, sizeof(source));
+    ssize_t got = size_result_of(syscall_five(SYS_RECVFROM, (uint64_t)fd,
+                                              (uint64_t)(uintptr_t)buffer, length,
+                                              (uint64_t)(uint32_t)flags,
+                                              (uint64_t)(uintptr_t)&source));
     if (got >= 0 && address && address_length)
-        (void)getpeername(fd, address, address_length);
+    {
+        socklen_t copy = *address_length < (socklen_t)sizeof(source)
+                             ? *address_length
+                             : (socklen_t)sizeof(source);
+        memcpy(address, &source, copy);
+        *address_length = sizeof(source);
+    }
     return got;
 }
 
@@ -163,12 +198,83 @@ int getsockopt(int fd, int level, int name, void *value, socklen_t *length)
 
 int socketpair(int domain, int type, int protocol, int fds[2])
 {
-    (void)domain;
-    (void)type;
-    (void)protocol;
-    (void)fds;
-    errno = EOPNOTSUPP;
-    return -1;
+    if (!fds)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return result_of(syscall_four(SYS_SOCKETPAIR, (uint64_t)(uint32_t)domain,
+                                  (uint64_t)(uint32_t)type,
+                                  (uint64_t)(uint32_t)protocol,
+                                  (uint64_t)(uintptr_t)fds));
+}
+
+ssize_t sendmsg(int fd, const struct msghdr *message, int flags)
+{
+    if (!message)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return size_result_of(pc_syscall(SYS_SENDMSG, (uint64_t)(uint32_t)fd,
+                                     (uint64_t)(uintptr_t)message,
+                                     (uint64_t)(uint32_t)flags));
+}
+
+ssize_t recvmsg(int fd, struct msghdr *message, int flags)
+{
+    if (!message)
+    {
+        errno = EFAULT;
+        return -1;
+    }
+    return size_result_of(pc_syscall(SYS_RECVMSG, (uint64_t)(uint32_t)fd,
+                                     (uint64_t)(uintptr_t)message,
+                                     (uint64_t)(uint32_t)flags));
+}
+
+ssize_t readv(int fd, const struct iovec *iov, int count)
+{
+    if (count < 0 || count > UIO_MAXIOV)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    ssize_t total = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (!iov[i].iov_len)
+            continue;
+        ssize_t got = read(fd, iov[i].iov_base, iov[i].iov_len);
+        if (got < 0)
+            return total ? total : -1;
+        total += got;
+        if ((size_t)got < iov[i].iov_len)
+            break;
+    }
+    return total;
+}
+
+ssize_t writev(int fd, const struct iovec *iov, int count)
+{
+    if (count < 0 || count > UIO_MAXIOV)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    ssize_t total = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (!iov[i].iov_len)
+            continue;
+        ssize_t put = write(fd, iov[i].iov_base, iov[i].iov_len);
+        if (put < 0)
+            return total ? total : -1;
+        total += put;
+        if ((size_t)put < iov[i].iov_len)
+            break;
+    }
+    return total;
 }
 
 int inet_aton(const char *text, struct in_addr *address)
@@ -268,9 +374,113 @@ static const struct
 {
     const char *name;
     int port;
-} services[] = {{"ftp", 21},   {"ssh", 22},  {"telnet", 23}, {"smtp", 25},
-                {"domain", 53}, {"http", 80}, {"pop3", 110},  {"ntp", 123},
-                {"imap", 143}, {"https", 443}, {"imaps", 993}, {"pop3s", 995}};
+    const char *proto;
+} services[] = {{"ftp", 21, "tcp"},     {"ssh", 22, "tcp"},     {"telnet", 23, "tcp"},
+                {"smtp", 25, "tcp"},    {"domain", 53, "udp"},  {"domain", 53, "tcp"},
+                {"bootps", 67, "udp"},  {"bootpc", 68, "udp"},  {"http", 80, "tcp"},
+                {"pop3", 110, "tcp"},   {"ntp", 123, "udp"},    {"imap", 143, "tcp"},
+                {"https", 443, "tcp"},  {"imaps", 993, "tcp"},  {"pop3s", 995, "tcp"}};
+
+static struct servent serv_entry;
+static char serv_name[32];
+static char serv_proto[8];
+static char serv_alias_text[64];
+static char *serv_aliases[4];
+
+static struct servent *serv_fill(const char *name, int port, const char *proto,
+                                 const char *aliases)
+{
+    strncpy(serv_name, name, sizeof(serv_name) - 1);
+    serv_name[sizeof(serv_name) - 1] = 0;
+    strncpy(serv_proto, proto, sizeof(serv_proto) - 1);
+    serv_proto[sizeof(serv_proto) - 1] = 0;
+    serv_alias_text[0] = 0;
+    if (aliases)
+    {
+        strncpy(serv_alias_text, aliases, sizeof(serv_alias_text) - 1);
+        serv_alias_text[sizeof(serv_alias_text) - 1] = 0;
+    }
+    unsigned n = 0;
+    char *cursor = serv_alias_text;
+    while (*cursor && n + 1 < sizeof(serv_aliases) / sizeof(serv_aliases[0]))
+    {
+        while (*cursor == ' ' || *cursor == '\t')
+            *cursor++ = 0;
+        if (!*cursor)
+            break;
+        serv_aliases[n++] = cursor;
+        while (*cursor && *cursor != ' ' && *cursor != '\t')
+            cursor++;
+    }
+    serv_aliases[n] = 0;
+    serv_entry.s_name = serv_name;
+    serv_entry.s_aliases = serv_aliases;
+    serv_entry.s_port = htons((uint16_t)port);
+    serv_entry.s_proto = serv_proto;
+    return &serv_entry;
+}
+
+static bool word_in(const char *list, const char *word)
+{
+    size_t n = strlen(word);
+    while (*list)
+    {
+        while (*list == ' ' || *list == '\t')
+            list++;
+        if (strncmp(list, word, n) == 0 &&
+            (list[n] == 0 || list[n] == ' ' || list[n] == '\t'))
+            return true;
+        while (*list && *list != ' ' && *list != '\t')
+            list++;
+    }
+    return false;
+}
+
+static struct servent *serv_lookup(const char *name, int port, const char *proto)
+{
+    FILE *file = fopen("/etc/services", "r");
+    if (file)
+    {
+        char line[256];
+        while (fgets(line, sizeof(line), file))
+        {
+            char *hash = strchr(line, '#');
+            if (hash)
+                *hash = 0;
+            char *nl = strchr(line, '\n');
+            if (nl)
+                *nl = 0;
+            char entry_name[32], entry_port[24];
+            int consumed = 0;
+            if (sscanf(line, "%31s %23s %n", entry_name, entry_port, &consumed) < 2)
+                continue;
+            char *slash = strchr(entry_port, '/');
+            if (!slash)
+                continue;
+            *slash = 0;
+            int entry_number = atoi(entry_port);
+            const char *entry_proto = slash + 1;
+            const char *aliases = line + consumed;
+            if (proto && strcmp(proto, entry_proto) != 0)
+                continue;
+            bool match = name ? (strcmp(name, entry_name) == 0 || word_in(aliases, name))
+                              : entry_number == port;
+            if (!match)
+                continue;
+            fclose(file);
+            return serv_fill(entry_name, entry_number, entry_proto, aliases);
+        }
+        fclose(file);
+    }
+    for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
+    {
+        if (proto && strcmp(proto, services[i].proto) != 0)
+            continue;
+        if (name ? strcmp(name, services[i].name) == 0 : services[i].port == port)
+            return serv_fill(services[i].name, services[i].port, services[i].proto, 0);
+    }
+    return 0;
+}
 
 static int parse_service(const char *service, int flags, int *port)
 {
@@ -290,15 +500,205 @@ static int parse_service(const char *service, int flags, int *port)
     }
     if (flags & AI_NUMERICSERV)
         return EAI_NONAME;
-    for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
+    struct servent *entry = serv_lookup(service, 0, 0);
+    if (!entry)
+        return EAI_SERVICE;
+    *port = ntohs((uint16_t)entry->s_port);
+    return 0;
+}
+
+#define RESOLVE_MAX 8
+
+static int hosts_lookup(const char *name, uint32_t *out, int max)
+{
+    FILE *f = fopen("/etc/hosts", "r");
+    if (!f)
+        return 0;
+    char line[256];
+    int n = 0;
+    while (n < max && fgets(line, sizeof(line), f))
     {
-        if (strcmp(services[i].name, service) == 0)
+        char *hash = strchr(line, '#');
+        if (hash)
+            *hash = 0;
+        char *save = 0;
+        char *tok = strtok_r(line, " \t\r\n", &save);
+        struct in_addr a;
+        if (!tok || !inet_aton(tok, &a))
+            continue;
+        while ((tok = strtok_r(0, " \t\r\n", &save)))
+            if (strcasecmp(tok, name) == 0)
+            {
+                out[n++] = a.s_addr;
+                break;
+            }
+    }
+    fclose(f);
+    return n;
+}
+
+static int resolv_servers(uint32_t *out, int max)
+{
+    FILE *f = fopen("/etc/resolv.conf", "r");
+    if (!f)
+        return 0;
+    char line[128];
+    int n = 0;
+    while (n < max && fgets(line, sizeof(line), f))
+    {
+        char word[16], addr[64];
+        struct in_addr a;
+        if (sscanf(line, "%15s %63s", word, addr) == 2 && strcmp(word, "nameserver") == 0 &&
+            inet_aton(addr, &a))
+            out[n++] = a.s_addr;
+    }
+    fclose(f);
+    return n;
+}
+
+static int dns_skip(const uint8_t *p, int len, int at)
+{
+    while (at < len)
+    {
+        uint8_t l = p[at];
+        if (!l)
+            return at + 1;
+        if ((l & 0xC0) == 0xC0)
+            return at + 2;
+        at += l + 1;
+    }
+    return -1;
+}
+
+static int dns_query(uint32_t server_be, const char *name, uint32_t *out, int max, int *rcode)
+{
+    uint8_t q[300];
+    uint16_t id;
+    if (pc_getrandom(&id, sizeof(id)) != (int32_t)sizeof(id))
+        id = (uint16_t)getpid();
+    memset(q, 0, 12);
+    q[0] = (uint8_t)(id >> 8);
+    q[1] = (uint8_t)id;
+    q[2] = 0x01;
+    q[5] = 1;
+    int at = 12;
+    const char *label = name;
+    while (*label)
+    {
+        const char *dot = strchr(label, '.');
+        size_t l = dot ? (size_t)(dot - label) : strlen(label);
+        if (l == 0 || l > 63 || at + (int)l + 6 > (int)sizeof(q))
+            return -1;
+        q[at++] = (uint8_t)l;
+        memcpy(q + at, label, l);
+        at += (int)l;
+        label += l;
+        if (*label == '.')
+            label++;
+    }
+    q[at++] = 0;
+    q[at++] = 0;
+    q[at++] = 1;
+    q[at++] = 0;
+    q[at++] = 1;
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (fd < 0)
+        return -1;
+    struct timeval tv = {2, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    struct sockaddr_in to;
+    memset(&to, 0, sizeof(to));
+    to.sin_family = AF_INET;
+    to.sin_port = htons(53);
+    to.sin_addr.s_addr = server_be;
+    int found = -1;
+    for (int attempt = 0; attempt < 2 && found < 0; attempt++)
+    {
+        if (sendto(fd, q, (size_t)at, 0, (struct sockaddr *)&to, sizeof(to)) != at)
+            break;
+        uint8_t r[512];
+        for (;;)
         {
-            *port = services[i].port;
-            return 0;
+            ssize_t got = recv(fd, r, sizeof(r), 0);
+            if (got < 0)
+                break;
+            if (got < 12 || r[0] != q[0] || r[1] != q[1] || !(r[2] & 0x80))
+                continue;
+            *rcode = r[3] & 15;
+            int qd = r[4] << 8 | r[5], an = r[6] << 8 | r[7], p = 12;
+            for (int i = 0; i < qd && p > 0; i++)
+                p = dns_skip(r, (int)got, p) + 4;
+            found = 0;
+            for (int i = 0; i < an && p > 0 && p < got && found < max; i++)
+            {
+                p = dns_skip(r, (int)got, p);
+                if (p < 0 || p + 10 > got)
+                    break;
+                int type = r[p] << 8 | r[p + 1], klass = r[p + 2] << 8 | r[p + 3];
+                int rdlen = r[p + 8] << 8 | r[p + 9];
+                p += 10;
+                if (type == 1 && klass == 1 && rdlen == 4 && p + 4 <= got)
+                    memcpy(&out[found++], r + p, 4);
+                p += rdlen;
+            }
+            break;
         }
     }
-    return EAI_SERVICE;
+    close(fd);
+    return found;
+}
+
+static int name_lookup(const char *node, uint32_t *out, int max)
+{
+    int n = hosts_lookup(node, out, max);
+    if (n > 0)
+        return n;
+    if (strcmp(node, "localhost") == 0)
+    {
+        out[0] = htonl(INADDR_LOOPBACK);
+        return 1;
+    }
+    uint32_t servers[3];
+    int count = resolv_servers(servers, 3);
+    bool answered = false;
+    for (int i = 0; i < count; i++)
+    {
+        int rcode = -1;
+        n = dns_query(servers[i], node, out, max, &rcode);
+        if (n > 0)
+            return n;
+        if (n == 0 && (rcode == 0 || rcode == 3))
+        {
+            answered = true;
+            break;
+        }
+    }
+    if (answered)
+        return -EAI_NONAME;
+    struct net_if_info infos[NET_IF_MAX_COUNT];
+    int found = pc_net_if_list(infos, NET_IF_MAX_COUNT);
+    uint32_t tried[NET_IF_MAX_COUNT];
+    int tried_count = 0;
+    for (int i = 0; i < found && i < NET_IF_MAX_COUNT; i++)
+    {
+        uint32_t server = infos[i].dns_server;
+        if (!server || (server >> 24) == 127)
+            continue;
+        bool seen = false;
+        for (int k = 0; k < tried_count; k++)
+            if (tried[k] == server)
+                seen = true;
+        if (seen)
+            continue;
+        tried[tried_count++] = server;
+        int rcode = -1;
+        n = dns_query(htonl(server), node, out, max, &rcode);
+        if (n > 0)
+            return n;
+        if (n == 0 && (rcode == 0 || rcode == 3))
+            return -EAI_NONAME;
+    }
+    return -EAI_AGAIN;
 }
 
 int getaddrinfo(const char *node, const char *service,
@@ -312,9 +712,9 @@ int getaddrinfo(const char *node, const char *service,
         return EAI_FAIL;
     if (family != AF_UNSPEC && family != AF_INET)
         return EAI_FAMILY;
-    if (socktype != 0 && socktype != SOCK_STREAM)
+    if (socktype != 0 && socktype != SOCK_STREAM && socktype != SOCK_DGRAM)
         return EAI_SOCKTYPE;
-    if (protocol != 0 && protocol != IPPROTO_TCP)
+    if (protocol != 0 && protocol != IPPROTO_TCP && protocol != IPPROTO_UDP)
         return EAI_SOCKTYPE;
     if (!node && !service)
         return EAI_NONAME;
@@ -322,48 +722,59 @@ int getaddrinfo(const char *node, const char *service,
     int status = parse_service(service, flags, &port);
     if (status)
         return status;
+    if (!socktype)
+        socktype = protocol == IPPROTO_UDP ? SOCK_DGRAM : SOCK_STREAM;
+    if (!protocol)
+        protocol = socktype == SOCK_DGRAM ? IPPROTO_UDP : IPPROTO_TCP;
 
-    uint32_t address_be;
+    uint32_t addrs[RESOLVE_MAX];
+    int count = 1;
     if (!node)
-        address_be = (flags & AI_PASSIVE) ? htonl(INADDR_ANY)
-                                          : htonl(INADDR_LOOPBACK);
-    else if (strcmp(node, "localhost") == 0)
-        address_be = htonl(INADDR_LOOPBACK);
+        addrs[0] = (flags & AI_PASSIVE) ? htonl(INADDR_ANY) : htonl(INADDR_LOOPBACK);
     else
     {
         struct in_addr parsed;
         if (inet_aton(node, &parsed))
-            address_be = parsed.s_addr;
+            addrs[0] = parsed.s_addr;
         else if (flags & AI_NUMERICHOST)
             return EAI_NONAME;
         else
         {
-            int64_t code = pc_syscall(SYS_DNS_RESOLVE, (uint64_t)(uintptr_t)node,
-                                      5000, (uint64_t)(uintptr_t)&address_be);
-            if (code == -ENOENT || code == -EINVAL)
+            count = name_lookup(node, addrs, RESOLVE_MAX);
+            if (count < 0)
+                return -count;
+            if (count == 0)
                 return EAI_NONAME;
-            if (code == -ETIMEDOUT || code == -EINTR || code == -ENETUNREACH)
-                return EAI_AGAIN;
-            if (code < 0)
-                return EAI_FAIL;
         }
     }
 
-    struct addrinfo *info = calloc(1, sizeof(*info) + sizeof(struct sockaddr_in));
-    if (!info)
-        return EAI_MEMORY;
-    struct sockaddr_in *sin = (struct sockaddr_in *)(info + 1);
-    sin->sin_family = AF_INET;
-    sin->sin_port = htons((uint16_t)port);
-    sin->sin_addr.s_addr = address_be;
-    info->ai_family = AF_INET;
-    info->ai_socktype = SOCK_STREAM;
-    info->ai_protocol = IPPROTO_TCP;
-    info->ai_addrlen = sizeof(*sin);
-    info->ai_addr = (struct sockaddr *)sin;
-    if ((flags & AI_CANONNAME) && node)
-        info->ai_canonname = strdup(node);
-    *result = info;
+    struct addrinfo *head = 0, *tail = 0;
+    for (int i = 0; i < count; i++)
+    {
+        struct addrinfo *info = calloc(1, sizeof(*info) + sizeof(struct sockaddr_in));
+        if (!info)
+        {
+            freeaddrinfo(head);
+            return EAI_MEMORY;
+        }
+        struct sockaddr_in *sin = (struct sockaddr_in *)(info + 1);
+        sin->sin_family = AF_INET;
+        sin->sin_port = htons((uint16_t)port);
+        sin->sin_addr.s_addr = addrs[i];
+        info->ai_family = AF_INET;
+        info->ai_socktype = socktype;
+        info->ai_protocol = protocol;
+        info->ai_addrlen = sizeof(*sin);
+        info->ai_addr = (struct sockaddr *)sin;
+        if (!head && (flags & AI_CANONNAME) && node)
+            info->ai_canonname = strdup(node);
+        if (tail)
+            tail->ai_next = info;
+        else
+            head = info;
+        tail = info;
+    }
+    *result = head;
     return 0;
 }
 
@@ -488,23 +899,10 @@ const char *hstrerror(int code)
 
 struct servent *getservbyname(const char *name, const char *protocol)
 {
-    static struct servent entry;
-    static char service_name[16];
-    static char proto[8] = "tcp";
-    static char *aliases[1];
-    if (protocol && strcmp(protocol, "tcp") != 0)
-        return 0;
-    for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
-    {
-        if (strcmp(services[i].name, name) == 0)
-        {
-            strncpy(service_name, name, sizeof(service_name) - 1);
-            entry.s_name = service_name;
-            entry.s_aliases = aliases;
-            entry.s_port = htons((uint16_t)services[i].port);
-            entry.s_proto = proto;
-            return &entry;
-        }
-    }
-    return 0;
+    return name ? serv_lookup(name, 0, protocol) : 0;
+}
+
+struct servent *getservbyport(int port, const char *protocol)
+{
+    return serv_lookup(0, ntohs((uint16_t)port), protocol);
 }

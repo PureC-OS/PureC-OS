@@ -2,6 +2,12 @@
 #include "../pci/pci.h"
 #include "../../arch/x86_64/mmio.h"
 #include "../../kernel/diagnostics/klog.h"
+
+#ifndef AUDIO_VERBOSE
+#define AUDIO_VERBOSE 0
+#endif
+#define audio_dbg(msg) do { if (AUDIO_VERBOSE) klog(KLOG_DEBUG, msg); } while (0)
+#define audio_dbgf(...) do { if (AUDIO_VERBOSE) klogf(KLOG_DEBUG, __VA_ARGS__); } while (0)
 #include "../../lib/string.h"
 
 #define PCI_CLASS_MULTIMEDIA 0x04
@@ -113,25 +119,24 @@ static uint32_t read32(uint32_t offset) {
 
 static void write16(uint32_t offset, uint16_t value) {
     *(volatile uint16_t *)(regs + offset) = value;
-    klogf(KLOG_DEBUG, "audio: HDA MMIO write16 off=0x%03x value=0x%04x",
+    audio_dbgf("audio: HDA MMIO write16 off=0x%03x value=0x%04x",
           offset, value);
 }
 
 static void write8(uint32_t offset, uint8_t value) {
     *(volatile uint8_t *)(regs + offset) = value;
-    klogf(KLOG_DEBUG, "audio: HDA MMIO write8 off=0x%03x value=0x%02x",
+    audio_dbgf("audio: HDA MMIO write8 off=0x%03x value=0x%02x",
           offset, value);
 }
 
 static void write32(uint32_t offset, uint32_t value) {
     *(volatile uint32_t *)(regs + offset) = value;
-    klogf(KLOG_DEBUG, "audio: HDA MMIO write32 off=0x%03x value=0x%08x",
+    audio_dbgf("audio: HDA MMIO write32 off=0x%03x value=0x%08x",
           offset, value);
 }
 
 static void trace_ring(const char *stage) {
-    klogf(KLOG_DEBUG,
-          "audio: HDA %s CORBWP=0x%04x CORBRP=0x%04x CORBCTL=0x%02x CORBSIZE=0x%02x RIRBWP=0x%04x RIRBCTL=0x%02x RIRBSTS=0x%02x STATESTS=0x%04x",
+    audio_dbgf("audio: HDA %s CORBWP=0x%04x CORBRP=0x%04x CORBCTL=0x%02x CORBSIZE=0x%02x RIRBWP=0x%04x RIRBCTL=0x%02x RIRBSTS=0x%02x STATESTS=0x%04x",
           stage, read16(HDA_CORBWP), read16(HDA_CORBRP), read8(HDA_CORBCTL),
           read8(HDA_CORBSIZE), read16(HDA_RIRBWP), read8(HDA_RIRBCTL),
           read8(HDA_RIRBSTS), read16(HDA_STATESTS));
@@ -142,7 +147,7 @@ static uint64_t physical_address(const void *pointer) {
 }
 
 static bool wait_reset_state(bool asserted) {
-    klogf(KLOG_DEBUG, "audio: HDA reset wait target=%u", asserted ? 1 : 0);
+    audio_dbgf("audio: HDA reset wait target=%u", asserted ? 1 : 0);
     for (uint32_t wait = 0; wait < HDA_TIMEOUT; wait++) {
         if (((read32(HDA_GCTL) & HDA_GCTL_RESET) != 0) == asserted) {
             return true;
@@ -160,10 +165,10 @@ static uint32_t read_stream_control(volatile uint8_t *stream) {
 }
 
 static void write_stream_control(volatile uint8_t *stream, uint32_t value) {
-    klogf(KLOG_DEBUG, "audio: HDA stream CTL write value=0x%06x", value & 0xFFFFFF);
+    audio_dbgf("audio: HDA stream CTL write value=0x%06x", value & 0xFFFFFF);
     *(volatile uint16_t *)(stream + HDA_STREAM_CTL) = (uint16_t)value;
     *(volatile uint8_t *)(stream + HDA_STREAM_CTL + 2) = (uint8_t)(value >> 16);
-    klogf(KLOG_DEBUG, "audio: HDA stream CTL readback=0x%06x",
+    audio_dbgf("audio: HDA stream CTL readback=0x%06x",
           read_stream_control(stream));
 }
 
@@ -180,8 +185,7 @@ static bool wait_stream_control(volatile uint8_t *stream, uint32_t mask,
 
 static void trace_stream_status(const char *stage, volatile uint8_t *stream) {
     uint8_t status = *(volatile uint8_t *)(stream + HDA_STREAM_STS);
-    klogf(KLOG_DEBUG,
-          "audio: HDA stream status stage=%s raw=0x%02x fifo_ready=%u descriptor_error=%u fifo_error=%u buffer_complete=%u lpib=0x%08x",
+    audio_dbgf("audio: HDA stream status stage=%s raw=0x%02x fifo_ready=%u descriptor_error=%u fifo_error=%u buffer_complete=%u lpib=0x%08x",
           stage, status, (status & 0x20) != 0 ? 1 : 0,
           (status & 0x10) != 0 ? 1 : 0, (status & 0x08) != 0 ? 1 : 0,
           (status & 0x04) != 0 ? 1 : 0,
@@ -190,30 +194,30 @@ static void trace_stream_status(const char *stage, volatile uint8_t *stream) {
 
 static bool reset_stream(volatile uint8_t *stream) {
     uint32_t control = read_stream_control(stream) & ~HDA_STREAM_RUN;
-    klogf(KLOG_DEBUG, "audio: HDA stream reset begin ctl=0x%06x", control);
+    audio_dbgf("audio: HDA stream reset begin ctl=0x%06x", control);
     write_stream_control(stream, control);
     if (!wait_stream_control(stream, HDA_STREAM_RUN, false)) {
         klog(KLOG_ERROR, "audio: HDA stream RUN clear timeout");
         return false;
     }
-    klog(KLOG_DEBUG, "audio: HDA stream RUN confirmed clear");
+    audio_dbg("audio: HDA stream RUN confirmed clear");
     write_stream_control(stream, control | HDA_STREAM_RESET);
     if (!wait_stream_control(stream, HDA_STREAM_RESET, true)) {
         klog(KLOG_ERROR, "audio: HDA stream reset assert timeout");
         return false;
     }
-    klog(KLOG_DEBUG, "audio: HDA stream reset asserted");
+    audio_dbg("audio: HDA stream reset asserted");
     write_stream_control(stream, control & ~HDA_STREAM_RESET);
     if (!wait_stream_control(stream, HDA_STREAM_RESET, false)) {
         klog(KLOG_ERROR, "audio: HDA stream reset deassert timeout");
         return false;
     }
-    klog(KLOG_DEBUG, "audio: HDA stream reset deasserted");
+    audio_dbg("audio: HDA stream reset deasserted");
     return true;
 }
 
 static bool reset_controller(void) {
-    klogf(KLOG_DEBUG, "audio: HDA reset begin GCTL=0x%08x", read32(HDA_GCTL));
+    audio_dbgf("audio: HDA reset begin GCTL=0x%08x", read32(HDA_GCTL));
     write32(HDA_GCTL, read32(HDA_GCTL) & ~HDA_GCTL_RESET);
     if (!wait_reset_state(false)) {
         klogf(KLOG_ERROR, "audio: HDA reset deassert timeout GCTL=0x%08x",
@@ -226,13 +230,13 @@ static bool reset_controller(void) {
               read32(HDA_GCTL));
         return false;
     }
-    klogf(KLOG_DEBUG, "audio: HDA reset complete GCTL=0x%08x STATESTS=0x%04x",
+    audio_dbgf("audio: HDA reset complete GCTL=0x%08x STATESTS=0x%04x",
           read32(HDA_GCTL), read16(HDA_STATESTS));
     return true;
 }
 
 static bool setup_command_ring(void) {
-    klog(KLOG_DEBUG, "audio: HDA command ring setup begin");
+    audio_dbg("audio: HDA command ring setup begin");
     uint64_t corb_address = physical_address(corb);
     uint64_t rirb_address = physical_address(rirb);
     write8(HDA_CORBCTL, 0);
@@ -252,7 +256,7 @@ static bool setup_command_ring(void) {
     write8(HDA_RIRBCTL, 0x02);
     bool ready = (read8(HDA_CORBCTL) & 0x02) != 0
         && (read8(HDA_RIRBCTL) & 0x02) != 0;
-    klogf(KLOG_DEBUG, "audio: HDA ring pointers reset corbrp=0x%04x rirbwp=0x%04x",
+    audio_dbgf("audio: HDA ring pointers reset corbrp=0x%04x rirbwp=0x%04x",
           read16(HDA_CORBRP), read16(HDA_RIRBWP));
     klogf(ready ? KLOG_DEBUG : KLOG_ERROR,
           "audio: HDA CORB/RIRB corb=0x%llx rirb=0x%llx size=0x%04x ctl=0x%04x/0x%04x ready=%u",
@@ -269,13 +273,12 @@ static bool send_verb(uint32_t verb, uint32_t *response) {
     uint8_t node = (uint8_t)((verb >> 20) & 0x7F);
     uint16_t command = (uint16_t)((verb >> 8) & 0x0FFF);
     uint8_t payload = (uint8_t)verb;
-    klogf(KLOG_DEBUG,
-          "audio: HDA VERB OUT raw=0x%08x codec=%u node=0x%02x verb=0x%03x payload=0x%02x slot=%u",
+    audio_dbgf("audio: HDA VERB OUT raw=0x%08x codec=%u node=0x%02x verb=0x%03x payload=0x%02x slot=%u",
           verb, codec, node, command, payload, next_write);
     trace_ring("before-submit");
     corb[next_write] = verb;
     write16(HDA_CORBWP, next_write);
-    klogf(KLOG_DEBUG, "audio: HDA CORB[%u] phys=0x%llx value=0x%08x",
+    audio_dbgf("audio: HDA CORB[%u] phys=0x%llx value=0x%08x",
           next_write, physical_address(&corb[next_write]), corb[next_write]);
     trace_ring("after-submit");
     for (uint32_t wait = 0; wait < HDA_TIMEOUT; wait++) {
@@ -287,14 +290,12 @@ static bool send_verb(uint32_t verb, uint32_t *response) {
             uint32_t response_extended = (uint32_t)(response_entry >> 32);
             if (response) {
                 *response = response_value;
-                klogf(KLOG_DEBUG,
-                      "audio: HDA VERB IN raw=0x%08x extended=0x%08x unsolicited=%u response_slot=%u phys=0x%llx",
+                audio_dbgf("audio: HDA VERB IN raw=0x%08x extended=0x%08x unsolicited=%u response_slot=%u phys=0x%llx",
                       *response, response_extended,
                       (response_extended & 0x10) != 0 ? 1 : 0, response_index,
                       physical_address(&rirb[response_index]));
             } else {
-                klogf(KLOG_DEBUG,
-                      "audio: HDA VERB ACK raw=0x%08x extended=0x%08x unsolicited=%u slot=%u",
+                audio_dbgf("audio: HDA VERB ACK raw=0x%08x extended=0x%08x unsolicited=%u slot=%u",
                       response_value, response_extended,
                       (response_extended & 0x10) != 0 ? 1 : 0,
                       response_index);
@@ -312,7 +313,7 @@ static bool send_verb(uint32_t verb, uint32_t *response) {
 }
 
 static bool codec_parameter(uint8_t node, uint8_t parameter, uint32_t *value) {
-    klogf(KLOG_DEBUG, "audio: codec%u GET_PARAMETER node=0x%02x parameter=0x%02x",
+    audio_dbgf("audio: codec%u GET_PARAMETER node=0x%02x parameter=0x%02x",
           codec_address, node, parameter);
     return send_verb(((uint32_t)codec_address << 28)
                      | ((uint32_t)node << 20)
@@ -321,7 +322,7 @@ static bool codec_parameter(uint8_t node, uint8_t parameter, uint32_t *value) {
 }
 
 static bool codec_command(uint8_t node, uint16_t verb, uint16_t payload) {
-    klogf(KLOG_DEBUG, "audio: codec%u command node=0x%02x verb=0x%03x payload=0x%04x",
+    audio_dbgf("audio: codec%u command node=0x%02x verb=0x%03x payload=0x%04x",
           codec_address, node, verb, payload);
     return send_verb(((uint32_t)codec_address << 28)
                      | ((uint32_t)node << 20)
@@ -330,8 +331,7 @@ static bool codec_command(uint8_t node, uint16_t verb, uint16_t payload) {
 
 static bool codec_read_command(uint8_t node, uint16_t verb, uint8_t payload,
                                uint32_t *response) {
-    klogf(KLOG_DEBUG,
-          "audio: codec%u read command node=0x%02x verb=0x%03x payload=0x%02x",
+    audio_dbgf("audio: codec%u read command node=0x%02x verb=0x%03x payload=0x%02x",
           codec_address, node, verb, payload);
     return send_verb(((uint32_t)codec_address << 28)
                      | ((uint32_t)node << 20)
@@ -350,8 +350,7 @@ static bool find_audio_function_group(uint32_t root_subnodes,
                                       uint8_t *function_group) {
     uint8_t first_group = subnode_start(root_subnodes);
     uint8_t group_count = subnode_count(root_subnodes);
-    klogf(KLOG_DEBUG,
-          "audio: codec%u function groups start=%u count=%u raw=0x%08x",
+    audio_dbgf("audio: codec%u function groups start=%u count=%u raw=0x%08x",
           codec_address, first_group, group_count, root_subnodes);
     for (uint8_t index = 0; index < group_count; index++) {
         uint8_t node = (uint8_t)(first_group + index);
@@ -362,8 +361,7 @@ static bool find_audio_function_group(uint32_t root_subnodes,
                   codec_address, node);
             continue;
         }
-        klogf(KLOG_DEBUG,
-              "audio: codec%u function group node=%u type=0x%08x audio=%u",
+        audio_dbgf("audio: codec%u function group node=%u type=0x%08x audio=%u",
               codec_address, node, type,
               (type & 0xFF) == HDA_FUNCTION_GROUP_AUDIO ? 1 : 0);
         if ((type & 0xFF) == HDA_FUNCTION_GROUP_AUDIO) {
@@ -449,8 +447,7 @@ static bool read_connection_nid(uint8_t node, uint8_t index, uint8_t *nid) {
         range = (encoded & 0x80) != 0;
         *nid = (uint8_t)(encoded & 0x7F);
     }
-    klogf(KLOG_DEBUG,
-          "audio: codec%u node=%u connection index=%u request=%u response=0x%08x encoded=0x%x nid=%u range=%u long=%u",
+    audio_dbgf("audio: codec%u node=%u connection index=%u request=%u response=0x%08x encoded=0x%x nid=%u range=%u long=%u",
           codec_address, node, index, request_index, response, encoded, *nid,
           range ? 1 : 0, long_form ? 1 : 0);
     if (range) {
@@ -479,8 +476,7 @@ static uint32_t discover_routes_from_node(
         return 0;
     }
     uint8_t count = connection_count(widget_connections[node]);
-    klogf(KLOG_DEBUG,
-          "audio: codec%u route walk pin=%u node=%u type=%u depth=%u connections=%u",
+    audio_dbgf("audio: codec%u route walk pin=%u node=%u type=%u depth=%u connections=%u",
           codec_address, pin, node, widget_types[node], depth, count);
     uint32_t found = 0;
     for (uint8_t index = 0; index < count; index++) {
@@ -572,7 +568,7 @@ static bool discover_codec(void) {
         uint32_t connection_length = 0;
         bool connection_query = codec_parameter(
             node, HDA_PARAMETER_CONNECTION_LIST_LENGTH, &connection_length);
-        klogf(KLOG_DEBUG, "audio: codec%u node%u caps=0x%08x type=0x%x connections=0x%08x",
+        audio_dbgf("audio: codec%u node%u caps=0x%08x type=0x%x connections=0x%08x",
               codec_address, node, capabilities, type, connection_length);
         if (node < HDA_MAX_CODEC_NODES) {
             widget_present[node] = true;
@@ -595,7 +591,7 @@ static bool discover_codec(void) {
             uint32_t pin_capabilities = 0;
             if (codec_parameter(node, HDA_PARAMETER_PIN_CAPS,
                                 &pin_capabilities)) {
-                klogf(KLOG_DEBUG, "audio: codec%u node%u pin caps=0x%08x output=%u",
+                audio_dbgf("audio: codec%u node%u pin caps=0x%08x output=%u",
                       codec_address, node, pin_capabilities,
                       (pin_capabilities & HDA_PIN_CAP_OUTPUT) != 0 ? 1 : 0);
                 if ((pin_capabilities & HDA_PIN_CAP_OUTPUT) != 0) {
@@ -623,8 +619,7 @@ static bool discover_codec(void) {
                               codec_address, node);
                     }
                 } else {
-                    klogf(KLOG_DEBUG,
-                          "audio: codec%u pin node=%u rejected reason=NOT_OUTPUT_CAPABLE",
+                    audio_dbgf("audio: codec%u pin node=%u rejected reason=NOT_OUTPUT_CAPABLE",
                           codec_address, node);
                 }
             } else {
@@ -633,8 +628,7 @@ static bool discover_codec(void) {
                       codec_address, node);
             }
         } else if (type != HDA_WIDGET_AUDIO_OUTPUT) {
-            klogf(KLOG_DEBUG,
-                  "audio: codec%u node=%u not an output endpoint widget_type=0x%x",
+            audio_dbgf("audio: codec%u node=%u not an output endpoint widget_type=0x%x",
                   codec_address, node, type);
         }
     }
@@ -709,8 +703,7 @@ static uint8_t amp_zero_db_gain(uint8_t node, uint8_t parameter,
         return 0;
     }
     uint8_t gain = (uint8_t)(capabilities & 0x7F);
-    klogf(KLOG_DEBUG,
-          "audio: codec%u amp caps widget=%u capability_node=%u parameter=0x%02x raw=0x%08x zero_db_gain=%u steps=%u step_size=%u mute=%u",
+    audio_dbgf("audio: codec%u amp caps widget=%u capability_node=%u parameter=0x%02x raw=0x%08x zero_db_gain=%u steps=%u step_size=%u mute=%u",
           codec_address, node, capability_node, parameter, capabilities, gain,
           (capabilities >> 8) & 0x7F, (capabilities >> 16) & 0x7F,
           capabilities >> 31);
@@ -731,13 +724,11 @@ static bool unmute_route_widget(uint8_t node, uint8_t connection,
                   codec_address, node, connection, payload);
             ready = false;
         } else {
-            klogf(KLOG_DEBUG,
-                  "audio: codec%u input amp unmuted node=%u connection=%u payload=0x%04x",
+            audio_dbgf("audio: codec%u input amp unmuted node=%u connection=%u payload=0x%04x",
                   codec_address, node, connection, payload);
         }
     } else {
-        klogf(KLOG_DEBUG,
-              "audio: codec%u node=%u has no input amp",
+        audio_dbgf("audio: codec%u node=%u has no input amp",
               codec_address, node);
     }
     if ((capabilities & HDA_WIDGET_CAP_OUTPUT_AMP) != 0) {
@@ -750,13 +741,11 @@ static bool unmute_route_widget(uint8_t node, uint8_t connection,
                   codec_address, node);
             ready = false;
         } else {
-            klogf(KLOG_DEBUG,
-                  "audio: codec%u output amp unmuted node=%u payload=0x%04x",
+            audio_dbgf("audio: codec%u output amp unmuted node=%u payload=0x%04x",
                   codec_address, node, payload);
         }
     } else {
-        klogf(KLOG_DEBUG,
-              "audio: codec%u node=%u has no output amp",
+        audio_dbgf("audio: codec%u node=%u has no output amp",
               codec_address, node);
     }
     return ready;
@@ -800,12 +789,10 @@ static bool configure_codec(const struct hda_output_device_info *device) {
                       node, connection);
                 return false;
             }
-            klogf(KLOG_DEBUG,
-                  "audio: route connection selected node=%u index=%u",
+            audio_dbgf("audio: route connection selected node=%u index=%u",
                   node, connection);
         } else {
-            klogf(KLOG_DEBUG,
-                  "audio: route node=%u has a single connection index=%u",
+            audio_dbgf("audio: route node=%u has a single connection index=%u",
                   node, connection);
         }
         if (!unmute_route_widget(node, connection, capabilities)) {
@@ -816,18 +803,17 @@ static bool configure_codec(const struct hda_output_device_info *device) {
         klog(KLOG_ERROR, "audio: failed to enable output pin");
         return false;
     }
-    klogf(KLOG_DEBUG, "audio: route stage=PIN_OUTPUT_ENABLE result=OK pin=%u",
+    audio_dbgf("audio: route stage=PIN_OUTPUT_ENABLE result=OK pin=%u",
           pin_node);
     if ((device->pin_capabilities & HDA_PIN_CAP_EAPD) != 0) {
         if (!codec_command(pin_node, HDA_VERB_SET_EAPD_BTL, 0x02)) {
             klog(KLOG_ERROR, "audio: failed to enable codec amplifier");
             return false;
         }
-        klogf(KLOG_DEBUG, "audio: route stage=EAPD_ENABLE result=OK pin=%u",
+        audio_dbgf("audio: route stage=EAPD_ENABLE result=OK pin=%u",
               pin_node);
     } else {
-        klogf(KLOG_DEBUG,
-              "audio: route stage=EAPD_ENABLE skipped pin=%u reason=NOT_SUPPORTED",
+        audio_dbgf("audio: route stage=EAPD_ENABLE skipped pin=%u reason=NOT_SUPPORTED",
               pin_node);
     }
     if (!codec_command(dac_node, HDA_VERB_SET_CONVERTER_STREAM_CHANNEL,
@@ -835,15 +821,13 @@ static bool configure_codec(const struct hda_output_device_info *device) {
         klog(KLOG_ERROR, "audio: failed to bind DAC to output stream");
         return false;
     }
-    klogf(KLOG_DEBUG,
-          "audio: route stage=STREAM_BIND result=OK dac=%u tag=%u channel=0",
+    audio_dbgf("audio: route stage=STREAM_BIND result=OK dac=%u tag=%u channel=0",
           dac_node, HDA_STREAM_TAG);
     if (!codec_command(dac_node, HDA_VERB_SET_STREAM_FORMAT, HDA_PCM_FORMAT)) {
         klog(KLOG_ERROR, "audio: failed to set DAC stream format");
         return false;
     }
-    klogf(KLOG_DEBUG,
-          "audio: route stage=FORMAT result=OK dac=%u format=0x%04x",
+    audio_dbgf("audio: route stage=FORMAT result=OK dac=%u format=0x%04x",
           dac_node, HDA_PCM_FORMAT);
     uint32_t dac_capabilities = 0;
     if (!codec_parameter(dac_node, HDA_PARAMETER_WIDGET_CAPS,
@@ -860,7 +844,7 @@ static bool configure_codec(const struct hda_output_device_info *device) {
             return false;
         }
     } else {
-        klogf(KLOG_DEBUG, "audio: DAC node=%u has no output amplifier",
+        audio_dbgf("audio: DAC node=%u has no output amplifier",
               dac_node);
     }
     klogf(KLOG_OK,
@@ -880,12 +864,11 @@ static bool configure_stream(void) {
           "audio: HDA output stream selected descriptor=%u offset=0x%x inputs=%u outputs=%u",
           controller.input_streams, stream_offset, controller.input_streams,
           controller.output_streams);
-    klogf(KLOG_DEBUG,
-          "audio: HDA DMA layout pcm_virt=0x%llx pcm_phys=0x%llx bdl_virt=0x%llx bdl_phys=0x%llx bytes=%u",
+    audio_dbgf("audio: HDA DMA layout pcm_virt=0x%llx pcm_phys=0x%llx bdl_virt=0x%llx bdl_phys=0x%llx bytes=%u",
           (uint64_t)(uintptr_t)pcm_buffer, pcm_address,
           (uint64_t)(uintptr_t)bdl, bdl_address, HDA_PCM_BYTES * 2U);
     uint32_t control = read_stream_control(stream);
-    klogf(KLOG_DEBUG, "audio: HDA stream before ctl=0x%08x sts=0x%02x lpib=0x%08x",
+    audio_dbgf("audio: HDA stream before ctl=0x%08x sts=0x%02x lpib=0x%08x",
           control, *(volatile uint8_t *)(stream + 0x03),
           *(volatile uint32_t *)(stream + 0x04));
     if (!reset_stream(stream)) {
@@ -897,33 +880,32 @@ static bool configure_stream(void) {
     bdl[1].address = pcm_address + HDA_PCM_BYTES;
     bdl[1].length = HDA_PCM_BYTES;
     bdl[1].flags = 0;
-    klogf(KLOG_DEBUG,
-          "audio: HDA BDL[0] addr=0x%llx length=%u flags=0x%x BDL[1] addr=0x%llx length=%u flags=0x%x",
+    audio_dbgf("audio: HDA BDL[0] addr=0x%llx length=%u flags=0x%x BDL[1] addr=0x%llx length=%u flags=0x%x",
           bdl[0].address, bdl[0].length, bdl[0].flags, bdl[1].address,
           bdl[1].length, bdl[1].flags);
     *(volatile uint32_t *)(stream + HDA_STREAM_CBL) = HDA_PCM_BYTES * 2U;
-    klogf(KLOG_DEBUG, "audio: HDA stream CBL write=%u readback=%u",
+    audio_dbgf("audio: HDA stream CBL write=%u readback=%u",
           HDA_PCM_BYTES * 2U,
           *(volatile uint32_t *)(stream + HDA_STREAM_CBL));
     *(volatile uint16_t *)(stream + HDA_STREAM_LVI) = 1;
-    klogf(KLOG_DEBUG, "audio: HDA stream LVI write=1 readback=%u",
+    audio_dbgf("audio: HDA stream LVI write=1 readback=%u",
           *(volatile uint16_t *)(stream + HDA_STREAM_LVI));
     *(volatile uint16_t *)(stream + HDA_STREAM_FMT) = HDA_PCM_FORMAT;
-    klogf(KLOG_DEBUG, "audio: HDA stream FMT write=0x%04x readback=0x%04x",
+    audio_dbgf("audio: HDA stream FMT write=0x%04x readback=0x%04x",
           HDA_PCM_FORMAT, *(volatile uint16_t *)(stream + HDA_STREAM_FMT));
     *(volatile uint32_t *)(stream + HDA_STREAM_BDPL) = (uint32_t)bdl_address;
-    klogf(KLOG_DEBUG, "audio: HDA stream BDPL write=0x%08x readback=0x%08x",
+    audio_dbgf("audio: HDA stream BDPL write=0x%08x readback=0x%08x",
           (uint32_t)bdl_address,
           *(volatile uint32_t *)(stream + HDA_STREAM_BDPL));
     *(volatile uint32_t *)(stream + HDA_STREAM_BDPU) = (uint32_t)(bdl_address >> 32);
-    klogf(KLOG_DEBUG, "audio: HDA stream BDPU write=0x%08x readback=0x%08x",
+    audio_dbgf("audio: HDA stream BDPU write=0x%08x readback=0x%08x",
           (uint32_t)(bdl_address >> 32),
           *(volatile uint32_t *)(stream + HDA_STREAM_BDPU));
     *(volatile uint8_t *)(stream + HDA_STREAM_STS) = 0x1C;
-    klogf(KLOG_DEBUG, "audio: HDA stream status cleared readback=0x%02x",
+    audio_dbgf("audio: HDA stream status cleared readback=0x%02x",
           *(volatile uint8_t *)(stream + HDA_STREAM_STS));
     write_stream_control(stream, (uint32_t)HDA_STREAM_TAG << 20);
-    klogf(KLOG_DEBUG, "audio: HDA stream programmed base=0x%x ctl=0x%08x cbl=%u lvi=%u fmt=0x%04x bdl=0x%llx",
+    audio_dbgf("audio: HDA stream programmed base=0x%x ctl=0x%08x cbl=%u lvi=%u fmt=0x%04x bdl=0x%llx",
           stream_offset, read_stream_control(stream),
           HDA_PCM_BYTES * 2U, 1, HDA_PCM_FORMAT, bdl_address);
     return true;
@@ -931,8 +913,7 @@ static bool configure_stream(void) {
 
 static void deactivate_current_output(void) {
     if (selected_output_index >= output_device_count) {
-        klog(KLOG_DEBUG,
-             "audio: HDA deactivate skipped reason=NO_SELECTED_OUTPUT");
+        audio_dbg("audio: HDA deactivate skipped reason=NO_SELECTED_OUTPUT");
         return;
     }
     struct hda_output_device_info *device =
@@ -955,8 +936,7 @@ static void deactivate_current_output(void) {
               "audio: HDA previous pin disable failed codec=%u pin=%u",
               device->codec_address, device->pin_node);
     } else {
-        klogf(KLOG_DEBUG,
-              "audio: HDA previous pin disabled codec=%u pin=%u",
+        audio_dbgf("audio: HDA previous pin disabled codec=%u pin=%u",
               device->codec_address, device->pin_node);
     }
 }
@@ -1034,11 +1014,10 @@ static bool setup_pcm(void) {
         return false;
     }
     for (uint8_t address = 0; address < 15; address++) {
-        klogf(KLOG_DEBUG, "audio: HDA checking codec address=%u present=%u",
+        audio_dbgf("audio: HDA checking codec address=%u present=%u",
               address, (state & (1U << address)) != 0 ? 1 : 0);
         if ((state & (1U << address)) == 0) {
-            klogf(KLOG_DEBUG,
-                  "audio: codec address=%u skipped reason=STATESTS_NOT_PRESENT",
+            audio_dbgf("audio: codec address=%u skipped reason=STATESTS_NOT_PRESENT",
                   address);
             continue;
         }
@@ -1075,8 +1054,7 @@ static bool setup_pcm(void) {
 
 static void inspect_audio_device(const struct pci_device_info *device, void *context) {
     (void)context;
-    klogf(KLOG_DEBUG,
-          "audio: PCI inspect %u:%u.%u id=%04x:%04x class=%02x/%02x prog=%02x hda=%u already_selected=%u",
+    audio_dbgf("audio: PCI inspect %u:%u.%u id=%04x:%04x class=%02x/%02x prog=%02x hda=%u already_selected=%u",
           device->bus, device->slot, device->function, device->vendor_id,
           device->device_id, device->class_code, device->subclass,
           device->programming_interface,
@@ -1085,8 +1063,7 @@ static void inspect_audio_device(const struct pci_device_info *device, void *con
           present ? 1 : 0);
     if (device->class_code != PCI_CLASS_MULTIMEDIA
         || device->subclass != PCI_SUBCLASS_HDA) {
-        klogf(KLOG_DEBUG,
-              "audio: PCI device %u:%u.%u rejected reason=NOT_HDA_CLASS",
+        audio_dbgf("audio: PCI device %u:%u.%u rejected reason=NOT_HDA_CLASS",
               device->bus, device->slot, device->function);
         return;
     }
@@ -1107,12 +1084,12 @@ static void inspect_audio_device(const struct pci_device_info *device, void *con
     controller.slot = device->slot;
     controller.function = device->function;
     uint32_t command = pci_read_config32(device->bus, device->slot, device->function, 0x04);
-    klogf(KLOG_DEBUG, "audio: HDA PCI command before=0x%08x request=0x%08x",
+    audio_dbgf("audio: HDA PCI command before=0x%08x request=0x%08x",
           command, command | 0x00000006);
     pci_write_config32(device->bus, device->slot, device->function, 0x04, command | 0x00000006);
     uint32_t command_after = pci_read_config32(
         device->bus, device->slot, device->function, 0x04);
-    klogf(KLOG_DEBUG, "audio: HDA PCI command readback=0x%08x mem=%u busmaster=%u",
+    audio_dbgf("audio: HDA PCI command readback=0x%08x mem=%u busmaster=%u",
           command_after, (command_after & 0x02) != 0 ? 1 : 0,
           (command_after & 0x04) != 0 ? 1 : 0);
     uint64_t bar0 = pci_read_bar(device->bus, device->slot, device->function, 0);
@@ -1138,8 +1115,7 @@ static void inspect_audio_device(const struct pci_device_info *device, void *con
     klogf(KLOG_INFO, "audio: HDA PCI %u:%u.%u command 0x%08x BAR0=0x%llx GCAP=0x%04x version=%u.%u",
           device->bus, device->slot, device->function, command_after,
           bar0, capabilities, controller.major_version, controller.minor_version);
-    klogf(KLOG_DEBUG,
-          "audio: HDA initial registers GCTL=0x%08x STATESTS=0x%04x CORBCTL=0x%02x RIRBCTL=0x%02x CORBSIZE=0x%02x",
+    audio_dbgf("audio: HDA initial registers GCTL=0x%08x STATESTS=0x%04x CORBCTL=0x%02x RIRBCTL=0x%02x CORBSIZE=0x%02x",
           read32(HDA_GCTL), read16(HDA_STATESTS), read8(HDA_CORBCTL),
           read8(HDA_RIRBCTL), read8(HDA_CORBSIZE));
 }
@@ -1166,7 +1142,7 @@ void hda_init(void) {
     selected_output_index = HDA_NO_OUTPUT_DEVICE;
     memset(&controller, 0, sizeof(controller));
     memset(output_devices, 0, sizeof(output_devices));
-    klog(KLOG_DEBUG, "audio: HDA state cleared; starting full PCI enumeration");
+    audio_dbg("audio: HDA state cleared; starting full PCI enumeration");
     pci_enumerate(inspect_audio_device, 0);
     if (!present) {
         klog(KLOG_WARN, "audio: no Intel HDA controller found on PCI");
@@ -1193,13 +1169,13 @@ bool hda_pcm_output_ready(void) {
 }
 
 uint32_t hda_output_device_count(void) {
-    klogf(KLOG_DEBUG, "audio: HDA output device count query result=%u",
+    audio_dbgf("audio: HDA output device count query result=%u",
           output_device_count);
     return output_device_count;
 }
 
 uint32_t hda_selected_output_device(void) {
-    klogf(KLOG_DEBUG, "audio: HDA selected output query result=%u",
+    audio_dbgf("audio: HDA selected output query result=%u",
           selected_output_index);
     return selected_output_index;
 }
@@ -1212,14 +1188,12 @@ bool hda_get_output_device(uint32_t index, struct hda_output_device_info *out) {
         return false;
     }
     if (index >= output_device_count) {
-        klogf(KLOG_DEBUG,
-              "audio: HDA get output device miss index=%u count=%u",
+        audio_dbgf("audio: HDA get output device miss index=%u count=%u",
               index, output_device_count);
         return false;
     }
     *out = output_devices[index];
-    klogf(KLOG_DEBUG,
-          "audio: HDA get output device index=%u codec=%u group=%u dac=%u pin=%u config=0x%08x",
+    audio_dbgf("audio: HDA get output device index=%u codec=%u group=%u dac=%u pin=%u config=0x%08x",
           index, out->codec_address, out->function_group_node, out->dac_node,
           out->pin_node, out->default_configuration);
     return true;
@@ -1300,7 +1274,7 @@ bool hda_play_tone(uint16_t frequency_hz, uint8_t volume) {
         return false;
     }
     uint32_t amplitude = (32767U * volume) / 100U;
-    klogf(KLOG_DEBUG, "audio: HDA PCM fill begin freq=%u volume=%u amplitude=%u bytes=%u",
+    audio_dbgf("audio: HDA PCM fill begin freq=%u volume=%u amplitude=%u bytes=%u",
           frequency_hz, volume, amplitude, HDA_PCM_BYTES * 2U);
     for (uint32_t frame = 0; frame < HDA_PCM_SAMPLES * 2U; frame++) {
         uint32_t phase = (uint32_t)(((uint64_t)frame * frequency_hz) % HDA_PCM_RATE);
@@ -1388,7 +1362,7 @@ uint32_t hda_pcm_position(void) {
 
 void hda_stop_tone(void) {
     if (!pcm_ready || !regs) {
-        klogf(KLOG_DEBUG, "audio: HDA stop ignored pcm_ready=%u regs=%u",
+        audio_dbgf("audio: HDA stop ignored pcm_ready=%u regs=%u",
               pcm_ready ? 1 : 0, regs ? 1 : 0);
         return;
     }
@@ -1399,7 +1373,7 @@ void hda_stop_tone(void) {
     if (!wait_stream_control(stream, HDA_STREAM_RUN, false)) {
         klog(KLOG_ERROR, "audio: HDA PCM RUN clear timeout during stop");
     }
-    klogf(KLOG_DEBUG, "audio: HDA PCM stream STOP ctl=0x%08x sts=0x%02x",
+    audio_dbgf("audio: HDA PCM stream STOP ctl=0x%08x sts=0x%02x",
           read_stream_control(stream),
           *(volatile uint8_t *)(stream + 0x03));
     trace_stream_status("after-stop", stream);

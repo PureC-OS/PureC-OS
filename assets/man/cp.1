@@ -1,0 +1,42 @@
+NAME
+       cp - copy files and directories
+
+SYNOPSIS
+       cp [OPTION]... SOURCE DEST
+       cp [OPTION]... SOURCE... DIRECTORY
+
+DESCRIPTION
+       Copy SOURCE to DEST, or multiple SOURCEs into DIRECTORY. Permissions of
+       the source are kept.
+
+OPTIONS
+       -r, -R, --recursive
+           copy directories recursively
+
+       -p
+           preserve modification and access times
+
+       -a
+           archive mode, same as -rp
+
+       -n
+           do not overwrite an existing file
+
+       -i
+           prompt before overwrite
+
+       -f
+           force; accepted for compatibility
+
+       -v
+           explain what is being done
+
+       -t DIR
+           copy all SOURCE arguments into DIR
+
+EXAMPLES
+       cp notes.txt /root/backup/
+       cp -rv /usr/share/man /root/man-copy
+
+SEE ALSO
+       mv(1), rm(1), install(1)

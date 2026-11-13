@@ -201,8 +201,8 @@ int uname(struct utsname *name)
     memset(name, 0, sizeof(*name));
     strcpy(name->sysname, "PureC");
     strcpy(name->nodename, "purec");
-    strcpy(name->release, "1.0");
-    strcpy(name->version, "purec-os");
+    strcpy(name->release, "1.2.29");
+    strcpy(name->version, "#1 SMP PureC OS");
     strcpy(name->machine, "x86_64");
     char host[64];
     if (pc_getenv("HOSTNAME", host, sizeof(host)) > 0)
@@ -470,5 +470,42 @@ int getloadavg(double loadavg[], int count)
 {
     (void)loadavg;
     (void)count;
+    return -1;
+}
+
+#include "include/hosted/sys/statvfs.h"
+
+int statvfs(const char *path, struct statvfs *info)
+{
+    if (!path || !info)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    struct ext2_super_info super;
+    if (pc_ext2_super(&super) < 0 || !super.block_size)
+    {
+        errno = ENOSYS;
+        return -1;
+    }
+    memset(info, 0, sizeof(*info));
+    info->f_bsize = super.block_size;
+    info->f_frsize = super.block_size;
+    info->f_blocks = super.total_blocks;
+    info->f_bfree = super.free_blocks;
+    info->f_bavail = super.free_blocks;
+    info->f_files = super.total_inodes;
+    info->f_ffree = super.free_inodes;
+    info->f_favail = super.free_inodes;
+    info->f_fsid = super.magic;
+    info->f_namemax = 255;
+    return 0;
+}
+
+int fstatvfs(int fd, struct statvfs *info)
+{
+    (void)fd;
+    (void)info;
+    errno = ENOSYS;
     return -1;
 }

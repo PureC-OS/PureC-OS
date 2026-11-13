@@ -1,0 +1,29 @@
+NAME
+       tail - output the last part of files
+
+SYNOPSIS
+       tail [-n [+]N] [-c [+]N] [-f] [FILE]...
+
+DESCRIPTION
+       Print the last 10 lines of each FILE.
+
+OPTIONS
+       -n N, -N
+           output the last N lines; with +N start at line N
+
+       -c N
+           output the last N bytes; with +N start at byte N
+
+       -f, --follow
+           keep the file open and print data as it is appended; stop with
+           Ctrl+C
+
+       -q, -v
+           never or always print headers
+
+EXAMPLES
+       tail -n 20 /root/log.txt
+       tail -f /root/build.log
+
+SEE ALSO
+       head(1), less(1)

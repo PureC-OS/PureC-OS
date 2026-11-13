@@ -4,6 +4,9 @@
 
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 void *memcpy(void *destination, const void *source, size_t count);
 void *memmove(void *destination, const void *source, size_t count);
 void *memset(void *destination, int value, size_t count);
@@ -43,3 +46,6 @@ size_t strcspn(const char *text, const char *reject);
 char *strpbrk(const char *text, const char *accept);
 size_t strnlen(const char *text, size_t capacity);
 #include "strings.h"
+#ifdef __cplusplus
+}
+#endif

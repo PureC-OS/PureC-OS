@@ -101,7 +101,9 @@ uint32_t display_mode_index_of(uint32_t width, uint32_t height){
 bool display_load(struct display_settings *s){
     if(!s) return false;
     display_defaults(s);
-    int32_t descriptor=pf_open(DISPLAY_INI_PATH);
+    char cfg[192];
+    pc_config_path("display.ini",cfg,sizeof(cfg),false);
+    int32_t descriptor=pf_open(cfg);
     if(descriptor<0) return false;
     char buffer[128]={0};
     int32_t amount=pf_read(descriptor,buffer,sizeof(buffer)-1);
@@ -142,8 +144,9 @@ int32_t display_save(const struct display_settings *s){
     out=append_text(out,"\nscale=");
     out=append_u32(out,s->scale ? s->scale : 100);
     out=append_text(out,"\n");
-    (void)pf_create_dir(DISPLAY_INI_DIR);
-    return pf_write_file(DISPLAY_INI_PATH,buffer,(uint32_t)(out-buffer));
+    char cfg[192];
+    pc_config_path("display.ini",cfg,sizeof(cfg),true);
+    return pf_write_file(cfg,buffer,(uint32_t)(out-buffer));
 }
 
 int32_t display_apply_live(const struct display_settings *s){

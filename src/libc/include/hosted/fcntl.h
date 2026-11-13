@@ -13,6 +13,8 @@
 #define O_BINARY 0
 #define O_NONBLOCK 04000
 #define O_CLOEXEC 02000000
+#define O_DIRECTORY 0200000
+#define O_NOFOLLOW 0400000
 
 #define AT_FDCWD (-100)
 #define AT_SYMLINK_NOFOLLOW 0x100
@@ -26,6 +28,17 @@
 #define F_DUPFD_CLOEXEC 1030
 #define FD_CLOEXEC 1
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+#ifndef O_LARGEFILE
+#define O_LARGEFILE 0
+#endif
 int open(const char *path, int flags, ...);
+int openat(int dirfd, const char *path, int flags, ...);
 int creat(const char *path, int mode);
 int fcntl(int fd, int command, ...);
+int posix_fallocate(int fd, long offset, long length);
+#ifdef __cplusplus
+}
+#endif

@@ -1,0 +1,81 @@
+NAME
+       ls - list directory contents
+
+SYNOPSIS
+       ls [OPTION]... [FILE]...
+
+DESCRIPTION
+       List information about the FILEs (the current directory by default).
+       Entries are sorted alphabetically, ignoring leading dots and case. On a
+       terminal the output is arranged in columns that fit the window and names
+       are colored by type: directories blue, executables green, images
+       magenta, archives red, source files yellow.
+
+OPTIONS
+       -a, --all
+           do not ignore entries starting with ., including . and ..
+
+       -A, --almost-all
+           like -a, but without . and ..
+
+       -l
+           long listing: permissions, links, owner, group, size, modification
+           time and name
+
+       -h, --human-readable
+           with -l, print sizes like 1.5K, 23M, 2.1G
+
+       -1
+           one entry per line
+
+       -m
+           comma separated list
+
+       -R, --recursive
+           list subdirectories recursively
+
+       -d, --directory
+           list directories themselves, not their contents
+
+       -t
+           sort by modification time, newest first
+
+       -S
+           sort by file size, largest first
+
+       -X
+           sort by extension
+
+       -U
+           do not sort; list in directory order
+
+       -r, --reverse
+           reverse the sort order
+
+       -F, --classify
+           append indicator: / directory, * executable, @ link, | fifo, =
+           socket
+
+       -i, --inode
+           print the inode number of each file
+
+       -n
+           like -l, but list numeric user and group IDs
+
+       -o
+           like -l, but do not list the group
+
+       --group-directories-first
+           list directories before files
+
+       --color[=WHEN]
+           colorize names: always, auto (default) or never
+
+EXAMPLES
+       ls -lh /bin
+       ls -la ~
+       ls -lt --color=never | head
+       ls -R /usr/share
+
+SEE ALSO
+       tree(1), stat(1), find(1), du(1)

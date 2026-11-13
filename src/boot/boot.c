@@ -111,6 +111,8 @@ static void boot_parse_video_cmdline(const char *cmd) {
         return;
     if (cmd_contains(cmd, "video=gop") || cmd_contains(cmd, "nogpu") || cmd_contains(cmd, "video=safe"))
         boot_video_pref = 1;
+    else if (cmd_contains(cmd, "video=2d") || cmd_contains(cmd, "no3d"))
+        boot_video_pref = 3;
     else if (cmd_contains(cmd, "video=svga") || cmd_contains(cmd, "video=gpu"))
         boot_video_pref = 2;
 }

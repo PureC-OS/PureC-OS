@@ -1,3 +1,4 @@
+#include "user_config.h"
 #include "display_mode.h"
 #include "display.h"
 #include "userspace.h"
@@ -5,6 +6,7 @@
 #include "../drivers/display/gop.h"
 #include "../drivers/display/vbe.h"
 #include "../drivers/display/svga.h"
+#include "../drivers/display/svga3d.h"
 #include "../drivers/mouse/ps2_mouse.h"
 #include "../drivers/interrupts/timer.h"
 #include "../fs/vfs.h"
@@ -43,7 +45,9 @@ static bool display_mode_load_ex(uint32_t *width, uint32_t *height,
                                  uint8_t *bpp, uint32_t *scale){
     if(!vfs_is_root_mounted()) return false;
     if(!filesystem_syscall_acquire()) return false;
-    int32_t fd=vfs_open(DISPLAY_INI_PATH);
+    char path[192];
+    user_config_path("display.ini",path,sizeof(path),false);
+    int32_t fd=vfs_open(path);
     char buffer[128];
     int32_t total=0;
     if(fd>=0){
@@ -116,8 +120,10 @@ static void write_back_ini(uint32_t width, uint32_t height, uint8_t bpp){
     *out='\0';
     if(!vfs_is_root_mounted()) return;
     if(!filesystem_syscall_acquire()) return;
-    (void)vfs_write_file(DISPLAY_INI_PATH,buffer,
-                         (uint32_t)(out-buffer));
+    char path[192];
+    user_config_path("display.ini",path,sizeof(path),true);
+    if(vfs_write_file(path,buffer,(uint32_t)(out-buffer))>=0)
+        user_config_claim(path);
     filesystem_syscall_unlock();
 }
 
@@ -155,11 +161,15 @@ static int display_mode_apply_low(uint32_t width, uint32_t height,
     }
     if(svga_is_available()){
         uint32_t sw=0,sh=0;
+        bool was3d=svga3d_active();
+        svga3d_screen_teardown();
         if(!svga_set_mode(width,height,&sw,&sh)){
             klogf(KLOG_ERROR,"display: SVGA rejected mode %ux%u",width,height);
             return -1;
         }
-        if(!gop_apply_live(svga_fb_virt(),sw,sh,svga_pitch_pixels(),32)){
+        void *front3d=was3d ? svga3d_screen_setup(sw,sh) : 0;
+        if(front3d ? !gop_apply_live(front3d,sw,sh,sw,32)
+                   : !gop_apply_live(svga_fb_virt(),sw,sh,svga_pitch_pixels(),32)){
             klog(KLOG_ERROR,"display: gop_apply_live failed (svga)");
             return -1;
         }

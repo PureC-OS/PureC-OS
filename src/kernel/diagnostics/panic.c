@@ -76,6 +76,7 @@ static void panic_header(const char *title, const char *file, int line,
   panic_active = true;
   smp_stop_others();
   klog_panic_mode();
+  gop_kernel_reclaim();
   gop_cancel_compose();
   compositor_panic_disable();
   klog_set_screen_enabled(true);

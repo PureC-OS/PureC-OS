@@ -1,0 +1,206 @@
+#include "../../libc/include/purec.h"
+#include <errno.h>
+#include <signal.h>
+#include <stdio.h>
+#include <syslog.h>
+#include <string.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+#define DHCPC_PATH "/bin/dhcpc"
+#define MAX_CHILDREN (NET_IF_MAX_COUNT + 4)
+
+struct service {
+    const char *slot;
+    const char *path;
+    const char *name;
+    const char *banner;
+    const char *give_up;
+};
+
+static const struct service services[] = {
+    {"@resolved", "/bin/resolved", "resolved", " on 127.0.0.1:53",
+     "programs fall back to direct DNS"},
+    {"@ntpd", "/bin/ntpd", "ntpd", " on UDP 123", "clock stays on the RTC"},
+};
+#define SERVICE_COUNT (sizeof(services) / sizeof(services[0]))
+
+struct child {
+    char name[NET_IF_NAME_CAPACITY];
+    pid_t pid;
+    unsigned failures;
+    time_t retry_at;
+    time_t started_at;
+    bool given_up;
+};
+
+static struct child children[MAX_CHILDREN];
+static volatile sig_atomic_t stop;
+
+static void on_term(int sig)
+{
+    (void)sig;
+    stop = 1;
+}
+
+static struct child *slot_for(const char *name, bool create)
+{
+    for (int i = 0; i < MAX_CHILDREN; i++)
+        if (children[i].name[0] && strcmp(children[i].name, name) == 0)
+            return &children[i];
+    if (!create)
+        return 0;
+    for (int i = 0; i < MAX_CHILDREN; i++)
+        if (!children[i].name[0]) {
+            memset(&children[i], 0, sizeof(children[i]));
+            snprintf(children[i].name, sizeof(children[i].name), "%s", name);
+            return &children[i];
+        }
+    return 0;
+}
+
+static void kernel_dhcp(const char *name, uint32_t op)
+{
+    struct net_if_config c;
+    memset(&c, 0, sizeof(c));
+    snprintf(c.name, sizeof(c.name), "%s", name);
+    c.op = op;
+    (void)pc_net_configure(&c);
+}
+
+static const struct service *service_of(const struct child *c)
+{
+    for (unsigned i = 0; i < SERVICE_COUNT; i++)
+        if (strcmp(c->name, services[i].slot) == 0)
+            return &services[i];
+    return 0;
+}
+
+static const char *label(const struct child *c, char *out, size_t cap)
+{
+    const struct service *svc = service_of(c);
+    if (svc)
+        snprintf(out, cap, "%s", svc->name);
+    else
+        snprintf(out, cap, "dhcpc for %s", c->name);
+    return out;
+}
+
+static void start(struct child *c)
+{
+    const struct service *svc = service_of(c);
+    if (svc && access(svc->path, X_OK) != 0) {
+        c->given_up = true;
+        syslog(LOG_WARNING, "%s not installed, skipped\n", svc->path);
+        return;
+    }
+    if (!svc)
+        kernel_dhcp(c->name, NET_CFG_DHCP_STOP);
+    c->started_at = time(0);
+    pid_t pid = fork();
+    if (pid == 0) {
+        const char *path = svc ? svc->path : DHCPC_PATH;
+        char *args[3] = {(char *)(svc ? svc->name : "dhcpc"), svc ? 0 : c->name, 0};
+        execv(path, args);
+        syslog(LOG_INFO, "cannot run %s: %s\n", path, strerror(errno));
+        _exit(127);
+    }
+    char what[48];
+    if (pid < 0) {
+        syslog(LOG_INFO, "fork failed for %s\n", label(c, what, sizeof(what)));
+        c->retry_at = time(0) + 5;
+        return;
+    }
+    c->pid = pid;
+    syslog(LOG_INFO, "started %s%s (pid %d)\n", label(c, what, sizeof(what)),
+           svc ? svc->banner : "", (int)pid);
+}
+
+static void reap(void)
+{
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        for (int i = 0; i < MAX_CHILDREN; i++) {
+            struct child *c = &children[i];
+            if (c->pid != pid)
+                continue;
+            c->pid = 0;
+            if (time(0) - c->started_at > 60)
+                c->failures = 0;
+            c->failures++;
+            const struct service *svc = service_of(c);
+            char what[48];
+            label(c, what, sizeof(what));
+            if (c->failures >= 3 && svc) {
+                c->given_up = true;
+                syslog(LOG_WARNING, "%s keeps failing, %s\n", what, svc->give_up);
+                continue;
+            }
+            if (c->failures >= 3) {
+                c->given_up = true;
+                kernel_dhcp(c->name, NET_CFG_DHCP_START);
+                syslog(LOG_INFO, "dhcpc for %s keeps failing, giving %s back to kernel DHCP\n",
+                       c->name, c->name);
+                continue;
+            }
+            unsigned delay = 2u << (c->failures < 5 ? c->failures : 5);
+            if (delay > 60)
+                delay = 60;
+            c->retry_at = time(0) + delay;
+            syslog(LOG_INFO, "%s exited (status %d), restart in %u s\n", what,
+                   WIFEXITED(status) ? WEXITSTATUS(status) : -1, delay);
+        }
+    }
+}
+
+static void scan(void)
+{
+    struct net_if_info list[NET_IF_MAX_COUNT];
+    int32_t n = pc_net_if_list(list, NET_IF_MAX_COUNT);
+    time_t now = time(0);
+    for (int32_t i = 0; i < n; i++) {
+        if (strcmp(list[i].name, "lo") == 0)
+            continue;
+        struct child *c = slot_for(list[i].name, true);
+        if (!c || c->pid || c->given_up || now < c->retry_at)
+            continue;
+        start(c);
+    }
+    for (unsigned i = 0; i < SERVICE_COUNT; i++) {
+        struct child *r = slot_for(services[i].slot, true);
+        if (r && !r->pid && !r->given_up && now >= r->retry_at)
+            start(r);
+    }
+}
+
+int main(void)
+{
+    int null_fd = open("/dev/null", O_RDWR);
+    if (null_fd >= 0) {
+        dup2(null_fd, 0);
+        dup2(null_fd, 1);
+        dup2(null_fd, 2);
+        if (null_fd > 2)
+            close(null_fd);
+    }
+    signal(SIGTERM, on_term);
+    signal(SIGINT, on_term);
+    syslog(LOG_INFO, "started (pid %d)\n", (int)getpid());
+    while (!stop) {
+        reap();
+        scan();
+        sleep(2);
+    }
+    for (int i = 0; i < MAX_CHILDREN; i++)
+        if (children[i].pid)
+            kill(children[i].pid, SIGTERM);
+    for (int i = 0; i < 50; i++) {
+        reap();
+        sleep(0);
+    }
+    syslog(LOG_INFO, "stopped\n");
+    return 0;
+}

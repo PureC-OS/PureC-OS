@@ -1,0 +1,33 @@
+NAME
+       xxd - make a hex dump
+
+SYNOPSIS
+       xxd [-pu] [-c COLS] [-l LEN] [-s OFFSET] [FILE]
+
+DESCRIPTION
+       Print a hex dump of FILE or standard input: offset, bytes in hex and
+       their printable characters. On a terminal printable bytes are green, NUL
+       bytes gray and the rest red.
+
+OPTIONS
+       -c COLS
+           bytes per line (default 16)
+
+       -l LEN
+           stop after LEN bytes
+
+       -s OFFSET
+           start at OFFSET
+
+       -p
+           plain continuous hex dump
+
+       -u
+           use upper case hex
+
+EXAMPLES
+       xxd /bin/ls | head
+       xxd -l 64 -s 0x40 disk.img
+
+SEE ALSO
+       cat(1)

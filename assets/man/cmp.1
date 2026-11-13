@@ -1,0 +1,22 @@
+NAME
+       cmp - compare two files byte by byte
+
+SYNOPSIS
+       cmp [-sl] FILE1 [FILE2]
+
+DESCRIPTION
+       Report the first byte and line where FILE1 and FILE2 differ. Exit status
+       0 if equal, 1 if different, 2 on error.
+
+OPTIONS
+       -s
+           print nothing, only return the exit status
+
+       -l
+           print every differing byte
+
+EXAMPLES
+       cmp a.bin b.bin
+
+SEE ALSO
+       diff(1)

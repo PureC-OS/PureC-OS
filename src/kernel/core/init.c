@@ -1,3 +1,5 @@
+#include <acpi/acpi.h>
+#include "../../drivers/net/iwx/iwx.h"
 #include "../../io/swap.h"
 #include "init.h"
 #include "../../drivers/input/i2c_hid_touchpad/i2c_hid_touchpad.h"
@@ -60,11 +62,18 @@ void init_process_start(void)
     scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
   journal_start();
   (void)purec_i2c_hid_touchpad_start();
+  acpi_ec_start_event_thread();
+  (void)iwx_start();
   int32_t net_pid = process_spawn_service(net_service_thread, 0, "net-rx", 2,
                                           -1, SCHED_QOS_UTILITY,
                                           PROCESS_CAP_NET_ADMIN);
   if (net_pid < 0)
     klog(KLOG_WARN, "net: failed to create service process");
+  int32_t netd_pid = process_spawn_module("/bin/netd", "");
+  if (netd_pid < 0)
+    klog(KLOG_INFO, "net: /bin/netd not started, kernel DHCP stays in charge");
+  else
+    klogf(KLOG_OK, "net: netd started as pid %d", netd_pid);
   if (qemu_network_test_requested())
   {
     int t = scheduler_create_thread(qemu_network_test_thread, 0,

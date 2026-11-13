@@ -1,0 +1,35 @@
+NAME
+       diff - compare files line by line
+
+SYNOPSIS
+       diff [-qiw] [-U N] FILE1 FILE2
+
+DESCRIPTION
+       Compare two text files and print the differences in unified format:
+       lines starting with - are only in FILE1, lines starting with + only in
+       FILE2. Colored on a terminal.
+
+OPTIONS
+       -q, --brief
+           report only whether the files differ
+
+       -i
+           ignore case
+
+       -w, -b
+           ignore white space
+
+       -U N
+           show N lines of context (default 3)
+
+       -u
+           unified format (always on)
+
+       --color[=WHEN]
+           colorize the output
+
+EXAMPLES
+       diff old.c new.c
+
+SEE ALSO
+       cmp(1)

@@ -1,184 +1,213 @@
-#include "settings/display_page.h"
-#include "../../../libgui/include/pguiw.h"
-#include "../../../libfs/include/purefs.h"
+#include "settings/app.h"
+#include "settings/fmt.h"
 #include "../../../libc/include/purec.h"
+#include "../../../libfs/include/purefs.h"
 
-#define PAGE_LEFT 198
-#define PAGE_TOP 80
-#define CARD_H 118
-#define CARD_GAP 12
-
-static int32_t g_last_apply_rc=0;
-static bool g_have_apply_rc=false;
-
-static char *append_text(char *out, const char *text){
-    while(*text) *out++=*text++;
-    *out='\0';
-    return out;
+static uint32_t gcd(uint32_t a, uint32_t b)
+{
+    while (b) {
+        uint32_t t = a % b;
+        a = b;
+        b = t;
+    }
+    return a ? a : 1;
 }
 
-static char *append_u32(char *out, uint32_t value){
-    char reverse[12];
-    uint32_t count=0;
-    do{
-        reverse[count++]=(char)('0'+value%10U);
-        value/=10U;
-    }while(value && count<sizeof(reverse));
-    while(count) *out++=reverse[--count];
-    *out='\0';
-    return out;
+static void aspect(struct fmt *f, uint32_t w, uint32_t h)
+{
+    uint32_t g = gcd(w, h);
+    uint32_t aw = w / g, ah = h / g;
+    if (aw > 21) {
+        static const uint32_t known[][2] = {{16, 9}, {16, 10}, {4, 3}, {5, 4}, {21, 9}, {3, 2}};
+        uint32_t best = 0, bestd = 0xffffffffu;
+        for (uint32_t i = 0; i < sizeof(known) / sizeof(known[0]); i++) {
+            uint32_t a1 = w * known[i][1], a2 = h * known[i][0];
+            uint32_t dd = a1 > a2 ? a1 - a2 : a2 - a1;
+            if (dd < bestd) {
+                bestd = dd;
+                best = i;
+            }
+        }
+        fc(f, '~');
+        aw = known[best][0];
+        ah = known[best][1];
+    }
+    if (aw == 8 && ah == 5) {
+        aw = 16;
+        ah = 10;
+    }
+    fu(f, aw);
+    fc(f, ':');
+    fu(f, ah);
 }
 
-static void commit(struct display_settings *display){
-    g_last_apply_rc=display_apply_live(display);
-    g_have_apply_rc=true;
-    if(g_last_apply_rc==0){
+static void apply(struct settings_app *app)
+{
+    struct display_settings *d = &app->display;
+    int32_t rc = display_apply_live(d);
+    if (rc == 0) {
         struct pc_display_scale phys;
         struct pc_display_info info;
-        if(pc_display_scale_info(&phys)){
-            display->width=phys.physical_width;
-            display->height=phys.physical_height;
-            display->scale=phys.scale_percent;
+        if (pc_display_scale_info(&phys)) {
+            d->width = phys.physical_width;
+            d->height = phys.physical_height;
+            d->scale = phys.scale_percent;
         }
-        if(pc_display_get_info(&info) && info.available)
-            display->bpp=info.bpp;
-        int32_t saved=display_save(display);
-        if(saved<0) g_last_apply_rc=saved;
+        if (pc_display_get_info(&info) && info.available)
+            d->bpp = info.bpp;
+        if (display_save(d) < 0)
+            settings_toast(app, "Applied, but could not save (read-only disk?)", 0xf9e2af);
+        else
+            settings_toast(app, "Display settings applied", 0xa6e3a1);
+    } else if (rc == -2) {
+        (void)display_load(d);
+        settings_toast(app, "Mode switching is not supported on this machine", 0xf38ba8);
     } else {
-        (void)display_load(display);
+        (void)display_load(d);
+        settings_toast(app, "Could not apply display mode", 0xf38ba8);
     }
 }
 
-void display_page_draw(struct pg_window *window,
-                       struct display_settings *display,
-                       const struct pg_event *event){
-    if(!window || !display) return;
-    uint32_t width=window->client.width-PAGE_LEFT-22;
-    pg_window_text(window,PAGE_LEFT,PAGE_TOP-2,"Display",
-                   window->theme.text);
-    pg_window_text(window,PAGE_LEFT,PAGE_TOP+12,
-                   "Resolution applies immediately, no reboot",
-                   window->theme.muted_text);
+static void monitor(struct page_ctx *p, int x, int y, int w, int h, uint32_t rw, uint32_t rh)
+{
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
+    int sw = w, sh = (int)((uint64_t)w * rh / (rw ? rw : 1));
+    if (sh > h - 30) {
+        sh = h - 30;
+        sw = (int)((uint64_t)sh * rw / (rh ? rh : 1));
+    }
+    int sx = x + (w - sw) / 2, sy = y;
+    pgc_rrect(u->c, sx - 8, sy - 8, sw + 16, sh + 16, 12, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
+    pgc_rrect_grad(u->c, sx, sy, sw, sh, 5, pgc_mix(pal->accent, 0x1e1b4b, 150),
+                  pgc_mix(pal->accent, 0x0f766e, 170), true);
+    int ww = sw * 45 / 100, wh = sh * 45 / 100;
+    pgc_rrect(u->c, sx + sw / 7, sy + sh / 5, ww, wh, 4, 0xffffff, 200);
+    pgc_fill_a(u->c, sx + sw / 7, sy + sh / 5, ww, 6, pal->accent, 200);
+    pgc_rrect(u->c, sx + sw / 2, sy + sh / 3, ww * 3 / 4, wh, 4, 0xffffff, 120);
+    pgc_fill_a(u->c, sx, sy + sh - 8, sw, 8, 0x000000, 90);
+    pgc_rrect(u->c, x + w / 2 - 34, sy + sh + 8, 68, 10, 3, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
+    pgc_rrect(u->c, x + w / 2 - 56, sy + sh + 16, 112, 6, 3, pal->light ? 0x2b2b38 : 0x0b0b12, 255);
+}
 
-    char current[48];
-    char *out=current;
-    struct pc_display_info info;
+int page_display(struct page_ctx *p)
+{
+    struct settings_app *app = p->app;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
+    struct display_settings *d = &app->display;
+    int y = p->y;
+    struct fmt f;
+
     struct pc_display_scale phys;
-    if(pc_display_get_info(&info) && info.available
-       && pc_display_scale_info(&phys)){
-        out=append_text(out,"Current: ");
-        out=append_u32(out,phys.physical_width);
-        out=append_text(out,"x");
-        out=append_u32(out,phys.physical_height);
-        out=append_text(out,"x");
-        out=append_u32(out,info.bpp);
-    } else {
-        out=append_text(out,"Current: unknown");
-    }
+    struct pc_display_info info;
+    bool have_phys = pc_display_scale_info(&phys);
+    bool have_info = pc_display_get_info(&info) && info.available;
+    uint32_t cur_w = have_phys ? phys.physical_width : d->width;
+    uint32_t cur_h = have_phys ? phys.physical_height : d->height;
 
-    char selected[48];
-    out=selected;
-    out=append_text(out,"Selected: ");
-    out=append_u32(out,display->width);
-    out=append_text(out,"x");
-    out=append_u32(out,display->height);
-    out=append_text(out,"x");
-    out=append_u32(out,display->bpp);
+    int h = 230;
+    pgu_card(u, p->x, y, p->w, h);
+    int mw = p->w * 40 / 100;
+    if (mw > 300)
+        mw = 300;
+    monitor(p, p->x + 30, y + 34, mw, h - 50, cur_w, cur_h);
+    int tx = p->x + 60 + mw;
+    char big[32];
+    fmt_init(&f, big, sizeof(big));
+    fu(&f, cur_w);
+    fs(&f, " x ");
+    fu(&f, cur_h);
+    pgc_text(u->c, PGF_SMALL, tx, y + 40, "CURRENT MODE", pal->text3);
+    pgc_text(u->c, PGF_HERO, tx, y + 58, big, pal->text);
+    char sub[64];
+    fmt_init(&f, sub, sizeof(sub));
+    aspect(&f, cur_w, cur_h);
+    fs(&f, "  -  ");
+    fu(&f, have_info ? info.bpp : d->bpp);
+    fs(&f, "-bit color  -  scale ");
+    fu(&f, have_phys ? phys.scale_percent : 100);
+    fc(&f, '%');
+    pgc_text(u->c, PGF_BODY, tx, y + 104, sub, pal->text2);
+    char eff[64];
+    uint32_t sc = have_phys && phys.scale_percent ? phys.scale_percent : 100;
+    fmt_init(&f, eff, sizeof(eff));
+    fs(&f, "Apps see ");
+    fu(&f, cur_w * 100 / sc);
+    fs(&f, " x ");
+    fu(&f, cur_h * 100 / sc);
+    fs(&f, " logical pixels");
+    pgc_text(u->c, PGF_SMALL, tx, y + 130, eff, pal->text3);
+    int bx = tx;
+    bx += pgu_badge(u, bx, y + 160, "Live switching", pal->success) + 8;
+    pgu_badge(u, bx, y + 160, "No reboot needed", pal->info);
+    y += h + 16;
 
-    uint32_t card_y=PAGE_TOP+38;
-    pg_window_rect(window,(struct pg_rect){PAGE_LEFT,card_y,width,CARD_H},
-                   0x2B2D40);
-    pg_window_text(window,PAGE_LEFT+18,card_y+14,"Screen resolution",
-                   window->theme.text);
-    pg_window_text(window,PAGE_LEFT+18,card_y+36,current,
-                   window->theme.accent);
-    pg_window_text(window,PAGE_LEFT+18,card_y+58,selected,
-                   window->theme.text);
-    pg_window_text(window,PAGE_LEFT+18,card_y+80,
-                   "QEMU / VirtualBox only; bare-metal UEFI keeps boot mode",
-                   window->theme.muted_text);
-    bool prev=pg_button(window,
-        (struct pg_rect){PAGE_LEFT+width-206,card_y+CARD_H-38,92,28},
-        "Previous",event);
-    bool next=pg_button(window,
-        (struct pg_rect){PAGE_LEFT+width-106,card_y+CARD_H-38,92,28},
-        "Next",event);
-    if(prev || next){
-        uint32_t count=display_mode_count();
-        uint32_t index=display_mode_index_of(display->width,
-                                             display->height);
-        index=(prev ? (index+count-1u)%count : (index+1u)%count);
-        struct display_mode mode=display_mode_at(index);
-        display->width=mode.width;
-        display->height=mode.height;
-        display->bpp=mode.bpp;
-        commit(display);
+    int count = (int)display_mode_count();
+    int cols = p->w > 700 ? 4 : 3;
+    int gap = 10;
+    int cw = (p->w - 48 - gap * (cols - 1)) / cols;
+    int ch = 62;
+    int rows = (count + cols - 1) / cols;
+    int rh = 84 + rows * (ch + gap) + 14;
+    pgu_card(u, p->x, y, p->w, rh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_MONITOR_SCREENSHOT, "Resolution",
+                  "Works in QEMU and VirtualBox; real UEFI keeps the boot mode");
+    int gy = y + 84;
+    for (int i = 0; i < count; i++) {
+        struct display_mode m = display_mode_at((uint32_t)i);
+        int cx = p->x + 24 + (i % cols) * (cw + gap);
+        int cy = gy + (i / cols) * (ch + gap);
+        bool sel = m.width == cur_w && m.height == cur_h;
+        uint32_t id = pgu_id("mode", i);
+        bool clicked = pgu_click(u, id, cx, cy, cw, ch);
+        bool hot = u->hot == id;
+        pgc_rrect(u->c, cx, cy, cw, ch, 10, sel ? pgc_mix(pal->surface, pal->accent, 50)
+                                               : hot ? pal->surface2 : pal->surface, 255);
+        pgc_rrect_stroke(u->c, cx, cy, cw, ch, 10, sel ? pal->accent : pal->border, sel ? 255 : 150);
+        char lbl[24];
+        fmt_init(&f, lbl, sizeof(lbl));
+        fu(&f, m.width);
+        fs(&f, " x ");
+        fu(&f, m.height);
+        pgc_text(u->c, PGF_MEDIUM, cx + 14, cy + 12, lbl, sel ? pal->text : pal->text2);
+        char asp[16];
+        fmt_init(&f, asp, sizeof(asp));
+        aspect(&f, m.width, m.height);
+        pgc_text(u->c, PGF_SMALL, cx + 14, cy + 34, asp, pal->text3);
+        if (sel)
+            pgc_icon(u->c, PGI_CHECK_CIRCLE, PG_ICON_S, cx + cw - 30, cy + 22, pal->accent);
+        if (clicked && !sel) {
+            d->width = m.width;
+            d->height = m.height;
+            d->bpp = m.bpp;
+            apply(app);
+        }
     }
+    y += rh + 16;
 
-    uint32_t scale_y=card_y+CARD_H+CARD_GAP;
-    pg_window_rect(window,(struct pg_rect){PAGE_LEFT,scale_y,width,CARD_H-30},
-                   0x2B2D40);
-    pg_window_text(window,PAGE_LEFT+18,scale_y+14,"Interface scale",
-                   window->theme.text);
-    char scale_line[64];
-    out=scale_line;
-    out=append_u32(out,display->scale ? display->scale : 100);
-    out=append_text(out,"%  (apps see ");
-    {
-        uint32_t sc=display->scale ? display->scale : 100;
-        out=append_u32(out,display->width*100U/sc);
-        out=append_text(out,"x");
-        out=append_u32(out,display->height*100U/sc);
+    int sh = 160;
+    pgu_card(u, p->x, y, p->w, sh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_BRIGHTNESS_6, "Interface scale",
+                  "Makes text, icons and windows bigger");
+    int n = (int)display_scale_count();
+    if (n > 8)
+        n = 8;
+    static char labels[8][8];
+    const char *ptrs[8];
+    for (int i = 0; i < n; i++) {
+        fmt_init(&f, labels[i], sizeof(labels[i]));
+        fu(&f, display_scale_at((uint32_t)i));
+        fc(&f, '%');
+        ptrs[i] = labels[i];
     }
-    out=append_text(out,")");
-    pg_window_text(window,PAGE_LEFT+18,scale_y+36,scale_line,
-                   window->theme.accent);
-    pg_window_text(window,PAGE_LEFT+18,scale_y+58,
-                   "Makes everything bigger: icons, text, windows",
-                   window->theme.muted_text);
-    bool smaller=pg_button(window,
-        (struct pg_rect){PAGE_LEFT+width-206,scale_y+CARD_H-30-38,92,28},
-        "Smaller",event);
-    bool bigger=pg_button(window,
-        (struct pg_rect){PAGE_LEFT+width-106,scale_y+CARD_H-30-38,92,28},
-        "Bigger",event);
-    if(smaller || bigger){
-        uint32_t count=display_scale_count();
-        uint32_t index=display_scale_index_of(display->scale);
-        if(bigger && index+1<count) index++;
-        if(smaller && index>0) index--;
-        display->scale=display_scale_at(index);
-        commit(display);
+    int sel = (int)display_scale_index_of(have_phys ? phys.scale_percent : d->scale);
+    if (pgu_segmented(u, pgu_id("scale", 0), p->x + 24, y + 86, p->w - 48, 44, ptrs, n, &sel)) {
+        d->width = cur_w;
+        d->height = cur_h;
+        d->scale = display_scale_at((uint32_t)sel);
+        apply(app);
     }
-
-    char status[112];
-    uint32_t status_color=window->theme.muted_text;
-    if(!g_have_apply_rc){
-        pc_copy(status,
-            "Pick a resolution above, it saves to /config/display.ini",
-            sizeof(status));
-    } else if(g_last_apply_rc==0){
-        pc_copy(status,
-            "Applied live and saved to /config/display.ini",
-            sizeof(status));
-        status_color=window->theme.accent;
-    } else if(g_last_apply_rc==-2){
-        pc_copy(status,
-            "Not supported on this machine (no VBE); boot mode kept",
-            sizeof(status));
-        status_color=window->theme.danger;
-    } else {
-        const char *reason=pf_strerror(g_last_apply_rc);
-        out=status;
-        const char *prefix="APPLY FAILED: ";
-        while(*prefix) *out++=*prefix++;
-        while(*reason && (uint32_t)(out-status)<sizeof(status)-32)
-            *out++=*reason++;
-        const char *suffix=" (read-only disk? install OS?)";
-        while(*suffix && (uint32_t)(out-status)<sizeof(status)-1)
-            *out++=*suffix++;
-        *out='\0';
-        status_color=window->theme.danger;
-    }
-    pg_window_text(window,PAGE_LEFT,scale_y+CARD_H-30+10,status,status_color);
+    y += sh;
+    return y - p->y;
 }

@@ -1,3 +1,4 @@
+#include "../drivers/display/display_owner.h"
 #include "userspace.h"
 #include "personalization.h"
 #include "display_mode.h"
@@ -293,24 +294,30 @@ int32_t userspace_run_program(const char *path){
 }
 
 
-static void draw_power_button(void){
-    struct personalization_colors th;
-    desktop_theme(&th);
-    uint32_t x = desktop_width - 38;
-    display_draw_rect(x, 3, 30, 22, th.border);
-    display_draw_text_at(x + 7, 9, "PWR", th.text, th.border);
+static void focused_title(char *out, uint32_t cap){
+    out[0] = '\0';
+    struct gui_task_info tasks[32];
+    uint32_t count = window_manager_tasks(tasks, 32);
+    if(count > 32) count = 32;
+    for(uint32_t i = 0; i < count; i++){
+        if(!(tasks[i].flags & GUI_TASK_FOCUSED)) continue;
+        uint32_t n = 0;
+        for(; tasks[i].name[n] && n + 1 < cap; n++) out[n] = tasks[i].name[n];
+        out[n] = '\0';
+        return;
+    }
+}
+
+static void draw_top_panel(void){
+    char title[40];
+    focused_title(title, sizeof(title));
+    top_panel_draw(desktop_width, title);
+    audio_panel_draw(desktop_width);
 }
 
 static void draw_power_menu(void){
     if(!power_menu_visible) return;
-    struct personalization_colors th;
-    desktop_theme(&th);
-    uint32_t x = desktop_width - 158;
-    display_draw_rect(x, 28, 150, 62, th.border);
-    display_draw_rect(x + 2, 30, 146, 28, th.window);
-    display_draw_rect(x + 2, 60, 146, 28, th.window);
-    display_draw_text_at(x + 12, 39, "Restart",   th.text,   th.window);
-    display_draw_text_at(x + 12, 69, "Power off", th.danger, th.window);
+    top_panel_draw_power_menu(desktop_width);
 }
 
 
@@ -319,16 +326,15 @@ static void draw_desktop(void){
     desktop_height = display_get_height();
     if(desktop_width  == 0) desktop_width  = 1280;
     if(desktop_height == 0) desktop_height = 800;
+    window_manager_set_work_area(0, TOP_PANEL_HEIGHT, desktop_width,
+                                 desktop_height - TOP_PANEL_HEIGHT - BOTTOM_PANEL_HEIGHT);
 
     struct personalization_colors dth;
     desktop_theme(&dth);
     if(!wallpaper_draw())
         display_clear(dth.desktop);
-    display_draw_rect(0, 0, desktop_width, TOPBAR_HEIGHT, dth.titlebar);
-    display_draw_text_at(12, 8, "PureC OS", dth.accent, dth.titlebar);
-    audio_panel_draw(desktop_width);
     draw_desktop_icons();
-    draw_power_button();
+    draw_top_panel();
     bottom_panel_draw(desktop_width, desktop_height);
 }
 
@@ -458,8 +464,10 @@ static void handle_desktop_mouse(void){
         redraw = redraw || panel_redraw;
         if(consumed) service_bottom_panel_actions();
     }
+    uint32_t power_x, power_y, power_w, power_h;
+    top_panel_power_rect(desktop_width, &power_x, &power_y, &power_w, &power_h);
     if(pressed && !consumed && point_inside(mouse.x, mouse.y,
-                               desktop_width - 38, 3, 30, 22)){
+                               power_x, power_y, power_w, power_h)){
         power_menu_visible = !power_menu_visible;
         consumed = true;
         redraw   = true;
@@ -630,12 +638,23 @@ void userspace_input_thread(void *arg){
         usb_mouse_poll();
         mouse_flush_pending();
         keyboard_poll();
+        if(display_owner_active()){
+            display_owner_pump();
+            reap_detached_programs();
+            scheduler_sleep(2);
+            continue;
+        }
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
         display_mode_poll();
         (void)service_desktop_redraw();
         flush_deferred_redraw();
+        {
+            struct mouse_state cursor_mouse = mouse_get_state();
+            window_manager_update_cursor(cursor_mouse.x, cursor_mouse.y,
+                                         cursor_mouse.buttons);
+        }
         if(external_program_has_input_focus()){
             scheduler_sleep(10);
             continue;
@@ -653,6 +672,10 @@ void userspace_keyboard_thread(void *arg){
     (void)arg;
     klog(KLOG_INFO, "sched: desktop keyboard thread started");
     for(;;){
+        if(display_owner_active()){
+            scheduler_sleep(10);
+            continue;
+        }
         if(external_program_has_input_focus() || window_manager_has_focus()){
             scheduler_sleep(10);
             continue;
@@ -736,12 +759,23 @@ void userspace_run(void){
         usb_mouse_poll();
         mouse_flush_pending();
         keyboard_poll();
+        if(display_owner_active()){
+            display_owner_pump();
+            reap_detached_programs();
+            scheduler_sleep(2);
+            continue;
+        }
         userspace_audio_update();
         reap_detached_programs();
         if(personalization_poll()) redraw_managed_scene(0);
         display_mode_poll();
         (void)service_desktop_redraw();
         flush_deferred_redraw();
+        {
+            struct mouse_state cursor_mouse = mouse_get_state();
+            window_manager_update_cursor(cursor_mouse.x, cursor_mouse.y,
+                                         cursor_mouse.buttons);
+        }
         if(external_program_has_input_focus()){
             scheduler_yield();
             continue;

@@ -7,8 +7,9 @@
 #include "../../lib/string.h"
 #include "../config/dhcp.h"
 #include "../core/net_device.h"
-#include "../name/dns.h"
 #include "../transport/tcp.h"
+#include "../transport/udp_endpoint.h"
+#include "../../kernel/process/process.h"
 
 #define SOCK_CAPACITY 16384
 #define SOCK_MAX_TIMEOUT_MS 0xFFFFFFF0ULL
@@ -20,6 +21,9 @@ struct sock {
     bool shut_read;
     bool shut_write;
     int32_t tcp;
+    bool dgram;
+    bool reuse;
+    int32_t udp;
     uint32_t receive_timeout_ms;
     uint32_t send_timeout_ms;
     uint32_t options;
@@ -76,10 +80,43 @@ static int32_t map_error(int32_t code, bool connecting, bool writing)
     }
 }
 
+static int32_t install(bool dgram, int32_t handle)
+{
+    mutex_lock(&table_mutex);
+    for (int32_t i = 0; i < SOCK_CAPACITY; i++)
+    {
+        if (table[i].used)
+            continue;
+        memset(&table[i], 0, sizeof(table[i]));
+        table[i].used = true;
+        table[i].dgram = dgram;
+        if (dgram)
+            table[i].udp = handle;
+        else
+            table[i].tcp = handle;
+        mutex_unlock(&table_mutex);
+        return i;
+    }
+    mutex_unlock(&table_mutex);
+    return -KERR_NFILE;
+}
+
 int32_t sock_create(int32_t domain, int32_t type, int32_t protocol)
 {
     if (domain != SOCK_AF_INET)
         return -KERR_AFNOSUPPORT;
+    if ((type & SOCK_TYPE_MASK) == SOCK_TYPE_DGRAM)
+    {
+        if (protocol != 0 && protocol != SOCK_IPPROTO_UDP)
+            return -KERR_PROTONOSUPPORT;
+        int32_t handle = udpe_create();
+        if (handle < 0)
+            return handle;
+        int32_t id = install(true, handle);
+        if (id < 0)
+            udpe_release(handle);
+        return id;
+    }
     if ((type & SOCK_TYPE_MASK) != SOCK_TYPE_STREAM)
         return -KERR_PROTOTYPE;
     if (protocol != 0 && protocol != SOCK_IPPROTO_TCP)
@@ -114,8 +151,84 @@ void sock_release(int32_t id)
         table[id].used = false;
     }
     mutex_unlock(&table_mutex);
-    if (ok)
+    if (ok && s.dgram)
+        udpe_release(s.udp);
+    else if (ok)
         (void)tcp_close(s.tcp);
+}
+
+int32_t sock_find(bool dgram, int32_t handle, bool *reuse)
+{
+    mutex_lock(&table_mutex);
+    for (int32_t i = 0; i < SOCK_CAPACITY; i++)
+    {
+        if (!table[i].used || table[i].dgram != dgram)
+            continue;
+        if ((dgram ? table[i].udp : table[i].tcp) != handle)
+            continue;
+        if (reuse)
+            *reuse = table[i].reuse;
+        mutex_unlock(&table_mutex);
+        return i;
+    }
+    mutex_unlock(&table_mutex);
+    return -1;
+}
+
+static bool may_bind(uint16_t port)
+{
+    return port == 0 || port >= 1024 || process_current_uid() == 0 ||
+           process_has_capability(PROCESS_CAP_NET_BIND);
+}
+
+int32_t sock_sendto(int32_t id, const void *buffer, uint32_t count,
+                    bool nonblock, uint32_t flags,
+                    const struct sock_addr_in *target)
+{
+    struct sock s;
+    if (!lookup(id, &s))
+        return -KERR_BADF;
+    if (!s.dgram)
+        return target ? -KERR_ISCONN : sock_write(id, buffer, count, nonblock, flags);
+    if (s.shut_write)
+        return -KERR_PIPE;
+    if (target && target->family != SOCK_AF_INET)
+        return -KERR_AFNOSUPPORT;
+    return udpe_sendto(s.udp, buffer, count, target != 0,
+                       target ? __builtin_bswap32(target->address_be) : 0,
+                       target ? __builtin_bswap16(target->port_be) : 0);
+}
+
+int32_t sock_recvfrom(int32_t id, void *buffer, uint32_t count, bool nonblock,
+                      uint32_t flags, struct sock_addr_in *source)
+{
+    struct sock s;
+    if (!lookup(id, &s))
+        return -KERR_BADF;
+    if (!s.dgram)
+    {
+        int32_t got = sock_read(id, buffer, count, nonblock, flags);
+        if (got >= 0 && source)
+            (void)sock_name(id, true, source);
+        return got;
+    }
+    if (s.shut_read)
+        return 0;
+    if (flags & SOCK_MSG_DONTWAIT)
+        nonblock = true;
+    uint32_t address = 0;
+    uint16_t port = 0;
+    int32_t got = udpe_recvfrom(s.udp, buffer, count, nonblock,
+                                s.receive_timeout_ms, (flags & SOCK_MSG_PEEK) != 0,
+                                &address, &port);
+    if (got >= 0 && source)
+    {
+        memset(source, 0, sizeof(*source));
+        source->family = SOCK_AF_INET;
+        source->address_be = __builtin_bswap32(address);
+        source->port_be = __builtin_bswap16(port);
+    }
+    return got;
 }
 
 static uint32_t timeout_or_forever(uint32_t value)
@@ -151,6 +264,9 @@ int32_t sock_connect(int32_t id, const struct sock_addr_in *address,
         return -KERR_BADF;
     if (address->family != SOCK_AF_INET)
         return -KERR_AFNOSUPPORT;
+    if (s.dgram)
+        return udpe_connect(s.udp, __builtin_bswap32(address->address_be),
+                            __builtin_bswap16(address->port_be));
     if (s.connecting)
     {
         struct tcp_socket_info info;
@@ -214,7 +330,13 @@ int32_t sock_bind(int32_t id, const struct sock_addr_in *address)
         return -KERR_BADF;
     if (address->family != SOCK_AF_INET)
         return -KERR_AFNOSUPPORT;
-    int32_t status = tcp_bind(s.tcp, __builtin_bswap16(address->port_be));
+    uint16_t port = __builtin_bswap16(address->port_be);
+    if (!may_bind(port))
+        return -KERR_ACCES;
+    if (s.dgram)
+        return udpe_bind(s.udp, __builtin_bswap32(address->address_be), port,
+                         s.reuse);
+    int32_t status = tcp_bind(s.tcp, port);
     return status == TCP_OK ? 0 : map_error(status, false, false);
 }
 
@@ -223,6 +345,8 @@ int32_t sock_listen(int32_t id, int32_t backlog)
     struct sock s;
     if (!lookup(id, &s))
         return -KERR_BADF;
+    if (s.dgram)
+        return -KERR_OPNOTSUPP;
     struct tcp_socket_info info;
     if (!tcp_get_info(s.tcp, &info))
         return -KERR_BADF;
@@ -240,6 +364,8 @@ int32_t sock_accept(int32_t id, bool nonblock, int32_t *new_id,
     struct sock s;
     if (!lookup(id, &s))
         return -KERR_BADF;
+    if (s.dgram)
+        return -KERR_OPNOTSUPP;
     int32_t waited = wait_for(s.tcp, TCP_READY_IN | TCP_READY_ERR | TCP_READY_HUP,
                               nonblock, TCP_TIMEOUT_FOREVER);
     if (waited < 0)
@@ -287,6 +413,8 @@ int32_t sock_read(int32_t id, void *buffer, uint32_t count, bool nonblock,
     struct sock s;
     if (!lookup(id, &s))
         return -KERR_BADF;
+    if (s.dgram)
+        return sock_recvfrom(id, buffer, count, nonblock, flags, 0);
     if (s.shut_read)
         return 0;
     if (!count)
@@ -309,6 +437,8 @@ int32_t sock_write(int32_t id, const void *buffer, uint32_t count,
     struct sock s;
     if (!lookup(id, &s))
         return -KERR_BADF;
+    if (s.dgram)
+        return sock_sendto(id, buffer, count, nonblock, flags, 0);
     if (s.shut_write)
         return -KERR_PIPE;
     if (!count)
@@ -330,6 +460,16 @@ int32_t sock_shutdown(int32_t id, int32_t how)
         return -KERR_BADF;
     if (how < 0 || how > 2)
         return -KERR_INVAL;
+    if (s.dgram)
+    {
+        mutex_lock(&table_mutex);
+        if (how == 0 || how == 2)
+            table[id].shut_read = true;
+        if (how == 1 || how == 2)
+            table[id].shut_write = true;
+        mutex_unlock(&table_mutex);
+        return 0;
+    }
     struct tcp_socket_info info;
     if (!tcp_get_info(s.tcp, &info))
         return -KERR_BADF;
@@ -352,6 +492,8 @@ int32_t sock_poll(int32_t id)
     struct sock s;
     if (!lookup(id, &s))
         return KPOLLNVAL;
+    if (s.dgram)
+        return udpe_poll(s.udp) | (s.shut_read ? KPOLLIN : 0);
     uint32_t ready = tcp_readiness(s.tcp);
     int32_t out = 0;
     if (ready & TCP_READY_IN)
@@ -372,6 +514,17 @@ int32_t sock_name(int32_t id, bool peer, struct sock_addr_in *out)
     struct sock s;
     if (!lookup(id, &s))
         return -KERR_BADF;
+    if (s.dgram)
+    {
+        uint32_t address = 0;
+        uint16_t port = 0;
+        int32_t status = udpe_name(s.udp, peer, &address, &port);
+        memset(out, 0, sizeof(*out));
+        out->family = SOCK_AF_INET;
+        out->address_be = __builtin_bswap32(address);
+        out->port_be = __builtin_bswap16(port);
+        return status;
+    }
     struct tcp_socket_info info;
     if (!tcp_get_info(s.tcp, &info))
         return -KERR_BADF;
@@ -426,7 +579,31 @@ int32_t sock_setopt(int32_t id, int32_t level, int32_t name, const void *value,
             mutex_unlock(&table_mutex);
             return 0;
         }
+        case SOCK_SO_BROADCAST:
+            if (!s.dgram || length < sizeof(int32_t))
+                return s.dgram ? -KERR_INVAL : 0;
+            return udpe_set_broadcast(s.udp, *(const int32_t *)value != 0);
+        case SOCK_SO_BINDTODEVICE:
+        {
+            if (!s.dgram)
+                return -KERR_NOPROTOOPT;
+            if (process_current_uid() != 0 &&
+                !process_has_capability(PROCESS_CAP_NET_ADMIN))
+                return -KERR_PERM;
+            char name[16];
+            uint32_t n = length < sizeof(name) - 1 ? length : sizeof(name) - 1;
+            memcpy(name, value, n);
+            name[n] = '\0';
+            return udpe_bind_device(s.udp, name);
+        }
         case SOCK_SO_REUSEADDR:
+            if (length >= sizeof(int32_t))
+            {
+                mutex_lock(&table_mutex);
+                table[id].reuse = *(const int32_t *)value != 0;
+                mutex_unlock(&table_mutex);
+            }
+            return 0;
         case SOCK_SO_KEEPALIVE:
         case SOCK_SO_SNDBUF:
         case SOCK_SO_RCVBUF:
@@ -470,6 +647,8 @@ int32_t sock_getopt(int32_t id, int32_t level, int32_t name, void *value,
     {
         struct tcp_socket_info info;
         result = 0;
+        if (s.dgram)
+            break;
         if (tcp_get_info(s.tcp, &info) && info.state == TCP_STATE_CLOSED &&
             (s.connecting || s.connect_failed))
         {
@@ -482,7 +661,7 @@ int32_t sock_getopt(int32_t id, int32_t level, int32_t name, void *value,
         break;
     }
     case SOCK_SO_TYPE:
-        result = SOCK_TYPE_STREAM;
+        result = s.dgram ? SOCK_TYPE_DGRAM : SOCK_TYPE_STREAM;
         break;
     case SOCK_SO_SNDBUF:
     case SOCK_SO_RCVBUF:
@@ -498,47 +677,4 @@ int32_t sock_getopt(int32_t id, int32_t level, int32_t name, void *value,
     *(int32_t *)value = result;
     *length = sizeof(int32_t);
     return 0;
-}
-
-int32_t sock_resolve(const char *name, uint32_t timeout_ms,
-                     uint32_t *address_be)
-{
-    struct net_device *device = net_device_default();
-    if (!device)
-        return -KERR_NETUNREACH;
-    if (timeout_ms < 100)
-        timeout_ms = 100;
-    uint64_t started = timer_ticks();
-    for (;;)
-    {
-        uint32_t address = 0;
-        enum dns_result result = dns_resolve_ipv4(device, name, timeout_ms, &address);
-        if (result == DNS_RESULT_OK)
-        {
-            *address_be = __builtin_bswap32(address);
-            return 0;
-        }
-        if (result == DNS_RESULT_BUSY)
-        {
-            if (timer_ticks() - started >= timeout_ms)
-                return -KERR_TIMEDOUT;
-            if (signal_pending_current())
-                return -KERR_INTR;
-            scheduler_sleep(10);
-            continue;
-        }
-        switch (result)
-        {
-        case DNS_RESULT_INVALID:
-            return -KERR_INVAL;
-        case DNS_RESULT_NOT_FOUND:
-            return -KERR_NOENT;
-        case DNS_RESULT_TIMEOUT:
-            return -KERR_TIMEDOUT;
-        case DNS_RESULT_NO_SERVER:
-            return -KERR_NETUNREACH;
-        default:
-            return -KERR_IO;
-        }
-    }
 }

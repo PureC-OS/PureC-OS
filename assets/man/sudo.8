@@ -1,0 +1,39 @@
+NAME
+       sudo - run a command as root
+
+SYNOPSIS
+       **sudo** __command__ [__arg__...]
+       **sudo -i**
+       **sudo -s**
+
+DESCRIPTION
+       Ask for the password of the current user and run __command__ with
+       root privileges. Only members of the **wheel** group in /etc/group
+       may use sudo; the installer adds users to it when they are given
+       administrator rights.
+
+       The password is checked by the kernel against /etc/shadow. After
+       three wrong passwords sudo gives up. Every attempt is written to the
+       kernel log, see journalctl(1).
+
+OPTIONS
+       **-i**
+           Start a root login shell in /root.
+
+       **-s**
+           Start a root shell in the current directory.
+
+ENVIRONMENT
+       **SUDO_USER** is set to the name of the user who ran sudo. **USER** and
+       **LOGNAME** are set to root.
+
+EXIT STATUS
+       The exit status of __command__, 1 when authentication fails, 126 when
+       the command cannot run and 127 when it is not found.
+
+EXAMPLES
+       sudo rm /etc/motd
+       sudo -i
+
+SEE ALSO
+       id(1), sh(1)

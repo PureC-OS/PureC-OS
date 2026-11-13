@@ -183,6 +183,13 @@ void *pmm_physical_to_virtual(uint64_t physical_address) {
   return (void *)(uintptr_t)(physical_address + direct_map_offset);
 }
 
+uint64_t pmm_virtual_to_physical(uint64_t virtual_address) {
+  if (!direct_map_offset || virtual_address < direct_map_offset)
+    return 0;
+  uint64_t physical = virtual_address - direct_map_offset;
+  return physical < (1ULL << 46) ? physical : 0;
+}
+
 uint64_t pmm_total_bytes(void) { return frame_limit * PMM_PAGE_SIZE; }
 static uint64_t pmm_free_bytes_locked(void) {
   return free_frames * PMM_PAGE_SIZE;

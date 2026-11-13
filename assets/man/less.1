@@ -1,0 +1,25 @@
+NAME
+       less - view text one screen at a time
+
+SYNOPSIS
+       less [-N] [FILE]...
+       more [FILE]...
+
+DESCRIPTION
+       Show FILEs (or standard input) in a full screen pager with scrolling and
+       search. The keys are the same as in man(1). When the output is not a
+       terminal, the text is copied unchanged.
+
+OPTIONS
+       -N
+           show line numbers
+
+KEYS
+       j/k line, Space/b page, g/G start/end, /TEXT search, n/N next/previous, q quit.
+
+EXAMPLES
+       less /root/notes.txt
+       ls -l /bin | less
+
+SEE ALSO
+       man(1), cat(1), head(1)

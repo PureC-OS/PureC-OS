@@ -6,6 +6,9 @@
 
 #define FD_SETSIZE 1024
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef struct {
     uint64_t bits[FD_SETSIZE / 64];
 } fd_set;
@@ -19,3 +22,6 @@ int select(int count, fd_set *read_set, fd_set *write_set, fd_set *error_set,
            struct timeval *timeout);
 int pselect(int count, fd_set *read_set, fd_set *write_set, fd_set *error_set,
             const struct timespec *timeout, const void *mask);
+#ifdef __cplusplus
+}
+#endif

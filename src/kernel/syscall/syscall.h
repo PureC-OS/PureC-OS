@@ -101,7 +101,6 @@
 #define SYS_DIR_LIST_LONG 288
 #define SYS_IPC_SEND 291
 #define SYS_IPC_RECV 292
-#define SYS_PANIC_TEST 299
 /* TCP sockets. a1 packs handle (low 32 bits) | timeout_ms << 32 where the
  * call can block; timeout 0 = never block, 0xFFFFFFFF = wait forever. */
 #define SYS_TCP_SOCKET 300  /* () -> handle */
@@ -179,6 +178,42 @@
 #define SYS_SOCK_SEND 372    /* (fd, buf, len, msg_flags) */
 #define SYS_SOCK_RECV 373    /* (fd, buf, len, msg_flags) */
 #define SYS_UTIMES 374       /* (path, atime, mtime), 0xFFFFFFFF = now */
+#define SYS_THREAD_CREATE 375 /* (struct kernel_thread_args *) -> tid */
+#define SYS_THREAD_EXIT 376   /* (unmap_address, unmap_length), no return */
+#define SYS_FUTEX 377         /* (FUTEX_*, uaddr, value, timeout_ms in rsi) */
+#define SYS_SET_FS_BASE 378   /* (base) -> 0 */
+#define SYS_GETTID 379        /* () -> tid */
+#define SYS_EVENTFD 380          /* (initial, EFD_* flags) -> fd */
+#define SYS_TIMERFD_CREATE 381   /* (clock_id, TFD_* flags) -> fd */
+#define SYS_TIMERFD_SETTIME 382  /* (fd, flags, new itimerspec *, old itimerspec * in rsi) */
+#define SYS_TIMERFD_GETTIME 383  /* (fd, itimerspec *) */
+#define SYS_EPOLL_CREATE 384     /* (EPOLL_CLOEXEC flag) -> fd */
+#define SYS_EPOLL_CTL 385        /* (epfd, op, fd, struct epoll_event * in rsi) */
+#define SYS_EPOLL_WAIT 386       /* (epfd, events *, max, timeout_ms in rsi) */
+#define SYS_SOCKETPAIR 387       /* (domain, type|flags, protocol, int fds[2] in rsi) */
+#define SYS_SENDMSG 388          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
+#define SYS_RECVMSG 389          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
+#define SYS_MEMFD_CREATE 390     /* (name, flags) -> fd */
+#define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
+#define SYS_SHM_UNLINK 392       /* (name) */
+#define SYS_MADVISE 393          /* (address, length, advice) */
+#define SYS_DISPLAY_CLAIM 398     /* () -> 0; caller (PROCESS_CAP_DISPLAY or root) owns the screen */
+#define SYS_FB_MAP 399            /* (struct fb_map_info *) -> 0; maps the front framebuffer */
+#define SYS_INPUT_OPEN 400        /* () -> fd delivering struct input_record */
+#define SYS_FB_DAMAGE 401         /* (x, y, w, h) -> 0; flush a front-buffer rect to the device */
+#define SYS_DISPLAY_RELEASE 402   /* () -> 0; give the screen back to the kernel */
+#define SYS_SENDTO 403            /* (fd, buf, len, flags, const sockaddr_in *dst|0) -> bytes */
+#define SYS_RECVFROM 404          /* (fd, buf, len, flags, sockaddr_in *src|0) -> bytes */
+#define SYS_NET_CONFIGURE 405     /* (const struct net_if_config *) -> 0; root or NET_ADMIN */
+#define SYS_KLOG_WRITE 406        /* (level 0..3, const char *message) -> 0; appends to the kernel journal */
+#define SYS_CLOCK_ADJUST 407      /* (op CLOCK_ADJ_*, delta_ms, int64_t *previous|0) -> 0; root or SYS_TIME */
+#define SYS_NET_SOCKETS 408       /* (struct net_socket_entry *, capacity, offset) -> entries written */
+#define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
+#define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
+#define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
+#define TIME_ZONE_GET 0
+#define TIME_ZONE_SET 1
+#define SYS_SIGALTSTACK 394      /* (const struct kernel_stack *, struct kernel_stack *old) */
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -192,6 +227,39 @@
 #define FD_KIND_FILE 1
 #define FD_KIND_PIPE 2
 #define FD_KIND_SOCKET 3
+#define FD_KIND_EVENT 4
+#define FD_KIND_PTY 5
+#define FD_KIND_INPUT 6
+
+struct fb_map_info {
+  uint64_t address;
+  uint64_t bytes;
+  uint32_t width;
+  uint32_t height;
+  uint32_t pitch_bytes;
+  uint32_t bpp;
+  uint32_t generation;
+  uint32_t reserved;
+};
+
+#define INPUT_RECORD_KEY 1
+#define INPUT_RECORD_MOUSE 2
+
+struct input_record {
+  uint32_t type;
+  uint32_t time_ms;
+  int32_t x;
+  int32_t y;
+  int32_t dx;
+  int32_t dy;
+  int32_t wheel;
+  uint32_t buttons;
+  uint16_t scancode;
+  uint8_t pressed;
+  uint8_t repeat;
+  uint8_t mods;
+  uint8_t reserved[3];
+};
 
 #define TTY_TCGETS 0x5401u
 #define TTY_TCSETS 0x5402u
@@ -202,6 +270,7 @@
 #define TTY_TIOCSWINSZ 0x5414u
 #define TTY_FIONREAD 0x541Bu
 #define TTY_RAW_ACTIVE 0x7F01u
+#define TTY_TIOCSPGRP_PID 0x5410u
 
 #define KPOLLIN 0x001
 #define KPOLLOUT 0x004
@@ -219,17 +288,54 @@ struct kernel_pollfd {
 #define KMAP_PROT_WRITE 2
 #define KMAP_PROT_EXEC 4
 #define KMAP_FIXED 1
+#define KMAP_SHARED 2
+#define KMADV_DONTNEED 4
 #define KMAP_REMAP_MAYMOVE 1
+
+struct kernel_msghdr {
+  uint64_t name;
+  uint32_t name_length;
+  uint32_t reserved0;
+  uint64_t iov;
+  uint64_t iov_count;
+  uint64_t control;
+  uint64_t control_length;
+  int32_t flags;
+  int32_t reserved1;
+};
+
+struct kernel_cmsghdr {
+  uint64_t length;
+  int32_t level;
+  int32_t type;
+};
+
+#define KMSG_CTRUNC 0x8
+#define KMSG_CMSG_CLOEXEC 0x40000000
+#define KSCM_RIGHTS 1
+#define KSOL_SOCKET 1
+#define KSO_PEERCRED 17
+
+struct kernel_thread_args {
+  uint64_t entry;
+  uint64_t stack;
+  uint64_t argument;
+  uint64_t tls_base;
+  uint64_t clear_tid;
+};
 
 struct kernel_mmap_args {
   uint64_t address;
   uint64_t length;
   uint64_t prot;
   uint64_t flags;
+  int64_t fd;
+  uint64_t offset;
 };
 
 #define KERR_PERM 1
 #define KERR_NOENT 2
+#define KERR_NODEV 19
 #define KERR_SRCH 3
 #define KERR_INTR 4
 #define KERR_IO 5
@@ -241,6 +347,7 @@ struct kernel_mmap_args {
 #define KERR_NOMEM 12
 #define KERR_ACCES 13
 #define KERR_FAULT 14
+#define KERR_BUSY 16
 #define KERR_EXIST 17
 #define KERR_NOTDIR 20
 #define KERR_INVAL 22
@@ -252,6 +359,7 @@ struct kernel_mmap_args {
 #define KERR_NAMETOOLONG 36
 #define KERR_NOTSOCK 88
 #define KERR_DESTADDRREQ 89
+#define KERR_MSGSIZE 90
 #define KERR_PROTOTYPE 91
 #define KERR_NOPROTOOPT 92
 #define KERR_PROTONOSUPPORT 93
@@ -275,8 +383,20 @@ struct kernel_mmap_args {
 
 #define SIGNAL_ACTION_DEFAULT 0ULL
 #define SIGNAL_ACTION_IGNORE 1ULL
+#define SIGNAL_FLAG_ONSTACK 0x08000000U
 #define SIGNAL_FLAG_NODEFER 0x40000000U
 #define SIGNAL_FLAG_RESETHAND 0x80000000U
+
+#define KSS_ONSTACK 1
+#define KSS_DISABLE 2
+#define KMINSIGSTKSZ 2048
+
+struct kernel_stack {
+  uint64_t sp;
+  int32_t flags;
+  int32_t reserved;
+  uint64_t size;
+};
 
 struct ksigaction {
   uint64_t handler;
@@ -303,14 +423,24 @@ struct format_request {
 #define INSTALL_HASH_MAX 128
 #define INSTALL_FIRST_UID 1000
 
+#define INSTALL_USERS_MAX 8
+#define INSTALL_WHEEL_GID 10
+
+struct install_user {
+  char name[INSTALL_USER_MAX];
+  char gecos[INSTALL_GECOS_MAX];
+  char hash[INSTALL_HASH_MAX];
+  uint32_t uid;
+  uint32_t admin;
+};
+
 struct install_account_request {
   uint32_t present;
-  uint32_t user_uid;
+  uint32_t user_count;
   char hostname[INSTALL_HOSTNAME_MAX];
   char root_hash[INSTALL_HASH_MAX];
-  char user_name[INSTALL_USER_MAX];
-  char user_gecos[INSTALL_GECOS_MAX];
-  char user_hash[INSTALL_HASH_MAX];
+  struct install_user users[INSTALL_USERS_MAX];
+  char timezone[32];
 };
 
 struct install_start_request {
@@ -339,7 +469,54 @@ struct network_ping_result {
 };
 
 #define NET_IF_NAME_CAPACITY 16
-#define NET_IF_MAX_COUNT 4
+#define NET_IF_MAX_COUNT 8
+
+#define NET_CFG_SET_IPV4 1
+#define NET_CFG_CLEAR_IPV4 2
+#define NET_CFG_SET_DNS 3
+#define NET_CFG_DHCP_START 4
+#define NET_CFG_DHCP_STOP 5
+
+struct net_if_config {
+  char name[NET_IF_NAME_CAPACITY];
+  uint32_t op;
+  uint32_t address;
+  uint32_t netmask;
+  uint32_t gateway;
+  uint32_t dns;
+  uint32_t reserved;
+};
+
+#define CLOCK_ADJ_STEP 0
+#define CLOCK_ADJ_SLEW 1
+#define CLOCK_ADJ_QUERY 2
+#define CLOCK_ADJ_SAVE_RTC 3
+
+#define NET_SOCK_TCP 6
+#define NET_SOCK_UDP 17
+#define NET_SOCK_STATE_UNCONN 0xFF
+#define NET_SOCK_FLAG_KERNEL 1U
+#define NET_SOCK_FLAG_ORPHAN 2U
+#define NET_SOCK_FLAG_REUSE 4U
+#define NET_SOCK_FLAG_BROADCAST 8U
+#define NET_SOCKETS_MAX 512
+
+struct net_socket_entry {
+  uint8_t protocol;
+  uint8_t state;
+  uint16_t flags;
+  uint32_t local_address;
+  uint32_t remote_address;
+  uint16_t local_port;
+  uint16_t remote_port;
+  uint32_t recv_queue;
+  uint32_t send_queue;
+  uint32_t pid;
+  uint32_t uid;
+  uint32_t fd;
+  char process[32];
+  char device[NET_IF_NAME_CAPACITY];
+};
 
 struct net_if_info {
   char name[NET_IF_NAME_CAPACITY];
@@ -373,6 +550,44 @@ struct net_if_info {
 #define GUI_WINDOW_FLAG_FIXED 1
 #define GUI_WINDOW_FLAG_NOCLOSE 2
 #define GUI_WINDOW_FLAG_POPUP 4
+#define GUI_WINDOW_FLAG_NORESIZE 8
+
+#define GUI_RESIZE_GRIP 6
+#define GUI_RESIZE_TOP_GRIP 4
+#define GUI_RESIZE_CORNER 18
+#define GUI_EDGE_LEFT 1U
+#define GUI_EDGE_RIGHT 2U
+#define GUI_EDGE_TOP 4U
+#define GUI_EDGE_BOTTOM 8U
+
+static inline uint32_t gui_resize_edges(int32_t fx, int32_t fy, int32_t fw,
+                                        int32_t fh, int32_t x, int32_t y) {
+  int32_t rx = x - fx, ry = y - fy;
+  if (rx < 0 || ry < 0 || rx >= fw || ry >= fh)
+    return 0;
+  uint32_t edges = 0;
+  if (rx < GUI_RESIZE_GRIP)
+    edges |= GUI_EDGE_LEFT;
+  else if (rx >= fw - GUI_RESIZE_GRIP)
+    edges |= GUI_EDGE_RIGHT;
+  if (ry < GUI_RESIZE_TOP_GRIP)
+    edges |= GUI_EDGE_TOP;
+  else if (ry >= fh - GUI_RESIZE_GRIP)
+    edges |= GUI_EDGE_BOTTOM;
+  if (edges & (GUI_EDGE_TOP | GUI_EDGE_BOTTOM)) {
+    if (rx < GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_LEFT;
+    else if (rx >= fw - GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_RIGHT;
+  }
+  if (edges & (GUI_EDGE_LEFT | GUI_EDGE_RIGHT)) {
+    if (ry < GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_TOP;
+    else if (ry >= fh - GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_BOTTOM;
+  }
+  return edges;
+}
 
 #define GUI_WINDOW_CMD_MINIMIZE 1
 #define GUI_WINDOW_CMD_RESTORE 2

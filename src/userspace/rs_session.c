@@ -1,3 +1,4 @@
+#include "../drivers/display/display_owner.h"
 #include "rs_session.h"
 #include "display.h"
 #include "display_mode.h"
@@ -100,6 +101,11 @@ void rs_session_input_thread(void *arg) {
     usb_mouse_poll();
     mouse_flush_pending();
     keyboard_poll();
+    if (display_owner_active()) {
+      display_owner_pump();
+      scheduler_sleep(2);
+      continue;
+    }
     display_mode_poll();
     scheduler_sleep(4);
   }

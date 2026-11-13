@@ -1,184 +1,220 @@
-#include "settings/appearance_page.h"
-#include "../../../libgui/include/pguiw.h"
-#include "../../../libfs/include/purefs.h"
+#include "settings/app.h"
+#include "settings/fmt.h"
 #include "../../../libc/include/purec.h"
+#include "../../../libfs/include/purefs.h"
+#include "settings/thumb.h"
 
-#define PAGE_LEFT 198
-#define PAGE_TOP 80
-#define CARD_H 96
-#define CARD_GAP 12
-static int32_t g_last_save_rc=0;
-static bool g_have_save_rc=false;
+#define THUMB_MAX 24
+#define THUMB_W 220
+#define THUMB_H 124
 
-static char *append_u32(char *out, uint32_t value){
-    char reverse[12]; uint32_t count=0;
-    do{ reverse[count++]=(char)('0'+value%10U); value/=10U; }
-    while(value && count<sizeof(reverse));
-    while(count) *out++=reverse[--count];
-    *out='\0'; return out;
-}
+static struct thumb {
+    int state;
+    int w, h;
+    uint32_t px[THUMB_W * THUMB_H];
+} thumbs[THUMB_MAX];
 
-static void commit(struct personalization_settings *appearance){
-    g_last_save_rc=appearance_save(appearance);
-    g_have_save_rc=true;
-}
-
-static uint32_t theme_index_of(const char *name){
-    for(uint32_t i=0;i<pg_theme_count();i++){
-        if(pc_strcmp(name,pg_theme_name_at(i))==0) return i;
-    }
-    return 0;
-}
-
-static uint32_t wallpaper_index_of(const char *path){
-    for(uint32_t i=0;i<appearance_wallpaper_count();i++){
-        if(pc_strcmp(path,appearance_wallpaper_at(i))==0) return i;
-    }
-    return 0;
-}
-
-static uint32_t font_index_of(const char *name){
-    for(uint32_t i=0;i<appearance_font_count();i++){
-        if(pc_strcmp(name,appearance_font_name_at(i))==0) return i;
-    }
-    return 0;
-}
-
-static void draw_cycle_card(struct pg_window *window,
-                            struct personalization_settings *appearance,
-                            const struct pg_event *event,
-                            uint32_t card_y, uint32_t width,
-                            const char *title, const char *value,
-                            const char *hint,
-                            bool *prev, bool *next){
-    pg_window_rect(window,(struct pg_rect){PAGE_LEFT,card_y,width,CARD_H},
-                   0x2B2D40);
-    pg_window_text(window,PAGE_LEFT+18,card_y+14,title,window->theme.text);
-    pg_window_text(window,PAGE_LEFT+18,card_y+36,
-                   value[0] ? value : "(solid color)",window->theme.accent);
-    pg_window_text(window,PAGE_LEFT+18,card_y+58,hint,
-                   window->theme.muted_text);
-    *prev=pg_button(window,
-        (struct pg_rect){PAGE_LEFT+width-206,card_y+CARD_H-38,92,28},
-        "Previous",event);
-    *next=pg_button(window,
-        (struct pg_rect){PAGE_LEFT+width-106,card_y+CARD_H-38,92,28},
-        "Next",event);
-}
-
-void appearance_page_draw(struct pg_window *window,
-                          struct personalization_settings *appearance,
-                          const struct pg_event *event){
-    if(!window || !appearance) return;
-    uint32_t width=window->client.width-PAGE_LEFT-22;
-    pg_window_text(window,PAGE_LEFT,PAGE_TOP-2,"Appearance",
-                   window->theme.text);
-    pg_window_text(window,PAGE_LEFT,PAGE_TOP+12,
-                   "Themes, wallpaper, fonts. Applied live from",
-                   window->theme.muted_text);
-
-    bool prev=false, next=false;
-    uint32_t card_y=PAGE_TOP+38;
-
-    /* Theme */
-    draw_cycle_card(window,appearance,event,card_y,width,
-        "Color theme",appearance->theme,
-        "Window + desktop palette", &prev, &next);
-    if(prev || next){
-        uint32_t count=pg_theme_count();
-        uint32_t index=theme_index_of(appearance->theme);
-        index=(prev ? (index+count-1u)%count : (index+1u)%count);
-        pc_copy(appearance->theme,pg_theme_name_at(index),
-                sizeof(appearance->theme));
-        commit(appearance);
-    }
-    card_y+=CARD_H+CARD_GAP;
-
-    /* Wallpaper */
-    const char *wallpaper_label=appearance->wallpaper[0]
-        ? appearance->wallpaper : "(solid color)";
-    draw_cycle_card(window,appearance,event,card_y,width,
-        "Wallpaper",wallpaper_label,
-        "BMP / PNG, stretched. Own: /config/wp.bmp, /config/wp.png",
-        &prev,&next);
-    if(prev || next){
-        uint32_t count=appearance_wallpaper_count();
-        uint32_t index=wallpaper_index_of(appearance->wallpaper);
-        index=(prev ? (index+count-1u)%count : (index+1u)%count);
-        pc_copy(appearance->wallpaper,appearance_wallpaper_at(index),
-                sizeof(appearance->wallpaper));
-        commit(appearance);
-    }
-    card_y+=CARD_H+CARD_GAP;
-
-    /* Font face */
-    draw_cycle_card(window,appearance,event,card_y,width,
-        "Font",appearance->font,
-        "Bitmap faces. TTF files in /config/fonts are reserved",
-        &prev,&next);
-    if(prev || next){
-        uint32_t count=appearance_font_count();
-        uint32_t index=font_index_of(appearance->font);
-        index=(prev ? (index+count-1u)%count : (index+1u)%count);
-        pc_copy(appearance->font,appearance_font_name_at(index),
-                sizeof(appearance->font));
-        commit(appearance);
-    }
-    card_y+=CARD_H+CARD_GAP;
-
-    /* Font size */
-    char size_text[16];
-    char *end=append_u32(size_text,appearance->font_size);
-    *end++=' '; *end++='p'; *end++='x'; *end='\0';
-    pg_window_rect(window,(struct pg_rect){PAGE_LEFT,card_y,width,CARD_H},
-                   0x2B2D40);
-    pg_window_text(window,PAGE_LEFT+18,card_y+14,"Font size",
-                   window->theme.text);
-    pg_window_text_sized(window,PAGE_LEFT+18,card_y+34,
-                         "Ag PureC OS",window->theme.accent,
-                         appearance->font_size);
-    pg_window_text(window,PAGE_LEFT+18,card_y+58,
-                   "Desktop labels use up to 12 px to fit tiles",
-                   window->theme.muted_text);
-    pg_window_text(window,PAGE_LEFT+width-160,card_y+36,size_text,
-                   window->theme.text);
-    if(pg_button(window,
-            (struct pg_rect){PAGE_LEFT+width-206,card_y+CARD_H-38,92,28},
-            "Smaller",event)
-        && appearance->font_size>APPEAR_MIN_FONT_SIZE){
-        appearance->font_size--;
-        commit(appearance);
-    }
-    if(pg_button(window,
-            (struct pg_rect){PAGE_LEFT+width-106,card_y+CARD_H-38,92,28},
-            "Bigger",event)
-        && appearance->font_size<APPEAR_MAX_FONT_SIZE){
-        appearance->font_size++;
-        commit(appearance);
-    }
-
-    /* Save status line: never fail silently (live CD = read-only). */
-    char status[96];
-    uint32_t status_color=window->theme.muted_text;
-    if(!g_have_save_rc){
-        pc_copy(status,"Pick a setting above, it saves to /config/appear.ini",
-                sizeof(status));
-    } else if(g_last_save_rc>=0){
-        pc_copy(status,"Saved to /config/appear.ini, desktop applies it live",
-                sizeof(status));
-        status_color=window->theme.accent;
+static void commit(struct settings_app *app, const char *what)
+{
+    int32_t rc = appearance_save(&app->appearance);
+    if (rc >= 0) {
+        settings_toast(app, what, 0xa6e3a1);
+        pc_desktop_redraw();
     } else {
-        const char *reason=pf_strerror(g_last_save_rc);
-        char *out=status;
-        const char *prefix="SAVE FAILED: ";
-        while(*prefix) *out++=*prefix++;
-        while(*reason && (uint32_t)(out-status)<sizeof(status)-32)
-            *out++=*reason++;
-        const char *suffix=" (read-only disk? install OS?)";
-        while(*suffix && (uint32_t)(out-status)<sizeof(status)-1)
-            *out++=*suffix++;
-        *out='\0';
-        status_color=window->theme.danger;
+        settings_toast(app, "Could not save ~/.config/purec/appear.ini", 0xf38ba8);
     }
-    pg_window_text(window,PAGE_LEFT,card_y+CARD_H+10,status,status_color);
+}
+
+static const char *pretty_theme(const char *name, char *buf, int cap)
+{
+    int i = 0;
+    bool up = true;
+    for (; name[i] && i < cap - 1; i++) {
+        char ch = name[i];
+        if (ch == '-') {
+            buf[i] = ' ';
+            up = true;
+            continue;
+        }
+        buf[i] = up && ch >= 'a' && ch <= 'z' ? (char)(ch - 32) : ch;
+        up = false;
+    }
+    buf[i] = 0;
+    return buf;
+}
+
+static const char *basename_of(const char *path)
+{
+    const char *b = path;
+    for (const char *s = path; *s; s++)
+        if (*s == '/')
+            b = s + 1;
+    return b;
+}
+
+static void theme_preview(struct pg_ui *u, int x, int y, int w, int h, const struct pg_theme *t)
+{
+    pgc_rrect(u->c, x, y, w, h, 8, t->desktop, 255);
+    int wx = x + 12, wy = y + 12, ww = w - 24, wh = h - 22;
+    pgc_rrect(u->c, wx, wy, ww, wh, 6, t->window, 255);
+    pgc_rrect(u->c, wx, wy, ww, 14, 6, t->titlebar, 255);
+    pgc_fill(u->c, wx, wy + 8, ww, 6, t->titlebar);
+    pgc_circle(u->c, wx + ww - 9, wy + 7, 3, t->danger, 255);
+    pgc_circle(u->c, wx + ww - 19, wy + 7, 3, t->accent, 255);
+    pgc_rrect(u->c, wx + 8, wy + 22, ww * 6 / 10, 5, 2, t->text, 255);
+    pgc_rrect(u->c, wx + 8, wy + 32, ww * 4 / 10, 4, 2, t->muted_text, 255);
+    pgc_rrect(u->c, wx + 8, wy + 40, ww * 5 / 10, 4, 2, t->muted_text, 255);
+    pgc_rrect(u->c, wx + ww - 44, wy + wh - 18, 36, 12, 4, t->accent, 255);
+}
+
+int page_appearance(struct page_ctx *p)
+{
+    struct settings_app *app = p->app;
+    struct pg_ui *u = p->u;
+    const struct pg_palette *pal = &u->pal;
+    struct personalization_settings *a = &app->appearance;
+    int y = p->y;
+    struct fmt f;
+    char buf[96];
+
+    int count = (int)pg_theme_count();
+    int cols = p->w > 700 ? 5 : 3;
+    int gap = 14;
+    int tw = (p->w - 48 - gap * (cols - 1)) / cols;
+    int th = tw * 66 / 100;
+    int rows = (count + cols - 1) / cols;
+    int ch = 84 + rows * (th + 34 + gap) + 6;
+    pgu_card(u, p->x, y, p->w, ch);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_THEME_LIGHT_DARK, "Color theme", "Windows, desktop and this app");
+    for (int i = 0; i < count; i++) {
+        const char *name = pg_theme_name_at((uint32_t)i);
+        struct pg_theme t = pg_theme_by_name(name);
+        int cx = p->x + 24 + (i % cols) * (tw + gap);
+        int cy = y + 84 + (i / cols) * (th + 34 + gap);
+        bool sel = fmt_streq(a->theme, name);
+        uint32_t id = pgu_id("theme", i);
+        bool clicked = pgu_click(u, id, cx, cy, tw, th + 30);
+        bool hot = u->hot == id;
+        if (sel || hot)
+            pgc_rrect(u->c, cx - 4, cy - 4, tw + 8, th + 8, 12, sel ? pal->accent : pal->surface3, 255);
+        theme_preview(u, cx, cy, tw, th, &t);
+        pgc_text_fit(u->c, sel ? PGF_MEDIUM : PGF_BODY, cx + 2, cy + th + 10, tw - 24,
+                    pretty_theme(name, buf, sizeof(buf)), sel ? pal->text : pal->text2);
+        if (sel)
+            pgc_icon(u->c, PGI_CHECK_CIRCLE, PG_ICON_S, cx + tw - 18, cy + th + 8, pal->accent);
+        if (clicked && !sel) {
+            fmt_copy(a->theme, name, sizeof(a->theme));
+            commit(app, "Theme applied");
+        }
+    }
+    y += ch + 16;
+
+    int wcount = (int)appearance_wallpaper_count();
+    if (wcount > THUMB_MAX)
+        wcount = THUMB_MAX;
+    int wcols = p->w > 700 ? 4 : 3;
+    int wgap = 14;
+    int ww = (p->w - 48 - wgap * (wcols - 1)) / wcols;
+    int wth = ww * 9 / 16;
+    int wrows = (wcount + wcols - 1) / wcols;
+    int wh = 84 + wrows * (wth + 40 + wgap) + 4;
+    pgu_card(u, p->x, y, p->w, wh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_WALLPAPER, "Wallpaper",
+                  "PNG or BMP, stretched to the screen. Add your own as ~/.config/purec/wp.png");
+    bool decoded_one = false;
+    for (int i = 0; i < wcount; i++) {
+        const char *path = appearance_wallpaper_at((uint32_t)i);
+        int cx = p->x + 24 + (i % wcols) * (ww + wgap);
+        int cy = y + 84 + (i / wcols) * (wth + 40 + wgap);
+        bool sel = fmt_streq(a->wallpaper, path);
+        uint32_t id = pgu_id("wp", i);
+        bool clicked = pgu_click(u, id, cx, cy, ww, wth + 32);
+        bool hot = u->hot == id;
+        if (sel || hot)
+            pgc_rrect(u->c, cx - 4, cy - 4, ww + 8, wth + 8, 13, sel ? pal->accent : pal->surface3, 255);
+        if (!path[0]) {
+            struct pg_theme t = pg_theme_by_name(a->theme);
+            pgc_rrect(u->c, cx, cy, ww, wth, 10, t.desktop, 255);
+            pgc_icon(u->c, PGI_TEXTURE_BOX, PG_ICON_M, cx + (ww - 28) / 2, cy + (wth - 28) / 2,
+                    pgc_mix(t.desktop, t.text, 120));
+        } else {
+            struct thumb *th = &thumbs[i];
+            bool visible = cy + wth > u->c->cy0 && cy < u->c->cy1;
+            if (th->state != 0 && (th->w != ww || th->h != wth))
+                th->state = 0;
+            if (th->state == 0 && visible && !decoded_one) {
+                decoded_one = true;
+                th->w = ww;
+                th->h = wth;
+                th->state = ww <= THUMB_W && wth <= THUMB_H &&
+                                    thumb_decode_file(path, th->px, (uint32_t)ww, (uint32_t)wth)
+                                ? 1
+                                : 2;
+            }
+            if (th->state == 1) {
+                pgc_image(u->c, cx, cy, ww, wth, th->px, 10);
+            } else {
+                pgc_rrect_grad(u->c, cx, cy, ww, wth, 10, pgc_mix(pal->accent, 0x0f172a, 150),
+                              pgc_mix(pal->info, 0x0f172a, 140), true);
+                pgc_icon(u->c, th->state == 2 ? PGI_ALERT_CIRCLE : PGI_WALLPAPER, PG_ICON_M, cx + (ww - 28) / 2,
+                        cy + (wth - 28) / 2, 0xffffff);
+                if (th->state == 0)
+                    u->animating = true;
+            }
+        }
+        pgc_text_fit(u->c, sel ? PGF_MEDIUM : PGF_BODY, cx + 2, cy + wth + 10, ww - 26,
+                    path[0] ? basename_of(path) : "Solid color", sel ? pal->text : pal->text2);
+        if (sel)
+            pgc_icon(u->c, PGI_CHECK_CIRCLE, PG_ICON_S, cx + ww - 18, cy + wth + 8, pal->accent);
+        if (clicked && !sel) {
+            fmt_copy(a->wallpaper, path, sizeof(a->wallpaper));
+            commit(app, "Wallpaper changed");
+        }
+    }
+    y += wh + 16;
+
+    int fh = 296;
+    pgu_card(u, p->x, y, p->w, fh);
+    pgu_card_title(u, p->x + 20, y + 20, PGI_FORMAT_FONT, "System font", "Used by the desktop and classic apps");
+    int fcount = (int)appearance_font_count();
+    if (fcount > 4)
+        fcount = 4;
+    const char *labels[4];
+    char names[4][16];
+    int fsel = 0;
+    for (int i = 0; i < fcount; i++) {
+        const char *n = appearance_font_name_at((uint32_t)i);
+        pretty_theme(n, names[i], sizeof(names[i]));
+        labels[i] = names[i];
+        if (fmt_streq(a->font, n))
+            fsel = i;
+    }
+    if (pgu_segmented(u, pgu_id("font", 0), p->x + 24, y + 84, p->w - 48, 42, labels, fcount, &fsel)) {
+        fmt_copy(a->font, appearance_font_name_at((uint32_t)fsel), sizeof(a->font));
+        commit(app, "Font changed");
+    }
+    const char *fn = appearance_font_name_at((uint32_t)fsel);
+    int face = fmt_streq(fn, "classic") ? 0 : fmt_streq(fn, "bold") ? 2 : 1;
+    int py = y + 142;
+    pgc_rrect(u->c, p->x + 24, py, p->w - 48, 74, 10, pal->light ? 0xffffff : pal->bg, 255);
+    pgc_rrect_stroke(u->c, p->x + 24, py, p->w - 48, 74, 10, pal->border, 140);
+    struct pg_clip saved = pgc_clip_push(u->c, p->x + 30, py, p->w - 60, 74);
+    int sz = (int)a->font_size;
+    pgc_bitfont(u->c, face, p->x + 40, py + 37 - sz / 2, "The quick brown fox jumps 0123", pal->text, sz);
+    pgc_clip_pop(u->c, saved);
+    pgc_text(u->c, PGF_MEDIUM, p->x + 24, py + 94, "Size", pal->text);
+    fmt_init(&f, buf, sizeof(buf));
+    fu(&f, a->font_size);
+    fs(&f, " px");
+    pgc_text(u->c, PGF_MEDIUM, p->x + p->w - 24 - pgc_text_w(PGF_MEDIUM, buf), py + 94, buf, pal->accent);
+    int v = (int)a->font_size;
+    int r = pgu_slider(u, pgu_id("fsize", 0), p->x + 80, py + 90, p->w - 80 - 90, &v, APPEAR_MIN_FONT_SIZE,
+                      APPEAR_MAX_FONT_SIZE, pal->accent);
+    if (r) {
+        a->font_size = (uint32_t)v;
+        if (r == 2)
+            commit(app, "Font size saved");
+    }
+    y += fh;
+    return y - p->y;
 }

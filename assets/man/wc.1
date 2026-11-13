@@ -1,0 +1,32 @@
+NAME
+       wc - print newline, word, and byte counts
+
+SYNOPSIS
+       wc [-lwcmL] [FILE]...
+
+DESCRIPTION
+       Print newline, word and byte counts for each FILE, and a total line if
+       more than one FILE is given.
+
+OPTIONS
+       -l
+           print the newline count
+
+       -w
+           print the word count
+
+       -c
+           print the byte count
+
+       -m
+           print the character count (UTF-8 aware)
+
+       -L
+           print the maximum display width
+
+EXAMPLES
+       wc -l *.c
+       ls /bin | wc -l
+
+SEE ALSO
+       cat(1), grep(1)

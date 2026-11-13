@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#define SCHEDULER_STACK_PAGES 4
+#define SCHEDULER_STACK_PAGES 8
 #define SCHEDULER_STACK_SIZE (SCHEDULER_STACK_PAGES * 4096u)
 #define SCHEDULER_TARGET_LATENCY_MS 20
 
@@ -62,6 +62,11 @@ struct thread {
   uint64_t node_phys;
   uint64_t kstack_phys;
   uint8_t *kstack;
+  uint64_t fs_base;
+  uint64_t clear_child_tid;
+  uint64_t altstack_sp;
+  uint64_t altstack_size;
+  uint64_t user_frame[22];
   uint8_t fpu_state[512] __attribute__((aligned(16)));
 };
 
@@ -77,6 +82,12 @@ int scheduler_create_forked_thread(void (*entry)(void *arg), void *arg,
                                    const char *name, uint8_t priority,
                                    int16_t affinity, uint64_t address_space,
                                    struct process *process);
+int scheduler_create_sibling_thread(void (*entry)(void *arg), void *arg,
+                                    const char *name, uint8_t priority,
+                                    uint64_t address_space,
+                                    struct process *process,
+                                    const uint64_t *frame, uint64_t fs_base,
+                                    uint64_t clear_child_tid);
 int scheduler_create_service_thread(void (*entry)(void *arg), void *arg,
                                     const char *name, uint8_t priority,
                                     int16_t affinity, uint64_t address_space,
@@ -86,6 +97,10 @@ bool scheduler_preempt_disable(void);
 void scheduler_preempt_enable(void);
 void scheduler_sleep(uint32_t milliseconds);
 void scheduler_block(void);
+void scheduler_block_timeout(uint32_t milliseconds);
+void scheduler_wake_process_threads(const struct process *process,
+                                    int skip_tid);
+void scheduler_set_fs_base(uint64_t base);
 void scheduler_unblock(int tid);
 void scheduler_exit(void);
 void scheduler_free_thread_by_id(int tid);

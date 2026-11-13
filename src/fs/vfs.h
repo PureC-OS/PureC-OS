@@ -60,6 +60,8 @@ int32_t vfs_chmod(const char *path, uint16_t mode);
 int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid);
 int32_t vfs_utimes(const char *path, uint32_t atime, uint32_t mtime);
 int32_t vfs_get_perm(const char *path, struct file_perm_info *out);
+int32_t vfs_open_trusted(const char *path);
+int32_t vfs_access_dir(const char *path);
 int32_t vfs_user_lookup(const char *name, uint32_t uid, struct user_info *out);
 int32_t vfs_format_device(const char *device_name,
                           const char *serial_confirmation,

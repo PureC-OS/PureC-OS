@@ -400,10 +400,38 @@ static void validate_switch_target(const struct thread *prev,
   }
 }
 
+#define MSR_FS_BASE 0xC0000100U
+static inline void write_fs_base(uint64_t value)
+{
+#ifndef PUREC_HOST_TEST
+  __asm__ volatile("wrmsr"
+                   :
+                   : "c"(MSR_FS_BASE), "a"((uint32_t)value),
+                     "d"((uint32_t)(value >> 32))
+                   : "memory");
+#else
+  (void)value;
+#endif
+}
+
+void scheduler_set_fs_base(uint64_t base)
+{
+  struct thread *t = scheduler_current_thread();
+  if (!t)
+    return;
+  uint64_t flags = irq_save();
+  t->fs_base = base;
+  write_fs_base(base);
+  irq_restore(flags);
+}
+
 static void thread_node_free(struct thread *t);
 static void finish_switch(void)
 {
   struct scheduler_cpu *cpu = local_scheduler();
+  struct thread *incoming = cpu->current;
+  if (incoming && incoming->user_mode)
+    write_fs_base(incoming->fs_base);
   struct thread *previous = cpu->previous;
   struct thread *victim = NULL;
   if (previous)
@@ -645,7 +673,9 @@ void scheduler_free_thread_by_id(int tid)
 static int create_thread(void (*entry)(void *), void *arg, const char *name,
                          uint8_t priority, int16_t affinity,
                          uint64_t address_space, struct process *process,
-                         bool user_mode, const void *fpu_image)
+                         bool user_mode, const void *fpu_image,
+                         const uint64_t *frame, uint64_t fs_base,
+                         uint64_t clear_child_tid)
 {
   if (!local_scheduler()->initialized || !entry)
     return -1;
@@ -698,6 +728,10 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   t->process = process;
   t->user_mode = user_mode;
   strncpy(t->name, name ? name : "thread", sizeof(t->name) - 1);
+  t->fs_base = fs_base;
+  t->clear_child_tid = clear_child_tid;
+  if (frame)
+    memcpy(t->user_frame, frame, sizeof(t->user_frame));
   t->rsp = create_initial_stack(t);
   if (fpu_image)
     memcpy(t->fpu_state, fpu_image, FPU_STATE_SIZE);
@@ -745,7 +779,7 @@ int scheduler_create_thread(void (*entry)(void *), void *arg, const char *name,
                             uint8_t priority, int16_t affinity)
 {
   return create_thread(entry, arg, name, priority, affinity,
-                       vmm_kernel_address_space(), NULL, false, NULL);
+                       vmm_kernel_address_space(), NULL, false, NULL, NULL, 0, 0);
 }
 int scheduler_create_user_thread(void (*entry)(void *), void *arg,
                                  const char *name, uint8_t priority,
@@ -755,7 +789,7 @@ int scheduler_create_user_thread(void (*entry)(void *), void *arg,
   if (!address_space || !process)
     return -1;
   return create_thread(entry, arg, name, priority, affinity, address_space,
-                       process, true, NULL);
+                       process, true, NULL, NULL, 0, 0);
 }
 
 int scheduler_create_forked_thread(void (*entry)(void *arg), void *arg,
@@ -767,8 +801,23 @@ int scheduler_create_forked_thread(void (*entry)(void *arg), void *arg,
     return -1;
   uint8_t fpu_image[FPU_STATE_SIZE] __attribute__((aligned(16)));
   fpu_save(fpu_image);
+  struct thread *parent = scheduler_current_thread();
   return create_thread(entry, arg, name, priority, affinity, address_space,
-                       process, true, fpu_image);
+                       process, true, fpu_image, NULL,
+                       parent ? parent->fs_base : 0, 0);
+}
+
+int scheduler_create_sibling_thread(void (*entry)(void *), void *arg,
+                                    const char *name, uint8_t priority,
+                                    uint64_t address_space,
+                                    struct process *process,
+                                    const uint64_t *frame, uint64_t fs_base,
+                                    uint64_t clear_child_tid)
+{
+  if (!address_space || !process || !frame)
+    return -1;
+  return create_thread(entry, arg, name, priority, -1, address_space, process,
+                       true, NULL, frame, fs_base, clear_child_tid);
 }
 
 int scheduler_create_service_thread(void (*entry)(void *), void *arg,
@@ -779,7 +828,7 @@ int scheduler_create_service_thread(void (*entry)(void *), void *arg,
   if (!process)
     return -1;
   return create_thread(entry, arg, name, priority, affinity, address_space,
-                       process, false, NULL);
+                       process, false, NULL, NULL, 0, 0);
 }
 
 struct thread *scheduler_current_thread(void)
@@ -1352,6 +1401,59 @@ void scheduler_block(void)
   schedule_locked();
   irq_restore(flags);
 }
+void scheduler_block_timeout(uint32_t milliseconds)
+{
+  if (!local_scheduler()->initialized)
+    return;
+  if (!milliseconds)
+  {
+    scheduler_block();
+    return;
+  }
+  if (local_scheduler()->preempt_depth)
+    warn_sleep_with_preempt_off();
+  uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  struct thread *t = local_scheduler()->current;
+  if (t->idle || t->wake_pending)
+  {
+    t->wake_pending = false;
+    spin_unlock_irqrestore(&runqueue_lock, flags);
+    return;
+  }
+  account_current(local_scheduler(), timer_ticks());
+  uint64_t now = timer_ticks();
+  uint64_t wake_tick = now + milliseconds;
+  if (wake_tick < now)
+    wake_tick = UINT64_MAX;
+  thread_block_locked(t, local_scheduler(), wake_tick);
+  schedule_locked();
+  irq_restore(flags);
+}
+
+void scheduler_wake_process_threads(const struct process *process,
+                                    int skip_tid)
+{
+  uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  struct scheduler_cpu *local = local_scheduler();
+  for (struct thread *t = thread_list; t; t = t->next)
+  {
+    if (t->process != process || (int)t->id == skip_tid || t->idle)
+      continue;
+    if (t->state == THREAD_BLOCKED)
+    {
+      if (t->wake_tick)
+        sleep_remove(t);
+      make_runnable(t, gdt_current_cpu_id(), local);
+    }
+    else if (t->state == THREAD_RUNNING || t->state == THREAD_READY)
+    {
+      t->wake_pending = true;
+    }
+  }
+  unlock_and_kick(local);
+  irq_restore(flags);
+}
+
 void scheduler_unblock(int tid)
 {
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);

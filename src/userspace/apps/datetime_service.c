@@ -3,8 +3,9 @@
 #include "../../kernel/syscall/syscall.h"
 #include "../../kernel/core/system_info.h"
 #include "../../lib/string.h"
+#include "../../kernel/time/civil.h"
+#include "../../kernel/time/wallclock.h"
 
-#define DATETIME_PATH "/purec/datetime.cfg"
 
 static struct desktop_datetime current_datetime = {
     2026,
@@ -187,58 +188,52 @@ bool datetime_service_parse(
     return true;
 }
 
-void datetime_service_save(void) {
-    char text[20];
+static uint32_t last_shown_second = 0xFFFFFFFFu;
 
-    datetime_service_format(text);
-    userspace_syscall(SYS_DIR_CREATE, (uint64_t)"/purec", 0, 0);
-    userspace_syscall(
-        SYS_FILE_WRITE,
-        (uint64_t)DATETIME_PATH,
-        (uint64_t)text,
-        19
-    );
+static void load_from_kernel(void) {
+    int64_t utc = wallclock_unix_ms() / 1000;
+    int64_t local = utc + (int64_t)wallclock_tz_minutes() * 60;
+    struct civil_time parts;
+    unix_to_civil(local, &parts);
+    if (parts.year < 1980 || parts.year > 9999) {
+        return;
+    }
+    current_datetime = (struct desktop_datetime) {
+        (uint16_t)parts.year,
+        parts.month,
+        parts.day,
+        parts.hour,
+        parts.minute,
+        parts.second
+    };
+}
+
+void datetime_service_save(void) {
 }
 
 void datetime_service_init(void) {
-    int64_t descriptor = userspace_syscall(
-        SYS_FILE_OPEN,
-        (uint64_t)DATETIME_PATH,
-        0,
-        0
-    );
-
-    if (descriptor >= 0) {
-        char text[20] = {0};
-        struct desktop_datetime loaded;
-        int64_t count = userspace_syscall(
-            SYS_FILE_READ,
-            (uint64_t)descriptor,
-            (uint64_t)text,
-            19
-        );
-
-        userspace_syscall(SYS_FILE_CLOSE, (uint64_t)descriptor, 0, 0);
-        if (count == 19
-            && datetime_service_parse(text, &loaded, false)) {
-            current_datetime = loaded;
-        }
-    }
-
+    load_from_kernel();
     last_uptime_second = system_info_uptime_ms() / 1000;
+    last_shown_second = current_datetime.second;
 }
 
 bool datetime_service_update(void) {
-    uint64_t uptime_second = system_info_uptime_ms() / 1000;
-    bool changed = false;
-
-    while (last_uptime_second < uptime_second) {
-        advance_one_second();
-        last_uptime_second++;
-        changed = true;
+    if (!wallclock_valid()) {
+        uint64_t uptime_second = system_info_uptime_ms() / 1000;
+        bool changed = false;
+        while (last_uptime_second < uptime_second) {
+            advance_one_second();
+            last_uptime_second++;
+            changed = true;
+        }
+        return changed;
     }
-
-    return changed;
+    load_from_kernel();
+    if (current_datetime.second == last_shown_second) {
+        return false;
+    }
+    last_shown_second = current_datetime.second;
+    return true;
 }
 
 const struct desktop_datetime *datetime_service_get(void) {
@@ -249,9 +244,11 @@ bool datetime_service_set(const struct desktop_datetime *datetime) {
     if (datetime == 0) {
         return false;
     }
-
+    int64_t local = civil_to_unix(datetime->year, datetime->month,
+                                  datetime->day, datetime->hour,
+                                  datetime->minute, datetime->second);
+    int64_t utc = local - (int64_t)wallclock_tz_minutes() * 60;
     current_datetime = *datetime;
     last_uptime_second = system_info_uptime_ms() / 1000;
-    datetime_service_save();
-    return true;
+    return wallclock_set_utc(utc) == 0;
 }

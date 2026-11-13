@@ -14,8 +14,12 @@ uint64_t svga_fb_size(void);
 uint32_t svga_caps(void);
 bool svga_set_mode(uint32_t want_w, uint32_t want_h,
                    uint32_t *actual_w, uint32_t *actual_h);
+void svga_log_mode(void);
 void svga_update(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 bool svga_fill(uint32_t color, uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 bool svga_copy(uint32_t sx, uint32_t sy, uint32_t dx, uint32_t dy, uint32_t w, uint32_t h);
 void svga_sync(void);
+uint32_t svga_reg_get(uint32_t index);
+void svga_reg_set(uint32_t index, uint32_t value);
+bool svga_legacy_restore(uint32_t width, uint32_t height);
 const char *svga_status_line(void);

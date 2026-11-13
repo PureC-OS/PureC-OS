@@ -1,0 +1,19 @@
+NAME
+       cd - change the working directory
+
+SYNOPSIS
+       cd [DIRECTORY]
+
+DESCRIPTION
+       cd is a shell built-in: it changes the current directory of the shell.
+       Without DIRECTORY it goes to $HOME; cd - returns to the previous
+       directory. /bin/cd only checks that DIRECTORY exists, because a separate
+       program cannot change the directory of its parent.
+
+EXAMPLES
+       cd /usr/share/man
+       cd ..
+       cd
+
+SEE ALSO
+       pwd(1), sh(1)

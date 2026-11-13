@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+int __purec_fs_errno(int32_t status, int fallback);
 
 static const char *resolve_user_path(const char *path, char *buf, size_t cap)
 {
@@ -253,9 +254,10 @@ int stat(const char *path, struct stat *info)
         return 0;
     }
     struct file_stat_info raw;
-    if (pc_file_stat(path, &raw) < 0)
+    int32_t status = pc_file_stat(path, &raw);
+    if (status < 0)
     {
-        errno = ENOENT;
+        errno = __purec_fs_errno(status, ENOENT);
         return -1;
     }
     fill_stat(info, raw.size, raw.is_directory != 0);
@@ -307,7 +309,7 @@ DIR *opendir(const char *path)
     {
         free(directory->entries);
         free(directory);
-        errno = ENOENT;
+        errno = __purec_fs_errno(count, ENOENT);
         return 0;
     }
     directory->count = count;
@@ -388,6 +390,105 @@ int unlinkat(int dirfd_value, const char *path, int flags)
     if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
         return -1;
     return (flags & AT_REMOVEDIR) ? rmdir(full) : unlink(full);
+}
+
+int openat(int dirfd_value, const char *path, int flags, ...)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    va_list arguments;
+    va_start(arguments, flags);
+    unsigned int mode = (flags & O_CREAT) ? va_arg(arguments, unsigned int) : 0;
+    va_end(arguments);
+    if (flags & O_DIRECTORY)
+    {
+        struct stat info;
+        if (stat(full, &info) < 0)
+            return -1;
+        if (!S_ISDIR(info.st_mode))
+        {
+            errno = ENOTDIR;
+            return -1;
+        }
+        for (int slot = 0; slot < DIRFD_SLOTS; slot++)
+        {
+            if (!dirfd_used[slot])
+            {
+                dirfd_used[slot] = 1;
+                strcpy(dirfd_paths[slot], full);
+                return DIRFD_BASE + slot;
+            }
+        }
+        errno = EMFILE;
+        return -1;
+    }
+    return open(full, flags & ~(O_NOFOLLOW | O_DIRECTORY), mode);
+}
+
+DIR *fdopendir(int fd)
+{
+    int slot = fd - DIRFD_BASE;
+    if (slot < 0 || slot >= DIRFD_SLOTS || !dirfd_used[slot])
+    {
+        errno = EBADF;
+        return 0;
+    }
+    char path[512];
+    strcpy(path, dirfd_paths[slot]);
+    DIR *directory = opendir(path);
+    if (!directory)
+        return 0;
+    int extra = directory->pseudo_fd - DIRFD_BASE;
+    if (extra >= 0 && extra < DIRFD_SLOTS && extra != slot)
+        dirfd_used[extra] = 0;
+    directory->pseudo_fd = fd;
+    return directory;
+}
+
+int fchmodat(int dirfd_value, const char *path, unsigned int mode, int flags)
+{
+    (void)flags;
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return chmod(full, mode);
+}
+
+int link(const char *existing, const char *path)
+{
+    (void)existing;
+    (void)path;
+    errno = EPERM;
+    return -1;
+}
+
+long pathconf(const char *path, int name)
+{
+    (void)path;
+    return fpathconf(-1, name);
+}
+
+long fpathconf(int fd, int name)
+{
+    (void)fd;
+    switch (name)
+    {
+    case _PC_LINK_MAX:
+        return 1;
+    case _PC_MAX_CANON:
+    case _PC_MAX_INPUT:
+        return 255;
+    case _PC_NAME_MAX:
+        return 255;
+    case _PC_PATH_MAX:
+        return 4096;
+    case _PC_PIPE_BUF:
+        return 4096;
+    default:
+        errno = EINVAL;
+        return -1;
+    }
 }
 
 int alphasort(const struct dirent **left, const struct dirent **right)
@@ -486,6 +587,25 @@ int fileno(FILE *stream)
     return fd;
 }
 
+int __purec_fs_errno(int32_t status, int fallback)
+{
+    switch (status)
+    {
+    case -14: return EACCES;
+    case -10: return EROFS;
+    case -2: return ENOENT;
+    case -5: return EEXIST;
+    case -6: return EISDIR;
+    case -7: return ENOTDIR;
+    case -4: return ENOSPC;
+    case -12: return ENOTEMPTY;
+    case -9: return EBUSY;
+    case -3: return EINVAL;
+    case -1: return EIO;
+    }
+    return fallback;
+}
+
 int mkdir(const char *path, unsigned int mode)
 {
     (void)mode;
@@ -496,9 +616,10 @@ int mkdir(const char *path, unsigned int mode)
     }
     char abs[512];
     path = resolve_user_path(path, abs, sizeof(abs));
-    if (pc_directory_create(path) < 0)
+    int32_t status = pc_directory_create(path);
+    if (status < 0)
     {
-        errno = EEXIST;
+        errno = __purec_fs_errno(status, EEXIST);
         return -1;
     }
     return 0;
@@ -520,7 +641,7 @@ int fstat(int fd, struct stat *info)
     memset(info, 0, sizeof(*info));
     info->st_nlink = 1;
     info->st_blksize = 4096;
-    if (kind == FD_KIND_CONSOLE)
+    if (kind == FD_KIND_CONSOLE || kind == FD_KIND_PTY)
     {
         info->st_dev = 2;
         info->st_ino = 1;
@@ -561,9 +682,10 @@ int unlink(const char *path)
     }
     char abs[512];
     path = resolve_user_path(path, abs, sizeof(abs));
-    if (pc_file_delete(path) < 0)
+    int32_t status = pc_file_delete(path);
+    if (status < 0)
     {
-        errno = ENOENT;
+        errno = __purec_fs_errno(status, ENOENT);
         return -1;
     }
     return 0;
@@ -599,7 +721,7 @@ int isatty(int fd)
         errno = EBADF;
         return 0;
     }
-    if (kind != FD_KIND_CONSOLE)
+    if (kind != FD_KIND_CONSOLE && kind != FD_KIND_PTY)
     {
         errno = ENOTTY;
         return 0;
@@ -724,15 +846,33 @@ void *mmap(void *address, size_t length, int prot, int flags, int fd, long offse
             errno = EINVAL;
             return MAP_FAILED;
         }
-        if (sharing == MAP_SHARED && (prot & PROT_WRITE))
+    }
+    struct kernel_mmap_args request;
+    request.address = fixed ? (uint64_t)(uintptr_t)address : 0;
+    request.length = length;
+    request.fd = -1;
+    request.offset = 0;
+    if (sharing == MAP_SHARED && (anonymous || fd >= 0))
+    {
+        request.prot = (uint64_t)prot;
+        request.flags = KMAP_SHARED | (fixed ? KMAP_FIXED : 0);
+        if (!anonymous)
+        {
+            request.fd = fd;
+            request.offset = (uint64_t)offset;
+        }
+        void *shared = mmap_address_result(
+            pc_syscall(SYS_MMAP, (uint64_t)(uintptr_t)&request, 0, 0));
+        if (shared != MAP_FAILED || anonymous || errno != ENODEV)
+            return shared;
+        request.fd = -1;
+        request.offset = 0;
+        if (prot & PROT_WRITE)
         {
             errno = ENODEV;
             return MAP_FAILED;
         }
     }
-    struct kernel_mmap_args request;
-    request.address = fixed ? (uint64_t)(uintptr_t)address : 0;
-    request.length = length;
     request.prot = backed ? (uint64_t)(PROT_READ | PROT_WRITE) : (uint64_t)prot;
     request.flags = fixed ? KMAP_FIXED : 0;
     void *base = mmap_address_result(
@@ -801,18 +941,34 @@ int msync(void *address, size_t length, int flags)
 
 int madvise(void *address, size_t length, int advice)
 {
-    (void)length;
     if ((uintptr_t)address & 4095u)
     {
         errno = EINVAL;
         return -1;
     }
-    if (advice < MADV_NORMAL || advice > MADV_DONTNEED)
+    switch (advice)
     {
+    case MADV_NORMAL:
+    case MADV_RANDOM:
+    case MADV_SEQUENTIAL:
+    case MADV_WILLNEED:
+    case MADV_FREE:
+    case MADV_DONTFORK:
+    case MADV_DOFORK:
+    case MADV_HUGEPAGE:
+    case MADV_NOHUGEPAGE:
+    case MADV_DONTDUMP:
+    case MADV_DODUMP:
+        return 0;
+    case MADV_DONTNEED:
+        if (!length)
+            return 0;
+        return syscall_result(pc_syscall(SYS_MADVISE, (uint64_t)(uintptr_t)address,
+                                         length, (uint64_t)advice));
+    default:
         errno = EINVAL;
         return -1;
     }
-    return 0;
 }
 
 int mlock(const void *address, size_t length)
@@ -912,12 +1068,12 @@ char *realpath(const char *path, char *resolved)
                 break; // trailing slash, drop it
             if (combined[r] == '.' && (combined[r + 1] == '/' || !combined[r + 1]))
             {
-                r += combined[r + 1] ? 2 : 1;
+                r += 1;
                 continue;
             }
             if (combined[r] == '.' && combined[r + 1] == '.' && (combined[r + 2] == '/' || !combined[r + 2]))
             {
-                r += combined[r + 2] ? 3 : 2;
+                r += 2;
                 while (w > 1 && out[w - 1] != '/')
                     w--; // pop one level
                 if (w > 1)
@@ -947,4 +1103,53 @@ char *realpath(const char *path, char *resolved)
         return 0;
     memcpy(fresh, out, w + 1);
     return fresh;
+}
+
+int __pc_at_path(int dirfd_value, const char *path, char *out, size_t capacity)
+{
+    return at_path(dirfd_value, path, out, capacity);
+}
+
+int mkdirat(int dirfd_value, const char *path, unsigned int mode)
+{
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return mkdir(full, mode);
+}
+
+int renameat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path)
+{
+    char from[1024];
+    char to[1024];
+    if (at_path(old_dirfd, old_path, from, sizeof(from)) < 0 ||
+        at_path(new_dirfd, new_path, to, sizeof(to)) < 0)
+        return -1;
+    return rename(from, to);
+}
+
+int linkat(int old_dirfd, const char *old_path, int new_dirfd, const char *new_path,
+           int flags)
+{
+    (void)flags;
+    char from[1024];
+    char to[1024];
+    if (at_path(old_dirfd, old_path, from, sizeof(from)) < 0 ||
+        at_path(new_dirfd, new_path, to, sizeof(to)) < 0)
+        return -1;
+    return link(from, to);
+}
+
+int faccessat(int dirfd_value, const char *path, int mode, int flags)
+{
+    (void)flags;
+    char full[1024];
+    if (at_path(dirfd_value, path, full, sizeof(full)) < 0)
+        return -1;
+    return access(full, mode);
+}
+
+int getpagesize(void)
+{
+    return 4096;
 }

@@ -13,6 +13,7 @@ enum app_page {
     PAGE_WELCOME = 0,
     PAGE_DISK,
     PAGE_COMPUTER,
+    PAGE_TIME,
     PAGE_ACCOUNT,
     PAGE_REVIEW,
     PAGE_INSTALL,
@@ -21,6 +22,7 @@ enum app_page {
 };
 
 #define APP_PHASES 6
+#define APP_STEPS 7
 
 struct ui_input {
     int32_t mx, my;
@@ -38,9 +40,9 @@ struct ui {
     uint32_t frame;
     int32_t active;
     int32_t focus;
-    int32_t ids[24];
+    int32_t ids[48];
     int32_t id_count;
-    int32_t ids_new[24];
+    int32_t ids_new[48];
     int32_t id_new_count;
     bool dirty;
     bool caret_on;
@@ -52,6 +54,8 @@ struct app {
     int32_t disk_count;
     int32_t selected;
     int32_t scroll;
+    int32_t tz_selected;
+    int32_t tz_scroll;
     struct install_settings s;
     char user_pass2[SETUP_PASSWORD_MAX];
     char root_pass2[SETUP_PASSWORD_MAX];

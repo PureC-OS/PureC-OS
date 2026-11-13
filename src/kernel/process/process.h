@@ -13,6 +13,9 @@
 #define PROCESS_ENVIRONMENT_VALUE_CAPACITY 128
 #define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
 #define PROCESS_CAP_NET_ADMIN (1U << 1)
+#define PROCESS_CAP_DISPLAY (1U << 2)
+#define PROCESS_CAP_NET_BIND (1U << 3)
+#define PROCESS_CAP_SYS_TIME (1U << 4)
 
 struct process_environment_entry
 {
@@ -23,6 +26,7 @@ struct process_environment_entry
 
 struct ipc_mbox;
 struct process_signals;
+struct vma_table;
 
 enum process_state
 {
@@ -72,9 +76,14 @@ struct process
   uint64_t sig_blocked;
   struct process_signals *signals;
   uint64_t mmap_cursor;
+  int32_t exit_group;
+  int32_t exit_tid;
+  int32_t extra_threads;
+  struct vma_table *vmas;
 };
 
 void process_init(void);
+uint32_t process_path_capabilities(const char *path);
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line);
 int32_t process_spawn_module(const char *path, const char *command_line);
@@ -92,6 +101,7 @@ int32_t process_resolve_path(const char *path, char *out, uint32_t capacity);
 int32_t process_chdir(const char *path);
 int32_t process_getcwd(char *buffer, uint32_t capacity);
 bool process_handle_stack_fault(uint64_t address);
+bool process_handle_lazy_fault(uint64_t address, uint64_t error);
 void process_exit_signal(int32_t signal) __attribute__((noreturn));
 int32_t process_wait(uint32_t pid, int32_t *status, bool nohang);
 struct process *process_current(void);
@@ -103,9 +113,15 @@ uint32_t process_current_gid(void);
 int32_t process_session_begin(uint32_t uid, uint32_t gid);
 int32_t process_set_uid(uint32_t uid);
 int32_t process_set_gid(uint32_t gid);
+void process_grant_root(void);
+bool process_session_user(uint32_t *uid, uint32_t *gid);
 bool process_has_capability(uint32_t capability);
 uint64_t process_current_address_space(void);
 uint64_t process_heap_grow(uint64_t size);
+int64_t process_mmap_shared(uint64_t address, uint64_t length, uint64_t prot,
+                            uint64_t flags, int32_t shm, uint64_t offset_pages);
+int64_t process_madvise(uint64_t address, uint64_t length, uint64_t advice);
+int64_t process_map_device(uint64_t physical, uint64_t length);
 int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
                      uint64_t flags);
 int64_t process_munmap(uint64_t address, uint64_t length);
@@ -113,6 +129,11 @@ int64_t process_mprotect(uint64_t address, uint64_t length, uint64_t prot);
 int64_t process_mremap(uint64_t address, uint64_t old_length,
                        uint64_t new_length, uint64_t flags);
 void process_exit_current(int32_t status) __attribute__((noreturn));
+int32_t process_thread_create(uint64_t entry, uint64_t stack, uint64_t argument,
+                              uint64_t tls_base, uint64_t clear_tid);
+int32_t process_thread_exit(uint64_t unmap_address, uint64_t unmap_length);
+void process_thread_checkpoint(void);
+bool process_exit_pending(void);
 int32_t process_fd_install(int32_t kernel_descriptor);
 int32_t process_fd_resolve(int32_t descriptor);
 int32_t process_fd_close(int32_t descriptor);
@@ -134,6 +155,10 @@ int32_t process_monitor_list_page(struct process_monitor_info *entries,
 
 bool process_set_affinity(uint32_t pid, int16_t core);
 struct process *process_lookup_by_pid(uint32_t pid);
+uint32_t process_pids_with_stdin(bool (*match)(int32_t object, void *ctx), void *ctx, uint32_t *pids,
+                                 uint32_t capacity);
+struct oom_candidate;
+uint32_t process_oom_candidates(struct oom_candidate *out, uint32_t capacity);
 struct process_proc_info {
   uint32_t uid;
   uint32_t gid;
@@ -145,5 +170,8 @@ struct process_proc_info {
 };
 
 bool process_proc_info_get(uint32_t pid, struct process_proc_info *out);
+bool process_socket_owner(int32_t sock_id, uint32_t *pid, uint32_t *uid,
+                          uint32_t *fd, char *name, uint32_t capacity);
+bool process_name_of(uint32_t pid, uint32_t *uid, char *name, uint32_t capacity);
 void process_table_lock(void);
 void process_table_unlock(void);

@@ -10,6 +10,7 @@
 #include "include/hosted/string.h"
 #include "include/hosted/time.h"
 #include "include/hosted/unistd.h"
+#include "include/purec.h"
 #include "include/hosted/wchar.h"
 #include "include/purec.h"
 #include <stddef.h>
@@ -324,9 +325,39 @@ long sysconf(int name)
         return 100;
     case _SC_OPEN_MAX:
         return 1024;
+    case _SC_ARG_MAX:
+        return 131072;
+    case _SC_CHILD_MAX:
+        return 1024;
+    case _SC_NGROUPS_MAX:
+        return 32;
+    case _SC_GETGR_R_SIZE_MAX:
+    case _SC_GETPW_R_SIZE_MAX:
+        return 1024;
+    case _SC_LOGIN_NAME_MAX:
+    case _SC_TTY_NAME_MAX:
+        return 32;
+    case _SC_HOST_NAME_MAX:
+        return 64;
+    case _SC_SYMLOOP_MAX:
+        return 40;
+    case _SC_PHYS_PAGES:
+    case _SC_AVPHYS_PAGES:
+    {
+        struct memory_monitor_info memory;
+        if (!pc_memory_info(&memory))
+            return 0;
+        uint64_t bytes = name == _SC_PHYS_PAGES ? memory.total_bytes : memory.available_bytes;
+        return (long)(bytes / 4096);
+    }
     case _SC_NPROCESSORS_CONF:
     case _SC_NPROCESSORS_ONLN:
+    {
+        struct cpu_monitor_info cpu;
+        if (pc_cpu_info(&cpu) && cpu.logical_processors > 0)
+            return (long)cpu.logical_processors;
         return 1;
+    }
     default:
         errno = EINVAL;
         return -1;
@@ -469,12 +500,6 @@ char *basename(char *path)
     return slash && length > 1 ? slash + 1 : path;
 }
 
-char *nl_langinfo(nl_item item)
-{
-    (void)item;
-    return "UTF-8";
-}
-
 static int match_here(const char *pattern, const char *text, int flags)
 {
     for (; *pattern; pattern++, text++)
@@ -579,6 +604,12 @@ ldiv_t ldiv(long numerator, long denominator)
     return r;
 }
 
+lldiv_t lldiv(long long numerator, long long denominator)
+{
+    lldiv_t r = {numerator / denominator, numerator % denominator};
+    return r;
+}
+
 static void swap_bytes(unsigned char *a, unsigned char *b, size_t size)
 {
     while (size--)
@@ -599,370 +630,6 @@ void qsort_r(void *base, size_t count, size_t size,
                  compare(items + (j - gap) * size, items + j * size, context) > 0;
                  j -= gap)
                 swap_bytes(items + (j - gap) * size, items + j * size, size);
-}
-
-size_t wcslen(const wchar_t *text)
-{
-    size_t length = 0;
-    while (text[length])
-        length++;
-    return length;
-}
-
-size_t mbrtowc(wchar_t *out, const char *text, size_t count, mbstate_t *state)
-{
-    (void)state;
-    if (!text)
-        return 0;
-    if (!count)
-        return (size_t)-2;
-    unsigned char lead = (unsigned char)text[0];
-    unsigned int value;
-    size_t need;
-    if (lead < 0x80)
-    {
-        value = lead;
-        need = 1;
-    }
-    else if ((lead & 0xE0) == 0xC0)
-    {
-        value = lead & 0x1F;
-        need = 2;
-    }
-    else if ((lead & 0xF0) == 0xE0)
-    {
-        value = lead & 0x0F;
-        need = 3;
-    }
-    else if ((lead & 0xF8) == 0xF0)
-    {
-        value = lead & 0x07;
-        need = 4;
-    }
-    else
-    {
-        errno = EILSEQ;
-        return (size_t)-1;
-    }
-    if (count < need)
-        return (size_t)-2;
-    for (size_t i = 1; i < need; i++)
-    {
-        if (((unsigned char)text[i] & 0xC0) != 0x80)
-        {
-            errno = EILSEQ;
-            return (size_t)-1;
-        }
-        value = (value << 6) | ((unsigned char)text[i] & 0x3F);
-    }
-    if (out)
-        *out = (wchar_t)value;
-    return value ? need : 0;
-}
-
-size_t wcrtomb(char *out, wchar_t value, mbstate_t *state)
-{
-    (void)state;
-    unsigned int c = (unsigned int)value;
-    if (!out)
-        return 1;
-    if (c < 0x80)
-    {
-        out[0] = (char)c;
-        return 1;
-    }
-    if (c < 0x800)
-    {
-        out[0] = (char)(0xC0 | (c >> 6));
-        out[1] = (char)(0x80 | (c & 0x3F));
-        return 2;
-    }
-    if (c < 0x10000)
-    {
-        out[0] = (char)(0xE0 | (c >> 12));
-        out[1] = (char)(0x80 | ((c >> 6) & 0x3F));
-        out[2] = (char)(0x80 | (c & 0x3F));
-        return 3;
-    }
-    if (c < 0x110000)
-    {
-        out[0] = (char)(0xF0 | (c >> 18));
-        out[1] = (char)(0x80 | ((c >> 12) & 0x3F));
-        out[2] = (char)(0x80 | ((c >> 6) & 0x3F));
-        out[3] = (char)(0x80 | (c & 0x3F));
-        return 4;
-    }
-    errno = EILSEQ;
-    return (size_t)-1;
-}
-
-int mbsinit(const mbstate_t *state)
-{
-    return !state || !state->state;
-}
-
-size_t mbstowcs(wchar_t *out, const char *text, size_t count)
-{
-    size_t produced = 0;
-    while (*text)
-    {
-        wchar_t value;
-        size_t used = mbrtowc(&value, text, 4, 0);
-        if (used == (size_t)-1 || used == (size_t)-2)
-            return (size_t)-1;
-        if (out)
-        {
-            if (produced >= count)
-                return produced;
-            out[produced] = value;
-        }
-        produced++;
-        text += used;
-    }
-    if (out && produced < count)
-        out[produced] = 0;
-    return produced;
-}
-
-size_t wcstombs(char *out, const wchar_t *text, size_t count)
-{
-    size_t produced = 0;
-    char piece[4];
-    while (*text)
-    {
-        size_t used = wcrtomb(piece, *text++, 0);
-        if (used == (size_t)-1)
-            return (size_t)-1;
-        if (out)
-        {
-            if (produced + used > count)
-                return produced;
-            memcpy(out + produced, piece, used);
-        }
-        produced += used;
-    }
-    if (out && produced < count)
-        out[produced] = '\0';
-    return produced;
-}
-
-#define TLS_KEYS 64
-static void *key_values[TLS_KEYS];
-static unsigned char key_used[TLS_KEYS];
-
-int pthread_create(pthread_t *thread, const pthread_attr_t *attr,
-                   void *(*start)(void *), void *argument)
-{
-    (void)thread;
-    (void)attr;
-    (void)start;
-    (void)argument;
-    return EAGAIN;
-}
-
-int pthread_join(pthread_t thread, void **result)
-{
-    (void)thread;
-    (void)result;
-    return ESRCH;
-}
-
-int pthread_detach(pthread_t thread)
-{
-    (void)thread;
-    return ESRCH;
-}
-
-pthread_t pthread_self(void) { return 1; }
-int pthread_equal(pthread_t a, pthread_t b) { return a == b; }
-
-int pthread_mutex_init(pthread_mutex_t *mutex, const pthread_mutexattr_t *attr)
-{
-    mutex->locked = 0;
-    mutex->kind = attr ? attr->kind : 0;
-    return 0;
-}
-
-int pthread_mutex_destroy(pthread_mutex_t *mutex)
-{
-    (void)mutex;
-    return 0;
-}
-
-int pthread_mutex_lock(pthread_mutex_t *mutex)
-{
-    if (mutex->locked && mutex->kind != PTHREAD_MUTEX_RECURSIVE)
-        return mutex->kind == PTHREAD_MUTEX_ERRORCHECK ? EDEADLK : 0;
-    mutex->locked++;
-    return 0;
-}
-
-int pthread_mutex_trylock(pthread_mutex_t *mutex)
-{
-    if (mutex->locked && mutex->kind != PTHREAD_MUTEX_RECURSIVE)
-        return EBUSY;
-    mutex->locked++;
-    return 0;
-}
-
-int pthread_mutex_unlock(pthread_mutex_t *mutex)
-{
-    if (mutex->locked)
-        mutex->locked--;
-    return 0;
-}
-
-int pthread_mutexattr_init(pthread_mutexattr_t *attr)
-{
-    attr->kind = 0;
-    return 0;
-}
-
-int pthread_mutexattr_destroy(pthread_mutexattr_t *attr)
-{
-    (void)attr;
-    return 0;
-}
-
-int pthread_mutexattr_settype(pthread_mutexattr_t *attr, int kind)
-{
-    attr->kind = kind;
-    return 0;
-}
-
-int pthread_cond_init(pthread_cond_t *cond, const pthread_condattr_t *attr)
-{
-    (void)attr;
-    cond->waiters = 0;
-    return 0;
-}
-
-int pthread_cond_destroy(pthread_cond_t *cond)
-{
-    (void)cond;
-    return 0;
-}
-
-int pthread_cond_signal(pthread_cond_t *cond)
-{
-    (void)cond;
-    return 0;
-}
-
-int pthread_cond_broadcast(pthread_cond_t *cond)
-{
-    (void)cond;
-    return 0;
-}
-
-int pthread_cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex)
-{
-    (void)cond;
-    (void)mutex;
-    return EDEADLK;
-}
-
-int pthread_cond_timedwait(pthread_cond_t *cond, pthread_mutex_t *mutex,
-                           const struct timespec *deadline)
-{
-    (void)cond;
-    (void)mutex;
-    (void)deadline;
-    return ETIMEDOUT;
-}
-
-int pthread_once(pthread_once_t *once, void (*routine)(void))
-{
-    if (!*once)
-    {
-        *once = 1;
-        routine();
-    }
-    return 0;
-}
-
-int pthread_key_create(pthread_key_t *key, void (*destructor)(void *))
-{
-    (void)destructor;
-    for (unsigned i = 0; i < TLS_KEYS; i++)
-    {
-        if (!key_used[i])
-        {
-            key_used[i] = 1;
-            key_values[i] = 0;
-            *key = i;
-            return 0;
-        }
-    }
-    return EAGAIN;
-}
-
-int pthread_key_delete(pthread_key_t key)
-{
-    if (key >= TLS_KEYS)
-        return EINVAL;
-    key_used[key] = 0;
-    return 0;
-}
-
-void *pthread_getspecific(pthread_key_t key)
-{
-    return key < TLS_KEYS && key_used[key] ? key_values[key] : 0;
-}
-
-int pthread_setspecific(pthread_key_t key, const void *value)
-{
-    if (key >= TLS_KEYS || !key_used[key])
-        return EINVAL;
-    key_values[key] = (void *)value;
-    return 0;
-}
-
-int pthread_rwlock_init(pthread_rwlock_t *lock, const void *attr)
-{
-    (void)attr;
-    lock->readers = 0;
-    lock->writer = 0;
-    return 0;
-}
-
-int pthread_rwlock_destroy(pthread_rwlock_t *lock)
-{
-    (void)lock;
-    return 0;
-}
-
-int pthread_rwlock_rdlock(pthread_rwlock_t *lock)
-{
-    lock->readers++;
-    return 0;
-}
-
-int pthread_rwlock_wrlock(pthread_rwlock_t *lock)
-{
-    lock->writer = 1;
-    return 0;
-}
-
-int pthread_rwlock_unlock(pthread_rwlock_t *lock)
-{
-    if (lock->writer)
-        lock->writer = 0;
-    else if (lock->readers)
-        lock->readers--;
-    return 0;
-}
-
-int pthread_attr_init(pthread_attr_t *attr)
-{
-    attr->dummy = 0;
-    return 0;
-}
-
-int pthread_attr_destroy(pthread_attr_t *attr)
-{
-    (void)attr;
-    return 0;
 }
 
 ssize_t pread(int fd, void *buffer, size_t count, off_t offset)
@@ -991,41 +658,6 @@ ssize_t pwrite(int fd, const void *buffer, size_t count, off_t offset)
     lseek(fd, saved, SEEK_SET);
     errno = saved_errno;
     return put;
-}
-
-#include "include/hosted/regex.h"
-
-int regcomp(regex_t *preg, const char *pattern, int cflags)
-{
-    (void)pattern;
-    (void)cflags;
-    if (preg)
-        preg->re_nsub = 0;
-    return 0;
-}
-
-int regexec(const regex_t *preg, const char *string, size_t nmatch, regmatch_t pmatch[], int eflags)
-{
-    (void)preg;
-    (void)string;
-    (void)nmatch;
-    (void)pmatch;
-    (void)eflags;
-    return REG_NOMATCH;
-}
-
-size_t regerror(int errcode, const regex_t *preg, char *errbuf, size_t errbuf_size)
-{
-    (void)errcode;
-    (void)preg;
-    if (errbuf && errbuf_size)
-        *errbuf = 0;
-    return 0;
-}
-
-void regfree(regex_t *preg)
-{
-    (void)preg;
 }
 
 char *strchrnul(const char *text, int ch)

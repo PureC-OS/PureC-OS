@@ -31,6 +31,12 @@ struct pg_theme {
     uint32_t accent;
     uint32_t danger;
     uint32_t shadow;
+    uint32_t surface;
+    uint32_t surface_alt;
+    uint32_t success;
+    uint32_t warning;
+    uint32_t info;
+    uint32_t on_accent;
 };
 
 enum pg_event_type {
@@ -78,12 +84,22 @@ struct pg_window {
     bool server;
     bool maximized;
     bool frame_synced;
+    bool frameless;
     uint32_t frame_generation;
+    bool resizable;
+    bool resizing;
+    uint32_t resize_edges;
+    struct pg_rect resize_start;
+    int32_t resize_mouse_x;
+    int32_t resize_mouse_y;
+    uint64_t resize_last_ms;
+    uint64_t title_click_ms;
 };
 
 const char *pg_version(void);
 struct pg_theme pg_theme_default(void);
 struct pg_theme pg_theme_by_name(const char *name);
+struct pg_theme pg_theme_system(void);
 uint32_t pg_theme_count(void);
 const char *pg_theme_name_at(uint32_t index);
 bool pg_window_init(struct pg_window *window, const char *title,
@@ -95,6 +111,10 @@ void pg_window_begin(struct pg_window *window);
 void pg_window_end(struct pg_window *window);
 void pg_window_close(struct pg_window *window);
 void pg_window_set_closable(struct pg_window *window, bool closable);
+void pg_window_set_frameless(struct pg_window *window, bool frameless);
+void pg_window_set_resizable(struct pg_window *window, bool resizable);
+bool pg_window_resize(struct pg_window *window, uint32_t x, uint32_t y,
+                      uint32_t width, uint32_t height);
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
 void pg_window_fit_display(struct pg_window *window);
@@ -128,6 +148,9 @@ void pg_window_text_sized(struct pg_window *window, uint32_t x, uint32_t y,
 #define PG_FONT_BOLD 2
 void pg_set_font_face(uint32_t face);
 void pg_font_sync(void);
+struct pg_canvas;
+struct pg_canvas *pg_window_canvas(struct pg_window *window);
+void pg_window_damage(struct pg_window *window, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 bool pg_window_poll_event(struct pg_window *window, struct pg_event *event);
 bool pg_window_poll_key_event(struct pg_window *window, struct key_event *event);
 int32_t pg_window_take_wheel(struct pg_window *window);

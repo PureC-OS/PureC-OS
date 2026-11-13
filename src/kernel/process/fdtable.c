@@ -1,7 +1,11 @@
+#include "../ipc/pty.h"
 #include "fdtable.h"
 #include "../../fs/vfs.h"
 #include "../../lib/string.h"
+#include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
+#include "../ipc/unix.h"
+#include "../../mm/shm.h"
 #include "../syscall/syscall.h"
 #include "ofd.h"
 #include "process.h"
@@ -73,6 +77,66 @@ int32_t fd_install_socket(int32_t sock_id, uint32_t flags)
   process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
   process_table_unlock();
   return fd;
+}
+
+int32_t fd_install_ofd(int32_t object, uint32_t flags)
+{
+  struct process *process = process_current();
+  if (!process)
+  {
+    ofd_release(object);
+    return -KERR_BADF;
+  }
+  process_table_lock();
+  int32_t fd = slot_find(process, 0);
+  if (fd < 0)
+  {
+    process_table_unlock();
+    ofd_release(object);
+    return -KERR_MFILE;
+  }
+  process->descriptors[fd] = object;
+  process->fd_flags[fd] = (flags & O_CLOEXEC_FLAG) ? PROCESS_FD_CLOEXEC : 0;
+  process_table_unlock();
+  return fd;
+}
+
+int32_t fd_install_event(int32_t event_id, uint32_t flags)
+{
+  int32_t object = ofd_create_event(event_id, flags);
+  if (object < 0)
+  {
+    evfd_release(event_id);
+    return -KERR_NFILE;
+  }
+  return fd_install_ofd(object, flags);
+}
+
+int32_t fd_install_shm(int32_t shm_id, uint32_t flags)
+{
+  int32_t object = ofd_create_shm(shm_id, flags);
+  if (object < 0)
+  {
+    shm_unref(shm_id);
+    return -KERR_NFILE;
+  }
+  return fd_install_ofd(object, flags);
+}
+
+int32_t fd_install_unix(int32_t unix_id, uint32_t flags)
+{
+  int32_t object = ofd_create_unix(unix_id, flags);
+  if (object < 0)
+  {
+    unix_release(unix_id);
+    return -KERR_NFILE;
+  }
+  return fd_install_ofd(object, flags);
+}
+
+int32_t fd_object(int32_t fd)
+{
+  return object_get(fd);
 }
 
 int32_t fd_socket_id(int32_t fd)
@@ -274,6 +338,47 @@ int32_t fd_pipe(int32_t fds[2], uint32_t flags)
   process_table_unlock();
   fds[0] = read_fd;
   fds[1] = write_fd;
+  return 0;
+}
+
+int32_t fd_openpty(int32_t fds[2], uint32_t flags)
+{
+  int32_t id;
+  int32_t status = pty_create(&id);
+  if (status < 0)
+    return status;
+  int32_t master = ofd_create_pty(id, true);
+  int32_t slave = ofd_create_pty(id, false);
+  if (master < 0 || slave < 0)
+  {
+    if (master >= 0)
+      ofd_release(master);
+    else
+      pty_release(id, true);
+    if (slave >= 0)
+      ofd_release(slave);
+    else
+      pty_release(id, false);
+    return -KERR_NFILE;
+  }
+  if (flags & 04000U)
+    (void)ofd_flags_set(master, 04000U);
+  int32_t mfd = fd_install_ofd(master, flags & O_CLOEXEC_FLAG);
+  if (mfd < 0)
+  {
+    ofd_release(master);
+    ofd_release(slave);
+    return mfd;
+  }
+  int32_t sfd = fd_install_ofd(slave, 0);
+  if (sfd < 0)
+  {
+    (void)fd_close(mfd);
+    ofd_release(slave);
+    return sfd;
+  }
+  fds[0] = mfd;
+  fds[1] = sfd;
   return 0;
 }
 

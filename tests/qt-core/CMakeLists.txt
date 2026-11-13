@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.21)
+project(qtcoretest LANGUAGES CXX)
+set(CMAKE_AUTOMOC ON)
+find_package(Qt6 REQUIRED COMPONENTS Core)
+add_executable(qtcoretest main.cpp)
+target_link_libraries(qtcoretest PRIVATE Qt6::Core)

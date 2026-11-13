@@ -1,5 +1,8 @@
 #include "app.h"
 #include "../../fs/install_accounts.h"
+#include "../../kernel/time/civil.h"
+#include "../../kernel/time/tz.h"
+#include "../../libc/include/purec.h"
 
 #define C_CARD 0x14172AU
 #define C_SIDE 0x0E1121U
@@ -35,7 +38,11 @@ enum {
     ID_SAME,
     ID_ERASE,
     ID_REVEAL,
-    ID_DISK0 = 100
+    ID_ADMIN,
+    ID_ADDUSER,
+    ID_DISK0 = 100,
+    ID_TZ0 = 200,
+    ID_USER0 = 300
 };
 
 enum { STYLE_PRIMARY = 0, STYLE_SECONDARY, STYLE_DANGER };
@@ -46,8 +53,8 @@ struct lay {
 
 static struct lay L;
 
-static const char *const step_names[APP_PHASES] = {
-    "Welcome", "Disk", "Computer", "Account", "Review", "Install"};
+static const char *const step_names[APP_STEPS] = {
+    "Welcome", "Disk", "Computer", "Time", "Account", "Review", "Install"};
 
 static int32_t imin(int32_t a, int32_t b) { return a < b ? a : b; }
 static int32_t imax(int32_t a, int32_t b) { return a > b ? a : b; }
@@ -72,7 +79,7 @@ static void layout(const struct ui *u) {
 }
 
 static void register_focus(struct ui *u, int32_t id) {
-    if (u->id_new_count < 24)
+    if (u->id_new_count < 48)
         u->ids_new[u->id_new_count++] = id;
 }
 
@@ -302,18 +309,27 @@ static bool streq(const char *a, const char *b) {
     return *a == *b;
 }
 
-static bool account_ok(const struct app *a) {
-    if (!user_ok(a->s.user_name))
+static bool draft_empty(const struct app *a) {
+    return !a->s.user_gecos[0] && !a->s.user_name[0] &&
+           !a->s.user_password[0] && !a->user_pass2[0];
+}
+
+static bool draft_ok(const struct app *a) {
+    if (a->s.user_count >= INSTALL_USERS_MAX)
+        return false;
+    if (!user_ok(a->s.user_name) || setup_user_taken(&a->s, a->s.user_name))
         return false;
     if (!a->s.user_gecos[0] || !install_account_gecos_valid(a->s.user_gecos))
         return false;
-    if (!a->s.user_password[0] ||
-        !streq(a->s.user_password, a->user_pass2))
-        return false;
-    if (!a->same_root &&
-        (!a->s.root_password[0] || !streq(a->s.root_password, a->root_pass2)))
-        return false;
-    return true;
+    return a->s.user_password[0] && streq(a->s.user_password, a->user_pass2);
+}
+
+static bool root_ok(const struct app *a) {
+    return a->s.root_password[0] && streq(a->s.root_password, a->root_pass2);
+}
+
+static bool account_ok(const struct app *a) {
+    return root_ok(a) && draft_empty(a);
 }
 
 static bool disk_usable(const struct storage_device_info *d) {
@@ -383,7 +399,7 @@ static void go(struct app *a, struct ui *u, enum app_page page) {
     if (page == PAGE_COMPUTER)
         u->focus = ID_HOST;
     else if (page == PAGE_ACCOUNT)
-        u->focus = ID_FULLNAME;
+        u->focus = ID_ROOTPASS;
     if (page == PAGE_REVIEW)
         a->erase_ok = false;
 }
@@ -396,8 +412,11 @@ static void back(struct app *a, struct ui *u) {
     case PAGE_COMPUTER:
         go(a, u, PAGE_DISK);
         break;
-    case PAGE_ACCOUNT:
+    case PAGE_TIME:
         go(a, u, PAGE_COMPUTER);
+        break;
+    case PAGE_ACCOUNT:
+        go(a, u, PAGE_TIME);
         break;
     case PAGE_REVIEW:
         go(a, u, PAGE_ACCOUNT);
@@ -415,12 +434,14 @@ static int32_t step_of(const struct app *a) {
         return 1;
     case PAGE_COMPUTER:
         return 2;
-    case PAGE_ACCOUNT:
+    case PAGE_TIME:
         return 3;
-    case PAGE_REVIEW:
+    case PAGE_ACCOUNT:
         return 4;
-    default:
+    case PAGE_REVIEW:
         return 5;
+    default:
+        return 6;
     }
 }
 
@@ -445,13 +466,13 @@ static void draw_sidebar(struct app *a, struct ui *u) {
     bool finished = a->page == PAGE_DONE;
     bool failed = a->page == PAGE_FAILED;
     int32_t sy = y + 130;
-    int32_t gap = imin(58, (L.ch - 130 - 80) / APP_PHASES);
-    for (int32_t i = 0; i < APP_PHASES; i++) {
+    int32_t gap = imin(58, (L.ch - 130 - 80) / APP_STEPS);
+    for (int32_t i = 0; i < APP_STEPS; i++) {
         int32_t cy = sy + i * gap + 15;
         int32_t cx = x + 28 + 15;
         bool done = i < cur || finished;
         bool now = i == cur && !finished;
-        if (i + 1 < APP_PHASES)
+        if (i + 1 < APP_STEPS)
             ui_fill(c, cx - 1, cy + 18, 2, gap - 36,
                     (i < cur || finished) ? C_ACC0 : C_BORDER, 255);
         if (now && failed) {
@@ -726,6 +747,172 @@ static void page_computer(struct app *a, struct ui *u) {
     if (bk || u->in.key == 27)
         back(a, u);
     else if (next || (ok && (u->in.key == 13 || u->in.key == 10)))
+        go(a, u, PAGE_TIME);
+}
+
+static void two_digits(char *out, uint32_t v) {
+    out[0] = (char)('0' + (v / 10) % 10);
+    out[1] = (char)('0' + v % 10);
+}
+
+static void clock_text(int64_t local, bool seconds, char *out) {
+    struct civil_time t;
+    unix_to_civil(local, &t);
+    two_digits(out, t.hour);
+    out[2] = ':';
+    two_digits(out + 3, t.minute);
+    if (seconds) {
+        out[5] = ':';
+        two_digits(out + 6, t.second);
+        out[8] = 0;
+    } else {
+        out[5] = 0;
+    }
+}
+
+static void date_text(int64_t local, char *out, uint32_t cap) {
+    static const char *const days[7] = {"Sunday", "Monday", "Tuesday",
+                                        "Wednesday", "Thursday", "Friday",
+                                        "Saturday"};
+    static const char *const months[12] = {
+        "January", "February", "March", "April", "May", "June", "July",
+        "August", "September", "October", "November", "December"};
+    struct civil_time t;
+    unix_to_civil(local, &t);
+    int64_t d = local / 86400;
+    if (local < 0 && local % 86400)
+        d--;
+    int64_t w = (d + 4) % 7;
+    if (w < 0)
+        w += 7;
+    out[0] = 0;
+    cat(out, cap, days[w]);
+    cat(out, cap, ", ");
+    char n[3] = {0};
+    if (t.day >= 10) {
+        two_digits(n, t.day);
+    } else {
+        n[0] = (char)('0' + t.day);
+    }
+    cat(out, cap, n);
+    cat(out, cap, " ");
+    cat(out, cap, months[(t.month - 1) % 12]);
+    char y[5] = {(char)('0' + (t.year / 1000) % 10),
+                 (char)('0' + (t.year / 100) % 10),
+                 (char)('0' + (t.year / 10) % 10),
+                 (char)('0' + t.year % 10), 0};
+    cat(out, cap, " ");
+    cat(out, cap, y);
+}
+
+static int64_t now_utc(void) {
+    struct time_info info;
+    if (pc_time_get(&info) < 0)
+        return 0;
+    return info.unix_seconds;
+}
+
+static void page_time(struct app *a, struct ui *u) {
+    struct ui_canvas *c = &u->c;
+    header(a, u, "Time and region",
+           "Pick your time zone. The hardware clock is kept in UTC.");
+    int32_t count = (int32_t)tz_count();
+    if (a->tz_selected < 0 || a->tz_selected >= count)
+        a->tz_selected = 0;
+    const struct tz_zone *sel = tz_at((uint32_t)a->tz_selected);
+    int64_t utc = now_utc();
+    int32_t off = tz_offset_minutes(sel, utc);
+    int64_t local = utc + (int64_t)off * 60;
+
+    int32_t y = L.py + 86;
+    int32_t ph = 96;
+    ui_rrect(c, L.px, y, L.pw, ph, 16, ui_solid(0x0A0D1B), 255);
+    ui_rrect_stroke(c, L.px, y, L.pw, ph, 16, 1, ui_solid(C_BORDER), 255);
+    char big[10];
+    clock_text(local, true, big);
+    ui_text(c, L.px + 22, y + 18, big, C_TEXT, 16, F_BOLD);
+    char date[48];
+    date_text(local, date, sizeof(date));
+    ui_text(c, L.px + 22, y + 46, date, C_TEXT2, 8, F_BODY);
+    char offs[10];
+    tz_format_offset(off, offs);
+    char line[96] = "";
+    cat(line, sizeof(line), sel->name);
+    cat(line, sizeof(line), "  ");
+    cat(line, sizeof(line), offs);
+    if (tz_is_dst(sel, utc))
+        cat(line, sizeof(line), "  summer time");
+    ui_text(c, L.px + 22, y + 66, line, C_ACC0, 8, F_BODY);
+    char utcs[24] = "UTC ";
+    char uc[10];
+    clock_text(utc, true, uc);
+    cat(utcs, sizeof(utcs), uc);
+    ui_text(c, L.px + L.pw - 22 - ui_text_w(utcs, 8), y + 22, utcs, C_MUTED,
+            8, F_BODY);
+
+    int32_t top = y + ph + 14;
+    int32_t rh = 40, gap = 6;
+    int32_t room = L.fy - 24 - top;
+    int32_t visible = imax(1, room / (rh + gap));
+    int32_t maxscroll = imax(0, count - visible);
+    if (u->in.wheel)
+        a->tz_scroll = imax(0, imin(maxscroll, a->tz_scroll - u->in.wheel));
+    if (u->in.special == 10 && a->tz_selected > 0)
+        a->tz_selected--;
+    if (u->in.special == 11 && a->tz_selected + 1 < count)
+        a->tz_selected++;
+    if (u->in.special == 10 || u->in.special == 11) {
+        if (a->tz_selected < a->tz_scroll)
+            a->tz_scroll = a->tz_selected;
+        if (a->tz_selected >= a->tz_scroll + visible)
+            a->tz_scroll = a->tz_selected - visible + 1;
+    }
+    if (a->tz_scroll > maxscroll)
+        a->tz_scroll = maxscroll;
+    for (int32_t row = 0; row < visible && a->tz_scroll + row < count; row++) {
+        int32_t i = a->tz_scroll + row;
+        const struct tz_zone *z = tz_at((uint32_t)i);
+        int32_t ry = top + row * (rh + gap);
+        bool hot = inside(u, L.px, ry, L.pw, rh);
+        bool on = i == a->tz_selected;
+        if (hot && u->in.pressed)
+            u->active = ID_TZ0 + i;
+        if (hot && u->in.released && u->active == ID_TZ0 + i)
+            a->tz_selected = i, on = true;
+        ui_rrect(c, L.px, ry, L.pw, rh, 12,
+                 ui_solid(on ? 0x181D3C : (hot ? C_ROW_HOT : C_ROW)), 255);
+        ui_rrect_stroke(c, L.px, ry, L.pw, rh, 12, on ? 2 : 1,
+                        on ? ui_hgrad(C_ACC0, C_ACC1) : ui_solid(C_BORDER),
+                        255);
+        int32_t zo = tz_offset_minutes(z, utc);
+        char zoff[10];
+        tz_format_offset(zo, zoff);
+        ui_text(c, L.px + 16, ry + 8, z->city, C_TEXT, 8, F_BOLD);
+        ui_text(c, L.px + 16, ry + 24, z->name, C_MUTED, 8, F_BODY);
+        char zt[8];
+        clock_text(utc + (int64_t)zo * 60, false, zt);
+        int32_t tw = ui_text_w(zt, 16);
+        ui_text(c, L.px + L.pw - 16 - tw, ry + 12, zt, on ? C_TEXT : C_TEXT2,
+                16, F_BODY);
+        ui_text(c, L.px + L.pw - 32 - tw - ui_text_w(zoff, 8), ry + 16, zoff,
+                C_ACC0, 8, F_BODY);
+    }
+    if (maxscroll > 0) {
+        int32_t th = visible * (rh + gap) - gap;
+        int32_t bh = imax(24, th * visible / count);
+        int32_t by = top + (th - bh) * a->tz_scroll / maxscroll;
+        ui_rrect(c, L.px + L.pw + 10, top, 4, th, 2, ui_solid(C_BORDER), 255);
+        ui_rrect(c, L.px + L.pw + 10, by, 4, bh, 2, ui_hgrad(C_ACC0, C_ACC1),
+                 255);
+    }
+    ui_copy(a->s.timezone, tz_at((uint32_t)a->tz_selected)->name,
+            sizeof(a->s.timezone));
+
+    bool next, bk;
+    footer(a, u, "Continue", true, STYLE_PRIMARY, &next, &bk);
+    if (bk || u->in.key == 27)
+        back(a, u);
+    else if (next || u->in.key == 13 || u->in.key == 10)
         go(a, u, PAGE_ACCOUNT);
 }
 
@@ -746,60 +933,135 @@ static void suggest_username(struct app *a) {
     a->s.user_name[n] = '\0';
 }
 
+static void add_draft(struct app *a, struct ui *u) {
+    if (!draft_ok(a) || !setup_add_user(&a->s))
+        return;
+    for (uint32_t i = 0; i < sizeof(a->user_pass2); i++)
+        ((volatile char *)a->user_pass2)[i] = 0;
+    a->username_edited = false;
+    u->focus = ID_FULLNAME;
+    u->dirty = true;
+}
+
+static void user_list(struct app *a, struct ui *u, int32_t y) {
+    int32_t colw = (L.pw - 16) / 2;
+    int32_t rh = 34;
+    for (uint32_t i = 0; i < a->s.user_count; i++) {
+        const struct setup_user *user = &a->s.users[i];
+        int32_t x = L.px + (int32_t)(i % 2) * (colw + 16);
+        int32_t ry = y + (int32_t)(i / 2) * (rh + 8);
+        ui_rrect(&u->c, x, ry, colw, rh, 10, ui_solid(C_ROW), 255);
+        ui_rrect_stroke(&u->c, x, ry, colw, rh, 10, 1, ui_solid(C_BORDER), 255);
+        char label[64] = "";
+        cat(label, sizeof(label), user->gecos);
+        cat(label, sizeof(label), " (");
+        cat(label, sizeof(label), user->name);
+        cat(label, sizeof(label), ")");
+        int32_t text_w = colw - 24 - 40 - (user->admin ? 64 : 0);
+        char shown[64];
+        ui_copy(shown, label, sizeof(shown));
+        while (ui_strlen(shown) > 3 && ui_text_w(shown, 16) > text_w)
+            shown[ui_strlen(shown) - 1] = 0;
+        ui_text(&u->c, x + 12, ry + 9, shown, C_TEXT, 16, F_BODY);
+        if (user->admin) {
+            int32_t bx = x + colw - 40 - 60;
+            ui_rrect(&u->c, bx, ry + 8, 52, 18, 9, ui_hgrad(C_ACC0, C_ACC1), 255);
+            ui_text_center(&u->c, bx, 52, ry + 13, "SUDO", 0xFFFFFF, 8, F_BOLD);
+        }
+        int32_t id = ID_USER0 + (int32_t)i;
+        int32_t cx = x + colw - 34;
+        bool hot = inside(u, cx, ry + 4, 26, 26);
+        if (hot && u->in.pressed)
+            u->active = id;
+        ui_rrect(&u->c, cx, ry + 4, 26, 26, 8,
+                 ui_solid(hot ? 0x3A1B28 : C_FIELD), 255);
+        ui_cross(&u->c, cx + 13, ry + 17, 10, hot ? C_ERR : C_MUTED, 255);
+        if (hot && u->in.released && u->active == id) {
+            setup_remove_user(&a->s, i);
+            u->dirty = true;
+            return;
+        }
+    }
+}
+
 static void page_account(struct app *a, struct ui *u) {
-    header(a, u, "Create your account",
-           "You will sign in with this account every day.");
+    header(a, u, "Accounts",
+           "Set the root password and add the people who will use this computer.");
     int32_t colw = (L.pw - 24) / 2;
     int32_t x1 = L.px, x2 = L.px + colw + 24;
-    int32_t y = L.py + 82;
-    int32_t rowh = 92;
+    int32_t y = L.py + 78;
+    int32_t rowh = 84;
 
+    field(u, ID_ROOTPASS, x1, y, colw, "ROOT PASSWORD", a->s.root_password,
+          SETUP_PASSWORD_MAX, true, a->reveal, 0, 0);
+    reveal_toggle(u, x1, y, colw, &a->reveal);
+    strength_meter(u, x1, y, colw, a->s.root_password);
+    bool rm = a->root_pass2[0] && !streq(a->s.root_password, a->root_pass2);
+    field(u, ID_ROOTPASS2, x2, y, colw, "CONFIRM ROOT PASSWORD", a->root_pass2,
+          SETUP_PASSWORD_MAX, true, a->reveal, 0,
+          rm ? "Passwords do not match" : 0);
+
+    y += rowh;
+    char count[48] = "USERS  ";
+    char num[8];
+    fmt_u(num, sizeof(num), a->s.user_count);
+    cat(count, sizeof(count), num);
+    cat(count, sizeof(count), " / 8");
+    ui_text_bold(&u->c, L.px, y, count, C_ACC0, 8);
+    ui_text(&u->c, L.px + 110, y, "optional, you can install with root only",
+            C_MUTED, 8, F_BODY);
+    y += 20;
+
+    bool full = a->s.user_count >= INSTALL_USERS_MAX;
     bool gecos_bad = a->s.user_gecos[0] &&
                      !install_account_gecos_valid(a->s.user_gecos);
     if (field(u, ID_FULLNAME, x1, y, colw, "FULL NAME", a->s.user_gecos,
               INSTALL_GECOS_MAX, false, false, "Ada Lovelace",
               gecos_bad ? "Cannot contain ':'" : 0))
         suggest_username(a);
-    bool ubad = a->s.user_name[0] && !user_ok(a->s.user_name);
+    const char *uerr = 0;
+    if (a->s.user_name[0] && !user_ok(a->s.user_name))
+        uerr = "a-z, 0-9, - and _ ; start with a letter";
+    else if (a->s.user_name[0] && setup_user_taken(&a->s, a->s.user_name))
+        uerr = "This user name is already added";
     if (field(u, ID_USERNAME, x2, y, colw, "USER NAME", a->s.user_name,
-              INSTALL_USER_MAX, false, false, "ada",
-              ubad ? "a-z, 0-9, - and _ ; start with a letter" : 0))
+              INSTALL_USER_MAX, false, false, "ada", uerr))
         a->username_edited = a->s.user_name[0] != '\0';
 
     y += rowh;
     field(u, ID_PASS, x1, y, colw, "PASSWORD", a->s.user_password,
           SETUP_PASSWORD_MAX, true, a->reveal, 0, 0);
-    reveal_toggle(u, x1, y, colw, &a->reveal);
     strength_meter(u, x1, y, colw, a->s.user_password);
-    bool mism = a->user_pass2[0] &&
-                !streq(a->s.user_password, a->user_pass2);
+    bool mism = a->user_pass2[0] && !streq(a->s.user_password, a->user_pass2);
     field(u, ID_PASS2, x2, y, colw, "CONFIRM PASSWORD", a->user_pass2,
           SETUP_PASSWORD_MAX, true, a->reveal, 0,
           mism ? "Passwords do not match" : 0);
 
-    y += rowh;
-    checkbox(u, ID_SAME, L.px, y + 2,
-             "Use the same password for root",
-             &a->same_root);
-    if (!a->same_root) {
-        y += 44;
-        field(u, ID_ROOTPASS, x1, y, colw, "ROOT PASSWORD",
-              a->s.root_password, SETUP_PASSWORD_MAX, true, a->reveal, 0, 0);
-        strength_meter(u, x1, y, colw, a->s.root_password);
-        bool rm = a->root_pass2[0] &&
-                  !streq(a->s.root_password, a->root_pass2);
-        field(u, ID_ROOTPASS2, x2, y, colw, "CONFIRM ROOT PASSWORD",
-              a->root_pass2, SETUP_PASSWORD_MAX, true, a->reveal, 0,
-              rm ? "Passwords do not match" : 0);
-    }
+    y += rowh - 8;
+    checkbox(u, ID_ADMIN, L.px, y + 9,
+             "Administrator: allow sudo (adds to group wheel)",
+             &a->s.user_admin);
+    bool can_add = draft_ok(a);
+    if (button(u, ID_ADDUSER, L.px + L.pw - 150, y, 150, 44,
+               full ? "List is full" : "Add user", STYLE_SECONDARY, can_add))
+        add_draft(a, u);
+
+    y += 56;
+    user_list(a, u, y);
 
     bool ok = account_ok(a);
+    if (root_ok(a) && !draft_empty(a)) {
+        const char *hint = "Add this user or clear the form to continue.";
+        ui_text(&u->c, L.px + 150, L.fy + 14, hint, C_WARN, 8, F_BODY);
+    }
     bool next, bk;
     footer(a, u, "Continue", ok, STYLE_PRIMARY, &next, &bk);
     if (u->in.key == 9)
         ui_focus_next(u, 1);
     else if (u->in.key == 13 || u->in.key == 10) {
-        if (!focus_is_last(u))
+        if (u->focus == ID_PASS2 && can_add)
+            add_draft(a, u);
+        else if (!focus_is_last(u))
             ui_focus_next(u, 1);
         else if (ok)
             next = true;
@@ -813,10 +1075,21 @@ static void page_account(struct app *a, struct ui *u) {
 static void summary_row(struct ui *u, int32_t x, int32_t y, int32_t w,
                         const char *k, const char *v) {
     ui_text_bold(&u->c, x, y, k, C_MUTED, 8);
-    char shown[40];
+    char shown[160];
     ui_copy(shown, v, sizeof(shown));
+    int32_t room = w - 40;
+    if (ui_text_w(shown, 16) > room) {
+        uint32_t n = ui_strlen(shown);
+        while (n > 3 && ui_text_w(shown, 16) > room) {
+            shown[--n] = 0;
+            if (n >= 3) {
+                shown[n - 1] = '.';
+                shown[n - 2] = '.';
+                shown[n - 3] = '.';
+            }
+        }
+    }
     ui_text(&u->c, x, y + 14, shown, C_TEXT, 16, F_BODY);
-    (void)w;
 }
 
 static void page_review(struct app *a, struct ui *u) {
@@ -826,7 +1099,7 @@ static void page_review(struct app *a, struct ui *u) {
     const struct storage_device_info *d = &a->disks[a->selected];
     int32_t y = L.py + 86;
     int32_t colw = (L.pw - 20) / 2;
-    int32_t h = 176;
+    int32_t h = 206;
     ui_rrect(c, L.px, y, colw, h, 16, ui_solid(C_ROW), 255);
     ui_rrect_stroke(c, L.px, y, colw, h, 16, 1, ui_solid(C_BORDER), 255);
     ui_text_bold(c, L.px + 20, y + 16, "TARGET DISK", C_ACC0, 8);
@@ -843,14 +1116,20 @@ static void page_review(struct app *a, struct ui *u) {
     ui_rrect_stroke(c, x2, y, colw, h, 16, 1, ui_solid(C_BORDER), 255);
     ui_text_bold(c, x2 + 20, y + 16, "THIS COMPUTER", C_ACC0, 8);
     summary_row(u, x2 + 20, y + 40, colw, "COMPUTER NAME", a->s.hostname);
-    char who[48] = "";
-    cat(who, sizeof(who), a->s.user_gecos);
-    cat(who, sizeof(who), " (");
-    cat(who, sizeof(who), a->s.user_name);
-    cat(who, sizeof(who), ")");
-    summary_row(u, x2 + 20, y + 80, colw, "USER", who);
-    summary_row(u, x2 + 20, y + 120, colw, "ADMINISTRATOR",
-                a->same_root ? "root (same password)" : "root");
+    char who[160] = "";
+    for (uint32_t i = 0; i < a->s.user_count; i++) {
+        if (i)
+            cat(who, sizeof(who), ", ");
+        cat(who, sizeof(who), a->s.users[i].name);
+        if (a->s.users[i].admin)
+            cat(who, sizeof(who), " (sudo)");
+    }
+    if (!a->s.user_count)
+        cat(who, sizeof(who), "none, only root");
+    summary_row(u, x2 + 20, y + 80, colw, "USERS", who);
+    summary_row(u, x2 + 20, y + 120, colw, "ADMINISTRATOR", "root");
+    summary_row(u, x2 + 20, y + 160, colw, "TIME ZONE",
+                a->s.timezone[0] ? a->s.timezone : "UTC");
 
     int32_t wy = y + h + 18;
     ui_rrect(c, L.px, wy, L.pw, 62, 14, ui_solid(0x23121C), 255);
@@ -1005,6 +1284,12 @@ void view_background(struct ui_canvas *c, int32_t ox, int32_t oy, int32_t sw,
 void view_init(struct app *a) {
     a->page = PAGE_WELCOME;
     ui_copy(a->s.hostname, "purec", sizeof(a->s.hostname));
+    char zone[32] = "";
+    a->tz_selected = 0;
+    if (pc_time_zone_get(zone, sizeof(zone)) > 0 && tz_find(zone) >= 0)
+        a->tz_selected = tz_find(zone);
+    ui_copy(a->s.timezone, tz_at((uint32_t)a->tz_selected)->name,
+            sizeof(a->s.timezone));
     a->same_root = true;
     a->selected = -1;
     for (int32_t i = 0; i < a->disk_count; i++)
@@ -1027,6 +1312,9 @@ void view_frame(struct app *a, struct ui *u) {
         break;
     case PAGE_COMPUTER:
         page_computer(a, u);
+        break;
+    case PAGE_TIME:
+        page_time(a, u);
         break;
     case PAGE_ACCOUNT:
         page_account(a, u);

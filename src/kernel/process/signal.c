@@ -108,6 +108,32 @@ int32_t signal_send(uint32_t pid, int32_t sig) {
   return 0;
 }
 
+int32_t signal_send_kernel(uint32_t pid, int32_t sig) {
+  if (sig <= 0 || sig > SIGNAL_COUNT)
+    return -KERR_INVAL;
+  process_table_lock();
+  struct process *target = process_lookup_by_pid(pid);
+  if (!target || target->state == PROCESS_EXITED ||
+      target->state == PROCESS_FREE) {
+    process_table_unlock();
+    return -KERR_SRCH;
+  }
+  int32_t tid = target->thread_id;
+  __atomic_fetch_or(&target->sig_pending, SIG_BIT(sig), __ATOMIC_SEQ_CST);
+  process_table_unlock();
+  scheduler_unblock(tid);
+  scheduler_wake_process_threads(target, -1);
+  return 0;
+}
+
+bool signal_children_discarded(const struct process *parent) {
+  if (!parent || !parent->signals)
+    return false;
+  const struct ksigaction *action = &parent->signals->actions[SIGCHLD];
+  return action->handler == SIGNAL_ACTION_IGNORE ||
+         (action->flags & SIGNAL_FLAG_NOCLDWAIT) != 0;
+}
+
 void signal_notify_child_exit(struct process *parent) {
   if (!action_ignored(parent, SIGCHLD) ||
       (parent->signals &&
@@ -134,6 +160,8 @@ bool signal_pending_current(void) {
   struct process *process = process_current();
   if (!process)
     return false;
+  if (__atomic_load_n(&process->exit_group, __ATOMIC_ACQUIRE))
+    return true;
   uint64_t ready = deliverable(process);
   if (!ready)
     return false;
@@ -150,7 +178,8 @@ static bool frame_writable(uint64_t address, uint64_t size) {
     return false;
   for (uint64_t page = address & ~4095ULL; page < address + size;
        page += 4096)
-    (void)process_handle_stack_fault(page);
+    if (!process_handle_stack_fault(page))
+      (void)process_handle_lazy_fault(page, 6);
   return process_user_buffer((const void *)(uintptr_t)address, size, true);
 }
 
@@ -158,6 +187,13 @@ static void deliver_handler(struct process *process, struct syscall_regs *regs,
                             int32_t sig, const struct ksigaction *action) {
   uint64_t frame_size = (sizeof(struct signal_frame) + 15) & ~15ULL;
   uint64_t top = (regs->rsp - USER_RED_ZONE) & ~15ULL;
+  struct thread *thread = scheduler_current_thread();
+  if ((action->flags & SIGNAL_FLAG_ONSTACK) && thread && thread->altstack_size) {
+    uint64_t low = thread->altstack_sp;
+    uint64_t high = low + thread->altstack_size;
+    if (!(regs->rsp > low && regs->rsp <= high))
+      top = high & ~15ULL;
+  }
   uint64_t sp = top - frame_size - 8;
   if (!frame_writable(sp, sizeof(struct signal_frame)) ||
       action->restorer >= USER_TOP_ADDRESS || !action->restorer) {
@@ -339,4 +375,38 @@ int32_t signal_pause(void) {
       return -KERR_INTR;
     scheduler_sleep(10);
   }
+}
+
+int32_t signal_altstack(const struct kernel_stack *stack, struct kernel_stack *old,
+                        uint64_t rsp) {
+  struct thread *thread = scheduler_current_thread();
+  if (!thread)
+    return -KERR_INVAL;
+  bool on_stack = thread->altstack_size && rsp > thread->altstack_sp &&
+                  rsp <= thread->altstack_sp + thread->altstack_size;
+  if (old) {
+    old->sp = thread->altstack_sp;
+    old->size = thread->altstack_size;
+    old->reserved = 0;
+    old->flags = (thread->altstack_size ? 0 : KSS_DISABLE) |
+                 (on_stack ? KSS_ONSTACK : 0);
+  }
+  if (!stack)
+    return 0;
+  if (on_stack)
+    return -KERR_PERM;
+  if (stack->flags & ~KSS_DISABLE)
+    return -KERR_INVAL;
+  if (stack->flags & KSS_DISABLE) {
+    thread->altstack_sp = 0;
+    thread->altstack_size = 0;
+    return 0;
+  }
+  if (stack->size < KMINSIGSTKSZ)
+    return -KERR_NOMEM;
+  if (stack->sp >= USER_TOP_ADDRESS || stack->size > USER_TOP_ADDRESS - stack->sp)
+    return -KERR_FAULT;
+  thread->altstack_sp = stack->sp;
+  thread->altstack_size = stack->size;
+  return 0;
 }

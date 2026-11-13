@@ -1,5 +1,8 @@
 #pragma once
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef unsigned long rlim_t;
 
 #define RLIM_INFINITY ((rlim_t)~0UL)
@@ -18,3 +21,6 @@ struct rlimit {
 
 int getrlimit(int resource, struct rlimit *limit);
 int setrlimit(int resource, const struct rlimit *limit);
+#ifdef __cplusplus
+}
+#endif

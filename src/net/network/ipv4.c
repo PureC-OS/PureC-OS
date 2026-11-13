@@ -104,6 +104,15 @@ bool ipv4_register_handler(uint8_t protocol, ipv4_handler handler){
     return false;
 }
 
+bool ipv4_unconfigure(struct net_device *device){
+    struct ipv4_interface_config *interface=find_interface(device,false);
+    if(!interface) return false;
+    __atomic_store_n(&interface->configured,false,__ATOMIC_RELEASE);
+    interface->address=0;
+    interface->gateway=0;
+    return true;
+}
+
 bool ipv4_configure(struct net_device *device, uint32_t address,
                     uint32_t netmask, uint32_t gateway){
     if(!device || !device->registered || !address || !netmask) return false;
@@ -136,7 +145,9 @@ enum ipv4_send_result ipv4_send_from(struct net_device *device,
     if(source && (!interface || !interface->configured
                   || source!=interface->address)) return IPV4_SEND_ERROR;
     uint8_t destination_mac[6];
-    if(destination==IPV4_BROADCAST){
+    if(device->loopback){
+        memcpy(destination_mac,device->mac,sizeof(destination_mac));
+    } else if(destination==IPV4_BROADCAST){
         memset(destination_mac,0xFF,sizeof(destination_mac));
     } else {
         if(!interface || !interface->configured) return IPV4_SEND_ERROR;

@@ -77,7 +77,7 @@ int32_t ext2_super_info(struct ext2_super_info *out)
     out->magic = EXT2_MAGIC;
     out->partition_lba = vol->partition_lba;
     uint32_t free_blocks = 0, free_inodes = 0;
-    for (uint32_t g = 0; g < vol->groups_count && g < 32; g++)
+    for (uint32_t g = 0; g < vol->groups_count; g++)
     {
         uint8_t gd[32];
         if (!ext2_group_desc_read(g, gd))

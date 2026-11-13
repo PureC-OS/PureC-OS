@@ -7,8 +7,8 @@
 #include "../../net/config/dhcp.h"
 #include <stddef.h>
 
-#define WIFI_SCAN_INTERVAL_MS 5000ULL
-#define WIFI_SCAN_TIMEOUT_MS 4000ULL
+#define WIFI_SCAN_INTERVAL_MS 15000ULL
+#define WIFI_SCAN_TIMEOUT_MS 8000ULL
 #define WIFI_CONNECT_TIMEOUT_MS 15000ULL
 
 #define WIFI_MAX_DEVICES 2

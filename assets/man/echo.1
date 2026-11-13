@@ -1,0 +1,28 @@
+NAME
+       echo - display a line of text
+
+SYNOPSIS
+       echo [-neE] [STRING]...
+
+DESCRIPTION
+       Write the STRINGs separated by spaces, followed by a newline. The shell
+       has a built-in echo with the same behavior; /bin/echo is used by
+       programs that run it directly.
+
+OPTIONS
+       -n
+           do not output the trailing newline
+
+       -e
+           interpret backslash escapes: \n \t \r \a \b \f \v \e \\ \0NNN \xHH,
+           and \c to stop output
+
+       -E
+           do not interpret escapes (default)
+
+EXAMPLES
+       echo Hello, world
+       echo -e 'red: \e[31mtext\e[0m'
+
+SEE ALSO
+       sh(1)

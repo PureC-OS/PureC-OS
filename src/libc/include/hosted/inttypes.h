@@ -3,9 +3,24 @@
 
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 typedef int64_t intmax_t;
 typedef uint64_t uintmax_t;
 
+#define PRIdPTR "ld"
+#define PRIiPTR "li"
+#define PRIoPTR "lo"
+#define PRIuPTR "lu"
+#define PRIxPTR "lx"
+#define PRIXPTR "lX"
+#define PRIdMAX "ld"
+#define PRIiMAX "li"
+#define PRIoMAX "lo"
+#define PRIuMAX "lu"
+#define PRIxMAX "lx"
+#define PRIXMAX "lX"
 #define PRId8 "d"
 #define PRId16 "d"
 #define PRId32 "d"
@@ -55,3 +70,6 @@ typedef uint64_t uintmax_t;
 intmax_t imaxabs(intmax_t value);
 intmax_t strtoimax(const char *text, char **end, int base);
 uintmax_t strtoumax(const char *text, char **end, int base);
+#ifdef __cplusplus
+}
+#endif

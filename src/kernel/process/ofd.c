@@ -1,10 +1,15 @@
+#include "../ipc/inputdev.h"
+#include "../ipc/pty.h"
 #include "ofd.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/serial/serial.h"
 #include "../tty/tty.h"
 #include "../../fs/vfs.h"
 #include "../../lib/string.h"
+#include "../ipc/evfd.h"
 #include "../ipc/pipe.h"
+#include "../ipc/unix.h"
+#include "../../mm/shm.h"
 #include "../../net/api/socket.h"
 #include "../sync/mutex.h"
 #include "../syscall/syscall.h"
@@ -95,9 +100,46 @@ int32_t ofd_create_pipe(int32_t pipe_id, bool write_end)
                   write_end);
 }
 
+static bool snapshot(int32_t index, struct ofd *out);
+
+int32_t ofd_create_input(void)
+{
+  return allocate(OFD_INPUT, 0U, 0, false);
+}
+
+int32_t ofd_create_pty(int32_t pty_id, bool master)
+{
+  return allocate(OFD_PTY, 02U, pty_id, master);
+}
+
+bool ofd_pty_info(int32_t index, int32_t *pty_id, bool *master)
+{
+  struct ofd o;
+  if (!snapshot(index, &o) || o.kind != OFD_PTY)
+    return false;
+  *pty_id = o.object;
+  *master = o.write_end;
+  return true;
+}
+
 int32_t ofd_create_socket(int32_t sock_id, uint32_t flags)
 {
   return allocate(OFD_SOCKET, flags & OFD_O_NONBLOCK, sock_id, false);
+}
+
+int32_t ofd_create_event(int32_t event_id, uint32_t flags)
+{
+  return allocate(OFD_EVENT, flags & OFD_O_NONBLOCK, event_id, false);
+}
+
+int32_t ofd_create_unix(int32_t unix_id, uint32_t flags)
+{
+  return allocate(OFD_UNIX, flags & OFD_O_NONBLOCK, unix_id, false);
+}
+
+int32_t ofd_create_shm(int32_t shm_id, uint32_t flags)
+{
+  return allocate(OFD_SHM, flags & OFD_O_NONBLOCK, shm_id, false);
 }
 
 static bool valid(int32_t index)
@@ -132,6 +174,16 @@ void ofd_release(int32_t index)
     pipe_release(dropped.object, dropped.write_end);
   else if (dropped.kind == OFD_SOCKET)
     sock_release(dropped.object);
+  else if (dropped.kind == OFD_EVENT)
+    evfd_release(dropped.object);
+  else if (dropped.kind == OFD_UNIX)
+    unix_release(dropped.object);
+  else if (dropped.kind == OFD_SHM)
+    shm_unref(dropped.object);
+  else if (dropped.kind == OFD_PTY)
+    pty_release(dropped.object, dropped.write_end);
+  else if (dropped.kind == OFD_INPUT)
+    inputdev_release();
 }
 
 static bool snapshot(int32_t index, struct ofd *out)
@@ -159,9 +211,39 @@ int32_t ofd_kind_of(int32_t index)
     return -1;
   if (o.kind == OFD_CONSOLE_IN || o.kind == OFD_CONSOLE_OUT)
     return FD_KIND_CONSOLE;
-  if (o.kind == OFD_SOCKET)
+  if (o.kind == OFD_SOCKET || o.kind == OFD_UNIX)
     return FD_KIND_SOCKET;
+  if (o.kind == OFD_EVENT)
+    return FD_KIND_EVENT;
+  if (o.kind == OFD_PTY)
+    return FD_KIND_PTY;
+  if (o.kind == OFD_INPUT)
+    return FD_KIND_INPUT;
   return o.kind == OFD_PIPE ? FD_KIND_PIPE : FD_KIND_FILE;
+}
+
+int32_t ofd_event_id(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o) || o.kind != OFD_EVENT)
+    return -1;
+  return o.object;
+}
+
+int32_t ofd_unix_id(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o) || o.kind != OFD_UNIX)
+    return -1;
+  return o.object;
+}
+
+int32_t ofd_shm_id(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o) || o.kind != OFD_SHM)
+    return -1;
+  return o.object;
 }
 
 int32_t ofd_socket_id(int32_t index)
@@ -203,12 +285,24 @@ int32_t ofd_read(int32_t index, void *buffer, uint32_t count)
   {
   case OFD_CONSOLE_IN:
     return -KERR_CONSOLE;
+  case OFD_PTY:
+    return pty_read(o.object, o.write_end, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
+  case OFD_INPUT:
+    return inputdev_read(buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_PIPE:
     if (o.write_end)
       return -KERR_BADF;
     return pipe_read(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_SOCKET:
     return sock_read(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0, 0);
+  case OFD_EVENT:
+    return evfd_read(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
+  case OFD_UNIX:
+  {
+    struct unix_iov iov = {(uint64_t)(uintptr_t)buffer, count};
+    return unix_recv(o.object, &iov, 1, 0, 0, 0, 0,
+                     (o.flags & OFD_O_NONBLOCK) != 0, 0);
+  }
   case OFD_FILE:
   {
     if ((o.flags & OFD_O_ACCMODE) == OFD_O_WRONLY)
@@ -234,12 +328,21 @@ int32_t ofd_write(int32_t index, const void *buffer, uint32_t count)
   case OFD_CONSOLE_OUT:
     console_write((const char *)buffer, count);
     return (int32_t)count;
+  case OFD_PTY:
+    return pty_write(o.object, o.write_end, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_PIPE:
     if (!o.write_end)
       return -KERR_BADF;
     return pipe_write(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_SOCKET:
     return sock_write(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0, 0);
+  case OFD_EVENT:
+    return evfd_write(o.object, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
+  case OFD_UNIX:
+  {
+    struct unix_iov iov = {(uint64_t)(uintptr_t)buffer, count};
+    return unix_send(o.object, &iov, 1, 0, 0, (o.flags & OFD_O_NONBLOCK) != 0, 0);
+  }
   case OFD_FILE:
   {
     if ((o.flags & OFD_O_ACCMODE) == OFD_O_RDONLY)
@@ -272,6 +375,8 @@ int64_t ofd_seek(int32_t index, int64_t offset, uint32_t whence)
 int32_t ofd_truncate(int32_t index, uint64_t length)
 {
   struct ofd o;
+  if (snapshot(index, &o) && o.kind == OFD_SHM)
+    return shm_truncate(o.object, length);
   if (!snapshot(index, &o) || o.kind != OFD_FILE)
     return -KERR_BADF;
   if ((o.flags & OFD_O_ACCMODE) == OFD_O_RDONLY)
@@ -288,6 +393,12 @@ int32_t ofd_stat(int32_t index, struct file_stat_info *out)
   struct ofd o;
   if (!snapshot(index, &o))
     return -KERR_BADF;
+  if (o.kind == OFD_SHM)
+  {
+    memset(out, 0, sizeof(*out));
+    out->size = shm_size(o.object);
+    return 0;
+  }
   if (o.kind != OFD_FILE)
   {
     memset(out, 0, sizeof(*out));
@@ -339,13 +450,44 @@ int32_t ofd_poll(int32_t index)
     return tty_input_ready() ? KPOLLIN : 0;
   case OFD_CONSOLE_OUT:
     return KPOLLOUT;
+  case OFD_PTY:
+    return pty_poll(o.object, o.write_end);
+  case OFD_INPUT:
+    return inputdev_poll();
   case OFD_PIPE:
     return pipe_poll(o.object, o.write_end);
   case OFD_SOCKET:
     return sock_poll(o.object);
+  case OFD_EVENT:
+    return evfd_poll(o.object);
+  case OFD_UNIX:
+    return unix_poll(o.object);
   case OFD_FILE:
+  case OFD_SHM:
     return KPOLLIN | KPOLLOUT;
   default:
     return KPOLLNVAL;
+  }
+}
+
+uint64_t ofd_poll_generation(int32_t index)
+{
+  struct ofd o;
+  if (!snapshot(index, &o))
+    return 0;
+  switch (o.kind)
+  {
+  case OFD_PIPE:
+    return o.write_end ? 0 : pipe_generation(o.object);
+  case OFD_PTY:
+    return pty_generation(o.object);
+  case OFD_INPUT:
+    return inputdev_generation();
+  case OFD_UNIX:
+    return unix_generation(o.object);
+  case OFD_EVENT:
+    return evfd_generation(o.object);
+  default:
+    return 0;
   }
 }

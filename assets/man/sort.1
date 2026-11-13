@@ -1,0 +1,50 @@
+NAME
+       sort - sort lines of text files
+
+SYNOPSIS
+       sort [OPTION]... [FILE]...
+
+DESCRIPTION
+       Write the sorted concatenation of all FILEs to standard output.
+
+OPTIONS
+       -r
+           reverse the result
+
+       -n
+           compare by numeric value
+
+       -h
+           compare human readable numbers (2K, 1G)
+
+       -V
+           natural sort of version numbers
+
+       -f
+           fold lower case to upper case
+
+       -b
+           ignore leading blanks
+
+       -u
+           output only the first of equal lines
+
+       -k N[,M][nrhf]
+           sort by field N (to field M), with per-key options
+
+       -t SEP
+           use SEP as the field separator
+
+       -o FILE
+           write the result to FILE
+
+       -c
+           check whether input is sorted
+
+EXAMPLES
+       sort -n numbers.txt
+       du -h /usr | sort -h
+       sort -t: -k3n /etc/passwd
+
+SEE ALSO
+       uniq(1), cut(1)

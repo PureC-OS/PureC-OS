@@ -1,6 +1,9 @@
 #include "audio_panel.h"
 #include "../audio.h"
 #include "../display.h"
+extern "C" {
+#include "bottom_panel.h"
+}
 
 namespace {
 
@@ -157,8 +160,10 @@ extern "C" void audio_panel_draw(uint32_t screen_width) {
 
     make_volume_label(label, sizeof(label), status);
     make_device_label(device_label, sizeof(device_label), status);
-    display_draw_rect(bx, 3, BadgeWidth, BadgeHeight, popup_visible ? 0x585B70 : PanelBorder);
-    display_draw_text_at(bx + 8, 9, label, status.muted != 0 ? MutedText : Text, popup_visible ? 0x585B70 : PanelBorder);
+    panel_bevel_button(bx, 3, BadgeWidth, BadgeHeight, popup_visible);
+    uint32_t off = popup_visible ? 1 : 0;
+    display_draw_text_at(bx + 10 + off, 10 + off, label,
+                         panel_text_color(status.muted != 0), panel_face_color());
 
     if (!popup_visible) {
         return;

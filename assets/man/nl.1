@@ -1,0 +1,30 @@
+NAME
+       nl - number lines of files
+
+SYNOPSIS
+       nl [-b a|t|n] [-v N] [-i N] [-w N] [-s SEP] [FILE]...
+
+DESCRIPTION
+       Write each FILE to standard output with line numbers added.
+
+OPTIONS
+       -b STYLE
+           a: number all lines, t: nonempty lines (default), n: no lines
+
+       -v N
+           first line number
+
+       -i N
+           line number increment
+
+       -w N
+           width of line numbers
+
+       -s SEP
+           separator after the number
+
+EXAMPLES
+       nl main.c
+
+SEE ALSO
+       cat(1)

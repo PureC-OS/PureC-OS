@@ -1,0 +1,36 @@
+NAME
+       cut - remove sections from each line of files
+
+SYNOPSIS
+       cut -f LIST [-d DELIM] [-s] [FILE]...
+       cut -c LIST [FILE]...
+
+DESCRIPTION
+       Print selected parts of lines. LIST is a comma separated list of numbers
+       and ranges: N, N-, N-M, -M.
+
+OPTIONS
+       -f LIST
+           select fields
+
+       -c LIST, -b LIST
+           select characters
+
+       -d DELIM
+           use DELIM instead of TAB as the field delimiter
+
+       -s
+           do not print lines without delimiters
+
+       --complement
+           select everything except LIST
+
+       --output-delimiter=STR
+           use STR between output fields
+
+EXAMPLES
+       cut -d: -f1 /etc/passwd
+       cut -c1-8 file
+
+SEE ALSO
+       tr(1), sort(1)

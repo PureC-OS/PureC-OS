@@ -1,0 +1,25 @@
+NAME
+       ps - report a snapshot of the current processes
+
+SYNOPSIS
+       ps [-H] [--sort=pid|cpu|mem]
+
+DESCRIPTION
+       List all processes: PID, parent PID, state (R running, S ready, Z
+       exited, D loading), CPU usage, resident memory, CPU time and name.
+       Options aux are accepted and ignored, every process is always shown.
+
+OPTIONS
+       -H
+           show the process hierarchy by indenting children
+
+       --sort=KEY
+           sort by pid (default), cpu or mem
+
+EXAMPLES
+       ps
+       ps --sort=mem | head
+       ps | grep sh
+
+SEE ALSO
+       kill(1), free(1)

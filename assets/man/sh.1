@@ -1,0 +1,39 @@
+NAME
+       sh - the PureC command shell
+
+SYNOPSIS
+       sh [-c COMMAND] [SCRIPT [ARG]...]
+
+DESCRIPTION
+       A POSIX style shell: pipes, redirections (> >> < 2>&1), variables,
+       quoting, here documents, if/while/for/case, functions, command
+       substitution $(...) and arithmetic $((...)). The interactive shell has a
+       line editor with history and completion.
+
+OPTIONS
+       -c COMMAND
+           run COMMAND and exit
+
+LINE EDITING
+       Left/Right, Home/End, Ctrl+A/E    move the cursor
+       Up/Down                           browse history (saved in ~/.sh_history)
+       Tab                               complete commands and paths
+       Ctrl+U / Ctrl+K / Ctrl+W          delete to start / to end / previous word
+       Ctrl+L                            clear the screen
+       Ctrl+C                            cancel the line, or interrupt the running program
+       Ctrl+D                            exit on an empty line
+
+BUILT-IN COMMANDS
+       cd pwd echo printf test [ export readonly unset set shift read eval exec exit return break continue
+       trap umask type command kill wait source . true false : history
+
+PROMPT
+       PS1 understands \u user, \h host, \w directory, \W its last part, \$ (# for root),
+       \e escape, \n newline and \[ \] around invisible sequences.
+
+EXAMPLES
+       sh -c "ls | wc -l"
+       sh build.sh
+
+SEE ALSO
+       help(1), env(1), terminal(1)

@@ -1,0 +1,25 @@
+NAME
+       dhcpc - DHCP client for one interface
+
+SYNOPSIS
+       **dhcpc** __INTERFACE__
+
+DESCRIPTION
+       Gets an IPv4 address, netmask, gateway and DNS servers for
+       __INTERFACE__ from a DHCP server (RFC 2131) and applies them. Listens on
+       UDP port 68 (bootpc) and talks to servers on port 67 (bootps).
+
+       Cycle: DISCOVER, OFFER, REQUEST, ACK. The lease is renewed at T1 (half
+       of the lease by default) with a unicast REQUEST to the server and
+       rebound at T2 (7/8 of the lease) with a broadcast. When the lease
+       expires or the server answers NAK, the address is removed and the
+       cycle starts again. The current lease is written to
+       /run/dhcp/__INTERFACE__.lease.
+
+       Normally started by netd(8). Needs root or the NET_ADMIN capability.
+
+SIGNALS
+       **SIGTERM** sends RELEASE to the server and removes the address.
+
+SEE ALSO
+       netd(8), ip(8)

@@ -61,9 +61,45 @@ int dladdr(const void *address, Dl_info *info)
     return __pc_dl_addr(address, info);
 }
 
+extern char __pc_text_start[] __attribute__((weak));
+extern char __pc_text_end[] __attribute__((weak));
+extern char __eh_frame_hdr_start[] __attribute__((weak));
+extern char __eh_frame_hdr_end[] __attribute__((weak));
+
+static int static_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *), void *data)
+{
+    if (!__pc_text_start || !__pc_text_end || !__eh_frame_hdr_start || !__eh_frame_hdr_end)
+        return 0;
+    static Elf64_Phdr headers[2];
+    headers[0].p_type = PT_LOAD;
+    headers[0].p_flags = 5;
+    headers[0].p_vaddr = (uint64_t)(uintptr_t)__pc_text_start;
+    headers[0].p_paddr = headers[0].p_vaddr;
+    headers[0].p_filesz = (uint64_t)(__pc_text_end - __pc_text_start);
+    headers[0].p_memsz = headers[0].p_filesz;
+    headers[0].p_align = 4096;
+    headers[1].p_type = PT_GNU_EH_FRAME;
+    headers[1].p_flags = 4;
+    headers[1].p_vaddr = (uint64_t)(uintptr_t)__eh_frame_hdr_start;
+    headers[1].p_paddr = headers[1].p_vaddr;
+    headers[1].p_filesz = (uint64_t)(__eh_frame_hdr_end - __eh_frame_hdr_start);
+    headers[1].p_memsz = headers[1].p_filesz;
+    headers[1].p_align = 4;
+    struct dl_phdr_info info;
+    info.dlpi_addr = 0;
+    info.dlpi_name = "";
+    info.dlpi_phdr = headers;
+    info.dlpi_phnum = 2;
+    info.dlpi_adds = 1;
+    info.dlpi_subs = 0;
+    info.dlpi_tls_modid = 0;
+    info.dlpi_tls_data = 0;
+    return callback(&info, sizeof(info), data);
+}
+
 int dl_iterate_phdr(int (*callback)(struct dl_phdr_info *, size_t, void *), void *data)
 {
     if (!__pc_dl_iterate_phdr)
-        return 0;
+        return static_iterate_phdr(callback, data);
     return __pc_dl_iterate_phdr(callback, data);
 }

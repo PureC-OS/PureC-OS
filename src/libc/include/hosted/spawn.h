@@ -11,6 +11,9 @@
 #define POSIX_SPAWN_SETSCHEDULER 32
 #define POSIX_SPAWN_USEVFORK 64
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 struct posix_spawn_action;
 
 typedef struct {
@@ -55,3 +58,6 @@ int posix_spawnp(pid_t *pid, const char *file,
                  const posix_spawn_file_actions_t *actions,
                  const posix_spawnattr_t *attributes, char *const argv[],
                  char *const envp[]);
+#ifdef __cplusplus
+}
+#endif

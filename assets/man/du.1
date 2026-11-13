@@ -1,0 +1,35 @@
+NAME
+       du - estimate file space usage
+
+SYNOPSIS
+       du [OPTION]... [FILE]...
+
+DESCRIPTION
+       Summarize disk usage of each FILE, recursively for directories. Sizes
+       are in kilobytes unless -h or -b is given.
+
+OPTIONS
+       -a
+           write counts for all files, not just directories
+
+       -s
+           display only a total for each argument
+
+       -h
+           print sizes in human readable format
+
+       -b
+           apparent size in bytes
+
+       -c
+           produce a grand total
+
+       -d N, --max-depth=N
+           print totals only for directories N or fewer levels deep
+
+EXAMPLES
+       du -sh /usr
+       du -h -d 1 /
+
+SEE ALSO
+       df(1), ls(1)

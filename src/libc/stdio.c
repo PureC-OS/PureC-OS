@@ -11,6 +11,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "pthread_impl.h"
 
 struct file_impl {
     int fd;
@@ -32,7 +33,18 @@ struct file_impl {
     bool has_pushed;
     int child_pid;
     char *temp_path;
+    struct pc_rlock lock;
 };
+
+static struct pc_rlock registry_lock;
+
+static inline void stream_enter(struct pc_rlock *lock) {
+    if (__pc_threaded) __pc_rlock_lock(lock);
+}
+
+static inline void stream_leave(struct pc_rlock *lock) {
+    if (__pc_threaded) __pc_rlock_unlock(lock);
+}
 
 static struct file_impl std_in_impl;
 static struct file_impl std_out_impl;
@@ -63,16 +75,22 @@ static void stdio_init_std(void) {
     std_err_impl.unbuffered = true;
 }
 
+void stdio_prepare(void) { stdio_init_std(); }
+
 static void registry_add(FILE *stream) {
+    stream_enter(&registry_lock);
     for (uint32_t i = 0; i < FOPEN_MAX; i++) {
-        if (!open_registry[i]) { open_registry[i] = stream; return; }
+        if (!open_registry[i]) { open_registry[i] = stream; break; }
     }
+    stream_leave(&registry_lock);
 }
 
 static void registry_remove(FILE *stream) {
+    stream_enter(&registry_lock);
     for (uint32_t i = 0; i < FOPEN_MAX; i++) {
         if (open_registry[i] == stream) open_registry[i] = 0;
     }
+    stream_leave(&registry_lock);
 }
 
 void stdio_stdin_reset(void) { stdin_console_state = -1; }
@@ -208,7 +226,7 @@ FILE *fopen(const char *path, const char *mode) {
     return stream;
 }
 
-int fflush(FILE *stream) {
+static int fflush_nolock(FILE *stream) {
     if (!stream) {
         stdio_init_std();
         int result = 0;
@@ -223,7 +241,7 @@ int fflush(FILE *stream) {
     return flush_write(stream);
 }
 
-int fclose(FILE *stream) {
+static int fclose_nolock(FILE *stream) {
     if (!stream || stream == stdin || stream == stdout || stream == stderr) {
         errno = EINVAL;
         return EOF;
@@ -247,7 +265,7 @@ int fclose(FILE *stream) {
     return result;
 }
 
-FILE *freopen(const char *filename, const char *mode, FILE *stream) {
+static FILE *freopen_nolock(const char *filename, const char *mode, FILE *stream) {
     stdio_init_std();
     if (!mode || !stream) { errno = EINVAL; return 0; }
     int flags;
@@ -304,7 +322,7 @@ char *tmpnam(char *s) {
     return out;
 }
 
-int fseek(FILE *stream, long offset, int origin) {
+static int fseek_nolock(FILE *stream, long offset, int origin) {
     if (!stream) { errno = EINVAL; return -1; }
     if (origin != SEEK_SET && origin != SEEK_CUR && origin != SEEK_END) {
         errno = EINVAL;
@@ -326,7 +344,7 @@ int fseek(FILE *stream, long offset, int origin) {
     return 0;
 }
 
-long ftell(FILE *stream) {
+static long ftell_nolock(FILE *stream) {
     if (!stream) { errno = EINVAL; return -1L; }
     int64_t position = pc_syscall(SYS_FD_SEEK, (uint64_t)stream->fd, 0, SEEK_CUR);
     if (position < 0) { errno = ESPIPE; return -1L; }
@@ -336,13 +354,13 @@ long ftell(FILE *stream) {
     return (long)position;
 }
 
-void rewind(FILE *stream) {
+static void rewind_nolock(FILE *stream) {
     if (!stream) return;
     fseek(stream, 0, SEEK_SET);
     stream->error = false;
 }
 
-int fgetc(FILE *stream) {
+static int fgetc_nolock(FILE *stream) {
     if (!stream) { errno = EINVAL; return EOF; }
     if (stream == stdin) {
         stdio_init_std();
@@ -373,7 +391,7 @@ int getc(FILE *stream) { return fgetc(stream); }
 
 int getchar(void) { return fgetc(stdin); }
 
-char *fgets(char *buffer, int count, FILE *stream) {
+static char *fgets_nolock(char *buffer, int count, FILE *stream) {
     if (!buffer || count <= 0 || !stream) { errno = EINVAL; return 0; }
     int i = 0;
     while (i < count - 1) {
@@ -388,7 +406,7 @@ char *fgets(char *buffer, int count, FILE *stream) {
     return buffer;
 }
 
-int fputc(int value, FILE *stream) {
+static int fputc_nolock(int value, FILE *stream) {
     if (!stream) { errno = EINVAL; return EOF; }
     stdio_init_std();
     if (!stream->writable) { stream->error = true; errno = EBADF; return EOF; }
@@ -412,7 +430,7 @@ int fputc(int value, FILE *stream) {
 int putc(int value, FILE *stream) { return fputc(value, stream); }
 int putchar(int value) { return fputc(value, stdout); }
 
-int fputs(const char *text, FILE *stream) {
+static int fputs_nolock(const char *text, FILE *stream) {
     if (!text || !stream) { errno = EINVAL; return EOF; }
     size_t length = strlen(text);
     return fwrite(text, 1, length, stream) == length ? 0 : EOF;
@@ -423,7 +441,7 @@ int puts(const char *text) {
     return fputc('\n', stdout) == EOF ? EOF : 0;
 }
 
-int ungetc(int value, FILE *stream) {
+static int ungetc_nolock(int value, FILE *stream) {
     if (!stream || value == EOF) return EOF;
     if (!stream->readable || stream->has_pushed) return EOF;
     stream->pushed = value & 0xFF;
@@ -432,7 +450,7 @@ int ungetc(int value, FILE *stream) {
     return stream->pushed;
 }
 
-size_t fread(void *buffer, size_t size, size_t count, FILE *stream) {
+static size_t fread_nolock(void *buffer, size_t size, size_t count, FILE *stream) {
     if (!buffer || !stream) { errno = EINVAL; return 0; }
     if (size == 0 || count == 0) return 0;
     size_t total = size * count;
@@ -482,7 +500,7 @@ size_t fread(void *buffer, size_t size, size_t count, FILE *stream) {
     return done / size;
 }
 
-size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream) {
+static size_t fwrite_nolock(const void *buffer, size_t size, size_t count, FILE *stream) {
     if (!buffer || !stream) { errno = EINVAL; return 0; }
     if (size == 0 || count == 0) return 0;
     stdio_init_std();
@@ -517,7 +535,7 @@ size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream) {
 int feof(FILE *stream) { return stream ? (stream->eof ? 1 : 0) : 1; }
 int ferror(FILE *stream) { return stream ? (stream->error ? 1 : 0) : 1; }
 
-void clearerr(FILE *stream) {
+static void clearerr_nolock(FILE *stream) {
     if (!stream) return;
     stream->eof = false;
     stream->error = false;
@@ -532,12 +550,15 @@ void perror(const char *prefix) {
     fputc('\n', stderr);
 }
 
+int __purec_fs_errno(int32_t status, int fallback);
+
 int remove(const char *path) {    if (!path) { errno = EINVAL; return -1; }
     char abs[512];
     if (path[0] != '/') {
         if (realpath(path, abs)) path = abs;
     }
-    if (pc_file_delete(path) < 0) { errno = ENOENT; return -1; }
+    int32_t status = pc_file_delete(path);
+    if (status < 0) { errno = __purec_fs_errno(status, ENOENT); return -1; }
     return 0;
 }
 
@@ -556,11 +577,12 @@ int rename(const char *old_path, const char *new_path) {
     for (const char *p = new_path; *p; p++) {
         if (*p == '/') base = p + 1;
     }
-    if (pc_file_rename(old_path, base) < 0) { errno = ENOENT; return -1; }
+    int32_t status = pc_file_rename(old_path, base);
+    if (status < 0) { errno = __purec_fs_errno(status, ENOENT); return -1; }
     return 0;
 }
 
-int setvbuf(FILE *stream, char *buffer, int mode, size_t size) {
+static int setvbuf_nolock(FILE *stream, char *buffer, int mode, size_t size) {
     (void)buffer; (void)size;
     if (!stream) { errno = EINVAL; return -1; }
     stream->unbuffered = mode == _IONBF;
@@ -948,7 +970,7 @@ static int format_core(struct fmt_sink *sink, const char *format, va_list args) 
     return (int)(sink->length - start);
 }
 
-int vfprintf(FILE *stream, const char *format, va_list args) {
+static int vfprintf_nolock(FILE *stream, const char *format, va_list args) {
     if (!stream || !format) { errno = EINVAL; return -1; }
     struct fmt_sink sink;
     memset(&sink, 0, sizeof(sink));
@@ -1039,4 +1061,136 @@ int sprintf(char *buffer, const char *format, ...) {
     memcpy(buffer, sink.buffer, (size_t)result + 1);
     free(sink.dynamic);
     return result;
+}
+
+int fflush(FILE *stream) {
+    if (!stream) return fflush_nolock(stream);
+    stream_enter(&stream->lock);
+    int result = fflush_nolock(stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+FILE * freopen(const char *filename, const char *mode, FILE *stream) {
+    if (!stream) return freopen_nolock(filename, mode, stream);
+    stream_enter(&stream->lock);
+    FILE * result = freopen_nolock(filename, mode, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+int fseek(FILE *stream, long offset, int origin) {
+    if (!stream) return fseek_nolock(stream, offset, origin);
+    stream_enter(&stream->lock);
+    int result = fseek_nolock(stream, offset, origin);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+long ftell(FILE *stream) {
+    if (!stream) return ftell_nolock(stream);
+    stream_enter(&stream->lock);
+    long result = ftell_nolock(stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+void rewind(FILE *stream) {
+    if (!stream) { rewind_nolock(stream); return; }
+    stream_enter(&stream->lock);
+    rewind_nolock(stream);
+    stream_leave(&stream->lock);
+}
+
+int fgetc(FILE *stream) {
+    if (!stream) return fgetc_nolock(stream);
+    stream_enter(&stream->lock);
+    int result = fgetc_nolock(stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+char * fgets(char *buffer, int count, FILE *stream) {
+    if (!stream) return fgets_nolock(buffer, count, stream);
+    stream_enter(&stream->lock);
+    char * result = fgets_nolock(buffer, count, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+int fputc(int value, FILE *stream) {
+    if (!stream) return fputc_nolock(value, stream);
+    stream_enter(&stream->lock);
+    int result = fputc_nolock(value, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+int fputs(const char *text, FILE *stream) {
+    if (!stream) return fputs_nolock(text, stream);
+    stream_enter(&stream->lock);
+    int result = fputs_nolock(text, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+int ungetc(int value, FILE *stream) {
+    if (!stream) return ungetc_nolock(value, stream);
+    stream_enter(&stream->lock);
+    int result = ungetc_nolock(value, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+size_t fread(void *buffer, size_t size, size_t count, FILE *stream) {
+    if (!stream) return fread_nolock(buffer, size, count, stream);
+    stream_enter(&stream->lock);
+    size_t result = fread_nolock(buffer, size, count, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+size_t fwrite(const void *buffer, size_t size, size_t count, FILE *stream) {
+    if (!stream) return fwrite_nolock(buffer, size, count, stream);
+    stream_enter(&stream->lock);
+    size_t result = fwrite_nolock(buffer, size, count, stream);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+void clearerr(FILE *stream) {
+    if (!stream) { clearerr_nolock(stream); return; }
+    stream_enter(&stream->lock);
+    clearerr_nolock(stream);
+    stream_leave(&stream->lock);
+}
+
+int setvbuf(FILE *stream, char *buffer, int mode, size_t size) {
+    if (!stream) return setvbuf_nolock(stream, buffer, mode, size);
+    stream_enter(&stream->lock);
+    int result = setvbuf_nolock(stream, buffer, mode, size);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+int vfprintf(FILE *stream, const char *format, va_list args) {
+    if (!stream) return vfprintf_nolock(stream, format, args);
+    stream_enter(&stream->lock);
+    int result = vfprintf_nolock(stream, format, args);
+    stream_leave(&stream->lock);
+    return result;
+}
+
+int fclose(FILE *stream) {
+    if (!stream || stream == stdin || stream == stdout || stream == stderr || !__pc_threaded)
+        return fclose_nolock(stream);
+    stream_enter(&registry_lock);
+    bool known = false;
+    for (uint32_t i = 0; i < FOPEN_MAX; i++) {
+        if (open_registry[i] == stream) { known = true; break; }
+    }
+    stream_leave(&registry_lock);
+    if (!known) return fclose_nolock(stream);
+    stream_enter(&stream->lock);
+    return fclose_nolock(stream);
 }

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Terminal Qt
+Exec=/usr/bin/qt-terminal
+Icon=/usr/share/icons/terminal.icn
+IconColor=0x89B4FA
+IconText=Qt
+Type=Application
