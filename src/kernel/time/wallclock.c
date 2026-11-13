@@ -13,6 +13,27 @@ static uint64_t base_uptime_ms;
 static int32_t tz_minutes;
 static uint32_t source;
 static int32_t zone_index = -1;
+static int64_t slew_total_ms;
+static uint64_t slew_start_uptime_ms;
+
+static int64_t slew_applied_locked(uint64_t uptime) {
+  if (!slew_total_ms)
+    return 0;
+  int64_t limit = (int64_t)((uptime - slew_start_uptime_ms) /
+                            WALLCLOCK_SLEW_MS_PER_UNIT);
+  int64_t magnitude = slew_total_ms < 0 ? -slew_total_ms : slew_total_ms;
+  if (limit > magnitude)
+    limit = magnitude;
+  return slew_total_ms < 0 ? -limit : limit;
+}
+
+static void slew_fold_locked(uint64_t uptime) {
+  int64_t applied = slew_applied_locked(uptime);
+  base_unix_ms += applied + (int64_t)(uptime - base_uptime_ms);
+  base_uptime_ms = uptime;
+  slew_total_ms -= applied;
+  slew_start_uptime_ms = uptime;
+}
 
 void wallclock_init(void) {
   struct civil_time now;
@@ -39,7 +60,8 @@ uint32_t wallclock_source(void) { return source; }
 int64_t wallclock_unix_ms(void) {
   uint64_t uptime = system_info_uptime_ms();
   uint64_t flags = spin_lock_irqsave(&lock);
-  int64_t now = base_unix_ms + (int64_t)(uptime - base_uptime_ms);
+  int64_t now = base_unix_ms + (int64_t)(uptime - base_uptime_ms) +
+                slew_applied_locked(uptime);
   bool known = source != WALLCLOCK_SOURCE_NONE;
   spin_unlock_irqrestore(&lock, flags);
   return known ? now : (int64_t)uptime;
@@ -86,6 +108,7 @@ int32_t wallclock_set_utc(int64_t unix_seconds) {
   uint64_t flags = spin_lock_irqsave(&lock);
   base_unix_ms = unix_seconds * 1000;
   base_uptime_ms = uptime;
+  slew_total_ms = 0;
   source = WALLCLOCK_SOURCE_SET;
   spin_unlock_irqrestore(&lock, flags);
   if (!rtc_write(&parts))
@@ -127,6 +150,7 @@ int32_t wallclock_set(int64_t unix_seconds, int32_t zone_minutes) {
   uint64_t flags = spin_lock_irqsave(&lock);
   base_unix_ms = unix_seconds * 1000;
   base_uptime_ms = uptime;
+  slew_total_ms = 0;
   if (zone_index >= 0 && zone_minutes != effective)
     zone_index = -1;
   tz_minutes = zone_minutes;
@@ -136,3 +160,59 @@ int32_t wallclock_set(int64_t unix_seconds, int32_t zone_minutes) {
     klog(KLOG_WARN, "time: RTC write failed, clock set for this boot only");
   return 0;
 }
+
+static bool rtc_store_now(void) {
+  struct civil_time parts;
+  unix_to_civil(wallclock_unix_ms() / 1000, &parts);
+  if (!civil_valid(parts.year, parts.month, parts.day, parts.hour,
+                   parts.minute, parts.second))
+    return false;
+  return rtc_write(&parts);
+}
+
+int32_t wallclock_step_ms(int64_t delta_ms) {
+  if (delta_ms > WALLCLOCK_STEP_LIMIT_MS || delta_ms < -WALLCLOCK_STEP_LIMIT_MS)
+    return -1;
+  uint64_t uptime = system_info_uptime_ms();
+  uint64_t flags = spin_lock_irqsave(&lock);
+  if (source == WALLCLOCK_SOURCE_NONE) {
+    spin_unlock_irqrestore(&lock, flags);
+    return -1;
+  }
+  slew_fold_locked(uptime);
+  base_unix_ms += delta_ms;
+  slew_total_ms = 0;
+  source = WALLCLOCK_SOURCE_NTP;
+  spin_unlock_irqrestore(&lock, flags);
+  if (!rtc_store_now())
+    klog(KLOG_WARN, "time: RTC write failed after step");
+  return 0;
+}
+
+int32_t wallclock_slew_ms(int64_t delta_ms, int64_t *previous) {
+  if (delta_ms > WALLCLOCK_SLEW_LIMIT_MS || delta_ms < -WALLCLOCK_SLEW_LIMIT_MS)
+    return -1;
+  uint64_t uptime = system_info_uptime_ms();
+  uint64_t flags = spin_lock_irqsave(&lock);
+  if (source == WALLCLOCK_SOURCE_NONE) {
+    spin_unlock_irqrestore(&lock, flags);
+    return -1;
+  }
+  slew_fold_locked(uptime);
+  if (previous)
+    *previous = slew_total_ms;
+  slew_total_ms = delta_ms;
+  source = WALLCLOCK_SOURCE_NTP;
+  spin_unlock_irqrestore(&lock, flags);
+  return 0;
+}
+
+int64_t wallclock_slew_remaining_ms(void) {
+  uint64_t uptime = system_info_uptime_ms();
+  uint64_t flags = spin_lock_irqsave(&lock);
+  int64_t left = slew_total_ms - slew_applied_locked(uptime);
+  spin_unlock_irqrestore(&lock, flags);
+  return left;
+}
+
+bool wallclock_store_rtc(void) { return rtc_store_now(); }

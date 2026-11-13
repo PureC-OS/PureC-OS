@@ -206,6 +206,8 @@
 #define SYS_RECVFROM 404          /* (fd, buf, len, flags, sockaddr_in *src|0) -> bytes */
 #define SYS_NET_CONFIGURE 405     /* (const struct net_if_config *) -> 0; root or NET_ADMIN */
 #define SYS_KLOG_WRITE 406        /* (level 0..3, const char *message) -> 0; appends to the kernel journal */
+#define SYS_CLOCK_ADJUST 407      /* (op CLOCK_ADJ_*, delta_ms, int64_t *previous|0) -> 0; root or SYS_TIME */
+#define SYS_NET_SOCKETS 408       /* (struct net_socket_entry *, capacity, offset) -> entries written */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
@@ -483,6 +485,37 @@ struct net_if_config {
   uint32_t gateway;
   uint32_t dns;
   uint32_t reserved;
+};
+
+#define CLOCK_ADJ_STEP 0
+#define CLOCK_ADJ_SLEW 1
+#define CLOCK_ADJ_QUERY 2
+#define CLOCK_ADJ_SAVE_RTC 3
+
+#define NET_SOCK_TCP 6
+#define NET_SOCK_UDP 17
+#define NET_SOCK_STATE_UNCONN 0xFF
+#define NET_SOCK_FLAG_KERNEL 1U
+#define NET_SOCK_FLAG_ORPHAN 2U
+#define NET_SOCK_FLAG_REUSE 4U
+#define NET_SOCK_FLAG_BROADCAST 8U
+#define NET_SOCKETS_MAX 512
+
+struct net_socket_entry {
+  uint8_t protocol;
+  uint8_t state;
+  uint16_t flags;
+  uint32_t local_address;
+  uint32_t remote_address;
+  uint16_t local_port;
+  uint16_t remote_port;
+  uint32_t recv_queue;
+  uint32_t send_queue;
+  uint32_t pid;
+  uint32_t uid;
+  uint32_t fd;
+  char process[32];
+  char device[NET_IF_NAME_CAPACITY];
 };
 
 struct net_if_info {

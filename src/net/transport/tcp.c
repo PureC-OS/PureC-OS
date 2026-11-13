@@ -1417,7 +1417,16 @@ bool tcp_get_info(int32_t handle, struct tcp_socket_info *info)
     info->bytes_unsent = s->tx_length;
     info->cwnd = s->cwnd;
     info->rto_ms = s->rto_ms;
+    info->owner = s->owner;
+    info->orphan = s->app_closed;
+    info->device = s->device ? s->device->name : 0;
     return true;
+}
+
+uint32_t tcp_slot_count(void)
+{
+    MUTEX_SCOPE(&tcp_lock);
+    return socket_count;
 }
 
 void tcp_get_stats(struct tcp_stats *out)

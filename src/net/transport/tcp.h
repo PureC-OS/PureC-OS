@@ -62,6 +62,9 @@ struct tcp_socket_info {
     uint32_t bytes_unsent;
     uint32_t cwnd;
     uint32_t rto_ms;
+    uint32_t owner;
+    bool orphan;
+    const char *device;
 };
 
 bool tcp_init(void);
@@ -86,3 +89,4 @@ int32_t tcp_close(int32_t handle);
 int32_t tcp_abort(int32_t handle);
 bool tcp_get_info(int32_t handle, struct tcp_socket_info *info);
 void tcp_get_stats(struct tcp_stats *stats);
+uint32_t tcp_slot_count(void);

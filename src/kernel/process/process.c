@@ -233,6 +233,33 @@ uint32_t process_pids_with_stdin(bool (*match)(int32_t object, void *ctx), void 
   return n;
 }
 
+bool process_socket_owner(int32_t sock_id, uint32_t *pid, uint32_t *uid,
+                          uint32_t *fd, char *name, uint32_t capacity)
+{
+  MUTEX_SCOPE(&process_mutex);
+  for (uint32_t b = 0; b < PHASH_SIZE; b++)
+    for (struct process *p = phash_buckets[b]; p; p = p->hnext)
+    {
+      if (p->state == PROCESS_FREE || p->state == PROCESS_EXITED)
+        continue;
+      for (uint32_t d = 0; d < PROCESS_FD_COUNT; d++)
+      {
+        if (p->descriptors[d] < 0 || ofd_socket_id(p->descriptors[d]) != sock_id)
+          continue;
+        *pid = p->pid;
+        *uid = p->uid;
+        *fd = d;
+        if (name && capacity)
+        {
+          strncpy(name, p->name, capacity - 1);
+          name[capacity - 1] = '\0';
+        }
+        return true;
+      }
+    }
+  return false;
+}
+
 struct process *process_lookup_by_pid(uint32_t pid)
 {
   return process_find_by_pid(pid);
@@ -555,6 +582,7 @@ static const struct
     {"/bin/netd", PROCESS_CAP_NET_ADMIN | PROCESS_CAP_NET_BIND},
     {"/bin/dhcpc", PROCESS_CAP_NET_ADMIN | PROCESS_CAP_NET_BIND},
     {"/bin/resolved", PROCESS_CAP_NET_BIND},
+    {"/bin/ntpd", PROCESS_CAP_NET_BIND | PROCESS_CAP_SYS_TIME},
 };
 
 uint32_t process_path_capabilities(const char *path)

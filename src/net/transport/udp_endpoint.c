@@ -222,6 +222,31 @@ int32_t udpe_bind_device(int32_t id, const char *name)
   return e ? 0 : -KERR_BADF;
 }
 
+bool udpe_info(int32_t id, struct udpe_info *out)
+{
+  uint64_t flags = spin_lock_irqsave(&udpe_lock);
+  struct udpe *e = get(id);
+  if (e)
+  {
+    memset(out, 0, sizeof(*out));
+    out->bound = e->bound;
+    out->connected = e->connected;
+    out->broadcast = e->broadcast;
+    out->reuse = e->reuse;
+    out->local_address = e->local_address;
+    out->local_port = e->local_port;
+    out->peer_address = e->peer_address;
+    out->peer_port = e->peer_port;
+    out->dropped = e->dropped;
+    for (uint32_t i = e->tail; i != e->head; i = (i + 1) % UDPE_SLOTS)
+      out->queued_bytes += e->ring[i].length;
+    if (e->device)
+      strncpy(out->device, e->device->name, sizeof(out->device) - 1);
+  }
+  spin_unlock_irqrestore(&udpe_lock, flags);
+  return e != 0;
+}
+
 int32_t udpe_name(int32_t id, bool peer, uint32_t *address, uint16_t *port)
 {
   uint64_t flags = spin_lock_irqsave(&udpe_lock);

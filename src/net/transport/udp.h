@@ -23,6 +23,8 @@ bool udp_init(void);
 bool udp_bind(uint16_t port, udp_handler handler);
 bool udp_port_bound(uint16_t port);
 bool udp_unbind(uint16_t port);
+bool udp_binding_port(uint32_t index, uint16_t *port);
+#define UDP_BINDING_SLOTS 8U
 enum ipv4_send_result udp_send(struct net_device *device,
                                uint32_t destination_address,
                                uint16_t source_port, uint16_t destination_port,

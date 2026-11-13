@@ -15,6 +15,7 @@
 #define PROCESS_CAP_NET_ADMIN (1U << 1)
 #define PROCESS_CAP_DISPLAY (1U << 2)
 #define PROCESS_CAP_NET_BIND (1U << 3)
+#define PROCESS_CAP_SYS_TIME (1U << 4)
 
 struct process_environment_entry
 {
@@ -169,5 +170,7 @@ struct process_proc_info {
 };
 
 bool process_proc_info_get(uint32_t pid, struct process_proc_info *out);
+bool process_socket_owner(int32_t sock_id, uint32_t *pid, uint32_t *uid,
+                          uint32_t *fd, char *name, uint32_t capacity);
 void process_table_lock(void);
 void process_table_unlock(void);

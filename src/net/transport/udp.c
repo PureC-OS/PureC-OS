@@ -48,6 +48,12 @@ static void receive_datagram(const struct ipv4_packet *packet){
     (void)udpe_deliver(&datagram);
 }
 
+bool udp_binding_port(uint32_t index, uint16_t *port){
+    if(index>=UDP_BINDING_CAPACITY || !bindings[index].handler) return false;
+    *port=bindings[index].port;
+    return true;
+}
+
 bool udp_unbind(uint16_t port){
     for(uint8_t index=0;index<UDP_BINDING_CAPACITY;index++){
         if(bindings[index].handler && bindings[index].port==port){

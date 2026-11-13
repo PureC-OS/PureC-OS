@@ -20,4 +20,22 @@ int32_t udpe_set_broadcast(int32_t id, bool enabled);
 int32_t udpe_bind_device(int32_t id, const char *name);
 int32_t udpe_name(int32_t id, bool peer, uint32_t *address, uint16_t *port);
 bool udpe_port_in_use(uint16_t port);
+
+#define UDPE_SLOT_COUNT 128U
+
+struct udpe_info {
+  bool bound;
+  bool connected;
+  bool broadcast;
+  bool reuse;
+  uint32_t local_address;
+  uint16_t local_port;
+  uint32_t peer_address;
+  uint16_t peer_port;
+  uint32_t queued_bytes;
+  uint32_t dropped;
+  char device[16];
+};
+
+bool udpe_info(int32_t id, struct udpe_info *out);
 bool udpe_deliver(const struct udp_datagram *datagram);
