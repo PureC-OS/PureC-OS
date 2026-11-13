@@ -664,7 +664,23 @@ int fstat(int fd, struct stat *info)
     fill_stat(info, raw.size, raw.is_directory != 0);
     char path[512];
     if (pc_syscall(SYS_FD_PATH, (uint64_t)fd, (uint64_t)(uintptr_t)path, sizeof(path)) > 0)
+    {
+        struct file_stat_ex extended;
+        if (pc_file_stat_ex(path, &extended) == 0)
+        {
+            fill_stat_ex(info, &extended);
+            info->st_size = raw.size;
+        }
+        else
+        {
+            info->st_mode |= raw.is_directory ? 0755 : 0644;
+        }
         fill_identity(info, path);
+    }
+    else
+    {
+        info->st_mode |= raw.is_directory ? 0755 : 0644;
+    }
     return 0;
 }
 
