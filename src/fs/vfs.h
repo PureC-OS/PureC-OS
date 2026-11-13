@@ -47,6 +47,7 @@ int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out);
 int32_t vfs_delete(const char *path);
 int32_t vfs_rename(const char *path, const char *new_name);
 int32_t vfs_move(const char *path, const char *destination_directory);
+int32_t vfs_rename_path(const char *from, const char *to);
 int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
                  uint32_t capacity);
 int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
