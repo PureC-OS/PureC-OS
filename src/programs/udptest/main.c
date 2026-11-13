@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 static int failures;
 
@@ -54,6 +55,40 @@ static void test_loopback(void)
     close(client);
 }
 
+static void test_tcp_loopback(void)
+{
+    int server = socket(AF_INET, SOCK_STREAM, 0);
+    struct sockaddr_in local = at(0x7F000001, 6000);
+    check(server >= 0 && bind(server, (struct sockaddr *)&local, sizeof(local)) == 0 &&
+              listen(server, 2) == 0,
+          "TCP listen 127.0.0.1:6000");
+    int client = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    int rc = connect(client, (struct sockaddr *)&local, sizeof(local));
+    check(rc == 0 || errno == EINPROGRESS, "TCP connect 127.0.0.1:6000 started");
+    struct sockaddr_in peer;
+    socklen_t len = sizeof(peer);
+    int conn = accept(server, (struct sockaddr *)&peer, &len);
+    check(conn >= 0, "TCP accept on lo");
+    if (conn < 0) {
+        close(client);
+        close(server);
+        return;
+    }
+    printf("       peer %s:%u\n", inet_ntoa(peer.sin_addr), ntohs(peer.sin_port));
+    int flags = fcntl(client, F_GETFL);
+    fcntl(client, F_SETFL, flags & ~O_NONBLOCK);
+    check(send(client, "hello", 5, 0) == 5, "TCP client send");
+    char buf[16];
+    ssize_t got = recv(conn, buf, sizeof(buf), 0);
+    check(got == 5 && memcmp(buf, "hello", 5) == 0, "TCP server got \"hello\"");
+    check(send(conn, "world", 5, 0) == 5 && recv(client, buf, sizeof(buf), 0) == 5 &&
+              memcmp(buf, "world", 5) == 0,
+          "TCP reply \"world\"");
+    close(conn);
+    close(client);
+    close(server);
+}
+
 static void test_privileged(void)
 {
     int s = socket(AF_INET, SOCK_DGRAM, 0);
@@ -86,16 +121,18 @@ static uint32_t dns_server(void)
     return 0;
 }
 
+static uint32_t forced_server;
+
 static void test_dns(void)
 {
-    uint32_t server = dns_server();
+    uint32_t server = forced_server ? forced_server : dns_server();
     if (!server) {
         printf("[SKIP]  no DNS server from DHCP\n");
         return;
     }
     uint8_t q[64] = {0x12, 0x34, 0x01, 0x00, 0, 1, 0, 0, 0, 0, 0, 0};
     size_t n = 12;
-    const char *labels[] = {"example", "com"};
+    const char *labels[] = {"google", "com"};
     for (int i = 0; i < 2; i++) {
         size_t l = strlen(labels[i]);
         q[n++] = (uint8_t)l;
@@ -121,6 +158,10 @@ static void test_dns(void)
     ssize_t got = recvfrom(s, r, sizeof(r), 0, (struct sockaddr *)&from, &len);
     check(got > 12 && r[0] == 0x12 && r[1] == 0x34 && ntohs(from.sin_port) == 53,
           "DNS reply received from port 53");
+    if (got > 12)
+        printf("       rcode %u (%s), answers %u\n", r[3] & 15,
+               (r[3] & 15) == 0 ? "NOERROR" : (r[3] & 15) == 3 ? "NXDOMAIN" : "error",
+               (unsigned)(r[6] << 8 | r[7]));
     if (got > 12) {
         unsigned answers = (unsigned)(r[6] << 8 | r[7]);
         size_t p = n;
@@ -136,7 +177,7 @@ static void test_dns(void)
             uint16_t rdlen = (uint16_t)(r[p + 8] << 8 | r[p + 9]);
             p += 10;
             if (type == 1 && rdlen == 4 && p + 4 <= (size_t)got) {
-                printf("       example.com A %u.%u.%u.%u\n", r[p], r[p + 1], r[p + 2], r[p + 3]);
+                printf("       google.com A %u.%u.%u.%u\n", r[p], r[p + 1], r[p + 2], r[p + 3]);
                 check(true, "parsed A record");
                 break;
             }
@@ -146,11 +187,17 @@ static void test_dns(void)
     close(s);
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+    if (argc > 1) {
+        struct in_addr a;
+        if (inet_aton(argv[1], &a))
+            forced_server = ntohl(a.s_addr);
+    }
     printf("udptest (uid %d)\n", (int)getuid());
     test_services();
     test_loopback();
+    test_tcp_loopback();
     test_privileged();
     test_dns();
     printf("%s: %d failure(s)\n", failures ? "FAILED" : "PASSED", failures);
