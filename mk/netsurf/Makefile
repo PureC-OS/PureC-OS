@@ -131,9 +131,14 @@ $(NS_START): $(ROOT_DIR)/mk/netsurf/ns_start.c
 	@mkdir -p $(@D)
 	$(CC) $(NS_CFLAGS) -c $< -o $@
 
-$(BROWSER): nscore $(NS_START) $(ROOT_DIR)/mk/netsurf/netsurf.ld $(BIN_DIR)/lib/crt0.o $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a
+NS_DOWNLOAD := $(OBJ_DIR)/ns_download.o
+$(NS_DOWNLOAD): $(ROOT_DIR)/mk/netsurf/ns_download.c
 	@mkdir -p $(@D)
-	$(LD) -S --wrap=main --wrap=curl_easy_setopt -T $(ROOT_DIR)/mk/netsurf/netsurf.ld -o $@ $(BIN_DIR)/lib/crt0.o $(NS_START) \
+	$(CC) $(NS_CFLAGS) -I$(ROOT_DIR)/netsurf -I$(ROOT_DIR)/netsurf/include -I$(SINC) -c $< -o $@
+
+$(BROWSER): nscore $(NS_START) $(NS_DOWNLOAD) $(ROOT_DIR)/mk/netsurf/netsurf.ld $(BIN_DIR)/lib/crt0.o $(BIN_DIR)/lib/libpurec.a $(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a
+	@mkdir -p $(@D)
+	$(LD) -S --wrap=main --wrap=curl_easy_setopt --wrap=netsurf_register -T $(ROOT_DIR)/mk/netsurf/netsurf.ld -o $@ $(BIN_DIR)/lib/crt0.o $(NS_START) $(NS_DOWNLOAD) \
 		$$(find $(NS_BUILD) -name '*.o' ! -name '*javascript_none_none.o') --whole-archive $(SLIB)/libnsfb.a --no-whole-archive \
 		--start-group $(NS_LINK_LIBS) $(BIN_DIR)/lib/libpguiw.a $(BIN_DIR)/lib/libpuregui.a \
 		$(BIN_DIR)/lib/libpurefs.a $(BIN_DIR)/lib/libpurec.a $(LIBGCC) --end-group
