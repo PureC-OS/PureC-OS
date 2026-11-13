@@ -14,6 +14,7 @@
 #define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
 #define PROCESS_CAP_NET_ADMIN (1U << 1)
 #define PROCESS_CAP_DISPLAY (1U << 2)
+#define PROCESS_CAP_NET_BIND (1U << 3)
 
 struct process_environment_entry
 {
