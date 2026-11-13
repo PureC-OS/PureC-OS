@@ -1749,6 +1749,8 @@ int32_t process_chdir(const char *path)
     return -KERR_NOENT;
   if (!info.is_directory)
     return -KERR_NOTDIR;
+  if (vfs_access_dir(resolved) < 0)
+    return -KERR_ACCES;
   strncpy(process->cwd, resolved, sizeof(process->cwd) - 1);
   process->cwd[sizeof(process->cwd) - 1] = '\0';
   environment_put(process, "PWD", process->cwd);

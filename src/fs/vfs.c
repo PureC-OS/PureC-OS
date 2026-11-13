@@ -270,10 +270,32 @@ static int32_t store_meta(const char *path, const struct vfs_perm_meta *meta) {
   return vfs_perm_set(path, meta);
 }
 
+static int32_t check_traverse(const char *path) {
+  uint32_t uid = process_current_uid();
+  if (uid == 0 || !path || path[0] != '/')
+    return 0;
+  char prefix[VFS_PATH_MAX];
+  uint32_t gid = process_current_gid();
+  for (uint32_t i = 1; path[i] && i < sizeof(prefix); i++) {
+    if (path[i] != '/')
+      continue;
+    memcpy(prefix, path, i);
+    prefix[i] = '\0';
+    struct vfs_perm_meta meta;
+    effective_meta(prefix, true, &meta);
+    if (!vfs_perm_allowed(uid, gid, &meta, VFS_PERM_X))
+      return FS_ERROR_DENIED;
+  }
+  return 0;
+}
+
 static int32_t check_access(const char *path, bool directory, uint32_t want) {
   uint32_t uid = process_current_uid();
   if (uid == 0)
     return 0;
+  int32_t walk = check_traverse(path);
+  if (walk < 0)
+    return walk;
   struct vfs_perm_meta meta;
   effective_meta(path, directory, &meta);
   return vfs_perm_allowed(uid, process_current_gid(), &meta, want)
@@ -871,12 +893,24 @@ static int32_t overlay_list(const char *path) {
   return n > 0 ? n : 0;
 }
 
+int32_t vfs_access_dir(const char *path) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved resolved;
+  int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  return check_access(resolved.path, true, VFS_PERM_X);
+}
+
 int32_t vfs_stat(const char *path, struct file_stat_info *out) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!out)
     return FS_ERROR_INVALID;
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  status = check_traverse(resolved.path);
   if (status < 0)
     return status;
   out->reserved = 0;
@@ -1028,6 +1062,9 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
   int32_t status = resolve(path, &resolved);
   if (status < 0)
     return status;
+  status = check_access(resolved.path, true, VFS_PERM_R);
+  if (status < 0)
+    return status;
   const struct vfs_fs_ops *ops = resolved.mount->ops;
   int32_t backend = FS_ERROR_UNSUPPORTED;
   if (ops->list && mount_ready(resolved.mount))
@@ -1080,6 +1117,9 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
     return FS_ERROR_INVALID;
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  status = check_access(resolved.path, true, VFS_PERM_R);
   if (status < 0)
     return status;
   const struct vfs_fs_ops *ops = resolved.mount->ops;
@@ -1263,6 +1303,9 @@ int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
     return FS_ERROR_INVALID;
   struct vfs_resolved resolved;
   int32_t status = resolve(path, &resolved);
+  if (status < 0)
+    return status;
+  status = check_traverse(resolved.path);
   if (status < 0)
     return status;
   const struct vfs_fs_ops *ops = resolved.mount->ops;
