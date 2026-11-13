@@ -133,6 +133,7 @@ C_SOURCES := \
 	net/network/ipv4.c \
 	net/transport/udp.c \
 	net/transport/udp_endpoint.c \
+	net/core/loopback.c \
 	net/transport/tcp.c \
 	net/name/dns.c \
 	net/config/dhcp.c \
