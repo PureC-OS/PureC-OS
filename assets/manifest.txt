@@ -220,6 +220,7 @@
 /usr/share/fonts/DejaVuSans-Bold.ttf /usr/share/fonts/DejaVuSans-Bold.ttf - 0 assets/fonts/DejaVuSans-Bold.ttf
 /usr/bin/posixtest /usr/bin/posixtest - 0 bin/programs/posixtest
 /usr/bin/fbtest /usr/bin/fbtest - 0 bin/programs/fbtest
+/usr/bin/udptest /usr/bin/udptest - 0 bin/programs/udptest
 /usr/bin/memhog /usr/bin/memhog - 0 bin/programs/memhog
 /usr/bin/memtest /usr/bin/memtest - 0 bin/programs/memtest
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
