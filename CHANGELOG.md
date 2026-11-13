@@ -4,6 +4,22 @@
 
 ### Старт 
 
+### Порт git: `git` и `git-remote-https`
+В системе появился git. Это первый шаг: бинарники собраны, в ВМ ещё не проверены.
+
+**Сборка** (`mk/git/Makefile`, `make -C mk/git`)
+- Исходники git в `git/` не меняются: все настройки передаются через командную строку make. `mk/git/fetch.sh` клонирует git и записывает версию в `mk/git/versions.txt`.
+- Кросс-компилятор `x86_64-elf-gcc`, наш `crt0`, статическая линковка с libpurec, libpurefs, libcurl (wolfSSL) и zlib из `bin/ns-stage`.
+- Выключено: Rust-часть git (`NO_RUST`, у git есть вариант на C), Perl, Python, Tcl/Tk, gettext, iconv, OpenSSL (SHA-1 и SHA-256 у git встроенные), expat, потоки, IPv6, unix-сокеты, mmap. Используется встроенный в git regex с `REG_STARTEND`.
+- Наши заголовки libc подключаются как системные (`-isystem`), чтобы `compat/` git имел приоритет. Предкомпилированный заголовок git отключён: он не замечал изменений в libc.
+- Встроенные команды не раскладываются по отдельным файлам (`SKIP_DASHED_BUILT_INS`).
+
+**В образе**: `/usr/bin/git`, `/usr/libexec/git-core/git`, `git-remote-http` и `git-remote-https` (один бинарник). HTTPS идёт через libcurl с сертификатами `/etc/ssl/cert.pem`.
+
+**libc**: `memmem`, `sigfillset`, `NSIG`, `setsid`, `getsid`, `getpgid`, `getpass` (без эха через termios, читает `/dev/tty`), `struct itimerval`, `setitimer`/`getitimer` (пока заглушки, как `alarm`: прогресс git не обновляется по таймеру), `EOVERFLOW`, `SCNuMAX` и родственные.
+
+**Ограничения**: SSH-адреса (`git@github.com:...`) не работают — нет ssh-клиента, только HTTPS. Шаблонов `git init` нет.
+
 ### NetSurf: скачивание файлов в `~/Downloads`
 Раньше браузер не мог скачать ни одного файла: во framebuffer-версии NetSurf нет своего обработчика загрузок, и ядро браузера отменяло каждую загрузку через встроенную заглушку.
 
