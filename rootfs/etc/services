@@ -1,0 +1,91 @@
+# /etc/services: well-known network services and their ports.
+# Format: name  port/protocol  [aliases ...]
+# Ports below 1024 can be bound only by root or by a process with the
+# NET_BIND capability (granted by netd to its daemons).
+tcpmux          1/tcp
+echo            7/tcp
+echo            7/udp
+discard         9/tcp           sink null
+discard         9/udp           sink null
+daytime         13/tcp
+daytime         13/udp
+ftp-data        20/tcp
+ftp             21/tcp
+ssh             22/tcp
+telnet          23/tcp
+smtp            25/tcp          mail
+time            37/tcp          timserver
+time            37/udp          timserver
+whois           43/tcp          nicname
+tacacs          49/tcp
+tacacs          49/udp
+domain          53/tcp
+domain          53/udp
+bootps          67/udp
+bootpc          68/udp
+tftp            69/udp
+gopher          70/tcp
+finger          79/tcp
+http            80/tcp          www
+kerberos        88/tcp          kerberos5 krb5
+kerberos        88/udp          kerberos5 krb5
+pop3            110/tcp         pop-3
+sunrpc          111/tcp         portmapper
+sunrpc          111/udp         portmapper
+auth            113/tcp         ident
+nntp            119/tcp         readnews untp
+ntp             123/udp
+netbios-ns      137/udp
+netbios-dgm     138/udp
+netbios-ssn     139/tcp
+imap            143/tcp         imap2
+snmp            161/udp
+snmp-trap       162/udp         snmptrap
+bgp             179/tcp
+irc             194/tcp
+ldap            389/tcp
+ldap            389/udp
+https           443/tcp
+https           443/udp
+microsoft-ds    445/tcp
+isakmp          500/udp
+syslog          514/udp
+printer         515/tcp         spooler
+talk            517/udp
+ntalk           518/udp
+route           520/udp         router routed
+uucp            540/tcp         uucpd
+submissions     465/tcp         ssmtp smtps
+submission      587/tcp
+ipp             631/tcp
+ldaps           636/tcp
+rsync           873/tcp
+ftps-data       989/tcp
+ftps            990/tcp
+telnets         992/tcp
+imaps           993/tcp
+pop3s           995/tcp
+socks           1080/tcp
+openvpn         1194/tcp
+openvpn         1194/udp
+l2tp            1701/udp
+pptp            1723/tcp
+radius          1812/udp
+radius-acct     1813/udp
+nfs             2049/tcp
+nfs             2049/udp
+mysql           3306/tcp
+rdp             3389/tcp        ms-wbt-server
+svn             3690/tcp        subversion
+ipsec-nat-t     4500/udp
+sip             5060/tcp
+sip             5060/udp
+xmpp-client     5222/tcp        jabber-client
+postgresql      5432/tcp        postgres
+mdns            5353/udp
+vnc             5900/tcp
+x11             6000/tcp
+irc-alt         6667/tcp
+http-alt        8080/tcp        webcache
+git             9418/tcp
+wireguard       51820/udp
