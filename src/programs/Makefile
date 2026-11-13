@@ -156,6 +156,8 @@ TARGETS := \
   	$(PROGRAM_DIR)/posixtest \
   	$(PROGRAM_DIR)/fbtest \
   	$(PROGRAM_DIR)/udptest \
+  	$(PROGRAM_DIR)/netd \
+  	$(PROGRAM_DIR)/dhcpc \
   	$(PROGRAM_DIR)/memhog \
   	$(PROGRAM_DIR)/memtest \
   	$(PROGRAM_DIR)/journalctl \
@@ -592,6 +594,22 @@ $(OBJ_DIR)/thrtest/main.o: $(ROOT_DIR)/src/programs/thrtest/main.c
 $(PROGRAM_DIR)/thrtest: $(OBJ_DIR)/thrtest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/thrtest/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/netd/main.o: $(ROOT_DIR)/src/programs/netd/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/netd: $(OBJ_DIR)/netd/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/netd/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/dhcpc/main.o: $(ROOT_DIR)/src/programs/dhcpc/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/dhcpc: $(OBJ_DIR)/dhcpc/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/dhcpc/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/udptest/main.o: $(ROOT_DIR)/src/programs/udptest/main.c
 	@mkdir -p $(@D)
