@@ -60,19 +60,24 @@ int32_t inputdev_read(void *buffer, uint32_t count, bool nonblock)
   uint32_t want = count / (uint32_t)sizeof(struct input_record);
   if (!want)
     return -KERR_INVAL;
-  struct input_record *out = (struct input_record *)buffer;
+  if (want > 32)
+    want = 32;
+  struct input_record local[32];
   for (;;)
   {
     uint32_t got = 0;
     uint64_t flags = spin_lock_irqsave(&input_lock);
     while (got < want && tail != head)
     {
-      out[got++] = ring[tail];
+      local[got++] = ring[tail];
       tail = (tail + 1) % INPUT_RING;
     }
     spin_unlock_irqrestore(&input_lock, flags);
     if (got)
+    {
+      memcpy(buffer, local, got * sizeof(struct input_record));
       return (int32_t)(got * sizeof(struct input_record));
+    }
     if (!opened)
       return 0;
     if (nonblock)
