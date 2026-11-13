@@ -49,6 +49,8 @@
 /bin/whoami /bin/whoami - 1 bin/programs/whoami
 /bin/sudo /bin/sudo - 1 bin/programs/sudo
 /bin/ip /bin/ip - 1 bin/programs/ip
+/bin/netd /bin/netd - 1 bin/programs/netd
+/bin/dhcpc /bin/dhcpc - 1 bin/programs/dhcpc
 /bin/id /bin/id - 1 bin/programs/id
 /bin/hostname /bin/hostname - 1 bin/programs/hostname
 /bin/date /bin/date - 1 bin/programs/date
@@ -133,6 +135,8 @@
 /usr/share/man/whoami.1 /usr/share/man/whoami.1 - 0 assets/man/whoami.1
 /usr/share/man/sudo.8 /usr/share/man/sudo.8 - 0 assets/man/sudo.8
 /usr/share/man/ip.8 /usr/share/man/ip.8 - 0 assets/man/ip.8
+/usr/share/man/netd.8 /usr/share/man/netd.8 - 0 assets/man/netd.8
+/usr/share/man/dhcpc.8 /usr/share/man/dhcpc.8 - 0 assets/man/dhcpc.8
 /usr/share/man/id.1 /usr/share/man/id.1 - 0 assets/man/id.1
 /usr/share/man/hostname.1 /usr/share/man/hostname.1 - 0 assets/man/hostname.1
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
