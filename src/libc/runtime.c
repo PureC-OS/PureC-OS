@@ -482,6 +482,7 @@ int32_t pc_config_path(const char *name, char *out, uint32_t capacity, bool for_
     return 1;
 }
 
+int32_t pc_net_configure(const struct net_if_config *config){ return (int32_t)pc_syscall(SYS_NET_CONFIGURE,(uint64_t)(uintptr_t)config,0,0); }
 int32_t pc_display_claim(void){ return (int32_t)pc_syscall(SYS_DISPLAY_CLAIM,0,0,0); }
 int32_t pc_display_release(void){ return (int32_t)pc_syscall(SYS_DISPLAY_RELEASE,0,0,0); }
 int32_t pc_fb_map(struct fb_map_info *out){ return (int32_t)pc_syscall(SYS_FB_MAP,(uint64_t)(uintptr_t)out,0,0); }
