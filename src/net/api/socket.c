@@ -157,6 +157,24 @@ void sock_release(int32_t id)
         (void)tcp_close(s.tcp);
 }
 
+int32_t sock_find(bool dgram, int32_t handle, bool *reuse)
+{
+    mutex_lock(&table_mutex);
+    for (int32_t i = 0; i < SOCK_CAPACITY; i++)
+    {
+        if (!table[i].used || table[i].dgram != dgram)
+            continue;
+        if ((dgram ? table[i].udp : table[i].tcp) != handle)
+            continue;
+        if (reuse)
+            *reuse = table[i].reuse;
+        mutex_unlock(&table_mutex);
+        return i;
+    }
+    mutex_unlock(&table_mutex);
+    return -1;
+}
+
 static bool may_bind(uint16_t port)
 {
     return port == 0 || port >= 1024 || process_current_uid() == 0 ||

@@ -30,6 +30,7 @@
 #include "../time/wallclock.h"
 #include "../../net/api/ping.h"
 #include "../../net/api/socket.h"
+#include "../../net/api/sockstat.h"
 #include "../../net/config/dhcp.h"
 #include "../../net/core/net_device.h"
 #include "../../net/name/dns.h"
@@ -2777,6 +2778,59 @@ int64_t syscall_handler(struct syscall_regs *r)
     return socket_syscall(n, a1, a2, a3, r->rsi, r->rdi);
   case SYS_DNS_RESOLVE:
     return -KERR_NOSYS;
+  case SYS_CLOCK_ADJUST:
+  {
+    if (process_current_uid() != 0 && !process_has_capability(PROCESS_CAP_SYS_TIME))
+      return -KERR_PERM;
+    int64_t *previous = (int64_t *)(uintptr_t)a3;
+    if (previous && !writable(previous, sizeof(*previous)))
+      return -KERR_FAULT;
+    int64_t old = wallclock_slew_remaining_ms();
+    int32_t status = 0;
+    switch (a1)
+    {
+    case CLOCK_ADJ_STEP:
+      status = wallclock_step_ms((int64_t)a2);
+      if (status == 0)
+        klogf(KLOG_OK, "time: clock stepped by %lld ms", (long long)(int64_t)a2);
+      break;
+    case CLOCK_ADJ_SLEW:
+      status = wallclock_slew_ms((int64_t)a2, &old);
+      break;
+    case CLOCK_ADJ_QUERY:
+      break;
+    case CLOCK_ADJ_SAVE_RTC:
+      status = wallclock_store_rtc() ? 0 : -KERR_IO;
+      break;
+    default:
+      return -KERR_INVAL;
+    }
+    if (status < 0)
+      return status == -1 ? -KERR_INVAL : status;
+    if (previous)
+      *previous = old;
+    return 0;
+  }
+  case SYS_NET_SOCKETS:
+  {
+    struct net_socket_entry *out = (struct net_socket_entry *)(uintptr_t)a1;
+    uint32_t capacity = (uint32_t)a2;
+    if (capacity == 0 || capacity > NET_SOCKETS_MAX)
+      return -KERR_INVAL;
+    if (!writable(out, capacity * sizeof(*out)))
+      return -KERR_FAULT;
+    int32_t count = net_socket_list(out, capacity, (uint32_t)a3);
+    uint32_t self_uid = process_current_uid();
+    if (self_uid != 0)
+      for (int32_t i = 0; i < count; i++)
+        if (!(out[i].flags & NET_SOCK_FLAG_KERNEL) && out[i].pid && out[i].uid != self_uid)
+        {
+          out[i].pid = 0;
+          out[i].fd = 0;
+          memset(out[i].process, 0, sizeof(out[i].process));
+        }
+    return count;
+  }
   case SYS_NET_CONFIGURE:
   {
     if (process_current_uid() != 0 && !process_has_capability(PROCESS_CAP_NET_ADMIN))
