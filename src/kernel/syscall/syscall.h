@@ -204,6 +204,7 @@
 #define SYS_DISPLAY_RELEASE 402   /* () -> 0; give the screen back to the kernel */
 #define SYS_SENDTO 403            /* (fd, buf, len, flags, const sockaddr_in *dst|0) -> bytes */
 #define SYS_RECVFROM 404          /* (fd, buf, len, flags, sockaddr_in *src|0) -> bytes */
+#define SYS_NET_CONFIGURE 405     /* (const struct net_if_config *) -> 0; root or NET_ADMIN */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
@@ -465,7 +466,23 @@ struct network_ping_result {
 };
 
 #define NET_IF_NAME_CAPACITY 16
-#define NET_IF_MAX_COUNT 4
+#define NET_IF_MAX_COUNT 8
+
+#define NET_CFG_SET_IPV4 1
+#define NET_CFG_CLEAR_IPV4 2
+#define NET_CFG_SET_DNS 3
+#define NET_CFG_DHCP_START 4
+#define NET_CFG_DHCP_STOP 5
+
+struct net_if_config {
+  char name[NET_IF_NAME_CAPACITY];
+  uint32_t op;
+  uint32_t address;
+  uint32_t netmask;
+  uint32_t gateway;
+  uint32_t dns;
+  uint32_t reserved;
+};
 
 struct net_if_info {
   char name[NET_IF_NAME_CAPACITY];
