@@ -86,6 +86,14 @@ struct pg_window {
     bool frame_synced;
     bool frameless;
     uint32_t frame_generation;
+    bool resizable;
+    bool resizing;
+    uint32_t resize_edges;
+    struct pg_rect resize_start;
+    int32_t resize_mouse_x;
+    int32_t resize_mouse_y;
+    uint64_t resize_last_ms;
+    uint64_t title_click_ms;
 };
 
 const char *pg_version(void);
@@ -104,6 +112,9 @@ void pg_window_end(struct pg_window *window);
 void pg_window_close(struct pg_window *window);
 void pg_window_set_closable(struct pg_window *window, bool closable);
 void pg_window_set_frameless(struct pg_window *window, bool frameless);
+void pg_window_set_resizable(struct pg_window *window, bool resizable);
+bool pg_window_resize(struct pg_window *window, uint32_t x, uint32_t y,
+                      uint32_t width, uint32_t height);
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes);
 bool pg_window_move(struct pg_window *window, uint32_t x, uint32_t y);
 void pg_window_fit_display(struct pg_window *window);
