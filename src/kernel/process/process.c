@@ -1,6 +1,7 @@
 #include "../sync/mutex.h"
 static mutex_t process_mutex;
 #include "../../drivers/display/gop.h"
+#include "../../drivers/display/display_owner.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../../fs/initramfs.h"
 #include "../../fs/vfs.h"
@@ -1125,6 +1126,39 @@ int64_t process_mmap_shared(uint64_t address, uint64_t length, uint64_t prot,
     int status = mmap_vma_insert(process, base, bytes, prot, shm, offset_pages);
     if (status < 0)
       return status;
+  }
+  if (base >= MMAP_BASE && base + bytes <= MMAP_END)
+    process->mmap_cursor = base + bytes;
+  return (int64_t)base;
+}
+
+int64_t process_map_device(uint64_t physical, uint64_t length)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process_current_is_user())
+    return -KERR_PERM;
+  uint64_t pages;
+  if ((physical & (PMM_PAGE_SIZE - 1)) || !mmap_length_pages(length, &pages))
+    return -KERR_INVAL;
+  if (!process_vmas_ensure(process))
+    return -KERR_NOMEM;
+  uint64_t bytes = pages * PMM_PAGE_SIZE;
+  uint64_t cursor = mmap_cursor_get(process);
+  uint64_t base = vma_find_gap(process->vmas, bytes, cursor, MMAP_END);
+  if (!base)
+    base = vma_find_gap(process->vmas, bytes, MMAP_BASE, MMAP_END);
+  if (!base)
+    return -KERR_NOMEM;
+  int status = mmap_vma_insert(process, base, bytes,
+                               KMAP_PROT_READ | KMAP_PROT_WRITE, -1, 0);
+  if (status < 0)
+    return status;
+  if (!vmm_map_device_range(process->address_space, base, physical, pages,
+                            VMM_PAGE_WRITABLE | VMM_PAGE_NX))
+  {
+    (void)vma_unmap(process->vmas, base, base + bytes);
+    return -KERR_NOMEM;
   }
   if (base >= MMAP_BASE && base + bytes <= MMAP_END)
     process->mmap_cursor = base + bytes;
