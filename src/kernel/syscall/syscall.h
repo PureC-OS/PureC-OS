@@ -202,6 +202,8 @@
 #define SYS_INPUT_OPEN 400        /* () -> fd delivering struct input_record */
 #define SYS_FB_DAMAGE 401         /* (x, y, w, h) -> 0; flush a front-buffer rect to the device */
 #define SYS_DISPLAY_RELEASE 402   /* () -> 0; give the screen back to the kernel */
+#define SYS_SENDTO 403            /* (fd, buf, len, flags, const sockaddr_in *dst|0) -> bytes */
+#define SYS_RECVFROM 404          /* (fd, buf, len, flags, sockaddr_in *src|0) -> bytes */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */

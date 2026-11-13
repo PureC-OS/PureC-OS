@@ -726,7 +726,7 @@ static int64_t socketpair_syscall(uint64_t domain, uint64_t type_flags,
 }
 
 static int64_t socket_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3,
-                              uint64_t a4)
+                              uint64_t a4, uint64_t a5)
 {
   int32_t fd = (int32_t)a1;
   if (n != SYS_SOCKET && n != SYS_SOCKETPAIR && n != SYS_SENDMSG &&
@@ -734,10 +734,48 @@ static int64_t socket_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3,
   {
     int32_t unix_id = unix_of_fd(fd);
     if (unix_id >= 0)
+    {
+      if (n == SYS_SENDTO)
+        n = SYS_SOCK_SEND;
+      else if (n == SYS_RECVFROM)
+        n = SYS_SOCK_RECV;
       return unix_socket_syscall(n, fd, unix_id, a2, a3, a4);
+    }
   }
   switch (n)
   {
+  case SYS_SENDTO:
+  case SYS_RECVFROM:
+  {
+    int32_t id = socket_of_fd(fd);
+    if (id < 0)
+      return id;
+    if (a3 > 0x7FFFFFFFULL)
+      return -KERR_INVAL;
+    struct sock_addr_in address;
+    if (n == SYS_SENDTO)
+    {
+      if (!readable((const void *)(uintptr_t)a2, a3))
+        return -KERR_FAULT;
+      if (a5)
+      {
+        if (!readable((const void *)(uintptr_t)a5, sizeof(address)))
+          return -KERR_FAULT;
+        memcpy(&address, (const void *)(uintptr_t)a5, sizeof(address));
+      }
+      return sock_sendto(id, (const void *)(uintptr_t)a2, (uint32_t)a3,
+                         fd_nonblocking(fd), (uint32_t)a4, a5 ? &address : 0);
+    }
+    if (!writable((void *)(uintptr_t)a2, a3))
+      return -KERR_FAULT;
+    if (a5 && !writable((void *)(uintptr_t)a5, sizeof(address)))
+      return -KERR_FAULT;
+    int32_t got = sock_recvfrom(id, (void *)(uintptr_t)a2, (uint32_t)a3,
+                                fd_nonblocking(fd), (uint32_t)a4, &address);
+    if (got >= 0 && a5)
+      memcpy((void *)(uintptr_t)a5, &address, sizeof(address));
+    return got;
+  }
   case SYS_SOCKETPAIR:
     return socketpair_syscall(a1, a2, a3, a4);
   case SYS_SENDMSG:
@@ -2713,7 +2751,9 @@ int64_t syscall_handler(struct syscall_regs *r)
   case SYS_SOCKETPAIR:
   case SYS_SENDMSG:
   case SYS_RECVMSG:
-    return socket_syscall(n, a1, a2, a3, r->rsi);
+  case SYS_SENDTO:
+  case SYS_RECVFROM:
+    return socket_syscall(n, a1, a2, a3, r->rsi, r->rdi);
   case SYS_DNS_RESOLVE:
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||
