@@ -326,6 +326,8 @@ static void draw_desktop(void){
     desktop_height = display_get_height();
     if(desktop_width  == 0) desktop_width  = 1280;
     if(desktop_height == 0) desktop_height = 800;
+    window_manager_set_work_area(0, TOP_PANEL_HEIGHT, desktop_width,
+                                 desktop_height - TOP_PANEL_HEIGHT - BOTTOM_PANEL_HEIGHT);
 
     struct personalization_colors dth;
     desktop_theme(&dth);
@@ -648,6 +650,11 @@ void userspace_input_thread(void *arg){
         display_mode_poll();
         (void)service_desktop_redraw();
         flush_deferred_redraw();
+        {
+            struct mouse_state cursor_mouse = mouse_get_state();
+            window_manager_update_cursor(cursor_mouse.x, cursor_mouse.y,
+                                         cursor_mouse.buttons);
+        }
         if(external_program_has_input_focus()){
             scheduler_sleep(10);
             continue;
@@ -764,6 +771,11 @@ void userspace_run(void){
         display_mode_poll();
         (void)service_desktop_redraw();
         flush_deferred_redraw();
+        {
+            struct mouse_state cursor_mouse = mouse_get_state();
+            window_manager_update_cursor(cursor_mouse.x, cursor_mouse.y,
+                                         cursor_mouse.buttons);
+        }
         if(external_program_has_input_focus()){
             scheduler_yield();
             continue;
