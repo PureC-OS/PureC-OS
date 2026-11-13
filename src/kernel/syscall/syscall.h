@@ -197,6 +197,11 @@
 #define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
 #define SYS_SHM_UNLINK 392       /* (name) */
 #define SYS_MADVISE 393          /* (address, length, advice) */
+#define SYS_DISPLAY_CLAIM 398     /* () -> 0; caller (PROCESS_CAP_DISPLAY or root) owns the screen */
+#define SYS_FB_MAP 399            /* (struct fb_map_info *) -> 0; maps the front framebuffer */
+#define SYS_INPUT_OPEN 400        /* () -> fd delivering struct input_record */
+#define SYS_FB_DAMAGE 401         /* (x, y, w, h) -> 0; flush a front-buffer rect to the device */
+#define SYS_DISPLAY_RELEASE 402   /* () -> 0; give the screen back to the kernel */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
@@ -218,6 +223,37 @@
 #define FD_KIND_SOCKET 3
 #define FD_KIND_EVENT 4
 #define FD_KIND_PTY 5
+#define FD_KIND_INPUT 6
+
+struct fb_map_info {
+  uint64_t address;
+  uint64_t bytes;
+  uint32_t width;
+  uint32_t height;
+  uint32_t pitch_bytes;
+  uint32_t bpp;
+  uint32_t generation;
+  uint32_t reserved;
+};
+
+#define INPUT_RECORD_KEY 1
+#define INPUT_RECORD_MOUSE 2
+
+struct input_record {
+  uint32_t type;
+  uint32_t time_ms;
+  int32_t x;
+  int32_t y;
+  int32_t dx;
+  int32_t dy;
+  int32_t wheel;
+  uint32_t buttons;
+  uint16_t scancode;
+  uint8_t pressed;
+  uint8_t repeat;
+  uint8_t mods;
+  uint8_t reserved[3];
+};
 
 #define TTY_TCGETS 0x5401u
 #define TTY_TCSETS 0x5402u
@@ -305,6 +341,7 @@ struct kernel_mmap_args {
 #define KERR_NOMEM 12
 #define KERR_ACCES 13
 #define KERR_FAULT 14
+#define KERR_BUSY 16
 #define KERR_EXIST 17
 #define KERR_NOTDIR 20
 #define KERR_INVAL 22
