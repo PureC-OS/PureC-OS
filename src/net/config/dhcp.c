@@ -196,6 +196,14 @@ void dhcp_poll(uint64_t now_ms){
     }
 }
 
+bool dhcp_stop(struct net_device *device){
+    struct dhcp_client *client=find_client(device);
+    if(!client) return false;
+    __atomic_store_n(&client->state,DHCP_STATE_INIT,__ATOMIC_RELEASE);
+    __atomic_store_n(&client->device,(struct net_device *)0,__ATOMIC_RELEASE);
+    return true;
+}
+
 bool dhcp_is_bound(struct net_device *device){
     struct dhcp_client *client=find_client(device);
     return client && __atomic_load_n(&client->state,__ATOMIC_ACQUIRE)

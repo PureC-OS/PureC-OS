@@ -7,4 +7,5 @@
 bool dhcp_init(void);
 bool dhcp_start(struct net_device *device);
 void dhcp_poll(uint64_t now_ms);
+bool dhcp_stop(struct net_device *device);
 bool dhcp_is_bound(struct net_device *device);
