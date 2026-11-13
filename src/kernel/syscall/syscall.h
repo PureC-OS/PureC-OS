@@ -353,6 +353,7 @@ struct kernel_mmap_args {
 #define KERR_NAMETOOLONG 36
 #define KERR_NOTSOCK 88
 #define KERR_DESTADDRREQ 89
+#define KERR_MSGSIZE 90
 #define KERR_PROTOTYPE 91
 #define KERR_NOPROTOOPT 92
 #define KERR_PROTONOSUPPORT 93
