@@ -84,6 +84,11 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
                                   const struct install_account_request *accounts);
 int32_t pc_getuid(void);
 int32_t pc_sudo(const char *password);
+int32_t pc_display_claim(void);
+int32_t pc_display_release(void);
+int32_t pc_fb_map(struct fb_map_info *out);
+int32_t pc_input_open(void);
+int32_t pc_fb_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 int32_t pc_config_path(const char *name, char *out, uint32_t capacity, bool for_write);
 int32_t pc_getgid(void);
 int32_t pc_setuid(uint32_t uid);
