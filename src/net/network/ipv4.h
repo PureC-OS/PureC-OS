@@ -41,6 +41,7 @@ bool ipv4_init(void);
 bool ipv4_register_handler(uint8_t protocol, ipv4_handler handler);
 bool ipv4_configure(struct net_device *device, uint32_t address,
                     uint32_t netmask, uint32_t gateway);
+bool ipv4_unconfigure(struct net_device *device);
 bool ipv4_get_config(struct net_device *device,
                      struct ipv4_interface_config *config);
 enum ipv4_send_result ipv4_send(struct net_device *device,
