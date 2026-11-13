@@ -26,7 +26,7 @@ GIT_MAKE := $(MAKE) -C $(GIT_SRC) \
 	NO_GETTEXT=YesPlease NO_ICONV=YesPlease NO_OPENSSL=YesPlease NO_EXPAT=YesPlease \
 	NO_PTHREADS=YesPlease NO_REGEX=YesPlease NO_MMAP=YesPlease NO_IPV6=YesPlease \
 	NO_UNIX_SOCKETS=YesPlease NO_INSTALL_HARDLINKS=YesPlease SKIP_DASHED_BUILT_INS=YesPlease \
-	NO_GITWEB=YesPlease NO_SVN_TESTS=YesPlease NO_NSEC=YesPlease NO_PRECOMPILED_HEADER=YesPlease \
+	NO_GITWEB=YesPlease NO_SVN_TESTS=YesPlease NO_NSEC=YesPlease NO_PRECOMPILED_HEADER=YesPlease OBJECT_CREATION_MODE=1 \
 	USE_LIBPCRE=  NO_CURL=
 
 .PHONY: all git-core remote-http templates clean
