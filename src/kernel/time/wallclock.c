@@ -176,10 +176,11 @@ int32_t wallclock_step_ms(int64_t delta_ms) {
   uint64_t uptime = system_info_uptime_ms();
   uint64_t flags = spin_lock_irqsave(&lock);
   if (source == WALLCLOCK_SOURCE_NONE) {
-    spin_unlock_irqrestore(&lock, flags);
-    return -1;
+    base_unix_ms = (int64_t)uptime;
+    base_uptime_ms = uptime;
+  } else {
+    slew_fold_locked(uptime);
   }
-  slew_fold_locked(uptime);
   base_unix_ms += delta_ms;
   slew_total_ms = 0;
   source = WALLCLOCK_SOURCE_NTP;
