@@ -1,0 +1,17 @@
+NAME
+       host - look up the IPv4 addresses of a host name
+
+SYNOPSIS
+       **host** __NAME__
+
+DESCRIPTION
+       Resolves __NAME__ the same way programs do: /etc/hosts first, then the
+       DNS servers listed in /etc/resolv.conf (normally resolved(8) on
+       127.0.0.1), then the kernel resolver as a last resort. Prints every
+       address found.
+
+EXAMPLES
+       host google.com
+
+SEE ALSO
+       resolved(8), ping(1), ip(8)
