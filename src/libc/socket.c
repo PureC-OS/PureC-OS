@@ -117,20 +117,50 @@ ssize_t recv(int fd, void *buffer, size_t length, int flags)
                                        (uint64_t)(uint32_t)flags));
 }
 
+static int64_t syscall_five(uint64_t number, uint64_t argument1,
+                            uint64_t argument2, uint64_t argument3,
+                            uint64_t argument4, uint64_t argument5)
+{
+    int64_t result;
+    __asm__ volatile("int $0x80"
+                     : "=a"(result)
+                     : "a"(number), "b"(argument1), "c"(argument2),
+                       "d"(argument3), "S"(argument4), "D"(argument5)
+                     : "r10", "r8", "memory");
+    return result;
+}
+
 ssize_t sendto(int fd, const void *buffer, size_t length, int flags,
                const struct sockaddr *address, socklen_t address_length)
 {
-    (void)address;
-    (void)address_length;
-    return send(fd, buffer, length, flags);
+    if (address && address_length < (socklen_t)sizeof(struct sockaddr_in))
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    return size_result_of(syscall_five(SYS_SENDTO, (uint64_t)fd,
+                                       (uint64_t)(uintptr_t)buffer, length,
+                                       (uint64_t)(uint32_t)flags,
+                                       (uint64_t)(uintptr_t)address));
 }
 
 ssize_t recvfrom(int fd, void *buffer, size_t length, int flags,
                  struct sockaddr *address, socklen_t *address_length)
 {
-    ssize_t got = recv(fd, buffer, length, flags);
+    struct sockaddr_in source;
+    memset(&source, 0, sizeof(source));
+    ssize_t got = size_result_of(syscall_five(SYS_RECVFROM, (uint64_t)fd,
+                                              (uint64_t)(uintptr_t)buffer, length,
+                                              (uint64_t)(uint32_t)flags,
+                                              (uint64_t)(uintptr_t)&source));
     if (got >= 0 && address && address_length)
-        (void)getpeername(fd, address, address_length);
+    {
+        socklen_t copy = *address_length < (socklen_t)sizeof(source)
+                             ? *address_length
+                             : (socklen_t)sizeof(source);
+        memcpy(address, &source, copy);
+        *address_length = sizeof(source);
+    }
     return got;
 }
 
@@ -341,9 +371,113 @@ static const struct
 {
     const char *name;
     int port;
-} services[] = {{"ftp", 21},   {"ssh", 22},  {"telnet", 23}, {"smtp", 25},
-                {"domain", 53}, {"http", 80}, {"pop3", 110},  {"ntp", 123},
-                {"imap", 143}, {"https", 443}, {"imaps", 993}, {"pop3s", 995}};
+    const char *proto;
+} services[] = {{"ftp", 21, "tcp"},     {"ssh", 22, "tcp"},     {"telnet", 23, "tcp"},
+                {"smtp", 25, "tcp"},    {"domain", 53, "udp"},  {"domain", 53, "tcp"},
+                {"bootps", 67, "udp"},  {"bootpc", 68, "udp"},  {"http", 80, "tcp"},
+                {"pop3", 110, "tcp"},   {"ntp", 123, "udp"},    {"imap", 143, "tcp"},
+                {"https", 443, "tcp"},  {"imaps", 993, "tcp"},  {"pop3s", 995, "tcp"}};
+
+static struct servent serv_entry;
+static char serv_name[32];
+static char serv_proto[8];
+static char serv_alias_text[64];
+static char *serv_aliases[4];
+
+static struct servent *serv_fill(const char *name, int port, const char *proto,
+                                 const char *aliases)
+{
+    strncpy(serv_name, name, sizeof(serv_name) - 1);
+    serv_name[sizeof(serv_name) - 1] = 0;
+    strncpy(serv_proto, proto, sizeof(serv_proto) - 1);
+    serv_proto[sizeof(serv_proto) - 1] = 0;
+    serv_alias_text[0] = 0;
+    if (aliases)
+    {
+        strncpy(serv_alias_text, aliases, sizeof(serv_alias_text) - 1);
+        serv_alias_text[sizeof(serv_alias_text) - 1] = 0;
+    }
+    unsigned n = 0;
+    char *cursor = serv_alias_text;
+    while (*cursor && n + 1 < sizeof(serv_aliases) / sizeof(serv_aliases[0]))
+    {
+        while (*cursor == ' ' || *cursor == '\t')
+            *cursor++ = 0;
+        if (!*cursor)
+            break;
+        serv_aliases[n++] = cursor;
+        while (*cursor && *cursor != ' ' && *cursor != '\t')
+            cursor++;
+    }
+    serv_aliases[n] = 0;
+    serv_entry.s_name = serv_name;
+    serv_entry.s_aliases = serv_aliases;
+    serv_entry.s_port = htons((uint16_t)port);
+    serv_entry.s_proto = serv_proto;
+    return &serv_entry;
+}
+
+static bool word_in(const char *list, const char *word)
+{
+    size_t n = strlen(word);
+    while (*list)
+    {
+        while (*list == ' ' || *list == '\t')
+            list++;
+        if (strncmp(list, word, n) == 0 &&
+            (list[n] == 0 || list[n] == ' ' || list[n] == '\t'))
+            return true;
+        while (*list && *list != ' ' && *list != '\t')
+            list++;
+    }
+    return false;
+}
+
+static struct servent *serv_lookup(const char *name, int port, const char *proto)
+{
+    FILE *file = fopen("/etc/services", "r");
+    if (file)
+    {
+        char line[256];
+        while (fgets(line, sizeof(line), file))
+        {
+            char *hash = strchr(line, '#');
+            if (hash)
+                *hash = 0;
+            char *nl = strchr(line, '\n');
+            if (nl)
+                *nl = 0;
+            char entry_name[32], entry_port[24];
+            int consumed = 0;
+            if (sscanf(line, "%31s %23s %n", entry_name, entry_port, &consumed) < 2)
+                continue;
+            char *slash = strchr(entry_port, '/');
+            if (!slash)
+                continue;
+            *slash = 0;
+            int entry_number = atoi(entry_port);
+            const char *entry_proto = slash + 1;
+            const char *aliases = line + consumed;
+            if (proto && strcmp(proto, entry_proto) != 0)
+                continue;
+            bool match = name ? (strcmp(name, entry_name) == 0 || word_in(aliases, name))
+                              : entry_number == port;
+            if (!match)
+                continue;
+            fclose(file);
+            return serv_fill(entry_name, entry_number, entry_proto, aliases);
+        }
+        fclose(file);
+    }
+    for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
+    {
+        if (proto && strcmp(proto, services[i].proto) != 0)
+            continue;
+        if (name ? strcmp(name, services[i].name) == 0 : services[i].port == port)
+            return serv_fill(services[i].name, services[i].port, services[i].proto, 0);
+    }
+    return 0;
+}
 
 static int parse_service(const char *service, int flags, int *port)
 {
@@ -363,15 +497,11 @@ static int parse_service(const char *service, int flags, int *port)
     }
     if (flags & AI_NUMERICSERV)
         return EAI_NONAME;
-    for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
-    {
-        if (strcmp(services[i].name, service) == 0)
-        {
-            *port = services[i].port;
-            return 0;
-        }
-    }
-    return EAI_SERVICE;
+    struct servent *entry = serv_lookup(service, 0, 0);
+    if (!entry)
+        return EAI_SERVICE;
+    *port = ntohs((uint16_t)entry->s_port);
+    return 0;
 }
 
 int getaddrinfo(const char *node, const char *service,
@@ -561,23 +691,10 @@ const char *hstrerror(int code)
 
 struct servent *getservbyname(const char *name, const char *protocol)
 {
-    static struct servent entry;
-    static char service_name[16];
-    static char proto[8] = "tcp";
-    static char *aliases[1];
-    if (protocol && strcmp(protocol, "tcp") != 0)
-        return 0;
-    for (unsigned i = 0; i < sizeof(services) / sizeof(services[0]); i++)
-    {
-        if (strcmp(services[i].name, name) == 0)
-        {
-            strncpy(service_name, name, sizeof(service_name) - 1);
-            entry.s_name = service_name;
-            entry.s_aliases = aliases;
-            entry.s_port = htons((uint16_t)services[i].port);
-            entry.s_proto = proto;
-            return &entry;
-        }
-    }
-    return 0;
+    return name ? serv_lookup(name, 0, protocol) : 0;
+}
+
+struct servent *getservbyport(int port, const char *protocol)
+{
+    return serv_lookup(0, ntohs((uint16_t)port), protocol);
 }
