@@ -1,0 +1,34 @@
+NAME
+       ip - show and change network interfaces, addresses and routes
+
+SYNOPSIS
+       **ip** **a**[ddr] [**show**]
+       **ip** **addr add** __A.B.C.D/N__ **dev** __NAME__
+       **ip** **addr flush** **dev** __NAME__
+       **ip** **link**
+       **ip** **route** [**show**]
+       **ip** **route add** **default via** __GATEWAY__ **dev** __NAME__
+       **ip** **route del** **default dev** __NAME__
+       **ip** **dns set** __A.B.C.D__ **dev** __NAME__
+       **ip** **dhcp start**|**stop** **dev** __NAME__
+
+DESCRIPTION
+       Show the state of network interfaces and change their IPv4
+       configuration. Changes need root or the NET_ADMIN capability; showing
+       is allowed for everyone.
+
+       The loopback interface **lo** always has 127.0.0.1/8 and cannot be
+       removed.
+
+       **ip dns** and **ip dhcp** are PureC OS extensions: they set the DNS
+       server of an interface and start or stop the kernel DHCP client.
+
+EXAMPLES
+       ip a
+       ip addr add 192.168.0.50/24 dev eth0
+       ip route add default via 192.168.0.1 dev eth0
+       ip dns set 1.1.1.1 dev eth0
+       ip dhcp start dev eth0
+
+SEE ALSO
+       ping(1), services(5)
