@@ -681,6 +681,11 @@ bool window_manager_server_mode(void){
 void window_manager_set_work_area(int32_t x, int32_t y, uint32_t width,
                                   uint32_t height){
     struct wm_guard guard=wm_enter();
+    if(work_x==(x<0 ? 0 : x) && work_y==(y<0 ? 0 : y)
+       && work_w==width && work_h==height){
+        wm_leave(guard);
+        return;
+    }
     work_x=x<0 ? 0 : x;
     work_y=y<0 ? 0 : y;
     work_w=width;
