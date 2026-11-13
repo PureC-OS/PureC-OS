@@ -249,12 +249,43 @@ static int32_t initramfs_op_list_long(void *context, const char *path,
   return initramfs_list_long(directory, entries, capacity);
 }
 
+static int32_t initramfs_op_get_meta(void *context, const char *path,
+                                     struct vfs_perm_meta *out) {
+  (void)context;
+  if (vfs_perm_get(path, out))
+    return 0;
+  const void *data = 0;
+  uint32_t size = 0;
+  out->uid = 0;
+  out->gid = 0;
+  if (initramfs_find(path, &data, &size)) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    bool elf = size >= 4 && bytes[0] == 0x7F && bytes[1] == 'E' &&
+               bytes[2] == 'L' && bytes[3] == 'F';
+    bool script = size >= 2 && bytes[0] == '#' && bytes[1] == '!';
+    out->mode = (elf || script) ? 0755u : 0644u;
+    return 0;
+  }
+  if (!initramfs_directory_exists(path))
+    return FS_ERROR_NOT_FOUND;
+  out->mode = 0755u;
+  return 0;
+}
+
+static int32_t initramfs_op_set_meta(void *context, const char *path,
+                                     const struct vfs_perm_meta *meta) {
+  (void)context;
+  return vfs_perm_set(path, meta);
+}
+
 const struct vfs_fs_ops vfs_initramfs_ops = {
     .name = "initramfs",
     .map = initramfs_op_map,
     .stat = initramfs_op_stat,
     .list = initramfs_op_list,
     .list_long = initramfs_op_list_long,
+    .get_meta = initramfs_op_get_meta,
+    .set_meta = initramfs_op_set_meta,
     .is_ready = initramfs_ready,
 };
 
