@@ -1,3 +1,4 @@
+#include "../ipc/inputdev.h"
 #include "../ipc/pty.h"
 #include "ofd.h"
 #include "../../drivers/display/gop.h"
@@ -101,6 +102,11 @@ int32_t ofd_create_pipe(int32_t pipe_id, bool write_end)
 
 static bool snapshot(int32_t index, struct ofd *out);
 
+int32_t ofd_create_input(void)
+{
+  return allocate(OFD_INPUT, 0U, 0, false);
+}
+
 int32_t ofd_create_pty(int32_t pty_id, bool master)
 {
   return allocate(OFD_PTY, 02U, pty_id, master);
@@ -176,6 +182,8 @@ void ofd_release(int32_t index)
     shm_unref(dropped.object);
   else if (dropped.kind == OFD_PTY)
     pty_release(dropped.object, dropped.write_end);
+  else if (dropped.kind == OFD_INPUT)
+    inputdev_release();
 }
 
 static bool snapshot(int32_t index, struct ofd *out)
@@ -209,6 +217,8 @@ int32_t ofd_kind_of(int32_t index)
     return FD_KIND_EVENT;
   if (o.kind == OFD_PTY)
     return FD_KIND_PTY;
+  if (o.kind == OFD_INPUT)
+    return FD_KIND_INPUT;
   return o.kind == OFD_PIPE ? FD_KIND_PIPE : FD_KIND_FILE;
 }
 
@@ -277,6 +287,8 @@ int32_t ofd_read(int32_t index, void *buffer, uint32_t count)
     return -KERR_CONSOLE;
   case OFD_PTY:
     return pty_read(o.object, o.write_end, buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
+  case OFD_INPUT:
+    return inputdev_read(buffer, count, (o.flags & OFD_O_NONBLOCK) != 0);
   case OFD_PIPE:
     if (o.write_end)
       return -KERR_BADF;
@@ -440,6 +452,8 @@ int32_t ofd_poll(int32_t index)
     return KPOLLOUT;
   case OFD_PTY:
     return pty_poll(o.object, o.write_end);
+  case OFD_INPUT:
+    return inputdev_poll();
   case OFD_PIPE:
     return pipe_poll(o.object, o.write_end);
   case OFD_SOCKET:
@@ -467,6 +481,8 @@ uint64_t ofd_poll_generation(int32_t index)
     return o.write_end ? 0 : pipe_generation(o.object);
   case OFD_PTY:
     return pty_generation(o.object);
+  case OFD_INPUT:
+    return inputdev_generation();
   case OFD_UNIX:
     return unix_generation(o.object);
   case OFD_EVENT:
