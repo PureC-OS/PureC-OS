@@ -17,6 +17,12 @@ static void surface_sync(struct pg_window *window){
     if(w!=surface_w || h!=surface_h || !surface_px){
         uint64_t need=(uint64_t)w*h;
         if(need>surface_cap){
+            struct pc_display_info display;
+            if(pc_display_get_info(&display) && display.available){
+                uint64_t full=(uint64_t)(display.width+PG_SURFACE_MARGIN)
+                    *(display.height+PG_SURFACE_MARGIN);
+                if(full>need) need=full;
+            }
             uint32_t *mem=pc_heap_grow(need*sizeof(uint32_t));
             if(!mem){
                 pc_surface_detach();
@@ -28,6 +34,7 @@ static void surface_sync(struct pg_window *window){
             surface_px=mem;
             surface_cap=need;
         }
+        need=(uint64_t)w*h;
         for(uint64_t i=0;i<need;i++) surface_px[i]=0;
         surface_w=w;
         surface_h=h;
@@ -154,6 +161,11 @@ bool pg_window_init(struct pg_window *window, const char *title,
     window->frame_synced = false;
     window->frame_generation = 0;
     window->frameless = false;
+    window->resizable = true;
+    window->resizing = false;
+    window->resize_edges = 0;
+    window->resize_last_ms = 0;
+    window->title_click_ms = 0;
     update_client_rect(window);
     struct gui_window_request request = {x, y, width, height};
     if (!pc_gui_window_register(&request))
@@ -220,7 +232,7 @@ void pg_window_begin(struct pg_window *window)
     pc_draw_text_tr(window->frame.x + window->frame.width - 41,
                     window->frame.y + 11, window->minimized ? "+" : "-",
                     window->theme.window);
-    if (window->server)
+    if (window->server || (window->resizable && window->closable))
     {
         pc_draw_rect(window->frame.x + window->frame.width - 64,
                      window->frame.y + 8, 14, 14, window->theme.muted_text);
@@ -258,14 +270,22 @@ void pg_window_close(struct pg_window *window)
         pc_desktop_redraw();
 }
 
+static void push_flags(struct pg_window *window)
+{
+    if (!window->registered)
+        return;
+    uint32_t flags = window->closable ? 0 : GUI_WINDOW_FLAG_FIXED | GUI_WINDOW_FLAG_NOCLOSE;
+    if (window->frameless || !window->resizable)
+        flags |= GUI_WINDOW_FLAG_NORESIZE;
+    (void)pc_gui_window_set_flags(flags);
+}
+
 void pg_window_set_closable(struct pg_window *window, bool closable)
 {
     if (!window)
         return;
     window->closable = closable;
-    if (window->registered)
-        (void)pc_gui_window_set_flags(closable ? 0
-                                               : GUI_WINDOW_FLAG_FIXED | GUI_WINDOW_FLAG_NOCLOSE);
+    push_flags(window);
 }
 
 void pg_window_set_frameless(struct pg_window *window, bool frameless)
@@ -274,6 +294,66 @@ void pg_window_set_frameless(struct pg_window *window, bool frameless)
         return;
     window->frameless = frameless;
     update_client_rect(window);
+    push_flags(window);
+}
+
+void pg_window_set_resizable(struct pg_window *window, bool resizable)
+{
+    if (!window)
+        return;
+    window->resizable = resizable;
+    push_flags(window);
+}
+
+uint64_t pg_internal_now_ms(void)
+{
+    struct time_info info;
+    if (pc_time_get(&info) != 0)
+        return 0;
+    return info.uptime_ms;
+}
+
+bool pg_window_resize(struct pg_window *window, uint32_t x, uint32_t y,
+                      uint32_t width, uint32_t height)
+{
+    if (!window || !window->open || window->minimized)
+        return false;
+    struct pc_display_info display;
+    if (!pc_display_get_info(&display) || !display.available)
+        return false;
+    if (width < PG_RESIZE_MIN_WIDTH)
+        width = PG_RESIZE_MIN_WIDTH;
+    if (height < PG_RESIZE_MIN_HEIGHT)
+        height = PG_RESIZE_MIN_HEIGHT;
+    if (width > display.width)
+        width = display.width;
+    if (height > display.height)
+        height = display.height;
+    if (x > display.width - width)
+        x = display.width - width;
+    if (y > display.height - height)
+        y = display.height - height;
+    if (x == window->frame.x && y == window->frame.y && width == window->frame.width &&
+        height == window->frame.height)
+        return false;
+    window->frame = (struct pg_rect){x, y, width, height};
+    update_client_rect(window);
+    (void)pg_internal_update_registered_frame(window);
+    if (!window->server)
+        pc_desktop_redraw();
+    return true;
+}
+
+static void adopt_wm_frame(struct pg_window *window)
+{
+    struct gui_window_info info;
+    if (!pc_gui_window_info(&info))
+        return;
+    window->frame = (struct pg_rect){info.x, info.y, info.width, info.height};
+    window->maximized = (info.flags & GUI_WINDOW_INFO_MAXIMIZED) != 0;
+    update_client_rect(window);
+    surface_sync(window);
+    pc_desktop_redraw();
 }
 
 void pg_window_set_esc_closes(struct pg_window *window, bool esc_closes)
@@ -354,14 +434,20 @@ void pg_window_restore(struct pg_window *window)
 
 void pg_window_maximize(struct pg_window *window)
 {
-    if (window && window->open && window->server)
-        (void)pc_gui_window_command(GUI_WINDOW_CMD_MAXIMIZE);
+    if (!window || !window->open || window->frameless || !window->resizable)
+        return;
+    (void)pc_gui_window_command(GUI_WINDOW_CMD_MAXIMIZE);
+    if (!window->server)
+        adopt_wm_frame(window);
 }
 
 void pg_window_unmaximize(struct pg_window *window)
 {
-    if (window && window->open && window->server)
-        (void)pc_gui_window_command(GUI_WINDOW_CMD_UNMAXIMIZE);
+    if (!window || !window->open)
+        return;
+    (void)pc_gui_window_command(GUI_WINDOW_CMD_UNMAXIMIZE);
+    if (!window->server)
+        adopt_wm_frame(window);
 }
 
 bool pg_window_is_maximized(const struct pg_window *window)
