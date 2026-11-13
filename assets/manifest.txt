@@ -76,6 +76,8 @@
 /bin/dhcpc /bin/dhcpc - 1 bin/programs/dhcpc
 /bin/resolved /bin/resolved - 1 bin/programs/resolved
 /bin/host /bin/host - 1 bin/programs/host
+/bin/ss /bin/ss - 1 bin/programs/ss
+/bin/ntpd /bin/ntpd - 1 bin/programs/ntpd
 /bin/id /bin/id - 1 bin/programs/id
 /bin/hostname /bin/hostname - 1 bin/programs/hostname
 /bin/date /bin/date - 1 bin/programs/date
@@ -147,6 +149,8 @@
 /usr/share/man/dhcpc.8 /usr/share/man/dhcpc.8 - 0 assets/man/dhcpc.8
 /usr/share/man/resolved.8 /usr/share/man/resolved.8 - 0 assets/man/resolved.8
 /usr/share/man/host.1 /usr/share/man/host.1 - 0 assets/man/host.1
+/usr/share/man/ss.8 /usr/share/man/ss.8 - 0 assets/man/ss.8
+/usr/share/man/ntpd.8 /usr/share/man/ntpd.8 - 0 assets/man/ntpd.8
 /usr/share/man/id.1 /usr/share/man/id.1 - 0 assets/man/id.1
 /usr/share/man/hostname.1 /usr/share/man/hostname.1 - 0 assets/man/hostname.1
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
@@ -416,6 +420,7 @@
 /etc/resolv.conf /etc/resolv.conf - 0 rootfs/etc/resolv.conf
 /etc/hosts /etc/hosts - 0 rootfs/etc/hosts
 /etc/resolved.conf /etc/resolved.conf - 0 rootfs/etc/resolved.conf
+/etc/ntp.conf /etc/ntp.conf - 0 rootfs/etc/ntp.conf
 /etc/vimrc /etc/vimrc - 0 rootfs/etc/vimrc
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
