@@ -47,6 +47,7 @@ typedef unsigned short sa_family_t;
 #define SO_SNDLOWAT 19
 #define SO_RCVTIMEO 20
 #define SO_SNDTIMEO 21
+#define SO_BINDTODEVICE 25
 
 #define MSG_OOB 0x1
 #define MSG_PEEK 0x2
