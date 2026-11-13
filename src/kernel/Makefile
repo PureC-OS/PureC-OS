@@ -92,6 +92,7 @@ C_SOURCES := \
 	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
+	drivers/display/display_owner.c \
 	drivers/display/console_vt.c \
 	gfx/compositor.c \
 	gfx/blit.c \
