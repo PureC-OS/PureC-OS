@@ -104,6 +104,15 @@ bool ipv4_register_handler(uint8_t protocol, ipv4_handler handler){
     return false;
 }
 
+bool ipv4_unconfigure(struct net_device *device){
+    struct ipv4_interface_config *interface=find_interface(device,false);
+    if(!interface) return false;
+    __atomic_store_n(&interface->configured,false,__ATOMIC_RELEASE);
+    interface->address=0;
+    interface->gateway=0;
+    return true;
+}
+
 bool ipv4_configure(struct net_device *device, uint32_t address,
                     uint32_t netmask, uint32_t gateway){
     if(!device || !device->registered || !address || !netmask) return false;
