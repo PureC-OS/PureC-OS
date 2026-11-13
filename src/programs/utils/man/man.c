@@ -139,7 +139,7 @@ static int show_page(const char *path, const char *name)
     fclose(f);
     pager_add(&text, "");
     char footer[256];
-    snprintf(footer, sizeof(footer), "%sPureC OS 1.2.29%*s%s(%c)%s", color ? C_DIM : "", width - 15 - (int)strlen(name) - 3, "",
+    snprintf(footer, sizeof(footer), "%sPureC OS 2.0.0%*s%s(%c)%s", color ? C_DIM : "", width - 15 - (int)strlen(name) - 3, "",
              name, sec, color ? C_RESET : "");
     pager_add(&text, footer);
     char status[96];

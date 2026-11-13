@@ -55,7 +55,7 @@ static void hero(struct page_ctx *p, int y)
     pgc_rrect(u->c, p->x + 28, y + 35, 80, 80, 22, 0xffffff, 36);
     pgc_text_center(u->c, PGF_HERO, p->x + 28, y + 51, 80, "P", 0xffffff);
     pgc_text(u->c, PGF_HERO, p->x + 132, y + 32, "PureC OS", 0xffffff);
-    pgc_text(u->c, PGF_BODY, p->x + 134, y + 78, "Version 1.2.29  -  x86_64", pgc_mix(0xffffff, c1, 60));
+    pgc_text(u->c, PGF_BODY, p->x + 134, y + 78, "Version 2.0.0  -  x86_64", pgc_mix(0xffffff, c1, 60));
     pgc_text(u->c, PGF_SMALL, p->x + 134, y + 102, "A 64-bit operating system written from scratch in C",
             pgc_mix(0xffffff, c1, 90));
 }
@@ -183,7 +183,7 @@ int page_about(struct page_ctx *p)
     int ky = y + 72, kx = p->x + 24, kw = p->w - 48;
     char buf[96];
     fmt_init(&f, buf, sizeof(buf));
-    fs(&f, "PureC OS 1.2.29 (x86_64)");
+    fs(&f, "PureC OS 2.0.0 (x86_64)");
     pgu_kv(u, kx, ky, kw, "Operating system", buf);
     pgu_separator(u, kx, ky + 28, kw);
     ky += 38;

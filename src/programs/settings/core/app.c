@@ -82,7 +82,7 @@ static void draw_sidebar(struct settings_app *app, struct pg_ui *u, int h)
                   false);
     pgc_icon(c, PGI_COG, PG_ICON_M, 26, 28, 0xffffff);
     pgc_text(c, PGF_HEAD, 72, 22, "Settings", p->text);
-    pgc_text(c, PGF_SMALL, 72, 43, "PureC OS 1.2.29", p->text3);
+    pgc_text(c, PGF_SMALL, 72, 43, "PureC OS 2.0.0", p->text3);
 
     struct user_info user;
     char name[48];

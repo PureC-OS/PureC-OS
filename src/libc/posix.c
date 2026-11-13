@@ -201,7 +201,7 @@ int uname(struct utsname *name)
     memset(name, 0, sizeof(*name));
     strcpy(name->sysname, "PureC");
     strcpy(name->nodename, "purec");
-    strcpy(name->release, "1.2.29");
+    strcpy(name->release, "2.0.0");
     strcpy(name->version, "#1 SMP PureC OS");
     strcpy(name->machine, "x86_64");
     char host[64];

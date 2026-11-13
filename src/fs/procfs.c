@@ -57,7 +57,7 @@ static void emit(struct pbuf *out, const char *format, ...) {
 
 static void generate_version(struct pbuf *out, uint32_t pid) {
   (void)pid;
-  emit(out, "PureC OS kernel 1.2.29 (x86_64)\n");
+  emit(out, "PureC OS kernel 2.0.0 (x86_64)\n");
 }
 
 static void generate_uptime(struct pbuf *out, uint32_t pid) {

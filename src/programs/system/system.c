@@ -220,11 +220,11 @@ int system_platform_command(const char *name, const char *arguments){
        || pc_strcmp(name,"update")==0 || pc_strcmp(name,"mkfs.ext2")==0)
         return run_program("/bin/installer",arguments);
     if(pc_strcmp(name,"uname")==0){
-        pc_write("PureC OS 1.2.29 x86_64\n");
+        pc_write("PureC OS 2.0.0 x86_64\n");
         return 0;
     }
     if(pc_strcmp(name,"about")==0){
-        pc_write("PureC userspace 1.2.29, standalone system programs\n");
+        pc_write("PureC userspace 2.0.0, standalone system programs\n");
         return 0;
     }
     if(pc_strcmp(name,"systeminfo")==0) return command_systeminfo();
