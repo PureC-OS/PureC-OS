@@ -1,4 +1,5 @@
 #include "vfs_backends.h"
+#include "vfs_perm.h"
 #include "../io/storage/block_device.h"
 #include "../io/storage/storage_types.h"
 #include "../kernel/diagnostics/klog.h"
@@ -329,6 +330,45 @@ static int32_t devfs_write_file(void *context, const char *path,
   return FS_ERROR_INVALID;
 }
 
+static int32_t devfs_get_meta(void *context, const char *path,
+                              struct vfs_perm_meta *out) {
+  (void)context;
+  out->uid = 0;
+  out->gid = 0;
+  if (!path || !path[0] || (path[0] == '/' && !path[1])) {
+    out->mode = 0755u;
+    return 0;
+  }
+  enum devfs_kind kind;
+  struct storage_device_info block;
+  int32_t status = lookup(path, &kind, &block);
+  if (status < 0)
+    return status;
+  switch (kind) {
+  case DEVFS_NULL:
+  case DEVFS_ZERO:
+  case DEVFS_FULL:
+  case DEVFS_RANDOM:
+    out->mode = 0666u;
+    break;
+  case DEVFS_KMSG:
+    out->mode = 0644u;
+    break;
+  case DEVFS_BLOCK:
+    out->mode = 0600u;
+    break;
+  }
+  return 0;
+}
+
+static int32_t devfs_set_meta(void *context, const char *path,
+                              const struct vfs_perm_meta *meta) {
+  (void)context;
+  (void)path;
+  (void)meta;
+  return FS_ERROR_READ_ONLY;
+}
+
 const struct vfs_fs_ops vfs_devfs_ops = {
     .name = "devfs",
     .open = devfs_open,
@@ -340,4 +380,6 @@ const struct vfs_fs_ops vfs_devfs_ops = {
     .list_long = devfs_list_long,
     .write_file = devfs_write_file,
     .append_file = devfs_write_file,
+    .get_meta = devfs_get_meta,
+    .set_meta = devfs_set_meta,
 };
