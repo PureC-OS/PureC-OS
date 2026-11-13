@@ -156,6 +156,8 @@ bool dhcp_init(void){
 
 bool dhcp_start(struct net_device *device){
     if(!device || !device->registered || find_client(device)) return false;
+    if(!udp_port_bound(DHCP_CLIENT_PORT)
+       && !udp_bind(DHCP_CLIENT_PORT,receive_message)) return false;
     for(uint8_t index=0;index<NET_DEVICE_MAX_COUNT;index++){
         if(clients[index].device) continue;
         clients[index].device=device;
@@ -201,6 +203,10 @@ bool dhcp_stop(struct net_device *device){
     if(!client) return false;
     __atomic_store_n(&client->state,DHCP_STATE_INIT,__ATOMIC_RELEASE);
     __atomic_store_n(&client->device,(struct net_device *)0,__ATOMIC_RELEASE);
+    bool any=false;
+    for(uint8_t index=0;index<NET_DEVICE_MAX_COUNT;index++)
+        if(clients[index].device) any=true;
+    if(!any) (void)udp_unbind(DHCP_CLIENT_PORT);
     return true;
 }
 
