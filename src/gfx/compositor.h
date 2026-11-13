@@ -28,6 +28,16 @@ bool compositor_end_update(uint32_t pid);
 void compositor_cursor_move(int32_t x, int32_t y);
 void compositor_cursor_show(bool visible);
 
+enum compositor_cursor {
+  COMPOSITOR_CURSOR_ARROW,
+  COMPOSITOR_CURSOR_EW,
+  COMPOSITOR_CURSOR_NS,
+  COMPOSITOR_CURSOR_NWSE,
+  COMPOSITOR_CURSOR_NESW,
+  COMPOSITOR_CURSOR_COUNT
+};
+void compositor_cursor_set_shape(uint32_t shape);
+
 bool compositor_take_activity(void);
 bool compositor_present(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 void compositor_panic_disable(void);

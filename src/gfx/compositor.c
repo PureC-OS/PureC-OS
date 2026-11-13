@@ -21,10 +21,6 @@
 #define COMP_CHUNK 1024
 #define COMP_BAND_ROWS 32
 #define COMP_MAX_PIXELS (16u * 1024u * 1024u)
-#define CURSOR_SPRITE_W 12
-#define CURSOR_SPRITE_H 17
-#define CURSOR_BOX_W 14
-#define CURSOR_BOX_H 19
 
 struct comp_window {
   bool used;
@@ -69,12 +65,154 @@ static int32_t cursor_y = -1000;
 static bool cursor_visible = true;
 static volatile uint32_t activity_flag;
 
-static const char *const cursor_sprite[CURSOR_SPRITE_H] = {
-    "X           ", "XX          ", "XoX         ", "XooX        ",
-    "XoooX       ", "XooooX      ", "XoooooX     ", "XooooooX    ",
-    "XoooooooX   ", "XooooooooX  ", "XoooooXXXXX ", "XooXooX     ",
-    "XoX XooX    ", "XX  XooX    ", "X    XooX   ", "     XooX   ",
-    "      XX    "};
+static const char *const cursor_arrow_rows[] = {
+    "X             ",
+    "XX            ",
+    "XoX           ",
+    "XooX          ",
+    "XoooX         ",
+    "XooooX        ",
+    "XoooooX       ",
+    "XooooooX      ",
+    "XoooooooX     ",
+    "XooooooooX    ",
+    "XoooooooooX   ",
+    "XooooooooooX  ",
+    "XoooooooooooX ",
+    "XooooooooooooX",
+    "XoooooooXXXXXX",
+    "XooooXooX     ",
+    "XoooXXooX     ",
+    "XooX XooX     ",
+    "XoX   XooX    ",
+    "XX    XooX    ",
+    "X      XooX   ",
+    "       XooX   ",
+    "        XX    ",
+};
+#define CURSOR_ARROW_W 14
+#define CURSOR_ARROW_H 23
+#define CURSOR_ARROW_HX 0
+#define CURSOR_ARROW_HY 0
+static const char *const cursor_ew_rows[] = {
+    "    XXX         XXX    ",
+    "   XXoX         XoXX   ",
+    "  XXooX         XooXX  ",
+    " XXoooXXXXXXXXXXXoooXX ",
+    "XXoooooooooooooooooooXX",
+    "XoooooooooooooooooooooX",
+    "XXoooooooooooooooooooXX",
+    " XXoooXXXXXXXXXXXoooXX ",
+    "  XXooX         XooXX  ",
+    "   XXoX         XoXX   ",
+    "    XXX         XXX    ",
+};
+#define CURSOR_EW_W 23
+#define CURSOR_EW_H 11
+#define CURSOR_EW_HX 11
+#define CURSOR_EW_HY 5
+static const char *const cursor_ns_rows[] = {
+    "          XXX          ",
+    "         XXoXX         ",
+    "        XXoooXX        ",
+    "       XXoooooXX       ",
+    "      XXoooooooXX      ",
+    "      XoooooooooX      ",
+    "      XXXXoooXXXX      ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "         XoooX         ",
+    "      XXXXoooXXXX      ",
+    "      XoooooooooX      ",
+    "      XXoooooooXX      ",
+    "       XXoooooXX       ",
+    "        XXoooXX        ",
+    "         XXoXX         ",
+    "          XXX          ",
+};
+#define CURSOR_NS_W 23
+#define CURSOR_NS_H 23
+#define CURSOR_NS_HX 11
+#define CURSOR_NS_HY 11
+static const char *const cursor_nwse_rows[] = {
+    "   XXXXXXXXX           ",
+    "   XoooooooX           ",
+    "   XooooooXX           ",
+    "   XoooooXX            ",
+    "   XoooooXX            ",
+    "   XooooooXX           ",
+    "   XooXXoooXX          ",
+    "   XoXXXXoooXX         ",
+    "   XXX  XXoooXX  XXX   ",
+    "         XXoooXXXXoX   ",
+    "          XXoooXXooX   ",
+    "           XXooooooX   ",
+    "            XXoooooX   ",
+    "            XXoooooX   ",
+    "           XXooooooX   ",
+    "           XoooooooX   ",
+    "           XXXXXXXXX   ",
+};
+#define CURSOR_NWSE_W 23
+#define CURSOR_NWSE_H 17
+#define CURSOR_NWSE_HX 11
+#define CURSOR_NWSE_HY 8
+static const char *const cursor_nesw_rows[] = {
+    "           XXXXXXXXX   ",
+    "           XoooooooX   ",
+    "           XXooooooX   ",
+    "            XXoooooX   ",
+    "            XXoooooX   ",
+    "           XXooooooX   ",
+    "          XXoooXXooX   ",
+    "         XXoooXXXXoX   ",
+    "   XXX  XXoooXX  XXX   ",
+    "   XoXXXXoooXX         ",
+    "   XooXXoooXX          ",
+    "   XooooooXX           ",
+    "   XoooooXX            ",
+    "   XoooooXX            ",
+    "   XooooooXX           ",
+    "   XoooooooX           ",
+    "   XXXXXXXXX           ",
+};
+#define CURSOR_NESW_W 23
+#define CURSOR_NESW_H 17
+#define CURSOR_NESW_HX 11
+#define CURSOR_NESW_HY 8
+
+
+struct cursor_shape_def {
+  const char *const *rows;
+  int32_t w, h, hx, hy;
+};
+
+static const struct cursor_shape_def cursor_shapes[COMPOSITOR_CURSOR_COUNT] = {
+    [COMPOSITOR_CURSOR_ARROW] = {cursor_arrow_rows, CURSOR_ARROW_W, CURSOR_ARROW_H,
+                                 CURSOR_ARROW_HX, CURSOR_ARROW_HY},
+    [COMPOSITOR_CURSOR_EW] = {cursor_ew_rows, CURSOR_EW_W, CURSOR_EW_H, CURSOR_EW_HX,
+                              CURSOR_EW_HY},
+    [COMPOSITOR_CURSOR_NS] = {cursor_ns_rows, CURSOR_NS_W, CURSOR_NS_H, CURSOR_NS_HX,
+                              CURSOR_NS_HY},
+    [COMPOSITOR_CURSOR_NWSE] = {cursor_nwse_rows, CURSOR_NWSE_W, CURSOR_NWSE_H,
+                                CURSOR_NWSE_HX, CURSOR_NWSE_HY},
+    [COMPOSITOR_CURSOR_NESW] = {cursor_nesw_rows, CURSOR_NESW_W, CURSOR_NESW_H,
+                                CURSOR_NESW_HX, CURSOR_NESW_HY},
+};
+
+static uint32_t cursor_shape = COMPOSITOR_CURSOR_ARROW;
+
+static int32_t cursor_left(void) { return cursor_x - cursor_shapes[cursor_shape].hx; }
+static int32_t cursor_top(void) { return cursor_y - cursor_shapes[cursor_shape].hy; }
+static int32_t cursor_box_w(void) { return cursor_shapes[cursor_shape].w + 2; }
+static int32_t cursor_box_h(void) { return cursor_shapes[cursor_shape].h + 2; }
+
 
 static int64_t min64(int64_t a, int64_t b) { return a < b ? a : b; }
 static int64_t max64(int64_t a, int64_t b) { return a > b ? a : b; }
@@ -119,8 +257,9 @@ static uint32_t visible_h(const struct comp_window *w) {
 }
 
 static uint32_t cursor_argb(int32_t dx, int32_t dy) {
-  if (dx >= 0 && dx < CURSOR_SPRITE_W && dy >= 0 && dy < CURSOR_SPRITE_H) {
-    char c = cursor_sprite[dy][dx];
+  const struct cursor_shape_def *shape = &cursor_shapes[cursor_shape];
+  if (dx >= 0 && dx < shape->w && dy >= 0 && dy < shape->h) {
+    char c = shape->rows[dy][dx];
     if (c == 'X')
       return 0xFF000000u;
     if (c == 'o')
@@ -128,8 +267,8 @@ static uint32_t cursor_argb(int32_t dx, int32_t dy) {
   }
   int32_t sx = dx - 1;
   int32_t sy = dy - 1;
-  if (sx >= 0 && sx < CURSOR_SPRITE_W && sy >= 0 && sy < CURSOR_SPRITE_H) {
-    char c = cursor_sprite[sy][sx];
+  if (sx >= 0 && sx < shape->w && sy >= 0 && sy < shape->h) {
+    char c = shape->rows[sy][sx];
     if (c == 'X' || c == 'o')
       return 0x60000000u;
   }
@@ -190,12 +329,13 @@ static void present_locked(int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
             dst[k] = p & 0x00FFFFFFu;
         }
       }
-      if (cursor_visible && y >= cursor_y && y < cursor_y + CURSOR_BOX_H) {
-        int32_t dy = (int32_t)(y - cursor_y);
-        int64_t ix0 = max64(cx, cursor_x);
-        int64_t ix1 = min64(ce, (int64_t)cursor_x + CURSOR_BOX_W);
+      int32_t cur_x = cursor_left(), cur_y = cursor_top();
+      if (cursor_visible && y >= cur_y && y < cur_y + cursor_box_h()) {
+        int32_t dy = (int32_t)(y - cur_y);
+        int64_t ix0 = max64(cx, cur_x);
+        int64_t ix1 = min64(ce, (int64_t)cur_x + cursor_box_w());
         for (int64_t px = ix0; px < ix1; px++) {
-          uint32_t argb = cursor_argb((int32_t)(px - cursor_x), dy);
+          uint32_t argb = cursor_argb((int32_t)(px - cur_x), dy);
           if (!argb)
             continue;
           line_buffer[px - cx] = blend_pixel(line_buffer[px - cx], argb);
@@ -741,14 +881,16 @@ void compositor_cursor_move(int32_t x, int32_t y) {
     comp_leave(&c);
     return;
   }
-  int32_t ox = cursor_x;
-  int32_t oy = cursor_y;
+  int32_t ox = cursor_left();
+  int32_t oy = cursor_top();
   cursor_x = x;
   cursor_y = y;
+  int32_t nx = cursor_left();
+  int32_t ny = cursor_top();
+  int32_t bw = cursor_box_w(), bh = cursor_box_h();
   if (cursor_visible)
-    present_pair_locked(ox, oy, (int64_t)ox + CURSOR_BOX_W,
-                        (int64_t)oy + CURSOR_BOX_H, x, y,
-                        (int64_t)x + CURSOR_BOX_W, (int64_t)y + CURSOR_BOX_H);
+    present_pair_locked(ox, oy, (int64_t)ox + bw, (int64_t)oy + bh, nx, ny,
+                        (int64_t)nx + bw, (int64_t)ny + bh);
   comp_leave(&c);
 }
 
@@ -757,9 +899,28 @@ void compositor_cursor_show(bool visible) {
   comp_enter(&c);
   if (cursor_visible != visible) {
     cursor_visible = visible;
-    present_locked(cursor_x, cursor_y, (int64_t)cursor_x + CURSOR_BOX_W,
-                   (int64_t)cursor_y + CURSOR_BOX_H);
+    present_locked(cursor_left(), cursor_top(), (int64_t)cursor_left() + cursor_box_w(),
+                   (int64_t)cursor_top() + cursor_box_h());
   }
+  comp_leave(&c);
+}
+
+void compositor_cursor_set_shape(uint32_t shape) {
+  if (shape >= COMPOSITOR_CURSOR_COUNT || !gop_has_backbuffer())
+    return;
+  struct comp_ctx c;
+  comp_enter(&c);
+  if (shape == cursor_shape) {
+    comp_leave(&c);
+    return;
+  }
+  int32_t ox = cursor_left(), oy = cursor_top();
+  int32_t ow = cursor_box_w(), oh = cursor_box_h();
+  cursor_shape = shape;
+  int32_t nx = cursor_left(), ny = cursor_top();
+  if (cursor_visible)
+    present_pair_locked(ox, oy, (int64_t)ox + ow, (int64_t)oy + oh, nx, ny,
+                        (int64_t)nx + cursor_box_w(), (int64_t)ny + cursor_box_h());
   comp_leave(&c);
 }
 
