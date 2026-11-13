@@ -1,0 +1,21 @@
+NAME
+       netd - network service supervisor
+
+SYNOPSIS
+       **netd**
+
+DESCRIPTION
+       Started by the kernel at boot. For every network interface except
+       **lo** it turns off the kernel DHCP client and starts its own
+       dhcpc(8), then restarts it when it exits (the delay grows from 2 to
+       60 seconds). New interfaces, for example Wi-Fi after it connects, are
+       picked up within two seconds.
+
+       If /bin/netd is missing or fails to start, the kernel DHCP client keeps
+       working as before.
+
+SIGNALS
+       **SIGTERM** stops all children, which release their leases.
+
+SEE ALSO
+       dhcpc(8), ip(8), services(5)
