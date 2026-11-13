@@ -18,6 +18,8 @@
 #include "../../fs/install.h"
 #include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
+#include "../../drivers/display/display_owner.h"
+#include "../ipc/inputdev.h"
 #include "sudo.h"
 #include "../../gfx/blit.h"
 #include "../../gfx/compositor.h"
@@ -1418,6 +1420,62 @@ int64_t syscall_handler(struct syscall_regs *r)
     return (int64_t)process_current_uid();
   case SYS_GETGID:
     return (int64_t)process_current_gid();
+  case SYS_DISPLAY_CLAIM:
+  {
+    if (!process_has_capability(PROCESS_CAP_DISPLAY) && process_current_uid() != 0)
+      return -KERR_PERM;
+    return display_owner_claim((uint32_t)process_current_pid());
+  }
+  case SYS_DISPLAY_RELEASE:
+    display_owner_release((uint32_t)process_current_pid());
+    return 0;
+  case SYS_FB_MAP:
+  {
+    struct fb_map_info *out = (struct fb_map_info *)(uintptr_t)a1;
+    if (!writable(out, sizeof(*out)))
+      return -KERR_FAULT;
+    if (display_owner_pid() != (uint32_t)process_current_pid())
+      return -KERR_PERM;
+    struct gop_front_info front;
+    if (!gop_front_physical(&front) || front.bpp != 32)
+      return -KERR_NODEV;
+    uint64_t base = front.physical & ~0xFFFULL;
+    uint64_t skew = front.physical - base;
+    int64_t mapped = process_map_device(base, front.bytes + skew);
+    if (mapped < 0)
+      return mapped;
+    struct fb_map_info info;
+    memset(&info, 0, sizeof(info));
+    info.address = (uint64_t)mapped + skew;
+    info.bytes = front.bytes;
+    info.width = front.width;
+    info.height = front.height;
+    info.pitch_bytes = front.pitch_bytes;
+    info.bpp = front.bpp;
+    info.generation = front.generation;
+    *out = info;
+    return 0;
+  }
+  case SYS_INPUT_OPEN:
+  {
+    if (display_owner_pid() != (uint32_t)process_current_pid())
+      return -KERR_PERM;
+    int32_t status = inputdev_open();
+    if (status < 0)
+      return status;
+    int32_t object = ofd_create_input();
+    if (object < 0)
+    {
+      inputdev_release();
+      return object;
+    }
+    return fd_install_ofd(object, 0);
+  }
+  case SYS_FB_DAMAGE:
+    if (display_owner_pid() != (uint32_t)process_current_pid())
+      return -KERR_PERM;
+    gop_user_damage((uint32_t)a1, (uint32_t)a2, (uint32_t)a3, (uint32_t)r->rsi);
+    return 0;
   case SYS_SUDO:
   {
     if (!readable_string((const char *)(uintptr_t)a1))
