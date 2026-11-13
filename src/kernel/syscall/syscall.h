@@ -208,6 +208,7 @@
 #define SYS_KLOG_WRITE 406        /* (level 0..3, const char *message) -> 0; appends to the kernel journal */
 #define SYS_CLOCK_ADJUST 407      /* (op CLOCK_ADJ_*, delta_ms, int64_t *previous|0) -> 0; root or SYS_TIME */
 #define SYS_NET_SOCKETS 408       /* (struct net_socket_entry *, capacity, offset) -> entries written */
+#define SYS_RENAME_PATH 409       /* (old path, new path) -> 0; POSIX rename, replaces the target */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
 #define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
