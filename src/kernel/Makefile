@@ -60,6 +60,7 @@ C_SOURCES := \
 	kernel/ipc/pipe.c \
 	kernel/ipc/pty.c \
 	kernel/ipc/evfd.c \
+	kernel/ipc/inputdev.c \
 	kernel/ipc/unix.c \
 	kernel/process/signal.c \
 	kernel/process/futex.c \
