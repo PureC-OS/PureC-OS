@@ -401,6 +401,7 @@
 /etc/passwd /etc/passwd - 0 rootfs/etc/passwd
 /etc/group /etc/group - 0 rootfs/etc/group
 /etc/shells /etc/shells - 0 rootfs/etc/shells
+/etc/services /etc/services - 0 rootfs/etc/services
 /etc/vimrc /etc/vimrc - 0 rootfs/etc/vimrc
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
