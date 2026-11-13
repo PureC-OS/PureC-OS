@@ -27,6 +27,8 @@ struct lease {
     uint32_t router;
     uint32_t dns[3];
     uint32_t dns_count;
+    uint32_t ntp[3];
+    uint32_t ntp_count;
     uint32_t server;
     uint32_t lease_s;
     uint32_t t1_s;
@@ -148,7 +150,7 @@ static bool send_msg(uint8_t type, uint32_t ciaddr, uint32_t requested, uint32_t
     if (host[0])
         at = opt(p, at, 12, host, (uint8_t)strlen(host));
     if (type != RELEASE) {
-        static const uint8_t params[] = {1, 3, 6, 15, 51, 54, 58, 59};
+        static const uint8_t params[] = {1, 3, 6, 15, 42, 51, 54, 58, 59};
         at = opt(p, at, 55, params, sizeof(params));
     }
     p[at++] = 255;
@@ -195,6 +197,9 @@ static int parse(const uint8_t *p, ssize_t len, struct lease *out)
         else if (code == 6)
             for (uint8_t k = 0; k + 4 <= l && out->dns_count < 3; k += 4)
                 out->dns[out->dns_count++] = rd32(v + k);
+        else if (code == 42)
+            for (uint8_t k = 0; k + 4 <= l && out->ntp_count < 3; k += 4)
+                out->ntp[out->ntp_count++] = rd32(v + k);
         else if (code == 51 && l >= 4)
             out->lease_s = rd32(v);
         else if (code == 54 && l >= 4)
@@ -239,6 +244,10 @@ static void apply(const struct lease *l)
         for (uint32_t i = 0; i < l->dns_count; i++) {
             ip_text(l->dns[i], d);
             fprintf(f, "dns=%s\n", d);
+        }
+        for (uint32_t i = 0; i < l->ntp_count; i++) {
+            ip_text(l->ntp[i], d);
+            fprintf(f, "ntp=%s\n", d);
         }
         fclose(f);
     }
