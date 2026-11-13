@@ -84,6 +84,7 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
                                   const struct install_account_request *accounts);
 int32_t pc_getuid(void);
 int32_t pc_sudo(const char *password);
+int32_t pc_net_configure(const struct net_if_config *config);
 int32_t pc_display_claim(void);
 int32_t pc_display_release(void);
 int32_t pc_fb_map(struct fb_map_info *out);
