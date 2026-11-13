@@ -1,0 +1,28 @@
+NAME
+       resolved - local caching DNS resolver
+
+SYNOPSIS
+       **resolved**
+
+DESCRIPTION
+       Listens on UDP 127.0.0.1:53 (domain) and answers DNS queries from local
+       programs. /etc/resolv.conf points to it with "nameserver 127.0.0.1".
+
+       Names listed in /etc/hosts are answered directly. Other queries are
+       forwarded to the upstream servers and the answers are cached for their
+       TTL (at most one hour; failed lookups for one minute). When a server
+       does not answer within two seconds, the next one is tried.
+
+       Upstream servers come from /etc/resolved.conf, one "server ADDRESS"
+       per line. When it lists none, the DNS servers received from DHCP are
+       used. Listing your own servers there bypasses a provider that filters
+       DNS.
+
+       Started and restarted by netd(8). Needs root or the NET_BIND
+       capability to bind port 53.
+
+FILES
+       /etc/resolved.conf, /etc/resolv.conf, /etc/hosts
+
+SEE ALSO
+       netd(8), host(1)
