@@ -16,7 +16,6 @@ static bool read_password(const char *user, char *out, size_t cap)
     if (tty) {
         quiet = saved;
         quiet.c_lflag &= ~(tcflag_t)(ECHO | ECHOE | ECHOK);
-        quiet.c_lflag |= ECHONL;
         tcsetattr(0, TCSAFLUSH, &quiet);
     }
     fprintf(stderr, "[sudo] password for %s: ", user);
@@ -42,8 +41,7 @@ static bool read_password(const char *user, char *out, size_t cap)
     out[len] = 0;
     if (tty)
         tcsetattr(0, TCSAFLUSH, &saved);
-    if (!ok)
-        fputc('\n', stderr);
+    fputc('\n', stderr);
     return ok;
 }
 

@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+int __purec_fs_errno(int32_t status, int fallback);
 
 static const char *resolve_user_path(const char *path, char *buf, size_t cap)
 {
@@ -253,9 +254,10 @@ int stat(const char *path, struct stat *info)
         return 0;
     }
     struct file_stat_info raw;
-    if (pc_file_stat(path, &raw) < 0)
+    int32_t status = pc_file_stat(path, &raw);
+    if (status < 0)
     {
-        errno = ENOENT;
+        errno = __purec_fs_errno(status, ENOENT);
         return -1;
     }
     fill_stat(info, raw.size, raw.is_directory != 0);
@@ -307,7 +309,7 @@ DIR *opendir(const char *path)
     {
         free(directory->entries);
         free(directory);
-        errno = ENOENT;
+        errno = __purec_fs_errno(count, ENOENT);
         return 0;
     }
     directory->count = count;
