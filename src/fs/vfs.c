@@ -992,6 +992,138 @@ int32_t vfs_rename(const char *path, const char *new_name) {
   return status;
 }
 
+static const char *base_name(const char *path) {
+  const char *base = path;
+  for (const char *c = path; *c; c++)
+    if (*c == '/' && c[1])
+      base = c + 1;
+  return base;
+}
+
+static void join_path(char *out, uint32_t capacity, const char *dir,
+                      const char *name) {
+  uint32_t length = (uint32_t)strlen(dir);
+  if (length >= capacity)
+    length = capacity - 1;
+  memcpy(out, dir, length);
+  if (length > 1 && length + 1 < capacity)
+    out[length++] = '/';
+  else if (length == 1 && dir[0] != '/' && length + 1 < capacity)
+    out[length++] = '/';
+  uint32_t rest = (uint32_t)strlen(name);
+  if (length + rest >= capacity)
+    rest = capacity - 1 - length;
+  memcpy(out + length, name, rest);
+  out[length + rest] = '\0';
+}
+
+int32_t vfs_rename_path(const char *from, const char *to) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved src;
+  struct vfs_resolved dst;
+  int32_t status = resolve(from, &src);
+  if (status < 0)
+    return status;
+  status = resolve(to, &dst);
+  if (status < 0)
+    return status;
+  if (src.mount != dst.mount)
+    return FS_ERROR_UNSUPPORTED;
+  if (strcmp(src.path, dst.path) == 0)
+    return 0;
+  if (vfs_mount_at(src.path) || vfs_mount_at(dst.path))
+    return FS_ERROR_BUSY;
+  const struct vfs_fs_ops *ops = src.mount->ops;
+  void *ctx = src.mount->context;
+  status = check_mutation(src.mount, ops->rename);
+  if (status < 0)
+    return status;
+  if (!ops->stat || !mount_ready(src.mount))
+    return FS_ERROR_UNSUPPORTED;
+  uint32_t src_length = (uint32_t)strlen(src.path);
+  if (strncmp(dst.path, src.path, src_length) == 0 && dst.path[src_length] == '/')
+    return FS_ERROR_INVALID;
+  status = check_parent_write(src.path);
+  if (status < 0)
+    return status;
+  status = check_parent_write(dst.path);
+  if (status < 0)
+    return status;
+  struct file_stat_info source_info;
+  struct file_stat_info target_info;
+  if (ops->stat(ctx, src.relative, &source_info) < 0)
+    return FS_ERROR_NOT_FOUND;
+  char src_parent_rel[VFS_PATH_MAX];
+  char dst_parent_rel[VFS_PATH_MAX];
+  parent_of(src.relative, src_parent_rel, sizeof(src_parent_rel));
+  parent_of(dst.relative, dst_parent_rel, sizeof(dst_parent_rel));
+  struct file_stat_info parent_info;
+  if (ops->stat(ctx, dst_parent_rel, &parent_info) < 0)
+    return FS_ERROR_NOT_FOUND;
+  if (!parent_info.is_directory)
+    return FS_ERROR_NOT_DIR;
+  bool same_parent = strcmp(src_parent_rel, dst_parent_rel) == 0;
+  const char *src_base = base_name(src.relative);
+  const char *dst_base = base_name(dst.relative);
+  bool same_base = strcmp(src_base, dst_base) == 0;
+  if (!same_parent) {
+    status = check_mutation(src.mount, ops->move);
+    if (status < 0)
+      return status;
+  }
+  if (ops->stat(ctx, dst.relative, &target_info) >= 0) {
+    if (target_info.is_directory && !source_info.is_directory)
+      return FS_ERROR_NOT_FILE;
+    if (!target_info.is_directory && source_info.is_directory)
+      return FS_ERROR_NOT_DIR;
+    status = check_mutation(src.mount, ops->unlink);
+    if (status < 0)
+      return status;
+    status = ops->unlink(ctx, dst.relative);
+    if (status < 0)
+      return status;
+    vfs_perm_forget(dst.path);
+  }
+  if (same_parent) {
+    status = ops->rename(ctx, src.relative, dst_base);
+  } else if (same_base) {
+    status = ops->move(ctx, src.relative, dst_parent_rel);
+  } else {
+    static uint32_t rename_serial;
+    char temp_name[40];
+    char temp_rel[VFS_PATH_MAX];
+    char moved_rel[VFS_PATH_MAX];
+    uint32_t serial = ++rename_serial;
+    char digits[12];
+    uint32_t n = 0;
+    do {
+      digits[n++] = (char)('0' + serial % 10);
+      serial /= 10;
+    } while (serial && n < sizeof(digits));
+    strcpy(temp_name, ".vfs-rename-");
+    uint32_t t = (uint32_t)strlen(temp_name);
+    while (n)
+      temp_name[t++] = digits[--n];
+    temp_name[t] = '\0';
+    status = ops->rename(ctx, src.relative, temp_name);
+    if (status < 0)
+      return status;
+    join_path(temp_rel, sizeof(temp_rel), src_parent_rel, temp_name);
+    status = ops->move(ctx, temp_rel, dst_parent_rel);
+    if (status < 0) {
+      (void)ops->rename(ctx, temp_rel, src_base);
+      return status;
+    }
+    join_path(moved_rel, sizeof(moved_rel), dst_parent_rel, temp_name);
+    status = ops->rename(ctx, moved_rel, dst_base);
+    if (status < 0)
+      return status;
+  }
+  if (status >= 0)
+    vfs_perm_rename(src.path, dst.path);
+  return status;
+}
+
 int32_t vfs_move(const char *path, const char *dest) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved source;
