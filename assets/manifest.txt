@@ -246,6 +246,8 @@
 /usr/libexec/git-core/git /usr/libexec/git-core/git - 0 bin/programs/git
 /usr/libexec/git-core/git-remote-http /usr/libexec/git-core/git-remote-http - 0 bin/programs/git-remote-http
 /usr/libexec/git-core/git-remote-https /usr/libexec/git-core/git-remote-https - 0 bin/programs/git-remote-http
+/usr/share/git-core/templates/description /usr/share/git-core/templates/description - 0 bin/git-templates/description
+/usr/share/git-core/templates/info/exclude /usr/share/git-core/templates/info/exclude - 0 bin/git-templates/info/exclude
 /usr/local/share/netsurf/Messages /usr/local/share/netsurf/Messages - 0 netsurf/frontends/framebuffer/res/Messages
 /usr/local/share/netsurf/css-vars.html /usr/local/share/netsurf/css-vars.html - 0 tests/netsurf/css-vars.html
 /usr/local/share/netsurf/js-test.html /usr/local/share/netsurf/js-test.html - 0 tests/netsurf/js-test.html
