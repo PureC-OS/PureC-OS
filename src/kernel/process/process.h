@@ -13,6 +13,7 @@
 #define PROCESS_ENVIRONMENT_VALUE_CAPACITY 128
 #define PROCESS_CAP_STORAGE_ADMIN (1U << 0)
 #define PROCESS_CAP_NET_ADMIN (1U << 1)
+#define PROCESS_CAP_DISPLAY (1U << 2)
 
 struct process_environment_entry
 {
@@ -117,6 +118,7 @@ uint64_t process_heap_grow(uint64_t size);
 int64_t process_mmap_shared(uint64_t address, uint64_t length, uint64_t prot,
                             uint64_t flags, int32_t shm, uint64_t offset_pages);
 int64_t process_madvise(uint64_t address, uint64_t length, uint64_t advice);
+int64_t process_map_device(uint64_t physical, uint64_t length);
 int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
                      uint64_t flags);
 int64_t process_munmap(uint64_t address, uint64_t length);
