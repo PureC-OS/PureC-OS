@@ -1,0 +1,35 @@
+NAME
+       ss - show sockets and the ports they use
+
+SYNOPSIS
+       **ss** [**-tulanpesH4**]
+
+DESCRIPTION
+       Lists TCP and UDP sockets: state, queued bytes, local and peer
+       address and the process that owns the socket. Ports handled inside
+       the kernel (for example the kernel DHCP client on UDP 68) are marked
+       "kernel". Without -a or -l only connected sockets are shown.
+
+       Service names come from /etc/services. An address bound to one
+       interface is written as ADDRESS%DEVICE:PORT.
+
+       Other users' processes are hidden unless run as root.
+
+OPTIONS
+       **-t**, **--tcp**          TCP sockets
+       **-u**, **--udp**          UDP sockets
+       **-l**, **--listening**    only listening sockets (TCP LISTEN, UDP UNCONN)
+       **-a**, **--all**          listening and connected sockets
+       **-n**, **--numeric**      print port numbers, not service names
+       **-p**, **--processes**    show users:(("name",pid=N,fd=N))
+       **-e**, **--extended**     show uid and reuseaddr/broadcast
+       **-s**, **--summary**      print counters only
+       **-H**, **--no-header**    no header line
+
+EXAMPLES
+       ss -tulnp        everything that listens, with processes
+       sudo ss -ap      all sockets of all users
+       ss -s            totals
+
+SEE ALSO
+       ip(8), netd(8), host(1)
