@@ -2071,6 +2071,7 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   fd_close_on_exec(process);
   signal_exec_reset(process);
   window_manager_unregister(process->pid);
+  display_owner_release(process->pid);
   struct thread *thread = scheduler_current_thread();
   process->address_space = new_space;
   thread->address_space = new_space;
