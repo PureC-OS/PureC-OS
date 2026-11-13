@@ -23,6 +23,8 @@
    - [4.11. Сеть и Wi-Fi](#411-сеть-и-wi-fi)
    - [4.12. Накопители, Форматирование и Установка](#412-накопители-форматирование-и-установка)
    - [4.13. Управление Питанием и Системная Информация](#413-управление-питанием-и-системная-информация)
+   - [4.14. Права Доступа и sudo](#414-права-доступа-и-sudo)
+   - [4.15. Экран и Ввод (видеосервер, этап 2)](#415-экран-и-ввод-видеосервер-этап-2)
 
 ---
 
@@ -76,6 +78,7 @@
 | **2** | `SYS_CLEAR` | `pc_display_clear()` | Очистка экрана заданным цветом |
 | **3** | `SYS_SLEEP` | `pc_sleep()`, `sleep()` | Блокировка потока на N миллисекунд |
 | **39** | `SYS_GETPID` | `pc_getpid()` | Получение идентификатора текущего процесса |
+| **57** | `SYS_FORK` | `pc_fork()` | Создание дочернего процесса |
 | **59** | `SYS_EXEC` | `pc_exec()`, `pc_exec_with_args()` | Запуск ELF64 процесса |
 | **60** | `SYS_EXIT` | `pc_exit()`, `exit()` | Завершение текущего процесса |
 | **61** | `SYS_WAIT` | `pc_wait()` | Ожидание завершения дочернего процесса |
@@ -112,8 +115,8 @@
 | **218** | `SYS_REBOOT` | `pc_reboot()` | Перезагрузка компьютера |
 | **219** | `SYS_SHUTDOWN` | `pc_shutdown()` | Выключение питания (ACPI / QEMU) |
 | **220** | `SYS_BATTERY_INFO` | `pc_battery_info()` | Статус батареи ноутбука (ACPI, presence реален, % unknown до AML) |
-| **281** | `SYS_AC_INFO` | `pc_ac_info()` | AC-адаптер: найден ли, от сети или от батареи |
-| **282** | `SYS_POWER_SOURCE` | `pc_power_source()` | Источник питания: AC / battery / unknown |
+| **281** | `SYS_DISPLAY_SET_MODE` | `pc_display_set_mode()`, `pc_display_set_mode_scale()` | Смена разрешения экрана на лету (ширина, высота, bpp, масштаб в %) |
+| **282** | `SYS_THERMAL_INFO` | — | Температура и вентиляторы из ACPI (`struct thermal_info`) |
 | **221** | `SYS_SCHED_YIELD` | `pc_syscall(SYS_SCHED_YIELD, ...)` | Передача управления следующему процессу |
 | **222** | `SYS_FILE_CLOSE` (`SYS_CLOSE`) | `pc_file_close()`, `close()`, `fclose()` | Закрытие дескриптора файла |
 | **223** | `SYS_FILE_APPEND` | `pc_syscall(SYS_FILE_APPEND, ...)` | Дописывание данных в конец файла |
@@ -153,7 +156,6 @@
 | **257** | `SYS_PROCESS_LIST` | `pc_process_list()` | Список запущенных процессов и статистика |
 | **258** | `SYS_TRY_GET_SPECIAL` | `pc_try_get_special()` | Чтение спец. клавиш (стрелки, F-клавиши) |
 | **259** | `SYS_NET_PING` | `pc_ping()` | ICMP Ping хоста по IP или доменному имени |
-| **281** | `SYS_AC_INFO` | `pc_ac_info()` | AC-адаптер: найден ли, от сети или от батареи |
 | **260** | `SYS_WIFI_SCAN` | `pc_wifi_scan()` | Запуск фонового сканирования Wi-Fi сетей |
 | **261** | `SYS_WIFI_LIST` | `pc_wifi_list()` | Получение списка обнаруженных Wi-Fi точек |
 | **262** | `SYS_WIFI_CONNECT` | `pc_wifi_connect()` | Подключение к Wi-Fi сети (SSID + пароль) |
@@ -177,6 +179,111 @@
 | **280** | `SYS_AUDIO_PCM_STOP` | `pc_audio_pcm_stop()` | Немедленная остановка воспроизведения PCM |
 | **288** | `SYS_DIR_LIST_LONG` | `pc_directory_list_long()` | Расширенное чтение каталога (длинные имена) |
 | **290** | `SYS_NET_IF_LIST` | `pc_net_if_list()` | Список проводных интерфейсов: link/IP/GW/DNS/DHCP/статистика |
+| **291** | `SYS_IPC_SEND` | `pc_ipc_send()` | Отправка сообщения другому процессу по PID |
+| **292** | `SYS_IPC_RECV` | `pc_ipc_recv()` | Приём сообщения с ожиданием (таймаут в мс) |
+| **300** | `SYS_TCP_SOCKET` | `pc_tcp_socket()` | Создание TCP-сокета (handle) |
+| **301** | `SYS_TCP_CONNECT` | `pc_tcp_connect()` | Подключение TCP-сокета по IPv4 и порту |
+| **302** | `SYS_TCP_LISTEN` | `pc_tcp_listen()` | Перевод сокета в режим прослушивания |
+| **303** | `SYS_TCP_ACCEPT` | `pc_tcp_accept()` | Приём входящего соединения |
+| **304** | `SYS_TCP_SEND` | `pc_tcp_send()` | Отправка данных по TCP |
+| **305** | `SYS_TCP_RECV` | `pc_tcp_recv()` | Приём данных по TCP (0 — конец потока) |
+| **306** | `SYS_TCP_CLOSE` | `pc_tcp_close()` | Закрытие TCP-сокета |
+| **307** | `SYS_TCP_ABORT` | `pc_tcp_abort()` | Сброс соединения (RST) и освобождение сокета |
+| **308** | `SYS_TCP_INFO` | `pc_tcp_info()` | Состояние TCP-соединения |
+| **309** | `SYS_GETUID` | `pc_getuid()` | UID текущего процесса |
+| **310** | `SYS_GETGID` | `pc_getgid()` | GID текущего процесса |
+| **311** | `SYS_SETUID` | `pc_setuid()` | Смена UID процесса |
+| **312** | `SYS_SETGID` | `pc_setgid()` | Смена GID процесса |
+| **313** | `SYS_CHMOD` | `pc_chmod()` | Смена прав доступа к файлу |
+| **314** | `SYS_CHOWN` | `pc_chown()` | Смена владельца файла (uid, gid) |
+| **315** | `SYS_FILE_PERM` | `pc_file_perm()` | Владелец и режим файла |
+| **316** | `SYS_USER_LOOKUP` | `pc_user_lookup()` | Поиск пользователя по имени или UID |
+| **317** | `SYS_GETRANDOM` | `pc_getrandom()` | Криптографически стойкие случайные байты |
+| **318** | `SYS_SESSION_BEGIN` | `pc_session_begin()` | Начало сессии пользователя (только root) |
+| **319** | `SYS_TIME_GET` | `pc_time_get()` | Текущее время и часовой пояс |
+| **320** | `SYS_TIME_SET` | `pc_time_set()` | Установка времени (только root) |
+| **321** | `SYS_FILE_STAT_EX` | `pc_file_stat_ex()` | Расширенные атрибуты файла |
+| **322** | `SYS_FB_BLIT` | `pc_fb_blit()` | Копирование пикселей в видеобуфер |
+| **323** | `SYS_KEY_EVENT_GET` | `pc_key_event_get()` | Чтение события клавиатуры |
+| **324** | `SYS_EXECVE` | — | Замена образа процесса (`execve`) |
+| **325** | `SYS_WAITPID` | — | Ожидание конкретного дочернего процесса |
+| **326** | `SYS_PIPE` | — | Создание канала |
+| **327** | `SYS_DUP` | — | Дублирование дескриптора |
+| **328** | `SYS_DUP2` | — | Дублирование дескриптора в заданный номер |
+| **329** | `SYS_FD_READ` | — | Чтение из дескриптора любого типа |
+| **330** | `SYS_FD_WRITE` | — | Запись в дескриптор любого типа |
+| **331** | `SYS_FD_OPEN` | — | Открытие дескриптора |
+| **332** | `SYS_FD_CTL` | — | Управление дескриптором (`FD_CTL_GETFD`, `FD_CTL_SETFD`, `FD_CTL_DUPFD`) |
+| **333** | `SYS_CHDIR` | — | Смена текущего каталога |
+| **334** | `SYS_GETCWD` | — | Текущий каталог |
+| **335** | `SYS_KILL` | — | Отправка сигнала процессу |
+| **336** | `SYS_SIGACTION` | — | Установка обработчика сигнала |
+| **337** | `SYS_SIGPROCMASK` | — | Маска заблокированных сигналов |
+| **338** | `SYS_SIGRETURN` | — | Возврат из обработчика сигнала |
+| **339** | `SYS_GETPPID` | — | PID родительского процесса |
+| **340** | `SYS_FD_STAT` | — | Информация о дескрипторе |
+| **341** | `SYS_SIGPENDING` | — | Ожидающие сигналы |
+| **342** | `SYS_PAUSE` | — | Ожидание сигнала |
+| **343** | `SYS_FD_PATH` | — | Путь, связанный с дескриптором |
+| **344** | `SYS_FD_SEEK` | — | Позиционирование дескриптора |
+| **345** | `SYS_FD_TRUNCATE` | — | Усечение файла по дескриптору |
+| **346** | `SYS_DESKTOP_CLAIM` | — | Захват стола (только root, сессия `desktop=rs`) |
+| **347** | `SYS_DESKTOP_BLIT` | — | Вывод в слой стола |
+| **348** | `SYS_DESKTOP_WAIT` | — | Ожидание событий стола (`RS_WAIT_*`) |
+| **349** | `SYS_DESKTOP_WM` | — | Команды оконного менеджера стола |
+| **350** | `SYS_GUI_WINDOW_INFO` | `pc_gui_window_info()` | Информация об окне |
+| **351** | `SYS_GUI_WINDOW_FLAGS` | `pc_gui_window_set_flags()` | Флаги окна (`GUI_WINDOW_FLAG_*`) |
+| **352** | `SYS_GUI_WINDOW_CMD` | `pc_gui_window_command()` | Команда окну (`GUI_WINDOW_CMD_*`) |
+| **353** | `SYS_GUI_WINDOW_TITLE` | `pc_gui_window_set_title()` | Заголовок окна |
+| **354** | `SYS_TTY_READ` | — | Чтение ввода консоли |
+| **355** | `SYS_TTY_IOCTL` | `pc_tty_ioctl()` | Управление терминалом (`TTY_*`) |
+| **356** | `SYS_POLL` | — | Ожидание готовности дескрипторов |
+| **357** | `SYS_MMAP` | — | Отображение памяти (VMA) |
+| **358** | `SYS_MUNMAP` | — | Освобождение диапазона памяти |
+| **359** | `SYS_MPROTECT` | — | Смена прав доступа к страницам |
+| **360** | `SYS_MREMAP` | — | Перемещение и изменение размера отображения |
+| **361** | `SYS_DISPLAY_SCALE_INFO` | `pc_display_scale_info()` | Масштаб интерфейса дисплея |
+| **362** | `SYS_SOCKET` | — | Создание сокета, возвращает fd |
+| **363** | `SYS_CONNECT` | — | Подключение сокета |
+| **364** | `SYS_BIND` | — | Привязка сокета к адресу |
+| **365** | `SYS_LISTEN` | — | Прослушивание сокета |
+| **366** | `SYS_ACCEPT` | — | Приём соединения, возвращает fd |
+| **367** | `SYS_SOCK_SHUTDOWN` | — | Частичное закрытие сокета |
+| **368** | `SYS_SOCKNAME` | — | Адрес сокета (локальный или удалённый) |
+| **369** | `SYS_SETSOCKOPT` | — | Установка параметров сокета |
+| **370** | `SYS_GETSOCKOPT` | — | Чтение параметров сокета |
+| **371** | `SYS_DNS_RESOLVE` | — | Разрешение имени в IPv4 |
+| **372** | `SYS_SOCK_SEND` | — | Отправка данных в сокет |
+| **373** | `SYS_SOCK_RECV` | — | Приём данных из сокета |
+| **374** | `SYS_UTIMES` | `pc_utimes()` | Время доступа и изменения файла |
+| **375** | `SYS_THREAD_CREATE` | — | Создание потока |
+| **376** | `SYS_THREAD_EXIT` | — | Завершение потока |
+| **377** | `SYS_FUTEX` | — | Ожидание и пробуждение по адресу (futex) |
+| **378** | `SYS_SET_FS_BASE` | — | Установка `FS_BASE` (TLS) |
+| **379** | `SYS_GETTID` | — | Идентификатор потока |
+| **380** | `SYS_EVENTFD` | — | Дескриптор-счётчик событий (eventfd) |
+| **381** | `SYS_TIMERFD_CREATE` | — | Дескриптор таймера (timerfd) |
+| **382** | `SYS_TIMERFD_SETTIME` | — | Настройка таймера |
+| **383** | `SYS_TIMERFD_GETTIME` | — | Чтение таймера |
+| **384** | `SYS_EPOLL_CREATE` | — | Создание экземпляра epoll |
+| **385** | `SYS_EPOLL_CTL` | — | Добавление, изменение и удаление дескриптора в epoll |
+| **386** | `SYS_EPOLL_WAIT` | — | Ожидание событий epoll |
+| **387** | `SYS_SOCKETPAIR` | — | Пара связанных сокетов |
+| **388** | `SYS_SENDMSG` | — | Отправка сообщения (в том числе с дескрипторами) |
+| **389** | `SYS_RECVMSG` | — | Приём сообщения |
+| **390** | `SYS_MEMFD_CREATE` | — | Анонимный файл в памяти |
+| **391** | `SYS_SHM_OPEN` | — | Открытие объекта общей памяти |
+| **392** | `SYS_SHM_UNLINK` | — | Удаление объекта общей памяти |
+| **393** | `SYS_MADVISE` | — | Подсказка ядру о поведении памяти |
+| **394** | `SYS_SIGALTSTACK` | — | Альтернативный стек для обработчиков сигналов |
+| **395** | `SYS_TIME_ZONE` | `pc_time_zone_get()`, `pc_time_zone_set()` | Часовой пояс (0 — чтение, 1 — запись, только root) |
+| **396** | `SYS_OPENPTY` | `pc_openpty()` | Пара псевдотерминала (master, slave) |
+| **397** | `SYS_SUDO` | `pc_sudo()` | Повышение до root по паролю (группа `wheel`) |
+| **398** | `SYS_DISPLAY_CLAIM` | `pc_display_claim()` | Захват экрана процессом (видеосервер) |
+| **399** | `SYS_FB_MAP` | `pc_fb_map()` | Отображение видеопамяти в процесс |
+| **400** | `SYS_INPUT_OPEN` | `pc_input_open()` | Поток сырых событий ввода |
+| **401** | `SYS_FB_DAMAGE` | `pc_fb_damage()` | Показ области буфера на устройство |
+| **402** | `SYS_DISPLAY_RELEASE` | `pc_display_release()` | Возврат экрана ядру |
 
 ---
 
@@ -2107,43 +2214,27 @@ void show_battery(void) {
 
 ---
 
-#### `SYS_AC_INFO` (281) и `SYS_POWER_SOURCE` (282)
+#### `SYS_DISPLAY_SET_MODE` (281) и `SYS_THERMAL_INFO` (282)
 - **Регистры**:
-  - `SYS_AC_INFO`: `rax = 281`, `rbx = (uintptr_t)out`
-  - `SYS_POWER_SOURCE`: `rax = 282`, `rbx = (uintptr_t)out`
+  - `SYS_DISPLAY_SET_MODE`: `rax = 281`, `rbx = width`, `rcx = height`, `rdx = bpp`, `rsi = scale_percent` (0 — без масштаба)
+  - `SYS_THERMAL_INFO`: `rax = 282`, `rbx = (uintptr_t)out`
 - **Структуры**:
 ```c
-struct ac_adapter_info {
-    uint32_t present; // AC-адаптер найден в ACPI
-    uint32_t online; // 1 = питание от сети, 0 = от батареи
-    uint32_t online_valid; // 0 = неизвестно (динамический _PSR без AML)
-    char name[16];
-};
-
-struct power_source_info {
-    uint32_t source; // POWER_SOURCE_UNKNOWN/AC/BATTERY (0/1/2)
-    uint32_t battery_present;
-    uint32_t ac_present;
-    uint32_t battery_percent; // BATTERY_PERCENT_UNKNOWN, пока нет _BST
-    char status_text[32]; // "On AC power"/"On battery"/"Unknown"/"No battery"
+struct thermal_info {
+    uint32_t available;
+    uint32_t thermal_zone_count;
+    uint32_t fan_count;
+    int32_t temperature_deci_c; // десятые доли °C
+    uint32_t fan_rpm;
+    char thermal_zone[32];
+    char fan[32];
 };
 ```
+- **Возврат**: `SYS_DISPLAY_SET_MODE` — результат `display_mode_apply()`; `SYS_THERMAL_INFO` — 0 при успехе, -1 если данных нет или буфер недоступен.
 - **Обёртки**:
-  - `bool pc_ac_info(struct ac_adapter_info *info)`
-  - `bool pc_power_source(struct power_source_info *info)`
-- **Пример**:
-```c
-#include <purec.h>
-
-void show_power(void) {
-    struct power_source_info src;
-    if (pc_power_source(&src)) {
-        pc_write("Источник: ");
-        pc_write(src.status_text);
-        pc_write("\n");
-    }
-}
-```
+  - `int32_t pc_display_set_mode(uint32_t width, uint32_t height, uint32_t bpp)`
+  - `int32_t pc_display_set_mode_scale(uint32_t width, uint32_t height, uint32_t bpp, uint32_t scale_percent)`
+  - у `SYS_THERMAL_INFO` обёртки в libc нет, вызывается через `pc_syscall()`.
 
 ---
 
@@ -2194,6 +2285,155 @@ void dump_kernel_log(void) {
 ```
 
 
+
+### 4.14. Права Доступа и sudo
+
+#### `SYS_SUDO` (397)
+- **Регистры**: `rax = 397`, `rbx = (uintptr_t)password` (строка C с нулевым байтом в конце)
+- **Обертка stdlib**: `int32_t pc_sudo(const char *password)`
+- **Возврат**: `0` — пароль верный, процесс стал root (uid 0, gid 0); `-1` — неверный пароль; `-2` — пользователь не входит в группу `wheel`.
+- **Описание**: Ядро по uid находит имя пользователя, проверяет членство в группе `wheel` (по списку членов в `/etc/group` или по gid записи пользователя) и сверяет пароль с `/etc/shadow` через purecrypt (SHA-512). При отказе процесс засыпает на 1,5 с, а каждая попытка записывается в журнал ядра. Исходники: `src/kernel/syscall/sudo.c`. Утилита `/bin/sudo` построена поверх этого вызова.
+- **Пример**:
+```c
+#include <purec.h>
+
+int elevate_to_root(const char *password) {
+    int32_t status = pc_sudo(password);
+    if (status == 0) {
+        pc_write("Права root получены\n");
+    } else if (status == -2) {
+        pc_write("Пользователь не входит в группу wheel\n");
+    } else {
+        pc_write("Неверный пароль\n");
+    }
+    return status;
+}
+```
+
+---
+
+### 4.15. Экран и Ввод (видеосервер, этап 2)
+
+Вызовы этого раздела нужны userspace-видеосервису (displayd). Процесс с правом `PROCESS_CAP_DISPLAY` (бит `1<<2`) или root забирает экран через `SYS_DISPLAY_CLAIM`. Пока экран занят, ядро не пишет в видеопамять: стол, окна, курсор и klog не выводятся. Ядро возвращает экран само, если владелец завершился или сделал `exec`, а при панике отбирает его первым делом (`gop_kernel_reclaim`). Страницы видеопамяти помечены `VMM_PAGE_DEVICE`: они не освобождаются, не уходят в своп и не учитываются при выборе жертвы OOM.
+
+#### `SYS_DISPLAY_CLAIM` (398)
+- **Регистры**: `rax = 398`
+- **Обертка stdlib**: `int32_t pc_display_claim(void)`
+- **Возврат**: `0` — экран захвачен; `-EBUSY` (`KERR_BUSY` = 16) — экран уже занят другим процессом.
+- **Описание**: Переводит вывод на экран в режим владельца. Старый ядерный стол при этом не реагирует на ввод, а пересылает события владельцу через `SYS_INPUT_OPEN`.
+- **Пример**:
+```c
+#include <purec.h>
+
+int32_t take_screen(void) {
+    return pc_display_claim();
+}
+```
+
+#### `SYS_FB_MAP` (399)
+- **Регистры**: `rax = 399`, `rbx = (uintptr_t)out`
+- **Обертка stdlib**: `int32_t pc_fb_map(struct fb_map_info *out)`
+- **Структура**:
+```c
+struct fb_map_info {
+    uint64_t address;
+    uint64_t bytes;
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch_bytes;
+    uint32_t bpp;
+    uint32_t generation;
+    uint32_t reserved;
+};
+```
+- **Описание**: Отображает фронтовый буфер видеопамяти в адресное пространство владельца. Работает только для 32 bpp. Размеры и шаг строки (`pitch_bytes`) берутся из заполненной структуры.
+- **Пример**:
+```c
+#include <purec.h>
+
+int32_t map_screen(struct fb_map_info *info) {
+    if (pc_fb_map(info) != 0) {
+        return -1;
+    }
+    uint32_t *pixels = (uint32_t *)(uintptr_t)info->address;
+    pixels[0] = 0x00FF0000;
+    return 0;
+}
+```
+
+#### `SYS_INPUT_OPEN` (400)
+- **Регистры**: `rax = 400`
+- **Обертка stdlib**: `int32_t pc_input_open(void)`
+- **Возврат**: новый дескриптор типа `FD_KIND_INPUT` (6) либо код ошибки. Дескриптор доступен только владельцу экрана, открыть его можно только один раз одновременно.
+- **Структура события** (40 байт):
+```c
+#define INPUT_RECORD_KEY   1
+#define INPUT_RECORD_MOUSE 2
+
+struct input_record {
+    uint32_t type;
+    uint32_t time_ms;
+    int32_t x;
+    int32_t y;
+    int32_t dx;
+    int32_t dy;
+    int32_t wheel;
+    uint32_t buttons;
+    uint16_t scancode;
+    uint8_t pressed;
+    uint8_t repeat;
+    uint8_t mods;
+    uint8_t reserved[3];
+};
+```
+- **Описание**: Из дескриптора читаются сырые события `struct input_record` через `read`, а также через `poll` и `epoll`. Для клавиш `scancode` содержит HID-код (usage). Для мыши заполнены координаты, смещение, колесо и кнопки.
+- **Пример**:
+```c
+#include <purec.h>
+#include <unistd.h>
+
+void read_one_event(void) {
+    int32_t fd = pc_input_open();
+    if (fd < 0) {
+        return;
+    }
+    struct input_record record;
+    if (read(fd, &record, sizeof(record)) == sizeof(record) && record.type == INPUT_RECORD_KEY && record.pressed) {
+        pc_write("Нажата клавиша\n");
+    }
+    close(fd);
+}
+```
+
+#### `SYS_FB_DAMAGE` (401)
+- **Регистры**: `rax = 401`, `rbx = x`, `rcx = y`, `rdx = w`, `rsi = h`
+- **Обертка stdlib**: `int32_t pc_fb_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h)`
+- **Возврат**: `0` при успехе.
+- **Описание**: Сообщает ядру, какая прямоугольная область фронтового буфера изменилась, и отправляет её на устройство. Нужен для VMSVGA, где без такого сообщения изменения на экране не появляются.
+- **Пример**:
+```c
+#include <purec.h>
+
+void flush_frame(uint32_t width, uint32_t height) {
+    pc_fb_damage(0, 0, width, height);
+}
+```
+
+#### `SYS_DISPLAY_RELEASE` (402)
+- **Регистры**: `rax = 402`
+- **Обертка stdlib**: `int32_t pc_display_release(void)`
+- **Возврат**: `0`.
+- **Описание**: Возвращает экран ядру: вывод стола, окон и klog снова идёт на экран.
+- **Пример**:
+```c
+#include <purec.h>
+
+void give_screen_back(void) {
+    pc_display_release();
+}
+```
+
+---
 
 ## TCP-сокеты (300–308)
 
