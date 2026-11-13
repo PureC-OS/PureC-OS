@@ -82,6 +82,7 @@ struct process
 };
 
 void process_init(void);
+uint32_t process_path_capabilities(const char *path);
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line);
 int32_t process_spawn_module(const char *path, const char *command_line);

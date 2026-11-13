@@ -545,6 +545,30 @@ static bool session_active;
 static uint32_t session_uid;
 static uint32_t session_gid;
 
+static const struct
+{
+  const char *path;
+  uint32_t capabilities;
+} path_capabilities[] = {
+    {"/sbin/installer", PROCESS_CAP_STORAGE_ADMIN},
+    {"/usr/bin/disks", PROCESS_CAP_STORAGE_ADMIN},
+    {"/bin/netd", PROCESS_CAP_NET_ADMIN | PROCESS_CAP_NET_BIND},
+    {"/bin/dhcpc", PROCESS_CAP_NET_ADMIN | PROCESS_CAP_NET_BIND},
+    {"/bin/resolved", PROCESS_CAP_NET_BIND},
+};
+
+uint32_t process_path_capabilities(const char *path)
+{
+  if (!path)
+    return 0;
+  for (uint32_t i = 0; i < sizeof(path_capabilities) / sizeof(path_capabilities[0]); i++)
+    if (strcmp(path, path_capabilities[i].path) == 0)
+      return path_capabilities[i].capabilities;
+  return 0;
+}
+
+static uint32_t spawn_capabilities;
+
 int32_t process_spawn_elf(const void *image, uint64_t image_size,
                           const char *name, const char *command_line)
 {
@@ -625,11 +649,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     process->command_line[sizeof(process->command_line) - 1] = '\0';
   }
   strncpy(process->name, name ? name : "process", sizeof(process->name) - 1);
-  if (name && (strcmp(name, "installer") == 0 || strcmp(name, "disks") == 0))
-    process->capabilities |= PROCESS_CAP_STORAGE_ADMIN;
-  if (name && (strcmp(name, "netd") == 0 || strcmp(name, "net-rx") == 0 ||
-               strcmp(name, "dhcp") == 0 || strcmp(name, "dns") == 0))
-    process->capabilities |= PROCESS_CAP_NET_ADMIN;
+  process->capabilities |= spawn_capabilities;
+  spawn_capabilities = 0;
   process->thread_id = scheduler_create_user_thread(
       user_process_entry, process, process->name, USER_PROCESS_PRIORITY, -1,
       process->address_space, process);
@@ -760,6 +781,10 @@ int32_t process_spawn_module(const char *path, const char *command_line)
   uint32_t initramfs_size = 0;
   char canonical[512];
   const char *resolved = canonical_path(path, canonical, sizeof(canonical));
+  spawn_capabilities = process_path_capabilities(resolved);
+  if (program_alias_resolve(path, &module_path) && module_path)
+    spawn_capabilities |= process_path_capabilities(module_path);
+  module_path = path;
   if (initramfs_find(resolved, &initramfs_image, &initramfs_size))
     return process_spawn_elf(initramfs_image, initramfs_size, name,
                              command_line);
@@ -2133,13 +2158,8 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   process->mmap_cursor = MMAP_BASE;
   process->stack_limit = built.stack_limit;
   process->stack_low = built.stack_low;
-  if (strcmp(process->name, "installer") == 0 ||
-      strcmp(process->name, "disks") == 0)
-    process->capabilities |= PROCESS_CAP_STORAGE_ADMIN;
-  if (strcmp(process->name, "netd") == 0 ||
-      strcmp(process->name, "net-rx") == 0 ||
-      strcmp(process->name, "dhcp") == 0 || strcmp(process->name, "dns") == 0)
-    process->capabilities |= PROCESS_CAP_NET_ADMIN;
+  process->capabilities = process_path_capabilities(resolved) |
+                          (alias ? process_path_capabilities(alias) : 0);
   pmm_free_contiguous(args.phys, EXEC_ARG_PAGES);
 
   uint8_t fpu_area[FPU_STATE_SIZE] __attribute__((aligned(16)));
