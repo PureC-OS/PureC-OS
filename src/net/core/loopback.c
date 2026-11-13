@@ -10,6 +10,11 @@ static bool loopback_transmit(void *context, const uint8_t *frame, uint16_t leng
     return net_device_receive(&loopback,frame,length);
 }
 
+static void loopback_poll(void *context, uint32_t budget){
+    (void)context;
+    (void)budget;
+}
+
 static bool loopback_link_up(void *context){
     (void)context;
     return true;
@@ -17,7 +22,7 @@ static bool loopback_link_up(void *context){
 
 static const struct net_device_ops loopback_ops={
     .transmit=loopback_transmit,
-    .poll=0,
+    .poll=loopback_poll,
     .link_up=loopback_link_up
 };
 
