@@ -155,6 +155,7 @@ TARGETS := \
   	$(PROGRAM_DIR)/thrtest \
   	$(PROGRAM_DIR)/posixtest \
   	$(PROGRAM_DIR)/fbtest \
+  	$(PROGRAM_DIR)/udptest \
   	$(PROGRAM_DIR)/memhog \
   	$(PROGRAM_DIR)/memtest \
   	$(PROGRAM_DIR)/journalctl \
@@ -591,6 +592,14 @@ $(OBJ_DIR)/thrtest/main.o: $(ROOT_DIR)/src/programs/thrtest/main.c
 $(PROGRAM_DIR)/thrtest: $(OBJ_DIR)/thrtest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/thrtest/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/udptest/main.o: $(ROOT_DIR)/src/programs/udptest/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/udptest: $(OBJ_DIR)/udptest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/udptest/main.o $(LIBPUREFS) $(LIBPUREC)
 
 $(OBJ_DIR)/fbtest/main.o: $(ROOT_DIR)/src/programs/fbtest/main.c
 	@mkdir -p $(@D)
