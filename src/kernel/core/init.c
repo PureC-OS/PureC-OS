@@ -69,6 +69,11 @@ void init_process_start(void)
                                           PROCESS_CAP_NET_ADMIN);
   if (net_pid < 0)
     klog(KLOG_WARN, "net: failed to create service process");
+  int32_t netd_pid = process_spawn_module("/bin/netd", "");
+  if (netd_pid < 0)
+    klog(KLOG_INFO, "net: /bin/netd not started, kernel DHCP stays in charge");
+  else
+    klogf(KLOG_OK, "net: netd started as pid %d", netd_pid);
   if (qemu_network_test_requested())
   {
     int t = scheduler_create_thread(qemu_network_test_thread, 0,
