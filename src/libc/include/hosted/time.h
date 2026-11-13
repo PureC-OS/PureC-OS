@@ -42,6 +42,7 @@ struct itimerspec {
 };
 
 int clock_gettime(int clock_id, struct timespec *out);
+int clock_settime(int clock_id, const struct timespec *value);
 int nanosleep(const struct timespec *request, struct timespec *remaining);
 #define TIMER_ABSTIME 1
 extern char *tzname[2];

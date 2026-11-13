@@ -85,6 +85,8 @@ int32_t pc_install_start_accounts(const char *device, const char *serial,
 int32_t pc_getuid(void);
 int32_t pc_sudo(const char *password);
 int32_t pc_net_configure(const struct net_if_config *config);
+int32_t pc_clock_adjust(uint32_t op, int64_t delta_ms, int64_t *previous_ms);
+int32_t pc_net_sockets(struct net_socket_entry *out, uint32_t capacity, uint32_t offset);
 int32_t pc_display_claim(void);
 int32_t pc_display_release(void);
 int32_t pc_fb_map(struct fb_map_info *out);
