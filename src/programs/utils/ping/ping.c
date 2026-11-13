@@ -1,3 +1,6 @@
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include "../lib/common.h"
 #include <signal.h>
 #include "libc/include/purec.h"
@@ -47,6 +50,16 @@ int main(int argc, char **argv)
     if (o.count != 1) return util_err(o.count ? "extra operand '%s'" : "missing host operand", o.count ? o.operands[1] : ""), 2;
     const char *target = o.operands[0];
     if (strlen(target) >= NETWORK_PING_TARGET_CAPACITY) return util_err("target is too long"), 2;
+    char resolved_ip[16];
+    struct addrinfo hints, *found = 0;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    int gai = getaddrinfo(target, 0, &hints, &found);
+    if (gai != 0 || !found)
+        return util_err("cannot resolve %s: %s", target, gai_strerror(gai)), 2;
+    snprintf(resolved_ip, sizeof(resolved_ip), "%s",
+             inet_ntoa(((struct sockaddr_in *)found->ai_addr)->sin_addr));
+    freeaddrinfo(found);
     signal(SIGINT, on_int);
     bool color = util_color(1, NULL);
     bool heading = false;
@@ -56,7 +69,7 @@ int main(int argc, char **argv)
     for (long seq = 1; !interrupted && (count == 0 || seq <= count); seq++) {
         struct network_ping_result r;
         memset(&r, 0, sizeof(r));
-        int32_t st = pc_ping(target, (uint16_t)seq, (uint32_t)timeout, &r);
+        int32_t st = pc_ping(resolved_ip, (uint16_t)seq, (uint32_t)timeout, &r);
         sent++;
         if (st == 0) {
             if (!heading) {
