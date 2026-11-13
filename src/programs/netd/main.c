@@ -8,7 +8,9 @@
 #include <unistd.h>
 
 #define DHCPC_PATH "/bin/dhcpc"
-#define MAX_CHILDREN NET_IF_MAX_COUNT
+#define RESOLVED_PATH "/bin/resolved"
+#define RESOLVED_SLOT "@resolved"
+#define MAX_CHILDREN (NET_IF_MAX_COUNT + 1)
 
 struct child {
     char name[NET_IF_NAME_CAPACITY];
@@ -53,15 +55,20 @@ static void kernel_dhcp(const char *name, uint32_t op)
     (void)pc_net_configure(&c);
 }
 
+static bool is_resolver(const struct child *c) { return strcmp(c->name, RESOLVED_SLOT) == 0; }
+
 static void start(struct child *c)
 {
-    kernel_dhcp(c->name, NET_CFG_DHCP_STOP);
+    bool resolver = is_resolver(c);
+    if (!resolver)
+        kernel_dhcp(c->name, NET_CFG_DHCP_STOP);
     c->started_at = time(0);
     pid_t pid = fork();
     if (pid == 0) {
-        char *args[3] = {(char *)"dhcpc", c->name, 0};
-        execv(DHCPC_PATH, args);
-        printf("netd: cannot run %s: %s\n", DHCPC_PATH, strerror(errno));
+        const char *path = resolver ? RESOLVED_PATH : DHCPC_PATH;
+        char *args[3] = {(char *)(resolver ? "resolved" : "dhcpc"), resolver ? 0 : c->name, 0};
+        execv(path, args);
+        printf("netd: cannot run %s: %s\n", path, strerror(errno));
         _exit(127);
     }
     if (pid < 0) {
@@ -70,7 +77,8 @@ static void start(struct child *c)
         return;
     }
     c->pid = pid;
-    printf("netd: started dhcpc for %s (pid %d)\n", c->name, (int)pid);
+    printf("netd: started %s%s%s (pid %d)\n", resolver ? "resolved" : "dhcpc for ",
+           resolver ? "" : c->name, resolver ? " on 127.0.0.1:53" : "", (int)pid);
 }
 
 static void reap(void)
@@ -86,6 +94,11 @@ static void reap(void)
             if (time(0) - c->started_at > 60)
                 c->failures = 0;
             c->failures++;
+            if (c->failures >= 3 && is_resolver(c)) {
+                c->given_up = true;
+                printf("netd: resolved keeps failing, programs fall back to kernel DNS\n");
+                continue;
+            }
             if (c->failures >= 3) {
                 c->given_up = true;
                 kernel_dhcp(c->name, NET_CFG_DHCP_START);
@@ -116,6 +129,9 @@ static void scan(void)
             continue;
         start(c);
     }
+    struct child *r = slot_for(RESOLVED_SLOT, true);
+    if (r && !r->pid && !r->given_up && now >= r->retry_at)
+        start(r);
 }
 
 int main(void)
