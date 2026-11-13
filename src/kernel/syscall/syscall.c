@@ -2766,6 +2766,46 @@ int64_t syscall_handler(struct syscall_regs *r)
     *(uint32_t *)(uintptr_t)a3 = address;
     return 0;
   }
+  case SYS_NET_CONFIGURE:
+  {
+    if (process_current_uid() != 0 && !process_has_capability(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
+    const struct net_if_config *user = (const struct net_if_config *)(uintptr_t)a1;
+    if (!readable(user, sizeof(*user)))
+      return -KERR_FAULT;
+    struct net_if_config cfg = *user;
+    cfg.name[sizeof(cfg.name) - 1] = '\0';
+    struct net_device *dev = 0;
+    for (uint32_t i = 0; i < net_device_count(); i++)
+    {
+      struct net_device *d = net_device_get(i);
+      if (d && strcmp(d->name, cfg.name) == 0)
+        dev = d;
+    }
+    if (!dev)
+      return -KERR_NODEV;
+    switch (cfg.op)
+    {
+    case NET_CFG_SET_IPV4:
+      if (!cfg.address || !cfg.netmask)
+        return -KERR_INVAL;
+      return ipv4_configure(dev, cfg.address, cfg.netmask, cfg.gateway) ? 0 : -KERR_INVAL;
+    case NET_CFG_CLEAR_IPV4:
+      if (dev->loopback)
+        return -KERR_PERM;
+      return ipv4_unconfigure(dev) ? 0 : -KERR_INVAL;
+    case NET_CFG_SET_DNS:
+      return dns_set_server(dev, cfg.dns) ? 0 : -KERR_INVAL;
+    case NET_CFG_DHCP_START:
+      if (dev->loopback)
+        return -KERR_INVAL;
+      return dhcp_start(dev) ? 0 : -KERR_BUSY;
+    case NET_CFG_DHCP_STOP:
+      return dhcp_stop(dev) ? 0 : -KERR_INVAL;
+    default:
+      return -KERR_INVAL;
+    }
+  }
   case SYS_NET_IF_LIST:
   {
     struct net_if_info *buffer = (struct net_if_info *)(uintptr_t)a1;
