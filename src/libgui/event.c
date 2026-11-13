@@ -12,6 +12,50 @@ static uint8_t changed_button(uint8_t changed)
     return 0;
 }
 
+#define PG_RESIZE_INTERVAL_MS 30
+#define PG_DOUBLE_CLICK_MS 400
+
+static bool apply_resize(struct pg_window *window, int32_t mx, int32_t my)
+{
+    int64_t dx = mx - window->resize_mouse_x;
+    int64_t dy = my - window->resize_mouse_y;
+    struct pg_rect start = window->resize_start;
+    int64_t x = start.x, y = start.y, w = start.width, h = start.height;
+    if (window->resize_edges & GUI_EDGE_RIGHT)
+        w = start.width + dx;
+    if (window->resize_edges & GUI_EDGE_BOTTOM)
+        h = start.height + dy;
+    if (window->resize_edges & GUI_EDGE_LEFT)
+    {
+        w = start.width - dx;
+        if (w < PG_RESIZE_MIN_WIDTH)
+            w = PG_RESIZE_MIN_WIDTH;
+        x = (int64_t)start.x + start.width - w;
+        if (x < 0)
+        {
+            w += x;
+            x = 0;
+        }
+    }
+    if (window->resize_edges & GUI_EDGE_TOP)
+    {
+        h = start.height - dy;
+        if (h < PG_RESIZE_MIN_HEIGHT)
+            h = PG_RESIZE_MIN_HEIGHT;
+        y = (int64_t)start.y + start.height - h;
+        if (y < 0)
+        {
+            h += y;
+            y = 0;
+        }
+    }
+    if (w < PG_RESIZE_MIN_WIDTH)
+        w = PG_RESIZE_MIN_WIDTH;
+    if (h < PG_RESIZE_MIN_HEIGHT)
+        h = PG_RESIZE_MIN_HEIGHT;
+    return pg_window_resize(window, (uint32_t)x, (uint32_t)y, (uint32_t)w, (uint32_t)h);
+}
+
 bool pg_window_poll_event(struct pg_window *window, struct pg_event *event)
 {
     if (!window || !event || !window->open)
@@ -127,13 +171,68 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event)
     struct pg_rect minimize = {
         window->frame.x + window->frame.width - 44,
         window->frame.y + 8, 14, 14};
+    struct pg_rect maximize = {
+        window->frame.x + window->frame.width - 64,
+        window->frame.y + 8, 14, 14};
+    bool has_maximize = window->resizable && window->closable;
+    bool can_resize = has_maximize && !window->maximized && !window->minimized;
+    if (window->resizing)
+    {
+        bool held = (mouse.buttons & 1) != 0;
+        bool applied = false;
+        if (!held || event->type == PG_EVENT_MOUSE_MOVE)
+        {
+            uint64_t now = pg_internal_now_ms();
+            if (!held || now - window->resize_last_ms >= PG_RESIZE_INTERVAL_MS)
+            {
+                applied = apply_resize(window, mouse.x, mouse.y);
+                window->resize_last_ms = now;
+            }
+        }
+        if (!held)
+            window->resizing = false;
+        event->type = applied ? PG_EVENT_REPAINT : PG_EVENT_NONE;
+        return applied;
+    }
     if (event->type == PG_EVENT_MOUSE_DOWN && event->button == 1)
     {
+        uint32_t edges = can_resize
+                             ? gui_resize_edges((int32_t)window->frame.x, (int32_t)window->frame.y,
+                                                (int32_t)window->frame.width,
+                                                (int32_t)window->frame.height, mouse.x, mouse.y)
+                             : 0;
+        if (edges)
+        {
+            window->resizing = true;
+            window->resize_edges = edges;
+            window->resize_start = window->frame;
+            window->resize_mouse_x = mouse.x;
+            window->resize_mouse_y = mouse.y;
+            window->resize_last_ms = 0;
+            event->type = PG_EVENT_NONE;
+            return false;
+        }
         struct pg_rect titlebar = {
             window->frame.x, window->frame.y,
             window->frame.width, PG_TITLEBAR_HEIGHT + PG_WINDOW_BORDER * 2};
-        if (pg_internal_point_inside(mouse.x, mouse.y, &titlebar) && !pg_internal_point_inside(mouse.x, mouse.y, &close) && !pg_internal_point_inside(mouse.x, mouse.y, &minimize))
+        bool on_button = pg_internal_point_inside(mouse.x, mouse.y, &close) ||
+                         pg_internal_point_inside(mouse.x, mouse.y, &minimize) ||
+                         (has_maximize && pg_internal_point_inside(mouse.x, mouse.y, &maximize));
+        if (pg_internal_point_inside(mouse.x, mouse.y, &titlebar) && !on_button)
         {
+            uint64_t now = pg_internal_now_ms();
+            if (has_maximize && window->title_click_ms &&
+                now - window->title_click_ms < PG_DOUBLE_CLICK_MS)
+            {
+                window->title_click_ms = 0;
+                if (window->maximized)
+                    pg_window_unmaximize(window);
+                else
+                    pg_window_maximize(window);
+                event->type = PG_EVENT_REPAINT;
+                return true;
+            }
+            window->title_click_ms = now;
             window->dragging = true;
             window->drag_offset_x = mouse.x - (int32_t)window->frame.x;
             window->drag_offset_y = mouse.y - (int32_t)window->frame.y;
@@ -141,6 +240,16 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event)
     }
     if (event->type == PG_EVENT_MOUSE_MOVE && window->dragging && (mouse.buttons & 1))
     {
+        bool restored = false;
+        if (window->maximized)
+        {
+            uint32_t old_width = window->frame.width;
+            pg_window_unmaximize(window);
+            if (old_width && window->frame.width < old_width)
+                window->drag_offset_x =
+                    (int32_t)((int64_t)window->drag_offset_x * window->frame.width / old_width);
+            restored = true;
+        }
         int32_t next_x = mouse.x - window->drag_offset_x;
         int32_t next_y = mouse.y - window->drag_offset_y;
         if (next_x < 0)
@@ -148,7 +257,9 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event)
         if (next_y < 0)
             next_y = 0;
         if (pg_window_move(window, (uint32_t)next_x, (uint32_t)next_y))
-            event->type = PG_EVENT_MOVE;
+            event->type = restored ? PG_EVENT_REPAINT : PG_EVENT_MOVE;
+        else if (restored)
+            event->type = PG_EVENT_REPAINT;
     }
     if (event->type == PG_EVENT_MOUSE_UP && event->button == 1)
     {
@@ -172,6 +283,15 @@ bool pg_window_poll_event(struct pg_window *window, struct pg_event *event)
             (void)pg_internal_update_registered_frame(window);
             pc_desktop_redraw();
             event->type = PG_EVENT_MINIMIZE;
+        }
+        else if (has_maximize && !was_dragging && !window->minimized &&
+                 pg_internal_point_inside(mouse.x, mouse.y, &maximize))
+        {
+            if (window->maximized)
+                pg_window_unmaximize(window);
+            else
+                pg_window_maximize(window);
+            event->type = PG_EVENT_REPAINT;
         }
     }
     if (!(mouse.buttons & 1))
