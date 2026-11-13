@@ -15,6 +15,8 @@ struct child {
     pid_t pid;
     unsigned failures;
     time_t retry_at;
+    time_t started_at;
+    bool given_up;
 };
 
 static struct child children[MAX_CHILDREN];
@@ -42,18 +44,19 @@ static struct child *slot_for(const char *name, bool create)
     return 0;
 }
 
-static void kernel_dhcp_off(const char *name)
+static void kernel_dhcp(const char *name, uint32_t op)
 {
     struct net_if_config c;
     memset(&c, 0, sizeof(c));
     snprintf(c.name, sizeof(c.name), "%s", name);
-    c.op = NET_CFG_DHCP_STOP;
+    c.op = op;
     (void)pc_net_configure(&c);
 }
 
 static void start(struct child *c)
 {
-    kernel_dhcp_off(c->name);
+    kernel_dhcp(c->name, NET_CFG_DHCP_STOP);
+    c->started_at = time(0);
     pid_t pid = fork();
     if (pid == 0) {
         char *args[3] = {(char *)"dhcpc", c->name, 0};
@@ -80,7 +83,16 @@ static void reap(void)
             if (c->pid != pid)
                 continue;
             c->pid = 0;
+            if (time(0) - c->started_at > 60)
+                c->failures = 0;
             c->failures++;
+            if (c->failures >= 3) {
+                c->given_up = true;
+                kernel_dhcp(c->name, NET_CFG_DHCP_START);
+                printf("netd: dhcpc for %s keeps failing, giving %s back to kernel DHCP\n",
+                       c->name, c->name);
+                continue;
+            }
             unsigned delay = 2u << (c->failures < 5 ? c->failures : 5);
             if (delay > 60)
                 delay = 60;
@@ -100,7 +112,7 @@ static void scan(void)
         if (strcmp(list[i].name, "lo") == 0)
             continue;
         struct child *c = slot_for(list[i].name, true);
-        if (!c || c->pid || now < c->retry_at)
+        if (!c || c->pid || c->given_up || now < c->retry_at)
             continue;
         start(c);
     }
