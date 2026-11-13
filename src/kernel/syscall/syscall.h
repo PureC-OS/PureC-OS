@@ -550,6 +550,44 @@ struct net_if_info {
 #define GUI_WINDOW_FLAG_FIXED 1
 #define GUI_WINDOW_FLAG_NOCLOSE 2
 #define GUI_WINDOW_FLAG_POPUP 4
+#define GUI_WINDOW_FLAG_NORESIZE 8
+
+#define GUI_RESIZE_GRIP 6
+#define GUI_RESIZE_TOP_GRIP 4
+#define GUI_RESIZE_CORNER 18
+#define GUI_EDGE_LEFT 1U
+#define GUI_EDGE_RIGHT 2U
+#define GUI_EDGE_TOP 4U
+#define GUI_EDGE_BOTTOM 8U
+
+static inline uint32_t gui_resize_edges(int32_t fx, int32_t fy, int32_t fw,
+                                        int32_t fh, int32_t x, int32_t y) {
+  int32_t rx = x - fx, ry = y - fy;
+  if (rx < 0 || ry < 0 || rx >= fw || ry >= fh)
+    return 0;
+  uint32_t edges = 0;
+  if (rx < GUI_RESIZE_GRIP)
+    edges |= GUI_EDGE_LEFT;
+  else if (rx >= fw - GUI_RESIZE_GRIP)
+    edges |= GUI_EDGE_RIGHT;
+  if (ry < GUI_RESIZE_TOP_GRIP)
+    edges |= GUI_EDGE_TOP;
+  else if (ry >= fh - GUI_RESIZE_GRIP)
+    edges |= GUI_EDGE_BOTTOM;
+  if (edges & (GUI_EDGE_TOP | GUI_EDGE_BOTTOM)) {
+    if (rx < GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_LEFT;
+    else if (rx >= fw - GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_RIGHT;
+  }
+  if (edges & (GUI_EDGE_LEFT | GUI_EDGE_RIGHT)) {
+    if (ry < GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_TOP;
+    else if (ry >= fh - GUI_RESIZE_CORNER)
+      edges |= GUI_EDGE_BOTTOM;
+  }
+  return edges;
+}
 
 #define GUI_WINDOW_CMD_MINIMIZE 1
 #define GUI_WINDOW_CMD_RESTORE 2
