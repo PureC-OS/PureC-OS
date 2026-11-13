@@ -76,6 +76,45 @@ int gettimeofday(struct timeval *tv, void *tz) {
     return 0;
 }
 
+static int time_step_to(int64_t target_ms) {
+    struct time_info info;
+    if (!time_read(&info)) { errno = EINVAL; return -1; }
+    int64_t now_ms = (int64_t)info.unix_seconds * 1000 + (int64_t)info.millis;
+    int32_t rc = pc_clock_adjust(CLOCK_ADJ_STEP, target_ms - now_ms, 0);
+    if (rc < 0) { errno = -rc; return -1; }
+    return 0;
+}
+
+int clock_settime(int clock_id, const struct timespec *value) {
+    if (!value || clock_id != CLOCK_REALTIME || value->tv_nsec < 0 ||
+        value->tv_nsec >= 1000000000L) { errno = EINVAL; return -1; }
+    return time_step_to((int64_t)value->tv_sec * 1000 + value->tv_nsec / 1000000L);
+}
+
+int settimeofday(const struct timeval *tv, const struct timezone *tz) {
+    (void)tz;
+    if (!tv) return 0;
+    if (tv->tv_usec < 0 || tv->tv_usec >= 1000000L) { errno = EINVAL; return -1; }
+    return time_step_to((int64_t)tv->tv_sec * 1000 + tv->tv_usec / 1000L);
+}
+
+int adjtime(const struct timeval *delta, struct timeval *olddelta) {
+    int64_t previous = 0;
+    int32_t rc;
+    if (delta) {
+        int64_t ms = (int64_t)delta->tv_sec * 1000 + delta->tv_usec / 1000L;
+        rc = pc_clock_adjust(CLOCK_ADJ_SLEW, ms, &previous);
+    } else {
+        rc = pc_clock_adjust(CLOCK_ADJ_QUERY, 0, &previous);
+    }
+    if (rc < 0) { errno = -rc; return -1; }
+    if (olddelta) {
+        olddelta->tv_sec = (time_t)(previous / 1000);
+        olddelta->tv_usec = (suseconds_t)((previous % 1000) * 1000);
+    }
+    return 0;
+}
+
 static bool time_is_leap(long year) {
     return (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
 }

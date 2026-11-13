@@ -482,6 +482,8 @@ int32_t pc_config_path(const char *name, char *out, uint32_t capacity, bool for_
     return 1;
 }
 
+int32_t pc_clock_adjust(uint32_t op, int64_t delta_ms, int64_t *previous_ms){ return (int32_t)pc_syscall(SYS_CLOCK_ADJUST,op,(uint64_t)delta_ms,(uint64_t)(uintptr_t)previous_ms); }
+int32_t pc_net_sockets(struct net_socket_entry *out, uint32_t capacity, uint32_t offset){ return (int32_t)pc_syscall(SYS_NET_SOCKETS,(uint64_t)(uintptr_t)out,capacity,offset); }
 int32_t pc_net_configure(const struct net_if_config *config){ return (int32_t)pc_syscall(SYS_NET_CONFIGURE,(uint64_t)(uintptr_t)config,0,0); }
 int32_t pc_display_claim(void){ return (int32_t)pc_syscall(SYS_DISPLAY_CLAIM,0,0,0); }
 int32_t pc_display_release(void){ return (int32_t)pc_syscall(SYS_DISPLAY_RELEASE,0,0,0); }
