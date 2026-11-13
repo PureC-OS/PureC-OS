@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define NET_DEVICE_NAME_CAPACITY 16
-#define NET_DEVICE_MAX_COUNT 4
+#define NET_DEVICE_MAX_COUNT 8
 #define NET_DEVICE_RX_QUEUE_LENGTH 16
 #define NET_ETHERNET_MTU 1500
 #define NET_ETHERNET_MAX_FRAME_SIZE 1522
@@ -42,6 +42,7 @@ struct net_device {
     struct net_device_stats stats;
     bool registered;
     bool cached_link_up;
+    bool loopback;
 };
 
 void net_device_registry_init(void);
