@@ -140,6 +140,7 @@ C_SOURCES := \
 	net/diagnostics/icmp.c \
 	net/api/ping.c \
 	net/api/socket.c \
+	net/api/sockstat.c \
 	net/tests/qemu_network_test.c \
 	net/core/net_service.c \
 	drivers/usb/xhci.c \
