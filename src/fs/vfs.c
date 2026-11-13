@@ -328,9 +328,26 @@ static int32_t check_access(const char *path, bool directory, uint32_t want) {
              : FS_ERROR_DENIED;
 }
 
+static bool is_virtual_dir(const char *path);
+static bool overlay_dir(const char *path);
+
+static bool directory_exists(const char *path) {
+  struct vfs_resolved resolved;
+  if (resolve(path, &resolved) < 0)
+    return false;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  struct file_stat_info info;
+  if (ops->stat && mount_ready(resolved.mount) &&
+      ops->stat(resolved.mount->context, resolved.relative, &info) >= 0)
+    return info.is_directory != 0;
+  return is_virtual_dir(resolved.path) || overlay_dir(resolved.path);
+}
+
 static int32_t check_parent_write(const char *path) {
   char parent[VFS_PATH_MAX];
   parent_of(path, parent, sizeof(parent));
+  if (process_current_uid() != 0 && !directory_exists(parent))
+    return FS_ERROR_NOT_FOUND;
   return check_access(parent, true, VFS_PERM_W);
 }
 
