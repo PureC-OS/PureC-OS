@@ -291,6 +291,20 @@ void *memrchr(const void *buffer, int value, size_t count)
     return 0;
 }
 
+void *memmem(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len)
+{
+    const unsigned char *h = haystack;
+    const unsigned char *n = needle;
+    if (!needle_len)
+        return (void *)h;
+    if (needle_len > haystack_len)
+        return 0;
+    for (size_t i = 0; i + needle_len <= haystack_len; i++)
+        if (h[i] == n[0] && memcmp(h + i, n, needle_len) == 0)
+            return (void *)(h + i);
+    return 0;
+}
+
 size_t strxfrm(char *destination, const char *source, size_t count)
 {
     size_t length = strlen(source);

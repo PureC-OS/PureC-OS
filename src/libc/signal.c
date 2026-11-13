@@ -68,6 +68,15 @@ sighandler_t signal(int signum, sighandler_t handler) {
     return previous.sa_handler;
 }
 
+int sigfillset(sigset_t *set) {
+    if (!set) {
+        errno = EINVAL;
+        return -1;
+    }
+    *set = ~(sigset_t)0;
+    return 0;
+}
+
 int sigemptyset(sigset_t *set) {
     if (!set) {
         errno = EINVAL;

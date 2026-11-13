@@ -73,6 +73,9 @@ struct sigaction {
 #define SS_DISABLE 2
 #define MINSIGSTKSZ 2048
 #define SIGSTKSZ 8192
+#ifndef NSIG
+#define NSIG 65
+#endif
 
 typedef struct {
     void *ss_sp;
@@ -89,6 +92,7 @@ int sigsuspend(const sigset_t *mask);
 int sigaction(int signum, const struct sigaction *action,
               struct sigaction *previous);
 int sigemptyset(sigset_t *set);
+int sigfillset(sigset_t *set);
 int sigaddset(sigset_t *set, int signum);
 int sigdelset(sigset_t *set, int signum);
 int sigismember(const sigset_t *set, int signum);

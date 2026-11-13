@@ -38,6 +38,7 @@ char *strchrnul(const char *text, int ch);
 size_t strlcpy(char *destination, const char *source, size_t size);
 size_t strlcat(char *destination, const char *source, size_t size);
 void *memrchr(const void *buffer, int value, size_t count);
+void *memmem(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len);
 int strcoll(const char *a, const char *b);
 size_t strxfrm(char *destination, const char *source, size_t count);
 

@@ -11,6 +11,8 @@
 #include "include/hosted/utime.h"
 #include "include/hosted/sys/utsname.h"
 #include "include/hosted/unistd.h"
+#include "include/hosted/termios.h"
+#include <stdbool.h>
 #include "include/purec.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -156,6 +158,59 @@ int setpgid(pid_t pid, pid_t group)
 }
 
 pid_t getpgrp(void) { return getpid(); }
+
+pid_t getpgid(pid_t pid) { return pid ? pid : getpid(); }
+
+pid_t getsid(pid_t pid) { return pid ? pid : getpid(); }
+
+pid_t setsid(void) { return getpid(); }
+
+char *getpass(const char *prompt)
+{
+    static char buffer[256];
+    int fd = open("/dev/tty", O_RDWR);
+    bool own = fd >= 0;
+    if (!own)
+        fd = 0;
+    if (prompt)
+        write(own ? fd : 2, prompt, strlen(prompt));
+    struct termios saved, quiet;
+    bool raw = tcgetattr(fd, &saved) == 0;
+    if (raw) {
+        quiet = saved;
+        quiet.c_lflag &= ~(tcflag_t)ECHO;
+        tcsetattr(fd, TCSAFLUSH, &quiet);
+    }
+    size_t n = 0;
+    char c;
+    while (read(fd, &c, 1) == 1 && c != '\n' && c != '\r')
+        if (n + 1 < sizeof(buffer))
+            buffer[n++] = c;
+    buffer[n] = 0;
+    if (raw)
+        tcsetattr(fd, TCSAFLUSH, &saved);
+    write(own ? fd : 2, "\n", 1);
+    if (own)
+        close(fd);
+    return buffer;
+}
+
+int setitimer(int which, const struct itimerval *value, struct itimerval *old)
+{
+    (void)which;
+    (void)value;
+    if (old)
+        memset(old, 0, sizeof(*old));
+    return 0;
+}
+
+int getitimer(int which, struct itimerval *value)
+{
+    (void)which;
+    if (value)
+        memset(value, 0, sizeof(*value));
+    return 0;
+}
 
 pid_t tcgetpgrp(int fd)
 {
