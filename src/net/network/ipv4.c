@@ -136,7 +136,9 @@ enum ipv4_send_result ipv4_send_from(struct net_device *device,
     if(source && (!interface || !interface->configured
                   || source!=interface->address)) return IPV4_SEND_ERROR;
     uint8_t destination_mac[6];
-    if(destination==IPV4_BROADCAST){
+    if(device->loopback){
+        memcpy(destination_mac,device->mac,sizeof(destination_mac));
+    } else if(destination==IPV4_BROADCAST){
         memset(destination_mac,0xFF,sizeof(destination_mac));
     } else {
         if(!interface || !interface->configured) return IPV4_SEND_ERROR;
