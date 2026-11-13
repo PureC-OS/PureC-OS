@@ -11,4 +11,7 @@ bool pg_internal_update_registered_frame(struct pg_window *window);
 uint32_t pg_internal_sync_frame(struct pg_window *window, uint32_t state);
 bool pg_internal_point_in_titlebar(const struct pg_window *window, int32_t x, int32_t y);
 void pg_internal_surface_sync(struct pg_window *window);
+uint64_t pg_internal_now_ms(void);
+#define PG_RESIZE_MIN_WIDTH 160
+#define PG_RESIZE_MIN_HEIGHT 96
 bool pg_internal_surface_info(uint32_t **px, uint32_t *w, uint32_t *h);
