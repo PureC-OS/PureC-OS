@@ -25,3 +25,4 @@ cxx-libs/
 cxx-libs/llvm-project
 /ladybird-src/
 *netsurf-libs/*
+/git/
