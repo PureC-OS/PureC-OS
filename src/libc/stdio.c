@@ -247,6 +247,7 @@ static int fclose_nolock(FILE *stream) {
         return EOF;
     }
     if (stream == stdin || stream == stdout || stream == stderr) {
+        stdio_init_std();
         int result = stream->writable ? flush_write(stream) : 0;
         if (stream->fd < 0) {
             errno = EBADF;
