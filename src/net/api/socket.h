@@ -60,6 +60,7 @@ int32_t sock_sendto(int32_t id, const void *buffer, uint32_t count,
 int32_t sock_recvfrom(int32_t id, void *buffer, uint32_t count, bool nonblock,
                       uint32_t flags, struct sock_addr_in *source);
 int32_t sock_poll(int32_t id);
+int32_t sock_find(bool dgram, int32_t handle, bool *reuse);
 int32_t sock_name(int32_t id, bool peer, struct sock_addr_in *out);
 int32_t sock_setopt(int32_t id, int32_t level, int32_t name,
                     const void *value, uint32_t length);

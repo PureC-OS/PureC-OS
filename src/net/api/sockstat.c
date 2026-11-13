@@ -15,15 +15,16 @@ struct cursor {
   uint32_t written;
 };
 
-static struct net_socket_entry *next_slot(struct cursor *c)
+static bool wanted(struct cursor *c)
 {
   if (c->written >= c->capacity)
-    return 0;
-  if (c->seen++ < c->offset)
-    return 0;
-  struct net_socket_entry *e = &c->out[c->written++];
-  memset(e, 0, sizeof(*e));
-  return e;
+    return false;
+  return c->seen++ >= c->offset;
+}
+
+static void emit(struct cursor *c, const struct net_socket_entry *e)
+{
+  memcpy(&c->out[c->written++], e, sizeof(*e));
 }
 
 static void set_owner(struct net_socket_entry *e, int32_t sock_id)
@@ -53,13 +54,16 @@ static void list_kernel_udp(struct cursor *c)
     uint16_t port;
     if (!udp_binding_port(i, &port))
       continue;
-    struct net_socket_entry *e = next_slot(c);
-    if (!e)
+    if (!wanted(c))
       continue;
+    struct net_socket_entry entry;
+    struct net_socket_entry *e = &entry;
+    memset(e, 0, sizeof(*e));
     e->protocol = NET_SOCK_UDP;
     e->state = NET_SOCK_STATE_UNCONN;
     e->local_port = port;
     set_kernel(e);
+    emit(c, e);
   }
 }
 
@@ -70,9 +74,11 @@ static void list_udp(struct cursor *c)
     struct udpe_info info;
     if (!udpe_info(i, &info))
       continue;
-    struct net_socket_entry *e = next_slot(c);
-    if (!e)
+    if (!wanted(c))
       continue;
+    struct net_socket_entry entry;
+    struct net_socket_entry *e = &entry;
+    memset(e, 0, sizeof(*e));
     e->protocol = NET_SOCK_UDP;
     e->state = NET_SOCK_STATE_UNCONN;
     e->local_address = info.local_address;
@@ -90,6 +96,7 @@ static void list_udp(struct cursor *c)
       e->flags |= NET_SOCK_FLAG_BROADCAST;
     memcpy(e->device, info.device, sizeof(e->device) - 1);
     set_owner(e, sock_find(true, i, 0));
+    emit(c, e);
   }
 }
 
@@ -101,9 +108,11 @@ static void list_tcp(struct cursor *c)
     struct tcp_socket_info info;
     if (!tcp_get_info(i, &info))
       continue;
-    struct net_socket_entry *e = next_slot(c);
-    if (!e)
+    if (!wanted(c))
       continue;
+    struct net_socket_entry entry;
+    struct net_socket_entry *e = &entry;
+    memset(e, 0, sizeof(*e));
     e->protocol = NET_SOCK_TCP;
     e->state = (uint8_t)info.state;
     e->local_address = info.local_address;
@@ -117,6 +126,7 @@ static void list_tcp(struct cursor *c)
     if (info.orphan)
     {
       e->flags |= NET_SOCK_FLAG_ORPHAN;
+      emit(c, e);
       continue;
     }
     bool reuse = false;
@@ -128,15 +138,11 @@ static void list_tcp(struct cursor *c)
     else if (info.owner)
     {
       e->pid = info.owner;
-      struct process *p = process_lookup_by_pid(info.owner);
-      if (p)
-      {
-        e->uid = p->uid;
-        strncpy(e->process, p->name, sizeof(e->process) - 1);
-      }
+      process_name_of(info.owner, &e->uid, e->process, sizeof(e->process));
     }
     else
       set_kernel(e);
+    emit(c, e);
   }
 }
 
