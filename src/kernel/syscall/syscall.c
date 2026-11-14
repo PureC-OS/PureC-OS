@@ -1923,6 +1923,8 @@ int64_t syscall_handler(struct syscall_regs *r)
     filesystem_syscall_unlock();
     return result;
   }
+  case SYS_SYNC:
+    return vfs_sync() < 0 ? -KERR_IO : 0;
   case SYS_RENAME_PATH:
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||
