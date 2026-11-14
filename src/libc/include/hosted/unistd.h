@@ -73,6 +73,7 @@ int dup(int fd);
 int ftruncate(int fd, off_t length);
 int truncate(const char *path, off_t length);
 int fsync(int fd);
+void sync(void);
 int fdatasync(int fd);
 int gethostname(char *name, size_t length);
 long sysconf(int name);
