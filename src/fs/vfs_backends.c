@@ -98,19 +98,15 @@ static int32_t ext2_op_move(void *context, const char *path,
 static int32_t ext2_op_write_file(void *context, const char *path,
                                   const void *buffer, uint32_t count) {
   (void)context;
-  int32_t result = ext2_write_file(path, buffer, count);
-  if (result >= 0)
-    block_device_flush();
-  return result;
+  return ext2_write_file(path, buffer, count);
 }
+
+void vfs_backends_sync(void) {}
 
 static int32_t ext2_op_append_file(void *context, const char *path,
                                    const void *buffer, uint32_t count) {
   (void)context;
-  int32_t result = ext2_append_file(path, buffer, count);
-  if (result >= 0)
-    block_device_flush();
-  return result;
+  return ext2_append_file(path, buffer, count);
 }
 
 static int32_t ext2_op_stat_ex(void *context, const char *path,
@@ -148,19 +144,13 @@ static int32_t ext2_op_get_meta(void *context, const char *path,
 static int32_t ext2_op_set_meta(void *context, const char *path,
                                 const struct vfs_perm_meta *meta) {
   (void)context;
-  int32_t status = ext2_meta_set(path, meta->mode, meta->uid, meta->gid);
-  if (status >= 0)
-    block_device_flush();
-  return status;
+  return ext2_meta_set(path, meta->mode, meta->uid, meta->gid);
 }
 
 static int32_t ext2_op_set_times(void *context, const char *path,
                                  uint32_t atime, uint32_t mtime) {
   (void)context;
-  int32_t status = ext2_meta_set_times(path, atime, mtime);
-  if (status >= 0)
-    block_device_flush();
-  return status;
+  return ext2_meta_set_times(path, atime, mtime);
 }
 
 const struct vfs_fs_ops vfs_ext2_ops = {

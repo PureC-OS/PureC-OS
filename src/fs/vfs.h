@@ -81,3 +81,5 @@ int32_t vfs_ext2_inode(uint32_t ino, struct ext2_stat_info *out);
 int32_t vfs_ext2_super(struct ext2_super_info *out);
 int32_t vfs_ext2_blocks(const char *path, struct ext2_blocks_info *out);
 int32_t vfs_ext2_inode_blocks(uint32_t ino, struct ext2_blocks_info *out);
+int32_t vfs_sync(void);
+void vfs_writeback_start(void);

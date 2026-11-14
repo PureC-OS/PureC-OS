@@ -3,6 +3,7 @@ static mutex_t vfs_mutex;
 #include "../io/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
+#include "../kernel/process/scheduler.h"
 #include "../kernel/syscall/syscall.h"
 #include "../kernel/time/wallclock.h"
 #include "../lib/string.h"
@@ -17,6 +18,7 @@ static mutex_t vfs_mutex;
 #include "vfs.h"
 #include "vfs_alias.h"
 #include "vfs_backends.h"
+#include "ext2/include/ext2_bcache.h"
 #include "vfs_mount.h"
 #include "vfs_path.h"
 #include "vfs_perm.h"
@@ -845,9 +847,11 @@ int32_t vfs_close(int32_t descriptor) {
     return 0;
   }
   int32_t r = 0;
+  bool writable = h->type == VFS_HANDLE_WRITABLE;
   if (h->type == VFS_HANDLE_BACKEND && h->mount->ops->close)
     r = h->mount->ops->close(h->mount->context, h->backend_descriptor);
   memset(h, 0, sizeof(*h));
+  (void)writable;
   return r;
 }
 
@@ -1980,4 +1984,24 @@ void vfs_selftest(void) {
     klogf(KLOG_WARN, "vfs: selftest FAILED checks=%u", failed);
   else
     klog(KLOG_OK, "vfs: selftest passed");
+}
+
+int32_t vfs_sync(void) {
+  MUTEX_SCOPE(&vfs_mutex);
+  return ext2_bcache_checkpoint() ? 0 : FS_ERROR_IO;
+}
+
+static void vfs_writeback_thread(void *arg) {
+  (void)arg;
+  for (;;) {
+    scheduler_sleep(1000);
+    MUTEX_SCOPE(&vfs_mutex);
+    ext2_bcache_tick();
+  }
+}
+
+void vfs_writeback_start(void) {
+  int tid = scheduler_create_thread(vfs_writeback_thread, 0, "ext2-writeback", 3, -1);
+  if (tid < 0)
+    klog(KLOG_WARN, "vfs: writeback thread not started, dirty blocks flush on pressure only");
 }
