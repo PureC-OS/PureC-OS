@@ -147,6 +147,7 @@ C_SOURCES := \
 	drivers/usb/ehci.c \
 	fs/install.c \
 	fs/ext2/block.c \
+	fs/ext2/bcache.c \
 	fs/ext2/super.c \
 	fs/ext2/inode.c \
 	fs/ext2/dir.c \
