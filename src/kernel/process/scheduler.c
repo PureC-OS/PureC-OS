@@ -1,4 +1,5 @@
 #include "scheduler.h"
+#include "../../boot/boot_options.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../arch/x86_64/idt/include/idt.h"
@@ -129,9 +130,11 @@ static uint64_t thread_weight(const struct thread *thread)
   return scheduler_weight(thread->qos);
 }
 
+static bool cpu0_funnel;
+
 static bool eligible(const struct thread *t, uint32_t id)
 {
-  if (t->kernel_only)
+  if (cpu0_funnel && t->kernel_only)
     return id == 0;
   return t->affinity < 0 || t->affinity == (int16_t)id;
 }
@@ -223,7 +226,7 @@ static uint32_t select_cpu(const struct thread *thread, uint32_t here)
   {
     if (eligible(thread, here))
       return here;
-    if (thread->kernel_only)
+    if (cpu0_funnel && thread->kernel_only)
       return 0;
     return thread->affinity >= 0 ? (uint32_t)thread->affinity : here;
   }
@@ -513,8 +516,10 @@ void scheduler_init(void)
   sleep_head = NULL;
   for (unsigned i = 0; i < THASH_SIZE; i++)
     thash_buckets[i] = NULL;
+  cpu0_funnel = boot_syscalls_cpu0();
   scheduler_init_cpu();
-  klogf(KLOG_OK, "sched: dynamic runqueue, limit=RAM");
+  klogf(KLOG_OK, "sched: dynamic runqueue, limit=RAM, syscalls %s",
+        cpu0_funnel ? "on CPU0 only (syscalls=cpu0)" : "on the calling CPU");
 }
 
 static struct thread *thread_node_alloc(void)
@@ -718,7 +723,7 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   t->qos = SCHED_QOS_DEFAULT;
   t->affinity = affinity;
   t->running_cpu = -1;
-  t->kernel_only = user_mode;
+  t->kernel_only = user_mode && cpu0_funnel;
   t->ticks_remaining = 0;
   t->virtual_runtime = 0;
   t->rq_cpu = -1;
@@ -1561,13 +1566,15 @@ void scheduler_idle_loop(void)
 
 void scheduler_enter_kernel(void)
 {
+  if (!cpu0_funnel)
+    return;
   struct thread *t = scheduler_current_thread();
   if (!t || !t->user_mode)
     return;
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   t->kernel_only = true;
   spin_unlock_irqrestore(&runqueue_lock, flags);
-  if (gdt_current_cpu_id() != 0)
+  if (cpu0_funnel && gdt_current_cpu_id() != 0)
   {
     smp_reschedule_cpu(0);
     scheduler_yield();
@@ -1575,6 +1582,8 @@ void scheduler_enter_kernel(void)
 }
 void scheduler_leave_kernel(void)
 {
+  if (!cpu0_funnel)
+    return;
   struct thread *t = scheduler_current_thread();
   if (!t || !t->user_mode)
     return;

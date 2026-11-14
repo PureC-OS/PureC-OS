@@ -18,6 +18,12 @@ serial: yes
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
 @MODULES@
 
+/PureC OS 64-bit (safe: all syscalls on CPU0)
+    protocol: limine
+    resolution: 1920x1080x32
+    kernel_path: boot():/boot/kernel.elf
+    kernel_cmdline: syscalls=cpu0
+
 /PureC OS 64-bit (Rust desktop, experimental)
     protocol: limine
     resolution: 1920x1080x32

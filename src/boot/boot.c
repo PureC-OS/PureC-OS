@@ -103,10 +103,13 @@ static bool cmd_contains(const char *hay, const char *needle) {
     return false;
 }
 static bool boot_desktop_rs = false;
+static bool boot_syscalls_on_cpu0;
 bool boot_desktop_rust(void) { return boot_desktop_rs; }
+bool boot_syscalls_cpu0(void) { return boot_syscalls_on_cpu0; }
 static void boot_parse_video_cmdline(const char *cmd) {
     boot_video_pref = 0;
     boot_desktop_rs = cmd_contains(cmd, "desktop=rs");
+    boot_syscalls_on_cpu0 = cmd_contains(cmd, "syscalls=cpu0");
     if (!cmd)
         return;
     if (cmd_contains(cmd, "video=gop") || cmd_contains(cmd, "nogpu") || cmd_contains(cmd, "video=safe"))
