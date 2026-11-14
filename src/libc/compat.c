@@ -381,13 +381,18 @@ long sysconf(int name)
 int fsync(int fd)
 {
     (void)fd;
+    pc_syscall(SYS_SYNC, 0, 0, 0);
     return 0;
 }
 
 int fdatasync(int fd)
 {
-    (void)fd;
-    return 0;
+    return fsync(fd);
+}
+
+void sync(void)
+{
+    pc_syscall(SYS_SYNC, 0, 0, 0);
 }
 
 int truncate(const char *path, off_t length)
