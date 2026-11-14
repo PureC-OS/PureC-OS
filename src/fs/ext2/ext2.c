@@ -1,5 +1,6 @@
 #include "include/ext2.h"
 #include "include/ext2_types.h"
+#include "include/ext2_bcache.h"
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_inode.h"
@@ -17,6 +18,7 @@ bool ext2_mount_specific(const char *device)
     {
         return false;
     }
+    ext2_bcache_reset(true);
     int32_t idx = block_device_find(device);
     if (idx < 0)
     {

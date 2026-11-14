@@ -1,4 +1,5 @@
 #include "include/ext2_types.h"
+#include "include/ext2_bcache.h"
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_format.h"
@@ -27,6 +28,7 @@ int32_t ext2_format_device_impl(const char *device_name, const char *serial_conf
     {
         return -3;
     }
+    ext2_bcache_reset(true);
     int32_t idx = block_device_find(device_name);
     if (idx < 0)
     {

@@ -1,5 +1,6 @@
 #include "include/ext2_types.h"
 #include "include/ext2_block.h"
+#include "include/ext2_bcache.h"
 #include "include/ext2_inode.h"
 #include "../../io/storage/block_device.h"
 #include "../../kernel/diagnostics/klog.h"
@@ -85,6 +86,8 @@ bool ext2_read_block(uint32_t block, void *out)
     {
         return false;
     }
+    if (g_vol.mounted)
+        return ext2_bcache_read(block, out);
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
     uint32_t lba = g_vol.partition_lba + block * spb;
     return block_device_read_sectors(lba, out, spb);
@@ -99,6 +102,8 @@ bool ext2_write_block(uint32_t block, const void *in)
               g_vol.total_blocks);
         return false;
     }
+    if (g_vol.mounted)
+        return ext2_bcache_write(block, in, 1);
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
     uint32_t lba = g_vol.partition_lba + block * spb;
     return block_device_write_sectors(lba, in, spb);
@@ -115,6 +120,8 @@ bool ext2_write_blocks(uint32_t block, const void *in, uint32_t count)
               count, g_vol.total_blocks);
         return false;
     }
+    if (g_vol.mounted)
+        return ext2_bcache_write(block, in, count);
     uint32_t spb = g_vol.block_size / BLOCK_SECTOR_SIZE;
     uint32_t lba = g_vol.partition_lba + block * spb;
     return block_device_write_sectors(lba, in, count * spb);

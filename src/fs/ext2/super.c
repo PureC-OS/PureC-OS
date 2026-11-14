@@ -1,4 +1,5 @@
 #include "include/ext2_types.h"
+#include "include/ext2_bcache.h"
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_file.h"
@@ -86,6 +87,8 @@ bool ext2_super_mount_at(uint32_t lba)
         return false;
     }
     struct ext2_volume *vol = ext2_volume();
+    ext2_bcache_reset(false);
+    ext2_bcache_bind(block_device_name());
     vol->mounted = true;
     ext2_file_handles_reset();
     return true;
