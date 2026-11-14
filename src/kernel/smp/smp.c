@@ -188,6 +188,20 @@ void smp_reschedule_all(void){
     for(uint32_t id=0;id<cpu_registered_count();id++) smp_reschedule_cpu(id);
 }
 
+static volatile uint64_t cpu_cr3[CPU_MAX_COUNT];
+static volatile uint8_t tlb_full[CPU_MAX_COUNT];
+
+void smp_note_cr3(uint64_t cr3){
+    uint32_t id=gdt_current_cpu_id();
+    if(id>=CPU_MAX_COUNT) return;
+    __atomic_store_n(&cpu_cr3[id],cr3,__ATOMIC_SEQ_CST);
+}
+
+static void flush_local_user_tlb(void){
+    uint64_t cr3;
+    __asm__ volatile("mov %%cr3,%0; mov %0,%%cr3":"=r"(cr3)::"memory");
+}
+
 static void flush_local_tlb(void){
     /* Include global translations, and work independently of current CR3.
        This kernel does not enable PCID. No allocation or locks in NMI. */
@@ -206,19 +220,29 @@ bool smp_handle_nmi(void){
     }
     uint64_t request=__atomic_load_n(&tlb_request[id],__ATOMIC_ACQUIRE);
     if(request!=__atomic_load_n(&tlb_ack[id],__ATOMIC_RELAXED)){
-        flush_local_tlb();
+        if(__atomic_exchange_n(&tlb_full[id],0,__ATOMIC_ACQ_REL)) flush_local_tlb();
+        else flush_local_user_tlb();
         __atomic_store_n(&tlb_ack[id],request,__ATOMIC_RELEASE);
     }
     /* A delayed/coalesced shootdown NMI is harmless. */
     return request!=0;
 }
-void smp_tlb_shootdown(void){
+static void tlb_shootdown_targets(uint64_t space){
     uint64_t flags=spin_lock_irqsave(&tlb_lock);
     uint64_t generation=++tlb_generation;
     uint32_t self=gdt_current_cpu_id(), targets=0;
-    flush_local_tlb();
+    bool full=space==0;
+    if(full) flush_local_tlb();
+    else if(self>=CPU_MAX_COUNT || __atomic_load_n(&cpu_cr3[self],__ATOMIC_SEQ_CST)==space ||
+            !__atomic_load_n(&cpu_cr3[self],__ATOMIC_SEQ_CST)) flush_local_user_tlb();
     for(uint32_t id=0;id<cpu_registered_count();id++){
         if(id==self || !cpu_is_online(id)) continue;
+        if(!full){
+            uint64_t cr3=__atomic_load_n(&cpu_cr3[id],__ATOMIC_SEQ_CST);
+            if(cr3 && cr3!=space) continue;
+        } else {
+            __atomic_store_n(&tlb_full[id],1,__ATOMIC_RELEASE);
+        }
         targets|=1U<<id;
         __atomic_store_n(&tlb_request[id],generation,__ATOMIC_RELEASE);
         if(!lapic_send(id,4U<<8)) kernel_panic("smp: TLB IPI send failed");
@@ -233,6 +257,10 @@ void smp_tlb_shootdown(void){
     }
     spin_unlock_irqrestore(&tlb_lock,flags);
 }
+
+void smp_tlb_shootdown(void){ tlb_shootdown_targets(0); }
+
+void smp_tlb_shootdown_space(uint64_t space){ tlb_shootdown_targets(space); }
 void smp_stop_others(void){
     uint32_t self=gdt_current_cpu_id(), mask=0;
     for(uint32_t id=0;id<cpu_registered_count();id++)

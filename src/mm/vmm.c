@@ -42,6 +42,15 @@ static void space_unregister(uint64_t address_space);
 #define USER_TOP 0x0000800000000000ULL
 
 static uint64_t kernel_address_space;
+
+static void tlb_flush_space(uint64_t address_space, uint64_t virtual_address)
+{
+  if (!address_space || address_space == kernel_address_space ||
+      virtual_address >= 0xFFFF800000000000ULL)
+    smp_tlb_shootdown();
+  else
+    smp_tlb_shootdown_space(address_space);
+}
 static bool nx_enabled;
 
 static bool enable_nx_cpu(void)
@@ -280,7 +289,7 @@ static void vmm_destroy_address_space_locked(uint64_t address_space)
     detached[i] = root[i];
     root[i] = 0;
   }
-  smp_tlb_shootdown(); /* Acknowledge before returning any frame to PMM. */
+  tlb_flush_space(address_space, 0); /* Acknowledge before returning any frame to PMM. */
   uint64_t *pml4 = detached;
   for (uint16_t pml4_index = 0; pml4_index < 256; pml4_index++)
   {
@@ -498,6 +507,7 @@ void vmm_switch_address_space(uint64_t address_space)
 {
   if (!address_space || read_cr3() == address_space)
     return;
+  smp_note_cr3(address_space);
   __asm__ volatile("mov %0,%%cr3" ::"r"(address_space) : "memory");
 }
 
@@ -506,7 +516,7 @@ bool vmm_protect_page(uint64_t address_space, uint64_t virtual_address,
 {
   uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
   bool result = vmm_protect_page_locked(address_space, virtual_address, flags);
-  smp_tlb_shootdown();
+  tlb_flush_space(address_space, virtual_address);
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return result;
 }
@@ -532,7 +542,7 @@ bool vmm_map_page(uint64_t address_space, uint64_t virtual_address,
   uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
   bool result = vmm_map_page_locked(address_space, virtual_address,
                                     physical_address, flags);
-  smp_tlb_shootdown();
+  tlb_flush_space(address_space, virtual_address);
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return result;
 }
@@ -543,7 +553,7 @@ bool vmm_map_new_pages(uint64_t address_space, uint64_t virtual_address,
   uint64_t irq_flags = spin_lock_irqsave(&vmm_lock);
   bool result = vmm_map_new_pages_locked(address_space, virtual_address,
                                          page_count, flags);
-  smp_tlb_shootdown();
+  tlb_flush_space(address_space, virtual_address);
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return result;
 }
@@ -608,7 +618,7 @@ uint64_t vmm_clone_address_space(uint64_t source)
     else
       vmm_destroy_address_space_locked(root);
   }
-  smp_tlb_shootdown();
+  tlb_flush_space(source, 0);
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return result;
 }
@@ -807,7 +817,7 @@ uint64_t vmm_unmap_range(uint64_t address_space, uint64_t virtual_address,
     address = next;
     if (held == 64 || (address >= end && held))
     {
-      smp_tlb_shootdown();
+      tlb_flush_space(address_space, virtual_address);
       for (uint64_t i = 0; i < held; i++)
         pmm_free_page(frames[i]);
       held = 0;
@@ -870,7 +880,7 @@ bool vmm_protect_range(uint64_t address_space, uint64_t virtual_address,
     }
     address = next;
   }
-  smp_tlb_shootdown();
+  tlb_flush_space(address_space, virtual_address);
   spin_unlock_irqrestore(&vmm_lock, irq_flags);
   return ok;
 }
@@ -988,7 +998,7 @@ static bool swap_out_one_locked(void)
       return false;
     *slot = VMM_PAGE_SWAPENT | ((uint64_t)id << 12) | (entry & SWAP_ENTRY_KEEP);
     invalidate_local_page(address);
-    smp_tlb_shootdown();
+    tlb_flush_space(address_space, address);
     if (!swap_write(id, pmm_physical_to_virtual(frame)))
     {
       *slot = entry;
