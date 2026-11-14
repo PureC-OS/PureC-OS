@@ -2,6 +2,7 @@
 #include "../../boot/limine.h"
 #include "../../kernel/diagnostics/journal.h"
 #include "../../kernel/diagnostics/klog.h"
+#include "../../fs/vfs.h"
 #include "../../lib/string.h"
 #include <acpi/acpi.h>
 #include <stddef.h>
@@ -27,6 +28,7 @@ void power_init(void)
 
 void power_reboot(void)
 {
+    (void)vfs_sync();
     journal_mark_clean_shutdown();
     acpi_reboot();
     for (;;)
@@ -35,6 +37,7 @@ void power_reboot(void)
 
 void power_shutdown(void)
 {
+    (void)vfs_sync();
     journal_mark_clean_shutdown();
     acpi_shutdown();
     for (;;)
