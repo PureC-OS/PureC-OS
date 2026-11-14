@@ -390,17 +390,25 @@ static bool fixed_sector_op(bool write, uint32_t lba, void *buffer)
     return false;
 }
 
+#define AHCI_RUN_SECTORS 256U
+
 static bool fixed_run(bool write, uint32_t lba, uint8_t *buffer, uint32_t count)
 {
     if (!fixed_transport(active_transport))
         return false;
+    bool ahci = active_transport == STORAGE_TRANSPORT_AHCI;
     while (count)
     {
-        uint32_t chunk = count > IO_LOCK_CHUNK_SECTORS ? IO_LOCK_CHUNK_SECTORS : count;
+        uint32_t limit = ahci ? AHCI_RUN_SECTORS : IO_LOCK_CHUNK_SECTORS;
+        uint32_t chunk = count > limit ? limit : count;
         bool held = io_dev_lock();
         bool ok = true;
-        for (uint32_t done = 0; done < chunk && ok; done++)
-            ok = fixed_sector_op(write, lba + done, buffer + done * BLOCK_SECTOR_SIZE);
+        if (ahci)
+            ok = write ? ahci_write_sectors(lba, buffer, chunk)
+                       : ahci_read_sectors(lba, buffer, chunk);
+        else
+            for (uint32_t done = 0; done < chunk && ok; done++)
+                ok = fixed_sector_op(write, lba + done, buffer + done * BLOCK_SECTOR_SIZE);
         io_dev_unlock(held);
         if (!ok)
             return false;
