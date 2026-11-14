@@ -383,7 +383,6 @@ programs: libraries notepad
 	$(MAKE) -C src/doom
 	$(MAKE) -C src/chocolate
 	$(MAKE) -C src/make
-	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 	@$(MAKE) userspace || echo "WARNING: Rust userspace build failed; ISO will ship without desktop-rs"
 
 sdl2: libraries
