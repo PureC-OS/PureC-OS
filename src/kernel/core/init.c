@@ -1,3 +1,4 @@
+#include "../../fs/vfs.h"
 #include <acpi/acpi.h>
 #include "../../drivers/net/iwx/iwx.h"
 #include "../../io/swap.h"
@@ -61,6 +62,7 @@ void init_process_start(void)
   if (log_tid >= 0)
     scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
   journal_start();
+  vfs_writeback_start();
   (void)purec_i2c_hid_touchpad_start();
   acpi_ec_start_event_thread();
   (void)iwx_start();
