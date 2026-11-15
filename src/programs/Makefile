@@ -17,6 +17,8 @@ LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 
 PLAIN_SOURCES := \
 	init/main.c \
+	getty/main.c \
+	startgui/main.c \
 	nano/main.c \
 	nano/editor.c \
 	system/main.c \
@@ -120,7 +122,7 @@ GENERAL_CPP_SOURCES := \
 UTILS := ls cat cp mv rm mkdir rmdir touch chmod stat find tree du df install realpath basename dirname \
 	grep head tail wc sort uniq cut tr tee cmp diff nl rev seq yes xargs xxd \
 	echo pwd env uname whoami id hostname date uptime sleep true false kill ps free which \
-	clear reboot ping man less help cd sudo ip host ss
+	clear reboot ping man less help cd sudo ip host ss chvt tty
 UTIL_LIB_OBJECTS := $(OBJ_DIR)/utils/lib/common.o $(OBJ_DIR)/utils/lib/pager.o $(OBJ_DIR)/utils/lib/fileops.o
 UTIL_OBJECTS := $(foreach u,$(UTILS),$(OBJ_DIR)/utils/$(u)/$(u).o) $(UTIL_LIB_OBJECTS)
 UTIL_TARGETS := $(UTILS:%=$(PROGRAM_DIR)/%)
@@ -130,6 +132,8 @@ GENERAL_CPP_OBJECTS := $(GENERAL_CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 LUA_OBJECTS := $(LUA_SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
+	$(PROGRAM_DIR)/getty \
+	$(PROGRAM_DIR)/startgui \
 	$(PROGRAM_DIR)/installer \
 	$(PROGRAM_DIR)/snake \
 	$(PROGRAM_DIR)/tetris \
@@ -296,7 +300,15 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CPPFLAGS) -I$(ROOT_DIR)/src/programs/settings/include -I$(ROOT_DIR)/src/programs/hexedit/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CXXFLAGS) -c $< -o $@
 
-$(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/init/main.o $(LIBPUREC)
+
+$(PROGRAM_DIR)/getty: $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIB_DIR)/crt0.o $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPURECRYPT) $(LIBPUREC)
+
+$(PROGRAM_DIR)/startgui: $(OBJ_DIR)/startgui/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
@@ -500,6 +512,10 @@ $(OBJ_DIR)/forktest/main.o: $(ROOT_DIR)/src/programs/forktest/main.c
 $(PROGRAM_DIR)/forktest: $(OBJ_DIR)/forktest/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/forktest/main.o $(LIBPUREFS) $(LIBPUREC)
+
+$(OBJ_DIR)/init/main.o $(OBJ_DIR)/getty/main.o: $(OBJ_DIR)/%/main.o: $(ROOT_DIR)/src/programs/%/main.c
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/sh/main.o: $(ROOT_DIR)/src/programs/sh/main.c
 	@mkdir -p $(@D)

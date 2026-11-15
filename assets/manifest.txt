@@ -22,6 +22,8 @@
 
 # --- core programs (required) ---
 /sbin/init /sbin/init - 1 bin/programs/init
+/sbin/getty /sbin/getty - 1 bin/programs/getty
+/sbin/startgui /sbin/startgui - 1 bin/programs/startgui
 /sbin/installer /sbin/installer - 1 bin/programs/installer
 /usr/games/snake /usr/games/snake - 1 bin/programs/snake
 /usr/bin/terminal /usr/bin/terminal - 1 bin/programs/terminal
@@ -80,6 +82,8 @@
 /bin/ntpd /bin/ntpd - 1 bin/programs/ntpd
 /bin/id /bin/id - 1 bin/programs/id
 /bin/hostname /bin/hostname - 1 bin/programs/hostname
+/bin/chvt /bin/chvt - 1 bin/programs/chvt
+/bin/tty /bin/tty - 1 bin/programs/tty
 /bin/date /bin/date - 1 bin/programs/date
 /bin/uptime /bin/uptime - 1 bin/programs/uptime
 /bin/sleep /bin/sleep - 1 bin/programs/sleep
@@ -153,6 +157,11 @@
 /usr/share/man/ntpd.8 /usr/share/man/ntpd.8 - 0 assets/man/ntpd.8
 /usr/share/man/id.1 /usr/share/man/id.1 - 0 assets/man/id.1
 /usr/share/man/hostname.1 /usr/share/man/hostname.1 - 0 assets/man/hostname.1
+/usr/share/man/chvt.1 /usr/share/man/chvt.1 - 0 assets/man/chvt.1
+/usr/share/man/tty.1 /usr/share/man/tty.1 - 0 assets/man/tty.1
+/usr/share/man/getty.8 /usr/share/man/getty.8 - 0 assets/man/getty.8
+/usr/share/man/init.8 /usr/share/man/init.8 - 0 assets/man/init.8
+/usr/share/man/startgui.8 /usr/share/man/startgui.8 - 0 assets/man/startgui.8
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
 /usr/share/man/uptime.1 /usr/share/man/uptime.1 - 0 assets/man/uptime.1
 /usr/share/man/sleep.1 /usr/share/man/sleep.1 - 0 assets/man/sleep.1
@@ -430,6 +439,8 @@
 /etc/vimrc /etc/vimrc - 0 rootfs/etc/vimrc
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
+/etc/inittab /etc/inittab - 0 rootfs/etc/inittab
+/etc/issue /etc/issue - 0 rootfs/etc/issue
 
 # --- kernel modules (loaded by the device manager from /lib/modules) ---
 /lib/modules/e1000.so /lib/modules/e1000.so - 0 bin/modules/e1000.so
