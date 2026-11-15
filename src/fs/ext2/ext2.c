@@ -56,6 +56,7 @@ bool ext2_mount_specific(const char *device)
             uint32_t per = BLOCK_SECTOR_SIZE / 128;
             uint8_t type_basic[16] = {0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
             uint8_t type_linux[16] = {0xAF, 0x3C, 0x4C, 0x24, 0x00, 0x00, 0x42, 0x4D, 0xA0, 0x76, 0x4D, 0x89, 0x41, 0xFF, 0x86, 0xFE};
+            uint8_t type_linux_fs[16] = {0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47, 0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4};
             for (uint32_t i = 0; i < entry_count; i++)
             {
                 if (i % per == 0)
@@ -66,7 +67,8 @@ bool ext2_mount_specific(const char *device)
                     }
                 }
                 uint32_t off = (i % per) * 128;
-                bool typed = memcmp(sec + off, type_basic, 16) == 0 || memcmp(sec + off, type_linux, 16) == 0;
+                bool typed = memcmp(sec + off, type_basic, 16) == 0 || memcmp(sec + off, type_linux, 16) == 0 ||
+                             memcmp(sec + off, type_linux_fs, 16) == 0;
                 if (!typed)
                 {
                     continue;
@@ -229,12 +231,20 @@ int32_t ext2_move(const char *a, const char *b)
 
 int32_t ext2_format_device(const char *device_name, const char *serial_confirmation, const char *erase_confirmation)
 {
+    bool had_root = ext2_volume()->mounted;
     int32_t r = ext2_format_device_impl(device_name, serial_confirmation, erase_confirmation);
-    if (r == 0)
-    {
-        ext2_volume()->mounted = false;
-        return ext2_init() ? 0 : -1;
-    }
+    if (r == 0 && !had_root)
+        (void)ext2_init();
+    return r;
+}
+
+int32_t ext2_format_partition_device(const char *device_name, uint32_t number,
+                                     const char *serial_confirmation, const char *erase_confirmation)
+{
+    bool had_root = ext2_volume()->mounted;
+    int32_t r = ext2_format_partition(device_name, number, serial_confirmation, erase_confirmation);
+    if (r == 0 && !had_root)
+        (void)ext2_init();
     return r;
 }
 

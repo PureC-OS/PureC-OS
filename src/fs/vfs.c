@@ -1688,6 +1688,24 @@ int32_t vfs_format_device_ex(const char *device_name,
     return FS_ERROR_INVALID;
   if (fs_type != VFS_FS_EXT2)
     return FS_ERROR_UNSUPPORTED;
+  uint32_t length = (uint32_t)strlen(device_name);
+  uint32_t digits = 0;
+  while (digits < length && device_name[length - 1 - digits] >= '0' &&
+         device_name[length - 1 - digits] <= '9')
+    digits++;
+  if (digits && digits < length && digits <= 3 && block_device_find(device_name) < 0) {
+    char disk[32];
+    uint32_t base = length - digits;
+    if (base >= sizeof(disk))
+      return FS_ERROR_INVALID;
+    memcpy(disk, device_name, base);
+    disk[base] = '\0';
+    uint32_t number = 0;
+    for (uint32_t i = base; i < length; i++)
+      number = number * 10 + (uint32_t)(device_name[i] - '0');
+    return ext2_format_partition_device(disk, number, serial_confirmation,
+                                        erase_confirmation);
+  }
   return ext2_format_device(device_name, serial_confirmation,
                             erase_confirmation);
 }

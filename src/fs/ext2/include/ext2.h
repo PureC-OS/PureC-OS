@@ -24,6 +24,7 @@ int32_t ext2_append_file(const char *path, const void *buffer, uint32_t count);
 int32_t ext2_create_directory(const char *path);
 int32_t ext2_format_device(const char *device_name, const char *serial_confirmation, const char *erase_confirmation);
 int32_t ext2_format_device_force(const char *device_name, const char *serial_confirmation);
+int32_t ext2_format_partition_device(const char *device_name, uint32_t number, const char *serial_confirmation, const char *erase_confirmation);
 bool ext2_mount_specific(const char *device);
 
 struct ext2_module_ops
