@@ -29,6 +29,4 @@ bool vtcon_klog_wants(int level);
 void vtcon_set_quiet(bool quiet);
 void vtcon_note_open(int32_t index);
 
-int32_t vtcon_gui_start(void);
-bool vtcon_gui_running(void);
-void vtcon_set_gui_starter(void (*starter)(void));
+void vtcon_graphics_claimed(bool claimed);

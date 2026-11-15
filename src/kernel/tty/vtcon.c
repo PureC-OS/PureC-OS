@@ -4,6 +4,9 @@
 #include "../../drivers/display/gop.h"
 #include "../../drivers/input/keyboard.h"
 #include "../../drivers/mouse/ps2_mouse.h"
+#include "../../drivers/mouse/usb_mouse.h"
+#include "../../arch/x86_64/idt/include/idt.h"
+#include "../../io/storage/block_device.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
 #include "../ipc/pty.h"
@@ -47,11 +50,9 @@ static mutex_t switch_mutex;
 static volatile int32_t active;
 static volatile bool ready;
 static volatile bool thread_running;
-static volatile bool gui_running;
-static volatile bool gui_starting;
+static volatile bool graphics_owned;
 static volatile bool quiet;
 static volatile int32_t pending_switch;
-static void (*gui_starter)(void);
 
 static uint32_t *shadow;
 static uint64_t shadow_phys;
@@ -489,20 +490,17 @@ static int32_t do_switch(int32_t index)
         return 0;
     }
     if (index == VTCON_GRAPHICS) {
-        if (!gui_running) {
+        if (!graphics_owned) {
             rc = -1;
         } else {
             uint64_t flags = spin_lock_irqsave(&render_lock);
             active = VTCON_GRAPHICS;
             spin_unlock_irqrestore(&render_lock, flags);
             keyboard_flush_legacy();
-            gop_set_vt_owned(false);
         }
     } else if (display_owner_active()) {
         rc = -1;
     } else {
-        if (active == VTCON_GRAPHICS)
-            gop_set_vt_owned(true);
         uint64_t flags = spin_lock_irqsave(&render_lock);
         active = index;
         repaint_locked();
@@ -645,28 +643,36 @@ static void vt_thread(void *arg)
 {
     (void)arg;
     __atomic_store_n(&thread_running, true, __ATOMIC_RELEASE);
+    klog(KLOG_INFO, "vtcon: console and input thread started");
     for (;;) {
-        if (!gui_running)
-            ps2_mouse_poll();
-        if (vtcon_keyboard_captured())
+        idt_check_interrupt_rates();
+        ps2_mouse_poll();
+        block_device_poll_usb_hotplug();
+        usb_mouse_poll();
+        bool owner = display_owner_active();
+        if (owner)
+            display_owner_pump();
+        else
             keyboard_poll();
-        pump_input();
-        int32_t request = __atomic_exchange_n(&pending_switch, 0, __ATOMIC_ACQ_REL);
-        if (request)
-            (void)do_switch(request - 1);
-        drain_klog();
-        flush();
-        scheduler_sleep(10);
+        if (vtcon_ready()) {
+            pump_input();
+            int32_t request = __atomic_exchange_n(&pending_switch, 0, __ATOMIC_ACQ_REL);
+            if (request)
+                (void)do_switch(request - 1);
+            drain_klog();
+            flush();
+        }
+        scheduler_sleep(owner ? 2 : 5);
     }
 }
 
 void vtcon_start_thread(void)
 {
-    if (!vtcon_ready())
-        return;
     int tid = scheduler_create_thread(vt_thread, 0, "vtcon", 1, -1);
     if (tid < 0)
         klog(KLOG_ERROR, "vtcon: cannot start console thread");
+    else
+        scheduler_set_qos(tid, SCHED_QOS_USER_INTERACTIVE);
 }
 
 void vtcon_console_write(const char *text, uint32_t count)
@@ -715,37 +721,23 @@ void vtcon_klog_putc(char character)
     flush();
 }
 
-void vtcon_set_gui_starter(void (*starter)(void))
+void vtcon_graphics_claimed(bool claimed)
 {
-    gui_starter = starter;
-}
-
-bool vtcon_gui_running(void)
-{
-    return gui_running;
-}
-
-static void gui_thread(void *arg)
-{
-    (void)arg;
-    gui_starter();
-    gui_running = true;
-    gui_starting = false;
-    (void)do_switch(VTCON_GRAPHICS);
-    scheduler_exit();
-}
-
-int32_t vtcon_gui_start(void)
-{
-    if (gui_running)
-        return do_switch(VTCON_GRAPHICS);
-    if (!gui_starter || !gop_is_available())
-        return -1;
-    if (__atomic_exchange_n(&gui_starting, true, __ATOMIC_ACQ_REL))
-        return 0;
-    if (scheduler_create_thread(gui_thread, 0, "gui-start", 1, -1) < 0) {
-        gui_starting = false;
-        return -1;
+    if (!vtcon_ready())
+        return;
+    mutex_lock(&switch_mutex);
+    graphics_owned = claimed;
+    uint64_t flags = spin_lock_irqsave(&render_lock);
+    if (claimed) {
+        active = VTCON_GRAPHICS;
+    } else if (active == VTCON_GRAPHICS) {
+        active = 0;
+        repaint_locked();
     }
-    return 0;
+    spin_unlock_irqrestore(&render_lock, flags);
+    if (claimed)
+        keyboard_flush_legacy();
+    mutex_unlock(&switch_mutex);
+    if (!claimed)
+        flush();
 }
