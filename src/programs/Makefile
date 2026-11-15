@@ -372,6 +372,25 @@ $(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/utils/test/httpsget/main.o $(LIB_DIR)/crt0.o
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/test/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
 
+ifneq ($(wildcard $(ROOT_DIR)/netsurf-libs/zlib/zlib.h),)
+PKG_SOURCES := main util db repo tx sig archive version info
+PKG_OBJECTS := $(PKG_SOURCES:%=$(OBJ_DIR)/pkg/%.o)
+PKG_CFLAGS := -I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/src/programs/pkg -I$(CRYPT_DIR)/include \
+	-I$(ROOT_DIR)/netsurf-libs/zlib -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec \
+	-DWOLFSSL_USER_SETTINGS -DWOLF_PUREC_TLS
+TARGETS += $(PROGRAM_DIR)/pkg
+all: $(PROGRAM_DIR)/pkg
+-include $(PKG_OBJECTS:.o=.d)
+
+$(PKG_OBJECTS): $(OBJ_DIR)/pkg/%.o: $(ROOT_DIR)/src/programs/pkg/%.c $(LIBWOLF)
+	@mkdir -p $(@D)
+	$(CC) $(CPPFLAGS) $(PKG_CFLAGS) $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
+
+$(PROGRAM_DIR)/pkg: $(PKG_OBJECTS) $(LIB_DIR)/crt0.o $(LIB_DIR)/libz.a $(LIBWOLF) $(LIBPURECRYPT) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -S -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(PKG_OBJECTS) $(LIB_DIR)/libz.a $(LIBWOLF) $(LIBPURECRYPT) $(LIBPUREFS) $(LIBPUREC)
+endif
+
 CURL_DIR := $(ROOT_DIR)/curl
 CURL_PRESENT := $(wildcard $(CURL_DIR)/lib/curl_setup.h)
 ifneq ($(CURL_PRESENT),)
