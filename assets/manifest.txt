@@ -387,41 +387,6 @@
 /lib/tcc/include/stdatomic.h /lib/tcc/include/stdatomic.h - 0 tcc/include/stdatomic.h
 /lib/tcc/include/stdnoreturn.h /lib/tcc/include/stdnoreturn.h - 0 tcc/include/stdnoreturn.h
 
-# --- demo assets ---
-/usr/share/demo/screenshot.bmp /usr/share/demo/screenshot.bmp - 0 src/demo/screenshot.bmp
-/usr/share/demo/image.png /usr/share/demo/image.png - 0 src/demo/image.png
-
-# --- bundled wallpapers (24-bit BMP, 8.3 names, stretched by desktop) ---
-/usr/share/wallpapers/ducati1.png /usr/share/wallpapers/ducati1.png - 0 src/wallpapers/ducati1.png
-/usr/share/wallpapers/bmw2.png /usr/share/wallpapers/bmw2.png - 0 src/wallpapers/bmw2.png
-/usr/share/wallpapers/bmw3.png /usr/share/wallpapers/bmw3.png - 0 src/wallpapers/bmw3.png
-/usr/share/wallpapers/space1.png /usr/share/wallpapers/space1.png - 0 src/wallpapers/space1.png
-/usr/share/demo/wplist.ini /usr/share/demo/wplist.ini - 0 src/wallpapers/wplist.ini
-/usr/share/wallpapers/wp01.png /usr/share/wallpapers/wp01.png - 0 src/wallpapers/wp01.png
-/usr/share/wallpapers/wp02.png /usr/share/wallpapers/wp02.png - 0 src/wallpapers/wp02.png
-/usr/share/wallpapers/wp03.png /usr/share/wallpapers/wp03.png - 0 src/wallpapers/wp03.png
-/usr/share/wallpapers/wp04.png /usr/share/wallpapers/wp04.png - 0 src/wallpapers/wp04.png
-/usr/share/wallpapers/wp05.png /usr/share/wallpapers/wp05.png - 0 src/wallpapers/wp05.png
-/usr/share/wallpapers/wp06.png /usr/share/wallpapers/wp06.png - 0 src/wallpapers/wp06.png
-/usr/share/wallpapers/wp07.png /usr/share/wallpapers/wp07.png - 0 src/wallpapers/wp07.png
-/usr/share/wallpapers/wp08.png /usr/share/wallpapers/wp08.png - 0 src/wallpapers/wp08.png
-/usr/share/wallpapers/wp09.png /usr/share/wallpapers/wp09.png - 0 src/wallpapers/wp09.png
-/usr/share/wallpapers/wp10.png /usr/share/wallpapers/wp10.png - 0 src/wallpapers/wp10.png
-/usr/share/wallpapers/wp11.png /usr/share/wallpapers/wp11.png - 0 src/wallpapers/wp11.png
-/usr/share/wallpapers/wp12.png /usr/share/wallpapers/wp12.png - 0 src/wallpapers/wp12.png
-/usr/share/wallpapers/wp13.png /usr/share/wallpapers/wp13.png - 0 src/wallpapers/wp13.png
-/usr/share/wallpapers/wp14.png /usr/share/wallpapers/wp14.png - 0 src/wallpapers/wp14.png
-/usr/share/wallpapers/wp15.png /usr/share/wallpapers/wp15.png - 0 src/wallpapers/wp15.png
-/usr/share/wallpapers/wp16.png /usr/share/wallpapers/wp16.png - 0 src/wallpapers/wp16.png
-/usr/share/wallpapers/wp17.png /usr/share/wallpapers/wp17.png - 0 src/wallpapers/wp17.png
-
-# --- game sound effects (22050 Hz mono WAV) ---
-/usr/share/sounds/turn.wav /usr/share/sounds/turn.wav - 0 src/audio/snake/turn.wav
-/usr/share/sounds/eat.wav /usr/share/sounds/eat.wav - 0 src/audio/snake/eat.wav
-/usr/share/sounds/die.wav /usr/share/sounds/die.wav - 0 src/audio/snake/die.wav
-/usr/share/sounds/move.wav /usr/share/sounds/move.wav - 0 src/audio/tetris/move.wav
-/usr/share/sounds/clear.wav /usr/share/sounds/clear.wav - 0 src/audio/tetris/clear.wav
-/usr/share/sounds/over.wav /usr/share/sounds/over.wav - 0 src/audio/tetris/over.wav
 
 # --- /etc ---
 /etc/hostname /etc/hostname - 0 rootfs/etc/hostname
