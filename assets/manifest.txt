@@ -23,12 +23,7 @@
 # --- core programs (required) ---
 /sbin/init /sbin/init - 1 bin/programs/init
 /sbin/getty /sbin/getty - 1 bin/programs/getty
-/sbin/installer /sbin/installer - 1 bin/programs/installer
-/usr/games/snake /usr/games/snake - 1 bin/programs/snake
-/usr/bin/terminal /usr/bin/terminal - 1 bin/programs/terminal
-/usr/bin/nano /usr/bin/nano - 1 bin/programs/nano
 /bin/system /bin/system - 1 bin/programs/system
-/usr/bin/raminfo /usr/bin/raminfo - 0 bin/programs/raminfo
 /bin/ls /bin/ls - 1 bin/programs/ls
 /bin/cat /bin/cat - 1 bin/programs/cat
 /bin/cp /bin/cp - 1 bin/programs/cp
@@ -177,7 +172,6 @@
 /usr/share/man/help.1 /usr/share/man/help.1 - 0 assets/man/help.1
 /usr/share/man/mkfs.8 /usr/share/man/mkfs.8 - 0 assets/man/mkfs.8
 /usr/share/man/sh.1 /usr/share/man/sh.1 - 0 assets/man/sh.1
-/usr/share/man/terminal.1 /usr/share/man/terminal.1 - 0 assets/man/terminal.1
 /usr/share/man/intro.1 /usr/share/man/intro.1 - 0 assets/man/intro.1
 /usr/share/man/egrep.1 /usr/share/man/egrep.1 - 0 assets/man/grep.1
 /usr/share/man/fgrep.1 /usr/share/man/fgrep.1 - 0 assets/man/grep.1
@@ -210,22 +204,9 @@
 /usr/bin/true /usr/bin/true - 1 bin/programs/true
 /usr/bin/false /usr/bin/false - 1 bin/programs/false
 /usr/bin/sleep /usr/bin/sleep - 1 bin/programs/sleep
-/usr/bin/files /usr/bin/files - 1 bin/programs/files
-/usr/bin/gui-demo /usr/bin/gui-demo - 1 bin/programs/gui-demo
 
 # --- optional programs ---
-/usr/games/tetris /usr/games/tetris - 0 bin/programs/tetris
-/usr/games/puzzle15 /usr/games/puzzle15 - 0 bin/programs/puzzle15
-/usr/games/2048 /usr/games/2048 - 0 bin/programs/2048
 
-/usr/bin/settings /usr/bin/settings - 0 bin/programs/settings
-/usr/bin/monitor /usr/bin/monitor - 0 bin/programs/monitor
-/usr/bin/disks /usr/bin/disks - 0 bin/programs/disks
-/usr/bin/devmgr /usr/bin/devmgr - 0 bin/programs/devmgr
-/usr/bin/logview /usr/bin/logview - 0 bin/programs/logview
-/usr/bin/hexedit /usr/bin/hexedit - 0 bin/programs/hexedit
-/usr/bin/notepad /usr/bin/notepad - 0 bin/programs/notepad
-/usr/bin/imgview /usr/bin/imgview - 0 bin/programs/imgview
 /usr/bin/hello /usr/bin/hello - 0 bin/programs/hello
 /usr/bin/forktest /usr/bin/forktest - 0 bin/programs/forktest
 /usr/bin/sh /usr/bin/sh - 0 bin/programs/sh
@@ -234,11 +215,6 @@
 /usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
 /usr/bin/cmaketest /usr/bin/cmaketest - 0 bin/programs/cmaketest
 /usr/bin/qtcoretest /usr/bin/qtcoretest - 0 bin/programs/qtcoretest
-/usr/bin/qt-terminal /usr/bin/qt-terminal - 0 bin/programs/qt-terminal
-/usr/share/fonts/DejaVuSansMono.ttf /usr/share/fonts/DejaVuSansMono.ttf - 0 assets/fonts/DejaVuSansMono.ttf
-/usr/share/fonts/DejaVuSansMono-Bold.ttf /usr/share/fonts/DejaVuSansMono-Bold.ttf - 0 assets/fonts/DejaVuSansMono-Bold.ttf
-/usr/share/fonts/DejaVuSans.ttf /usr/share/fonts/DejaVuSans.ttf - 0 assets/fonts/DejaVuSans.ttf
-/usr/share/fonts/DejaVuSans-Bold.ttf /usr/share/fonts/DejaVuSans-Bold.ttf - 0 assets/fonts/DejaVuSans-Bold.ttf
 /usr/bin/posixtest /usr/bin/posixtest - 0 bin/programs/posixtest
 /usr/bin/fbtest /usr/bin/fbtest - 0 bin/programs/fbtest
 /usr/bin/udptest /usr/bin/udptest - 0 bin/programs/udptest
@@ -248,67 +224,25 @@
 /usr/bin/httpget /usr/bin/httpget - 0 bin/programs/httpget
 /usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
 /usr/bin/curl /usr/bin/curl - 0 bin/programs/curl
-/usr/bin/netsurf /usr/bin/netsurf - 0 bin/programs/netsurf
 /usr/bin/git /usr/bin/git - 0 bin/programs/git
 /usr/libexec/git-core/git /usr/libexec/git-core/git - 0 bin/programs/git
 /usr/libexec/git-core/git-remote-http /usr/libexec/git-core/git-remote-http - 0 bin/programs/git-remote-http
 /usr/libexec/git-core/git-remote-https /usr/libexec/git-core/git-remote-https - 0 bin/programs/git-remote-http
 /usr/share/git-core/templates/description /usr/share/git-core/templates/description - 0 bin/git-templates/description
 /usr/share/git-core/templates/info/exclude /usr/share/git-core/templates/info/exclude - 0 bin/git-templates/info/exclude
-/usr/local/share/netsurf/Messages /usr/local/share/netsurf/Messages - 0 netsurf/frontends/framebuffer/res/Messages
-/usr/local/share/netsurf/css-vars.html /usr/local/share/netsurf/css-vars.html - 0 tests/netsurf/css-vars.html
-/usr/local/share/netsurf/js-test.html /usr/local/share/netsurf/js-test.html - 0 tests/netsurf/js-test.html
-/usr/local/share/netsurf/default.css /usr/local/share/netsurf/default.css - 0 netsurf/frontends/framebuffer/res/default.css
-/usr/local/share/netsurf/internal.css /usr/local/share/netsurf/internal.css - 0 netsurf/frontends/framebuffer/res/internal.css
-/usr/local/share/netsurf/quirks.css /usr/local/share/netsurf/quirks.css - 0 netsurf/frontends/framebuffer/res/quirks.css
-/usr/local/share/netsurf/adblock.css /usr/local/share/netsurf/adblock.css - 0 netsurf/frontends/framebuffer/res/adblock.css
-/usr/local/share/netsurf/netsurf.png /usr/local/share/netsurf/netsurf.png - 0 netsurf/frontends/framebuffer/res/netsurf.png
-/usr/local/share/netsurf/welcome.html /usr/local/share/netsurf/welcome.html - 0 netsurf/frontends/framebuffer/res/welcome.html
-/usr/local/share/netsurf/credits.html /usr/local/share/netsurf/credits.html - 0 netsurf/frontends/framebuffer/res/credits.html
-/usr/local/share/netsurf/licence.html /usr/local/share/netsurf/licence.html - 0 netsurf/frontends/framebuffer/res/licence.html
-/usr/local/share/netsurf/favicon.png /usr/local/share/netsurf/favicon.png - 0 netsurf/frontends/framebuffer/res/favicon.png
-/usr/local/share/netsurf/Choices /usr/local/share/netsurf/Choices - 0 mk/netsurf/Choices
 /etc/ssl/cert.pem /etc/ssl/cert.pem - 0 rootfs/etc/ssl/cert.pem
 /usr/bin/make /usr/bin/make - 0 bin/programs/make
 /usr/share/purec/selftest.sh /usr/share/purec/selftest.sh - 0 tests/guest/selftest.sh
-/bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
-/usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest
-/usr/bin/sdltest /usr/bin/sdltest - 0 bin/programs/sdltest
-/usr/bin/doom /usr/bin/doom - 0 bin/programs/chocolate-doom
-/usr/share/doom/freedoom1.wad /usr/share/doom/freedoom1.wad - 0 assets/doom/freedoom1.wad
 /usr/bin/burn /usr/bin/burn - 0 bin/programs/burn
 /usr/bin/eat /usr/bin/eat - 0 bin/programs/eat
 /usr/bin/tcc /usr/bin/tcc - 0 bin/programs/tcc
 /usr/bin/lua /usr/bin/lua - 0 bin/programs/lua
 /usr/bin/vim /usr/bin/vim - 0 bin/programs/vim
 /usr/bin/micropython /usr/bin/micropython - 0 bin/programs/micropython
-/usr/bin/pl /usr/bin/pl - 0 bin/programs/pl
-/usr/bin/desktop-rs /usr/bin/desktop-rs - 0 bin/programs/desktop-rs
 /usr/bin/init-rs /usr/bin/init-rs - 0 bin/programs/init-rs
 /usr/bin/hello-rs /usr/bin/hello-rs - 0 bin/programs/hello-rs
-/usr/bin/apps-demo-rs /usr/bin/apps-demo-rs - 0 bin/programs/apps-demo-rs
 
-# --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
-/usr/share/applications/files.desktop /usr/share/applications/files.desktop - 0 assets/applications/files.desktop
-/usr/share/applications/monitor.desktop /usr/share/applications/monitor.desktop - 0 assets/applications/monitor.desktop
-/usr/share/applications/terminal.desktop /usr/share/applications/terminal.desktop - 0 assets/applications/terminal.desktop
-/usr/share/applications/qt-terminal.desktop /usr/share/applications/qt-terminal.desktop - 0 assets/applications/qt-terminal.desktop
-/usr/share/applications/clock.desktop /usr/share/applications/clock.desktop - 0 assets/applications/clock.desktop
-/usr/share/applications/calc.desktop /usr/share/applications/calc.desktop - 0 assets/applications/calc.desktop
-/usr/share/applications/calendar.desktop /usr/share/applications/calendar.desktop - 0 assets/applications/calendar.desktop
-/usr/share/applications/settings.desktop /usr/share/applications/settings.desktop - 0 assets/applications/settings.desktop
-/usr/share/applications/install.desktop /usr/share/applications/install.desktop - 0 assets/applications/install.desktop
-/usr/share/applications/disks.desktop /usr/share/applications/disks.desktop - 0 assets/applications/disks.desktop
-/usr/share/applications/devmgr.desktop /usr/share/applications/devmgr.desktop - 0 assets/applications/devmgr.desktop
-/usr/share/applications/tetris.desktop /usr/share/applications/tetris.desktop - 0 assets/applications/tetris.desktop
-/usr/share/applications/puzzle15.desktop /usr/share/applications/puzzle15.desktop - 0 assets/applications/puzzle15.desktop
-/usr/share/applications/logview.desktop /usr/share/applications/logview.desktop - 0 assets/applications/logview.desktop
-/usr/share/applications/hexedit.desktop /usr/share/applications/hexedit.desktop - 0 assets/applications/hexedit.desktop
-/usr/share/applications/notepad.desktop /usr/share/applications/notepad.desktop - 0 assets/applications/notepad.desktop
-/usr/share/applications/pl.desktop /usr/share/applications/pl.desktop - 0 userspace/desktop_entries/pl.desktop
-/usr/share/applications/desktop-rs.desktop /usr/share/applications/desktop-rs.desktop - 0 userspace/desktop_entries/desktop-rs.desktop
-/usr/share/applications/2048.desktop /usr/share/applications/2048.desktop - 0 assets/applications/2048.desktop
 
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
@@ -317,13 +251,9 @@
 /lib/libdltest2.so /lib/libdltest2.so - 0 bin/lib/libdltest2.so
 /lib/pc-ld.o /lib/pc-ld.o - 0 bin/lib/pc-ld.o
 /lib/libpurefs.a /lib/libpurefs.a - 1 bin/lib/libpurefs.a
-/lib/libpuregui.a /lib/libpuregui.a - 1 bin/lib/libpuregui.a
-/lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
 /lib/libpureaudio.a /lib/libpureaudio.a - 0 bin/lib/libpureaudio.a
 
 # --- development headers (required, except audio/tcc extras) ---
-/usr/include/puregui.h /usr/include/puregui.h - 1 src/libgui/include/puregui.h
-/usr/include/pguiw.h /usr/include/pguiw.h - 1 src/libgui/include/pguiw.h
 /usr/include/purefs.h /usr/include/purefs.h - 1 src/libfs/include/purefs.h
 /usr/include/pureaudio.h /usr/include/pureaudio.h - 0 src/libaudio/include/pureaudio.h
 /usr/include/assert.h /usr/include/assert.h - 1 src/libc/include/hosted/assert.h
@@ -415,23 +345,5 @@
 /lib/modules/wolf.so /lib/modules/wolf.so - 0 bin/modules/wolf.so
 /lib/modules/random.so /lib/modules/random.so - 0 bin/modules/random.so
 
-# --- desktop icons (Material Symbols, see assets/icons/NOTICE) ---
-/usr/share/icons/2048.icn /usr/share/icons/2048.icn - 0 assets/icons/2048.icn
-/usr/share/icons/calc.icn /usr/share/icons/calc.icn - 0 assets/icons/calc.icn
-/usr/share/icons/calendar.icn /usr/share/icons/calendar.icn - 0 assets/icons/calendar.icn
-/usr/share/icons/clock.icn /usr/share/icons/clock.icn - 0 assets/icons/clock.icn
-/usr/share/icons/desktop-rs.icn /usr/share/icons/desktop-rs.icn - 0 assets/icons/desktop-rs.icn
-/usr/share/icons/devmgr.icn /usr/share/icons/devmgr.icn - 0 assets/icons/devmgr.icn
-/usr/share/icons/disks.icn /usr/share/icons/disks.icn - 0 assets/icons/disks.icn
-/usr/share/icons/files.icn /usr/share/icons/files.icn - 0 assets/icons/files.icn
-/usr/share/icons/hexedit.icn /usr/share/icons/hexedit.icn - 0 assets/icons/hexedit.icn
-/usr/share/icons/install.icn /usr/share/icons/install.icn - 0 assets/icons/install.icn
-/usr/share/icons/logview.icn /usr/share/icons/logview.icn - 0 assets/icons/logview.icn
-/usr/share/icons/monitor.icn /usr/share/icons/monitor.icn - 0 assets/icons/monitor.icn
-/usr/share/icons/notepad.icn /usr/share/icons/notepad.icn - 0 assets/icons/notepad.icn
-/usr/share/icons/pl.icn /usr/share/icons/pl.icn - 0 assets/icons/pl.icn
-/usr/share/icons/puzzle15.icn /usr/share/icons/puzzle15.icn - 0 assets/icons/puzzle15.icn
-/usr/share/icons/settings.icn /usr/share/icons/settings.icn - 0 assets/icons/settings.icn
-/usr/share/icons/terminal.icn /usr/share/icons/terminal.icn - 0 assets/icons/terminal.icn
-/usr/share/icons/tetris.icn /usr/share/icons/tetris.icn - 0 assets/icons/tetris.icn
+# --- firmware ---
 /lib/firmware/iwx-so-a0-hr-b0-77 /lib/firmware/iwx-so-a0-hr-b0-77 - 0 third_party/openbsd-iwx/firmware/iwx-so-a0-hr-b0-77

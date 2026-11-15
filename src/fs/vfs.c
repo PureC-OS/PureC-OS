@@ -1955,9 +1955,8 @@ void vfs_selftest(void) {
   uint32_t failed = 0;
   failed += !selftest_stat("/", true);
   failed += !selftest_stat("/bin/ls", false);
-  failed += !selftest_stat("/usr/bin/terminal", false);
-  failed += !selftest_stat("/bin/program/terminal", false);
-  failed += !selftest_stat("/usr/share/applications", true);
+  failed += !selftest_stat("/bin/sh", false);
+  failed += !selftest_stat("/sbin/getty", false);
   failed += !selftest_stat("/sbin/init", false);
   failed += !selftest_stat("/etc/hostname", false);
   failed += !selftest_stat("/etc", true);
