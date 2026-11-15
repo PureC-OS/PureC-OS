@@ -19,6 +19,7 @@ static int failures;
   } while (0)
 
 uint64_t timer_ticks(void) { return 123456; }
+const char *boot_cmdline(void) { return "quiet"; }
 uint64_t pmm_total_bytes(void) { return 512ULL * 1024 * 1024; }
 uint64_t pmm_free_bytes(void) { return 300ULL * 1024 * 1024; }
 uint64_t idt_vector_count(uint8_t vector) {
@@ -134,14 +135,16 @@ int main(void) {
   CHECK(ops->stat(0, "/", &info) == 0 && info.is_directory);
   CHECK(ops->stat(0, "/12", &info) == 0 && info.is_directory);
   CHECK(ops->stat(0, "/uptime", &info) == 0 && !info.is_directory);
+  CHECK(read_file("/cmdline", text, sizeof(text)) > 0 && strcmp(text, "quiet\n") == 0);
   CHECK(ops->stat(0, "/77", &info) == FS_ERROR_NOT_FOUND);
 
   struct fs_directory_entry_long entries[32];
   int32_t count = ops->list_long(0, "/", entries, 32);
-  CHECK(count == 11);
+  CHECK(count == 12);
   CHECK(strcmp(entries[0].name, "version") == 0);
-  CHECK(strcmp(entries[9].name, "1") == 0 && entries[9].attributes == FS_ATTRIBUTE_DIRECTORY);
-  CHECK(strcmp(entries[10].name, "12") == 0);
+  CHECK(strcmp(entries[2].name, "cmdline") == 0);
+  CHECK(strcmp(entries[10].name, "1") == 0 && entries[10].attributes == FS_ATTRIBUTE_DIRECTORY);
+  CHECK(strcmp(entries[11].name, "12") == 0);
   count = ops->list_long(0, "/12", entries, 32);
   CHECK(count == 4 && strcmp(entries[0].name, "status") == 0);
   CHECK(ops->list_long(0, "/uptime", entries, 32) == FS_ERROR_NOT_DIR);

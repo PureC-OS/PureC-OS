@@ -150,14 +150,17 @@ int main(void) {
   CHECK(open_device("/missing") == FS_ERROR_NOT_FOUND);
   CHECK(open_device("/null/x") == FS_ERROR_NOT_FOUND);
 
-  struct fs_directory_entry_long entries[16];
-  int32_t count = ops->list_long(0, "/", entries, 16);
-  CHECK(count == 7);
+  struct fs_directory_entry_long entries[24];
+  int32_t count = ops->list_long(0, "/", entries, 24);
+  CHECK(count == 16);
   CHECK(strcmp(entries[0].name, "null") == 0);
   CHECK(entries[0].attributes == FS_ATTRIBUTE_CHAR_DEVICE);
-  CHECK(strcmp(entries[6].name, "sda") == 0);
-  CHECK(entries[6].attributes == FS_ATTRIBUTE_BLOCK_DEVICE);
-  CHECK(ops->list_long(0, "/null", entries, 16) == FS_ERROR_NOT_DIR);
+  CHECK(strcmp(entries[7].name, "tty") == 0);
+  CHECK(strcmp(entries[9].name, "tty1") == 0);
+  CHECK(entries[9].attributes == FS_ATTRIBUTE_CHAR_DEVICE);
+  CHECK(strcmp(entries[15].name, "sda") == 0);
+  CHECK(entries[15].attributes == FS_ATTRIBUTE_BLOCK_DEVICE);
+  CHECK(ops->list_long(0, "/null", entries, 24) == FS_ERROR_NOT_DIR);
 
   int32_t many[40];
   int opened = 0;
