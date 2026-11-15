@@ -145,10 +145,11 @@ static int cmd_scan(bool show)
     struct wifi_status_info st;
     if (!device(&st, 0))
         return 1;
-    if (st.state == WIFI_STATE_CONNECTED || st.state == WIFI_STATE_CONNECTING)
-        return util_err("cannot scan while connected to '%s' (iwxctl disconnect first); cached results:\n",
-                        st.ssid),
-               print_networks(), 1;
+    if (st.state == WIFI_STATE_CONNECTED || st.state == WIFI_STATE_CONNECTING) {
+        util_err("cannot scan while connected to '%s' (disconnect first); last results:", st.ssid);
+        print_networks();
+        return 1;
+    }
     uint32_t before = st.scan_count;
     if (pc_wifi_scan() < 0)
         return util_err("scan request rejected (a scan may already be running)");
