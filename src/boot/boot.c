@@ -104,14 +104,23 @@ static bool cmd_contains(const char *hay, const char *needle) {
 }
 static bool boot_desktop_rs = false;
 static bool boot_syscalls_on_cpu0;
+static bool boot_gui_in_kernel;
+static bool boot_console_loud;
+static char boot_cmdline_copy[256];
+bool boot_gui_kernel(void) { return boot_gui_in_kernel; }
+bool boot_console_verbose(void) { return boot_console_loud; }
+const char *boot_cmdline(void) { return boot_cmdline_copy; }
 bool boot_desktop_rust(void) { return boot_desktop_rs; }
 bool boot_syscalls_cpu0(void) { return boot_syscalls_on_cpu0; }
 static void boot_parse_video_cmdline(const char *cmd) {
     boot_video_pref = 0;
     boot_desktop_rs = cmd_contains(cmd, "desktop=rs");
     boot_syscalls_on_cpu0 = cmd_contains(cmd, "syscalls=cpu0");
+    boot_gui_in_kernel = cmd_contains(cmd, "gui=kernel");
+    boot_console_loud = cmd_contains(cmd, "verbose") || cmd_contains(cmd, "loglevel=7");
     if (!cmd)
         return;
+    strncpy(boot_cmdline_copy, cmd, sizeof(boot_cmdline_copy) - 1);
     if (cmd_contains(cmd, "video=gop") || cmd_contains(cmd, "nogpu") || cmd_contains(cmd, "video=safe"))
         boot_video_pref = 1;
     else if (cmd_contains(cmd, "video=2d") || cmd_contains(cmd, "no3d"))
