@@ -1,5 +1,5 @@
 #include "filesystem.h"
-#include "../terminal/path.h"
+#include "path.h"
 #include "../../libc/include/purec.h"
 #include "../../libfs/include/purefs.h"
 

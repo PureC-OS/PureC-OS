@@ -12,18 +12,16 @@ LIBPUREFS := $(LIB_DIR)/libpurefs.a
 LIBPUREAUDIO := $(LIB_DIR)/libpureaudio.a
 LIBPURECRYPT := $(LIB_DIR)/libpurecrypt.a
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
-ACCOUNT_OBJECTS := $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(OBJ_DIR)/accounts/install_accounts.o
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 
 PLAIN_SOURCES := \
 	init/main.c \
 	getty/main.c \
-	nano/main.c \
-	nano/editor.c \
 	system/main.c \
 	system/commands.c \
 	system/filesystem.c \
-	system/system.c
+	system/system.c \
+	system/path.c
 LUA_SOURCES := \
 	lua/lapi.c \
 	lua/lcode.c \
@@ -59,65 +57,16 @@ LUA_SOURCES := \
 	lua/lua.c \
 	lua/purec_lua_readline.c
 GENERAL_SOURCES := \
-	installer/main.c \
-	installer/progress.c \
-	installer/setup.c \
-	installer/ui.c \
-	installer/view.c \
-	installer/tz_link.c \
 	accounts/accounts.c \
 	accounts/accounts_core.c \
-	terminal/main.c \
-	terminal/vt.c \
-	terminal/path.c \
-	nano/window.c \
-	utils/test/gui_demo/main.c \
-	game/snake/main.c \
-	game/tetris/main.c \
-	game/puzzle15/puzzle15.c \
-	game/2048/game2048.c \
-	files/main.c \
-	files/app.c \
-	files/model.c \
-	files/path.c \
-	files/view.c \
-  	settings/main.c \
-  	settings/core/model.c \
-  	settings/core/personalization.c \
-  	settings/core/display.c \
-  	settings/core/app.c \
-  	settings/core/fmt.c \
-  	settings/core/thumb.c \
-  	settings/pages/about.c \
-  	settings/pages/network.c \
-  	settings/pages/sound.c \
-  	settings/pages/display.c \
-  	settings/pages/appearance.c \
-  	settings/pages/storage.c \
-  	settings/pages/datetime.c \
-  	settings/pages/power.c \
-	login/main.c \
-	disks/main.c \
-	devmgr/main.c \
-	logview/main.c \
-  	imgview/main.c \
   	fputest/main.c \
-  	gltest/main.c \
 	utils/mkfs/mkfs.c \
  	battery/battery.c \
  	burn/main.c \
  	utils/test/eat/main.c \
  	cpuinfo/main.c \
- 	raminfo/main.c \
  	hddcheck/main.c
-GENERAL_CPP_SOURCES := \
-	hexedit/src/main/main.cpp \
-	hexedit/src/buffer/buffer.cpp \
-	hexedit/src/tree/tree.cpp \
-	hexedit/src/view/view.cpp \
-	hexedit/src/input/input.cpp \
-	hexedit/src/editor/editor.cpp \
-	hexedit/src/window/window.cpp
+GENERAL_CPP_SOURCES := 
 UTILS := ls cat cp mv rm mkdir rmdir touch chmod stat find tree du df install realpath basename dirname \
 	grep head tail wc sort uniq cut tr tee cmp diff nl rev seq yes xargs xxd \
 	echo pwd env uname whoami id hostname date uptime sleep true false kill ps free which \
@@ -132,23 +81,7 @@ LUA_OBJECTS := $(LUA_SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
 	$(PROGRAM_DIR)/getty \
-	$(PROGRAM_DIR)/installer \
-	$(PROGRAM_DIR)/snake \
-	$(PROGRAM_DIR)/tetris \
-	$(PROGRAM_DIR)/puzzle15 \
-	$(PROGRAM_DIR)/terminal \
-	$(PROGRAM_DIR)/nano \
 	$(PROGRAM_DIR)/system \
-	$(PROGRAM_DIR)/gui-demo \
- 	$(PROGRAM_DIR)/files \
- 	$(PROGRAM_DIR)/settings \
-	$(PROGRAM_DIR)/login \
- 	$(PROGRAM_DIR)/monitor \
-	$(PROGRAM_DIR)/disks \
-	$(PROGRAM_DIR)/devmgr \
-	$(PROGRAM_DIR)/logview \
- 	$(PROGRAM_DIR)/hexedit \
-  	$(PROGRAM_DIR)/imgview \
   	$(PROGRAM_DIR)/hello \
   	$(PROGRAM_DIR)/forktest \
   	$(PROGRAM_DIR)/sh \
@@ -167,13 +100,11 @@ TARGETS := \
   	$(PROGRAM_DIR)/httpget \
   	$(PROGRAM_DIR)/httpsget \
   	$(PROGRAM_DIR)/fputest \
-  	$(PROGRAM_DIR)/gltest \
 	$(PROGRAM_DIR)/mkfs \
  	$(PROGRAM_DIR)/battery \
  	$(PROGRAM_DIR)/burn \
  	$(PROGRAM_DIR)/eat \
  	$(PROGRAM_DIR)/cpuinfo \
- 	$(PROGRAM_DIR)/raminfo \
  	$(PROGRAM_DIR)/hddcheck \
 	$(PROGRAM_DIR)/lua \
 	$(UTIL_TARGETS)
@@ -209,9 +140,8 @@ TARGETS += $(PROGRAM_DIR)/vim
 endif
 
 .NOTPARALLEL:
-.PHONY: all hexedit
+.PHONY: all
 all: $(TARGETS)
-hexedit: $(PROGRAM_DIR)/hexedit
 
 -include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(LUA_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
 
@@ -291,11 +221,11 @@ $(LIBPURECRYPT):
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.c
 	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include -I$(ROOT_DIR)/src/programs/settings/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CFLAGS) -c $< -o $@
+	$(CC) $(CPPFLAGS) -I$(CRYPT_DIR)/include  $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CFLAGS) -c $< -o $@
 
 $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/programs/%.cpp
 	@mkdir -p $(@D)
-	$(CXX) $(CPPFLAGS) -I$(ROOT_DIR)/src/programs/settings/include -I$(ROOT_DIR)/src/programs/hexedit/include $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CXXFLAGS) -c $< -o $@
+	$(CXX) $(CPPFLAGS)  $(DEPFLAGS) $(USER_CFLAGS) $(PRIVATE_CXXFLAGS) -c $< -o $@
 
 $(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -305,81 +235,11 @@ $(PROGRAM_DIR)/getty: $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(O
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPURECRYPT) $(LIBPUREC)
 
-$(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progress.o $(OBJ_DIR)/installer/setup.o $(OBJ_DIR)/installer/ui.o $(OBJ_DIR)/installer/view.o $(OBJ_DIR)/installer/tz_link.o $(ACCOUNT_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/snake: $(OBJ_DIR)/game/snake/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/terminal: $(OBJ_DIR)/terminal/main.o $(OBJ_DIR)/terminal/vt.o $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/nano: $(OBJ_DIR)/nano/main.o $(OBJ_DIR)/nano/editor.o $(OBJ_DIR)/nano/window.o $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/system: $(OBJ_DIR)/system/main.o $(OBJ_DIR)/system/commands.o $(OBJ_DIR)/system/filesystem.o $(OBJ_DIR)/system/system.o $(OBJ_DIR)/terminal/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/gui-demo: $(OBJ_DIR)/utils/test/gui_demo/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/files: $(OBJ_DIR)/files/main.o $(OBJ_DIR)/files/app.o $(OBJ_DIR)/files/model.o $(OBJ_DIR)/files/path.o $(OBJ_DIR)/files/view.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-SETTINGS_OBJECTS := $(OBJ_DIR)/settings/main.o $(OBJ_DIR)/settings/core/model.o $(OBJ_DIR)/settings/core/personalization.o $(OBJ_DIR)/settings/core/display.o $(OBJ_DIR)/settings/core/app.o $(OBJ_DIR)/settings/core/fmt.o $(OBJ_DIR)/settings/core/thumb.o $(OBJ_DIR)/settings/pages/about.o $(OBJ_DIR)/settings/pages/network.o $(OBJ_DIR)/settings/pages/sound.o $(OBJ_DIR)/settings/pages/display.o $(OBJ_DIR)/settings/pages/appearance.o $(OBJ_DIR)/settings/pages/storage.o $(OBJ_DIR)/settings/pages/datetime.o $(OBJ_DIR)/settings/pages/power.o
-$(PROGRAM_DIR)/settings: $(SETTINGS_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-MONITOR_OBJECTS := $(OBJ_DIR)/monitor/main.o $(OBJ_DIR)/monitor/model.o $(OBJ_DIR)/monitor/ui.o
-
-$(OBJ_DIR)/monitor/%.o: $(ROOT_DIR)/src/programs/monitor/%.c
-	@mkdir -p $(@D)
-	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
-
-$(PROGRAM_DIR)/monitor: $(MONITOR_OBJECTS) $(LIB_DIR)/crt0.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(MONITOR_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC)
-
--include $(MONITOR_OBJECTS:.o=.d)
-
-$(PROGRAM_DIR)/login: $(OBJ_DIR)/login/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/disks: $(OBJ_DIR)/disks/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/devmgr: $(OBJ_DIR)/devmgr/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/logview: $(OBJ_DIR)/logview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-
-$(PROGRAM_DIR)/hexedit: $(GENERAL_CPP_OBJECTS) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/imgview: $(OBJ_DIR)/imgview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
+$(PROGRAM_DIR)/system: $(OBJ_DIR)/system/main.o $(OBJ_DIR)/system/commands.o $(OBJ_DIR)/system/filesystem.o $(OBJ_DIR)/system/system.o $(OBJ_DIR)/system/path.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/fputest: $(OBJ_DIR)/fputest/main.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/gltest: $(OBJ_DIR)/gltest/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
@@ -400,10 +260,6 @@ $(PROGRAM_DIR)/battery: $(OBJ_DIR)/battery/battery.o $(LIBPUREC) $(LINKER_SCRIPT
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/cpuinfo: $(OBJ_DIR)/cpuinfo/main.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/raminfo: $(OBJ_DIR)/raminfo/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 

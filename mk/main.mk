@@ -10,12 +10,11 @@ CRYPT_DIR           := $(ROOT_DIR)/libxcrypt
 WOLFSSL_DIR         := $(ROOT_DIR)/wolfssl
 TCC_DIR             := $(ROOT_DIR)/tcc
 ACPI_DIR            := $(ROOT_DIR)/acpi
-NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
@@ -148,7 +147,7 @@ test-program-alias:
 test-path:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
-		tests/path_test.c src/programs/terminal/path.c src/programs/files/path.c \
+		tests/path_test.c src/programs/system/path.c \
 		-o $(BIN_DIR)/tests/path_test
 	$(BIN_DIR)/tests/path_test
 
@@ -366,7 +365,7 @@ libraries:
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
-programs: libraries notepad
+programs: libraries
 	$(MAKE) -C src/programs
 	$(MAKE) -C src/programs/micropython
 	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
@@ -391,15 +390,7 @@ userspace:
 	@command -v cargo >/dev/null || { echo "cargo not found, skipping Rust userspace"; exit 0; }
 	$(MAKE) -C userspace ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
-notepad:
-	@test -f "$(NOTEPAD_DIR)/Makefile" || \
-	  { echo "ERROR: purec-notepad-os/ not found. Run: ./purec.py setup"; exit 1; }
-	$(MAKE) -C $(NOTEPAD_DIR)
-	@mkdir -p $(PROGRAM_DIR)
-	cp $(NOTEPAD_DIR)/bin/notepad $(PROGRAM_DIR)/notepad
 
-hexedit: libraries
-	$(MAKE) -C src/programs/hexedit
 
 wolf: $(WOLFSSL_DIR)/wolfcrypt/src/aes.c
 	$(MAKE) -C $(WOLFSSL_DIR) module
@@ -446,17 +437,12 @@ iso: kernel programs
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
 		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
-		"$(ISO_ROOT)/lib/firmware" \
-		"$(ISO_ROOT)/src/demo"; \
-	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
-		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
-	fi; \
+		"$(ISO_ROOT)/lib/firmware"; \
 	command -v python3 >/dev/null || { echo "python3 required (mk/gen_assets.py)" >&2; exit 1; }; \
 	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
-	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
 	for mod in ext2 crypt acpi wolf random e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
@@ -506,8 +492,6 @@ help:
 	@echo "  make kernel         build kernel only"
 	@echo "  make libraries      build libraries"
 	@echo "  make programs       build Ring-3 programs"
-	@echo "  make hexedit        build HexEdit"
-	@echo "  make notepad        build PureC Notepad"
 	@echo "  make wolf           build libwolf.a + wolf.ko (wolfSSL port)"
 	@echo "  make iso            assemble ISO image"
 	@echo "  make test           run all host tests"

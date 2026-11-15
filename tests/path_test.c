@@ -1,5 +1,4 @@
-#include "programs/files/path.h"
-#include "programs/terminal/path.h"
+#include "programs/system/path.h"
 
 #include <assert.h>
 #include <stdint.h>
@@ -42,28 +41,8 @@ static void test_shell_paths(void){
     assert(!shell_path_normalize(NULL, "file", small, sizeof(small)));
 }
 
-static void test_file_paths(void){
-    char path[64];
-    assert(files_path_join(path, sizeof(path), "/", "readme.txt"));
-    assert(strcmp(path, "/readme.txt") == 0);
-    assert(files_path_join(path, sizeof(path), "/home", "user"));
-    assert(strcmp(path, "/home/user") == 0);
-    assert(!files_path_join(path, 6, "/home", "user"));
-    assert(!files_path_join(path, sizeof(path), "/home", ""));
-
-    strcpy(path, "/home/user/docs/");
-    assert(files_path_parent(path, sizeof(path)));
-    assert(strcmp(path, "/home/user") == 0);
-    assert(files_path_parent(path, sizeof(path)));
-    assert(strcmp(path, "/home") == 0);
-    assert(files_path_parent(path, sizeof(path)));
-    assert(strcmp(path, "/") == 0);
-    assert(!files_path_parent(path, sizeof(path)));
-}
-
 int main(void){
     test_shell_paths();
-    test_file_paths();
     puts("Path tests passed");
     return 0;
 }
