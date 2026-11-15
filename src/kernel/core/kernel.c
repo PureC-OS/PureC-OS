@@ -153,7 +153,6 @@ void kernel_main(struct limine_framebuffer *fb)
   devman_register_builtin_drivers();
   devman_autoload();
   krandom_init();
-  vfs_fat32_mount_boot();
   klogf(KLOG_INFO, "random: %s backend",
         krandom_hardened() ? "purecrypt hash-drbg" : "fallback");
   devman_dump();

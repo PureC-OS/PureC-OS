@@ -19,6 +19,7 @@
 #include "../../fs/install.h"
 #include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
+#include "../../fs/vfs_fat32.h"
 #include "../../drivers/display/display_owner.h"
 #include "../ipc/inputdev.h"
 #include "sudo.h"
@@ -2914,6 +2915,7 @@ void syscall_init(void)
     boot_diag_checkpoint(BOOT_STAGE_SYSCALLS,
                          "storage: initializing block transports");
     (void)block_device_init();
+    vfs_fat32_mount_boot();
     struct ahci_probe_stats ahci_stats;
     struct xhci_probe_stats xhci_stats;
     struct ehci_probe_stats ehci_stats;
