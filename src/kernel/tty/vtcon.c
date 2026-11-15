@@ -3,6 +3,7 @@
 #include "../../drivers/display/display_owner.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/input/keyboard.h"
+#include "../../drivers/mouse/ps2_mouse.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
 #include "../ipc/pty.h"
@@ -645,6 +646,8 @@ static void vt_thread(void *arg)
     (void)arg;
     __atomic_store_n(&thread_running, true, __ATOMIC_RELEASE);
     for (;;) {
+        if (!gui_running)
+            ps2_mouse_poll();
         if (vtcon_keyboard_captured())
             keyboard_poll();
         pump_input();

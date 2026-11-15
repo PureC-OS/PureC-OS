@@ -410,10 +410,32 @@ int32_t pty_read(int32_t id, bool master, void *buffer, uint32_t count, bool non
     }
 }
 
+#define PTY_KERNEL_CHUNK 2048u
+
+static bool kernel_drained(int32_t id)
+{
+    mutex_lock(&pty_mutex);
+    struct pty *p = pty_get(id);
+    bool drained = p && p->kernel_drain;
+    mutex_unlock(&pty_mutex);
+    return drained;
+}
+
 int32_t pty_write(int32_t id, bool master, const void *buffer, uint32_t count, bool nonblock)
 {
     (void)nonblock;
     const uint8_t *in = (const uint8_t *)buffer;
+    if (!master && count > PTY_KERNEL_CHUNK && kernel_drained(id)) {
+        uint32_t done = 0;
+        while (done < count) {
+            uint32_t chunk = count - done < PTY_KERNEL_CHUNK ? count - done : PTY_KERNEL_CHUNK;
+            int32_t rc = pty_write(id, false, in + done, chunk, nonblock);
+            if (rc < 0)
+                return done ? (int32_t)done : rc;
+            done += chunk;
+        }
+        return (int32_t)count;
+    }
     int32_t wake[PTY_WAITERS * 2];
     uint32_t n = 0;
     uint32_t sig = 0, sig_pid = 0;
