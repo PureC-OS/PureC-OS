@@ -422,13 +422,6 @@ $(PROGRAM_DIR)/hddcheck: $(OBJ_DIR)/hddcheck/main.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-
-
-
-
-
-
-
 ifneq ($(TCC_PRESENT),)
 TCC_PATCH_MARK := TCC_TARGET_PUREC
 $(OBJ_DIR)/tcc/.patched: $(ROOT_DIR)/mk/tcc/purec-target.patch
@@ -504,8 +497,6 @@ $(OBJ_DIR)/sh/main.o: $(ROOT_DIR)/src/programs/sh/main.c
 $(PROGRAM_DIR)/sh: $(OBJ_DIR)/sh/main.o $(LIB_DIR)/crt0.o $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/sh/main.o $(LIBPUREFS) $(LIBPUREC)
-
-
 
 $(OBJ_DIR)/journalctl/main.o: $(ROOT_DIR)/src/programs/journalctl/main.c
 	@mkdir -p $(@D)
