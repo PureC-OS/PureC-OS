@@ -538,6 +538,7 @@ static int run_plan(struct plan *plan, const char *question)
     msg("Processing package changes...");
     for (int i = 0; i < plan->count; i++) {
         struct item *it = &plan->items[i];
+        it->old = localdb_find(it->info.name);
         const char *what = it->old < 0 ? "installing" : (!strcmp(ldb.pkgs[it->old].version, it->info.version) ? "reinstalling" : "upgrading");
         printf("(%d/%d) %s %s-%s\n", i + 1, plan->count, what, it->info.name, it->info.version);
         if (install_item(it) < 0)
