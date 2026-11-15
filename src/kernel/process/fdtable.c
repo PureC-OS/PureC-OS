@@ -160,11 +160,47 @@ int32_t fd_vfs_handle(int32_t fd)
   return object < 0 ? -1 : ofd_vfs_handle(object);
 }
 
+static int32_t open_tty(const char *path, uint32_t flags)
+{
+  if (path && strcmp(path, "/dev/tty") == 0)
+  {
+    int32_t object = object_get(0);
+    int32_t id;
+    bool master;
+    if (object < 0 || !ofd_pty_info(object, &id, &master) || master)
+      return -KERR_NXIO;
+    return fd_dup(0, 0, (flags & O_CLOEXEC_FLAG) != 0);
+  }
+  int32_t index = vtcon_open_index(path);
+  if (index == -2)
+    return -KERR_NOENT - 1000;
+  if (index < 0)
+    return -KERR_NXIO;
+  int32_t pty_id = vtcon_pty(index);
+  if (pty_id < 0)
+    return -KERR_NXIO;
+  int32_t object = ofd_create_pty(pty_id, false);
+  if (object < 0)
+    return object;
+  if (flags & 04000U)
+    (void)ofd_flags_set(object, 04000U);
+  int32_t fd = fd_install_ofd(object, flags & O_CLOEXEC_FLAG);
+  if (fd < 0)
+    ofd_release(object);
+  return fd;
+}
+
 int32_t fd_open(const char *path, uint32_t flags)
 {
   struct process *process = process_current();
   if (!process)
     return -KERR_BADF;
+  if (path && strncmp(path, "/dev/", 5) == 0)
+  {
+    int32_t tty = open_tty(path, flags);
+    if (tty != -KERR_NOENT - 1000)
+      return tty;
+  }
   if (!filesystem_syscall_acquire())
     return -KERR_AGAIN;
   int32_t handle = vfs_open_flags(path, flags);
