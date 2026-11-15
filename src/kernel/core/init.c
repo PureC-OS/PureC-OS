@@ -20,6 +20,27 @@
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
 #include "../smp/smp.h"
+#include "../tty/vtcon.h"
+
+static bool desktop_rust;
+
+static void start_desktop(void)
+{
+  desktop_rust = boot_desktop_rust() && rs_session_start();
+  if (!desktop_rust)
+    userspace_init();
+  int32_t input_pid = process_spawn_service(
+      desktop_rust ? rs_session_input_thread : userspace_input_thread, 0,
+      "init-input", 1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
+  int32_t kbd_pid = desktop_rust
+                        ? 0
+                        : process_spawn_service(userspace_keyboard_thread, 0, "desktop-keyboard",
+                                                1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
+  if (input_pid < 0 || kbd_pid < 0)
+    klog(KLOG_WARN, "sched: failed to start input service processes");
+  else
+    klog(KLOG_OK, "desktop: graphical session started");
+}
 
 void init_process_start(void)
 {
@@ -41,22 +62,21 @@ void init_process_start(void)
   }
   klog(KLOG_OK, "process: /bin/init started as PID 1");
 
-  serial_write_string("[INIT] PID 1 registered, initializing desktop\n");
-  bool rust_desktop = boot_desktop_rust() && rs_session_start();
-  if (!rust_desktop)
-    userspace_init();
+  vtcon_set_gui_starter(start_desktop);
+  if (!vtcon_ready())
+  {
+    serial_write_string("[INIT] no text console, starting desktop in kernel\n");
+    start_desktop();
+  }
+  else
+  {
+    vtcon_start_thread();
+    if (boot_gui_kernel())
+      (void)vtcon_gui_start();
+  }
   boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
-                       "init and desktop ready, starting scheduler");
+                       "init and consoles ready, starting scheduler");
 
-  int32_t input_pid = process_spawn_service(
-      rust_desktop ? rs_session_input_thread : userspace_input_thread, 0,
-      "init-input", 1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
-  int32_t kbd_pid = rust_desktop
-                        ? 0
-                        : process_spawn_service(userspace_keyboard_thread, 0, "desktop-keyboard",
-                                                1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
-  if (input_pid < 0 || kbd_pid < 0)
-    klog(KLOG_WARN, "sched: failed to start input service processes");
   int32_t log_tid =
       scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, -1);
   if (log_tid >= 0)
