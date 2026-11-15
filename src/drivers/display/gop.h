@@ -35,6 +35,10 @@ struct gop_front_info {
 
 bool gop_user_owned(void);
 void gop_kernel_reclaim(void);
+bool gop_vt_owned(void);
+void gop_set_vt_owned(bool owned);
+void gop_vt_geometry(uint32_t *width, uint32_t *height);
+void gop_vt_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint32_t *src, uint32_t stride);
 void gop_set_user_owned(bool owned);
 bool gop_front_physical(struct gop_front_info *out);
 void gop_user_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h);

@@ -783,7 +783,7 @@ void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
 }
 
 void gop_put_pixel_front(uint32_t x, uint32_t y, uint32_t color){
-    if(front_user_owned) return;
+    if(front_blocked()) return;
     front_write_32(x, y, color);
 }
 
@@ -821,7 +821,7 @@ bool gop_draw_pixels(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
 }
 
 void gop_front_write_row(uint32_t x, uint32_t y, const uint32_t *pixels, uint32_t count){
-    if(front_user_owned) return;
+    if(front_blocked()) return;
     if(!gop.available || !gop.addr || !pixels || x>=gop.width || y>=gop.height) return;
     if(count>gop.width-x) count=gop.width-x;
     if(scale_active()){
