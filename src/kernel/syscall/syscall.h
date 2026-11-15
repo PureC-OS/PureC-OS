@@ -209,6 +209,9 @@
 #define SYS_CLOCK_ADJUST 407      /* (op CLOCK_ADJ_*, delta_ms, int64_t *previous|0) -> 0; root or SYS_TIME */
 #define SYS_NET_SOCKETS 408       /* (struct net_socket_entry *, capacity, offset) -> entries written */
 #define SYS_SYNC 410              /* () -> 0; write all dirty ext2 buffers to disk */
+#define SYS_GUI_START 411         /* () -> 0; root: start the graphical session on VT7 */
+#define SYS_VT_ACTIVATE 412       /* (index 0..5 text, 6 graphics) -> 0; root or the VT's own process */
+#define SYS_VT_ACTIVE 413         /* () -> active VT index, -1 without text consoles */
 #define SYS_RENAME_PATH 409       /* (old path, new path) -> 0; POSIX rename, replaces the target */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */

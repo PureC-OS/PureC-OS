@@ -1,6 +1,7 @@
 #include "../ipc/pty.h"
 #include "../../io/io_sched.h"
 #include "syscall.h"
+#include "../tty/vtcon.h"
 #include "../../drivers/audio/audio.h"
 #include "../../drivers/display/gop.h"
 #include "../../drivers/display/vga.h"
@@ -1925,6 +1926,30 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_SYNC:
     return vfs_sync() < 0 ? -KERR_IO : 0;
+  case SYS_GUI_START:
+  {
+    struct process *self = process_current();
+    if (!self || self->uid != 0)
+      return -KERR_PERM;
+    return vtcon_gui_start() < 0 ? -KERR_NODEV : 0;
+  }
+  case SYS_VT_ACTIVATE:
+  {
+    struct process *self = process_current();
+    if (!self)
+      return -KERR_PERM;
+    if (self->uid != 0)
+    {
+      int32_t object = fd_object(0);
+      int32_t pty_id;
+      bool master;
+      if (object < 0 || !ofd_pty_info(object, &pty_id, &master) || vtcon_index_of_pty(pty_id) < 0)
+        return -KERR_PERM;
+    }
+    return vtcon_activate((int32_t)a1) < 0 ? -KERR_BUSY : 0;
+  }
+  case SYS_VT_ACTIVE:
+    return vtcon_active();
   case SYS_RENAME_PATH:
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||

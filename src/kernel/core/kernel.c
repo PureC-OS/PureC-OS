@@ -1,3 +1,4 @@
+#include "../tty/vtcon.h"
 #include "../../drivers/mouse/vbox_mouse.h"
 #include "kernel.h"
 #include "../../arch/x86_64/fpu/include/fpu.h"
@@ -130,6 +131,7 @@ void kernel_main(struct limine_framebuffer *fb)
     }
   }
   (void)vbox_mouse_init();
+  vtcon_init();
   smp_start_all(smp_response_ptr);
   syscall_init();
   klog(KLOG_OK, "Syscall int 0x80 ready");

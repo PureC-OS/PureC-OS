@@ -68,6 +68,7 @@ C_SOURCES := \
 	kernel/process/fdtable.c \
 	kernel/process/ofd.c \
 	kernel/tty/tty.c \
+	kernel/tty/vtcon.c \
 	mm/pmm.c \
 	mm/shm.c \
 	mm/vmm.c \
@@ -94,6 +95,7 @@ C_SOURCES := \
 	drivers/display/gop.c \
 	drivers/display/display_owner.c \
 	drivers/display/console_vt.c \
+	drivers/display/vt_font.c \
 	gfx/compositor.c \
 	gfx/blit.c \
 	drivers/display/vbe.c \
