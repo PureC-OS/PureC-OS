@@ -24,11 +24,11 @@ serial: yes
     kernel_path: boot():/boot/kernel.elf
     kernel_cmdline: syscalls=cpu0
 
-/PureC OS 64-bit (Rust desktop, experimental)
+/PureC OS 64-bit (verbose kernel log on tty1)
     protocol: limine
     resolution: 1920x1080x32
     kernel_path: boot():/boot/kernel.elf
-    kernel_cmdline: desktop=rs
+    kernel_cmdline: verbose
     module_path: boot():/boot/kernel-fallback.elf
     module_path: boot():/EFI/BOOT/BOOTX64.EFI
 @MODULES@

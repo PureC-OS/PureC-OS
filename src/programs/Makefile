@@ -18,7 +18,6 @@ LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 PLAIN_SOURCES := \
 	init/main.c \
 	getty/main.c \
-	startgui/main.c \
 	nano/main.c \
 	nano/editor.c \
 	system/main.c \
@@ -133,7 +132,6 @@ LUA_OBJECTS := $(LUA_SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
 	$(PROGRAM_DIR)/getty \
-	$(PROGRAM_DIR)/startgui \
 	$(PROGRAM_DIR)/installer \
 	$(PROGRAM_DIR)/snake \
 	$(PROGRAM_DIR)/tetris \
@@ -307,10 +305,6 @@ $(PROGRAM_DIR)/init: $(OBJ_DIR)/init/main.o $(LIB_DIR)/crt0.o $(LIBPUREC) $(LINK
 $(PROGRAM_DIR)/getty: $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIB_DIR)/crt0.o $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPURECRYPT) $(LIBPUREC)
-
-$(PROGRAM_DIR)/startgui: $(OBJ_DIR)/startgui/main.o $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
 $(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/installer/progress.o $(OBJ_DIR)/installer/setup.o $(OBJ_DIR)/installer/ui.o $(OBJ_DIR)/installer/view.o $(OBJ_DIR)/installer/tz_link.o $(ACCOUNT_OBJECTS) $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)

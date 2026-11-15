@@ -6,4 +6,3 @@ tty3:respawn:/sbin/getty tty3
 tty4:respawn:/sbin/getty tty4
 tty5:respawn:/sbin/getty tty5
 tty6:respawn:/sbin/getty tty6
-gui:graphical:/sbin/startgui

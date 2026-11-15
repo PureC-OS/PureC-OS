@@ -7,10 +7,12 @@ SYNOPSIS
 DESCRIPTION
        chvt makes console N the one shown on the screen and the one that
        receives the keyboard. Consoles 1-6 are text consoles (/dev/tty1 ..
-       /dev/tty6), console 7 is the graphical session once it has started.
+       /dev/tty6), console 7 is the screen of a userspace display server
+       while one holds it (SYS_DISPLAY_CLAIM).
 
        The same switch is available from the keyboard: Ctrl+Alt+F1 .. F6
-       for the text consoles and Ctrl+Alt+F7 for the graphics. On a text
+       for the text consoles and Ctrl+Alt+F7 for the graphics. While a
+       display server holds the screen, switching to text is refused. On a text
        console Alt+F1 .. F7 works without Ctrl.
 
        root may switch to any console. Other users may switch only from a

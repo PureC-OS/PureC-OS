@@ -16,14 +16,14 @@ export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
 .PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-compositor test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-window-manager test-malloc test-fenv
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-malloc test-fenv
 	@echo "All host tests passed"
 
 test-malloc:
@@ -217,17 +217,7 @@ test-vfs-perm:
 		-o $(BIN_DIR)/tests/vfs_perm_test
 	$(BIN_DIR)/tests/vfs_perm_test
 
-test-compositor:
-	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
-		tests/compositor_test.c src/gfx/compositor.c src/gfx/blit.c -o $(BIN_DIR)/tests/compositor_test
-	$(BIN_DIR)/tests/compositor_test
 
-test-window-manager:
-	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
-		tests/window_manager_test.c src/userspace/window_manager.c -o $(BIN_DIR)/tests/window_manager_test
-	$(BIN_DIR)/tests/window_manager_test
 
 test-blit:
 	@mkdir -p $(BIN_DIR)/tests

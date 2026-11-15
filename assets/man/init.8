@@ -1,5 +1,5 @@
 NAME
-       init - first process, starts consoles and the graphical session
+       init - first process, starts the text consoles
 
 SYNOPSIS
        /sbin/init
@@ -25,13 +25,13 @@ DESCRIPTION
            like once, skipped when the kernel command line contains text,
            single, nogui or 3
 
-       Without /etc/inittab init runs getty on tty1-tty6 and /sbin/startgui.
+       Without /etc/inittab init runs getty on tty1-tty6. The kernel itself
+       starts no graphics; a display server is just another program that
+       init (or a service manager started by init) may run.
 
 KERNEL COMMAND LINE
        text
-           stay on the text consoles, do not start graphics
-       gui=kernel
-           the kernel starts the desktop itself during boot
+           skip inittab entries with the graphical action
        verbose, loglevel=7
            keep printing all kernel messages on tty1 after login starts;
            by default only warnings and errors are shown there
@@ -40,4 +40,4 @@ FILES
        /etc/inittab, /proc/cmdline
 
 SEE ALSO
-       getty(8), startgui(8), chvt(1)
+       getty(8), chvt(1)

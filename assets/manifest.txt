@@ -23,7 +23,6 @@
 # --- core programs (required) ---
 /sbin/init /sbin/init - 1 bin/programs/init
 /sbin/getty /sbin/getty - 1 bin/programs/getty
-/sbin/startgui /sbin/startgui - 1 bin/programs/startgui
 /sbin/installer /sbin/installer - 1 bin/programs/installer
 /usr/games/snake /usr/games/snake - 1 bin/programs/snake
 /usr/bin/terminal /usr/bin/terminal - 1 bin/programs/terminal
@@ -161,7 +160,6 @@
 /usr/share/man/tty.1 /usr/share/man/tty.1 - 0 assets/man/tty.1
 /usr/share/man/getty.8 /usr/share/man/getty.8 - 0 assets/man/getty.8
 /usr/share/man/init.8 /usr/share/man/init.8 - 0 assets/man/init.8
-/usr/share/man/startgui.8 /usr/share/man/startgui.8 - 0 assets/man/startgui.8
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
 /usr/share/man/uptime.1 /usr/share/man/uptime.1 - 0 assets/man/uptime.1
 /usr/share/man/sleep.1 /usr/share/man/sleep.1 - 0 assets/man/sleep.1

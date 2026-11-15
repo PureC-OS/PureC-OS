@@ -37,8 +37,7 @@ static const char default_inittab[] =
     "tty3:respawn:/sbin/getty tty3\n"
     "tty4:respawn:/sbin/getty tty4\n"
     "tty5:respawn:/sbin/getty tty5\n"
-    "tty6:respawn:/sbin/getty tty6\n"
-    "gui:graphical:/sbin/startgui\n";
+    "tty6:respawn:/sbin/getty tty6\n";
 
 static long long now_ms(void)
 {
