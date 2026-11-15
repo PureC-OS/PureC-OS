@@ -940,9 +940,6 @@ int64_t syscall_handler(struct syscall_regs *r)
       vtcon_console_write(s, (uint32_t)len);
     return (int64_t)len;
   }
-  }
-  }
-  }
   case SYS_FB_INFO:
   {
     struct framebuffer_info *info = (struct framebuffer_info *)(uintptr_t)a1;
@@ -959,7 +956,6 @@ int64_t syscall_handler(struct syscall_regs *r)
             sizeof(info->protocol_name) - 1);
     return 0;
   }
-  }
 
   case SYS_DISPLAY_SCALE_INFO:
   {
@@ -972,10 +968,6 @@ int64_t syscall_handler(struct syscall_regs *r)
     info->scale_percent = gop_get_scale_percent();
     info->reserved = 0;
     return 0;
-  }
-  }
-  }
-  }
   }
   case SYS_TTY_READ:
     if (a2 > 0x7FFFFFFFULL || !writable((void *)(uintptr_t)a1, a2))
@@ -1197,7 +1189,6 @@ int64_t syscall_handler(struct syscall_regs *r)
       memcpy((void *)(uintptr_t)a2, ready, (uint32_t)count * sizeof(ready[0]));
     return count;
   }
-  }
   case SYS_GETPID:
     return process_current_pid();
   case SYS_GETRANDOM:
@@ -1206,8 +1197,6 @@ int64_t syscall_handler(struct syscall_regs *r)
       return -1;
     krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
     return (int64_t)a2;
-  }
-  }
   }
   case SYS_TIME_GET:
   {
@@ -1751,7 +1740,6 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_SYNC:
     return vfs_sync() < 0 ? -KERR_IO : 0;
-  }
   case SYS_VT_ACTIVATE:
   {
     struct process *self = process_current();
