@@ -13,6 +13,7 @@
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/tty/tty.h"
 #include "console_vt.h"
+#include "../../kernel/tty/vtcon.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -22,6 +23,8 @@ static struct gop_state gop = {0};
 static uint32_t scale_num = 1, scale_den = 1;
 static uint32_t phys_w, phys_h;
 static volatile bool front_user_owned;
+static volatile bool front_vt_owned;
+static inline bool front_blocked(void){ return front_user_owned || front_vt_owned; }
 static volatile uint32_t front_generation;
 static void dirty_expand(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 static uint32_t xmap_tab[GOP_MAX_PHYS_W];
@@ -53,7 +56,7 @@ static void write_scaled_span(uint32_t ly, uint32_t lx0, const uint32_t *src,
 }
 
 void gop_front_notify(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
-    if(front_user_owned) return;
+    if(front_blocked()) return;
     if(!svga_is_available() || !w || !h) return;
     if(!scale_active()){ svga_update(x,y,w,h); return; }
     uint32_t px0=scale_up(x), py0=scale_up(y);
@@ -323,6 +326,7 @@ bool gop_apply_live(void *address, uint32_t width, uint32_t height,
     cur_x=12; cur_y=12; fg=0xCDD6F4; bg=0x000000;
     front_clear_physical();
     surface_reset();
+    vtcon_display_changed();
     return true;
 }
 
@@ -335,7 +339,52 @@ void gop_retarget_front(void *address, uint32_t pitch_pixels){
 
 bool gop_user_owned(void){ return front_user_owned; }
 
-void gop_kernel_reclaim(void){ front_user_owned=false; }
+void gop_kernel_reclaim(void){ front_user_owned=false; front_vt_owned=false; }
+
+bool gop_vt_owned(void){ return front_vt_owned; }
+
+void gop_set_vt_owned(bool owned){
+    if(front_vt_owned==owned) return;
+    front_vt_owned=owned;
+    if(!owned && !front_user_owned && gop.available && backbuffer){
+        dirty_expand(0,0,gop.width,gop.height);
+        gop_present_forced();
+        gop_front_notify(0,0,gop.width,gop.height);
+    }
+}
+
+void gop_vt_geometry(uint32_t *width, uint32_t *height){
+    *width=gop.available && gop.addr ? phys_w : 0;
+    *height=gop.available && gop.addr ? phys_h : 0;
+}
+
+void gop_vt_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                 const uint32_t *src, uint32_t stride){
+    if(front_user_owned || !gop.available || !gop.addr || !w || !h) return;
+    if(x>=phys_w || y>=phys_h) return;
+    if(w>phys_w-x) w=phys_w-x;
+    if(h>phys_h-y) h=phys_h-y;
+    for(uint32_t row=0;row<h;row++){
+        const uint32_t *line=&src[(uint64_t)(y+row)*stride+x];
+        if(gop.bpp==32){
+            memcpy(&gop.addr[(uint64_t)(y+row)*gop.pitch+x],line,(uint64_t)w*4);
+        }else if(gop.bpp==24){
+            uint8_t *dst=(uint8_t*)gop.addr+(uint64_t)(y+row)*gop.pitch*3+(uint64_t)x*3;
+            for(uint32_t i=0;i<w;i++){
+                dst[i*3+0]=(uint8_t)(line[i]&0xFF);
+                dst[i*3+1]=(uint8_t)((line[i]>>8)&0xFF);
+                dst[i*3+2]=(uint8_t)((line[i]>>16)&0xFF);
+            }
+        }else if(gop.bpp==16){
+            uint16_t *dst=(uint16_t*)gop.addr+(uint64_t)(y+row)*gop.pitch+x;
+            for(uint32_t i=0;i<w;i++){
+                uint32_t c=line[i];
+                dst[i]=(uint16_t)((((c>>19)&0x1F)<<11)|(((c>>10)&0x3F)<<5)|((c>>3)&0x1F));
+            }
+        }
+    }
+    if(svga_is_available()) svga_update(x,y,w,h);
+}
 
 void gop_set_user_owned(bool owned){
     if(front_user_owned==owned) return;
@@ -627,7 +676,7 @@ bool gop_flush_needed(void){
 }
 
 static void gop_present_nolock(void){
-    if(front_user_owned) return;
+    if(front_blocked()) return;
     if(!gop.available || !gop.addr || !backbuffer) return;
     if(!dirty_valid) return;
     if(dirty_x0>=gop.width || dirty_y0>=gop.height){
@@ -684,7 +733,7 @@ static void gop_present_nolock(void){
 }
 
 void gop_copy_back_to_front(uint32_t x, uint32_t y, uint32_t w, uint32_t h){
-    if(front_user_owned) return;
+    if(front_blocked()) return;
     if(!gop.available || !gop.addr || !backbuffer || !w || !h) return;
     if(x>=gop.width || y>=gop.height) return;
     if(x+w>gop.width) w=gop.width-x;
