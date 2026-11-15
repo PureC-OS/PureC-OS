@@ -48,7 +48,7 @@ void localdb_load(void);
 int localdb_find(const char *name);
 char **localdb_files(const struct pkg_info *p, int *count);
 void free_list(char **list, int count);
-int localdb_write(const struct pkg_info *p, char **files, int count, const char *hook_dir);
+int localdb_write(const struct pkg_info *p, char **files, int count);
 void localdb_remove(const struct pkg_info *p);
 const char *localdb_owner(const char *path);
 void owners_invalidate(void);
@@ -74,3 +74,9 @@ int tx_install(char **targets, int count, int local_files);
 int tx_remove(char **targets, int count, int recursive);
 int tx_upgrade(int refresh_only_check);
 int list_upgrades(int quiet);
+
+#define SIG_OK 0
+#define SIG_BAD (-1)
+#define SIG_NOKEYS (-2)
+
+int sig_verify_file(const char *file, const char *signature_file);
