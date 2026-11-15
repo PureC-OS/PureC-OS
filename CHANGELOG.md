@@ -2,6 +2,22 @@
 
 ## V2.0.0 переход на сетевой стек в userspace и время в userspace
 
+### initramfs: без графики, без отладочной информации, с жёсткими ссылками
+Стола в ядре больше нет, поэтому из `assets/manifest.txt` убрано всё, чему нужна графика (87 записей). `assets/manifest-new.txt` не тронут, это запасной вариант.
+
+**Убрано**
+- Программы на libgui: installer, login, terminal, settings, files, monitor, disks, devmgr, logview, hexedit, notepad, imgview, nano, raminfo, gui-demo, игры (snake, tetris, puzzle15, 2048).
+- SDL, GL и браузер: sdltest, gltest, doom с `freedoom1.wad`, netsurf вместе с ресурсами из `/usr/local/share/netsurf`, qt-terminal.
+- Rust-стол: desktop-rs, apps-demo-rs. Также pl.
+- Данные стола: обои `/usr/share/wallpapers`, иконки `/usr/share/icons`, `/usr/share/applications`, TTF-шрифты, звуки игр, demo-картинки, `libpuregui.a`, `libpguiw.a` и их заголовки, `terminal.1`.
+- Самотест VFS теперь проверяет `/bin/sh` и `/sbin/getty` вместо терминала и `/usr/share/applications`. Убран алиас `/walpaper`.
+
+**Сборка образа (`mk/gen_assets.py`)**
+- С ELF-файлов в initramfs снимается отладочная информация (`strip --strip-debug`, таблица символов остаётся). Модули ядра, `.o` и `.a` не трогаются. Полные бинарники остаются в `bin/programs` для `addr2line`. Кэш лежит в `bin/staged/strip-cache`.
+- Файлы с одинаковым содержимым (`/bin/cp` и `/usr/bin/cp`, `/bin/sh` и `/usr/bin/sh`, git в двух местах, `git-remote-http`/`-https` и т.д.) пишутся в cpio один раз, остальные — жёсткими ссылками (общий inode и nlink, данные в первой записи, как у Linux).
+
+**Ядро (`src/fs/initramfs.c`)**: читает inode и nlink из заголовка newc. Записи-ссылки без данных получают данные основной записи. `ls` показывает у ссылок настоящий размер. Хост-тест `test-initramfs` проверяет ссылки.
+
 ### Консоль: прокрутка, кириллица, вход через getty
 - При прокрутке освободившиеся строки не очищались, и новый текст ложился поверх копии старой строки. Теперь `op_scroll` в `vtcon.c` заливает их фоном.
 - UTF-8 выводился побайтово глифами CP437 (мусор справа). Шрифт заменён на `Cyr_a8x16` (VGA 8×16 с кириллицей и псевдографикой). Консоль декодирует UTF-8 в глифы шрифта по таблице Unicode, которую строит `mk/gen_vt_font.py`. Символы, которых в шрифте нет, выводятся как `?`.
