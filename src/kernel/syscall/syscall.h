@@ -101,32 +101,30 @@
 #define SYS_DIR_LIST_LONG 288
 #define SYS_IPC_SEND 291
 #define SYS_IPC_RECV 292
-/* TCP sockets. a1 packs handle (low 32 bits) | timeout_ms << 32 where the
- * call can block; timeout 0 = never block, 0xFFFFFFFF = wait forever. */
-#define SYS_TCP_SOCKET 300  /* () -> handle */
-#define SYS_TCP_CONNECT 301 /* (handle|timeout<<32, ipv4, port) */
-#define SYS_TCP_LISTEN 302  /* (handle, port, backlog) */
-#define SYS_TCP_ACCEPT 303  /* (handle|timeout<<32) -> new handle */
-#define SYS_TCP_SEND 304    /* (handle|timeout<<32, buf, len) -> bytes */
-#define SYS_TCP_RECV 305    /* (handle|timeout<<32, buf, len) -> bytes, 0=EOF */
-#define SYS_TCP_CLOSE 306   /* (handle) */
-#define SYS_TCP_ABORT 307   /* (handle) send RST and release */
-#define SYS_TCP_INFO 308    /* (handle, struct net_tcp_info *) */
+#define SYS_TCP_SOCKET 300
+#define SYS_TCP_CONNECT 301
+#define SYS_TCP_LISTEN 302
+#define SYS_TCP_ACCEPT 303
+#define SYS_TCP_SEND 304
+#define SYS_TCP_RECV 305
+#define SYS_TCP_CLOSE 306
+#define SYS_TCP_ABORT 307
+#define SYS_TCP_INFO 308
 #define SYS_GETUID 309
 #define SYS_GETGID 310
 #define SYS_SETUID 311
 #define SYS_SETGID 312
-#define SYS_CHMOD 313       /* (path, mode) */
-#define SYS_CHOWN 314       /* (path, uid, gid) */
-#define SYS_FILE_PERM 315   /* (path, struct file_perm_info *) */
-#define SYS_USER_LOOKUP 316 /* (name|NULL, uid, struct user_info *) */
-#define SYS_GETRANDOM 317   /* (buf, len) -> len */
-#define SYS_SESSION_BEGIN 318 /* (uid, gid), root only */
-#define SYS_TIME_GET 319      /* (struct time_info *) */
-#define SYS_TIME_SET 320      /* (unix_seconds, tz_minutes), root only */
-#define SYS_FILE_STAT_EX 321  /* (path, struct file_stat_ex *) */
-#define SYS_FB_BLIT 322       /* (struct fb_blit_request *) */
-#define SYS_KEY_EVENT_GET 323 /* (struct key_event *) -> 1 event, 0 empty */
+#define SYS_CHMOD 313
+#define SYS_CHOWN 314
+#define SYS_FILE_PERM 315
+#define SYS_USER_LOOKUP 316
+#define SYS_GETRANDOM 317
+#define SYS_SESSION_BEGIN 318
+#define SYS_TIME_GET 319
+#define SYS_TIME_SET 320
+#define SYS_FILE_STAT_EX 321
+#define SYS_FB_BLIT 322
+#define SYS_KEY_EVENT_GET 323
 #define SYS_EXECVE 324
 #define SYS_WAITPID 325
 #define SYS_PIPE 326
@@ -149,77 +147,77 @@
 #define SYS_FD_PATH 343
 #define SYS_FD_SEEK 344
 #define SYS_FD_TRUNCATE 345
-#define SYS_DESKTOP_CLAIM 346 /* () -> 0, root only, desktop=rs session */
-#define SYS_DESKTOP_BLIT 347  /* (struct fb_blit_request *) into desktop layer */
-#define SYS_DESKTOP_WAIT 348  /* (timeout_ms) -> RS_WAIT_* bits */
-#define SYS_DESKTOP_WM 349    /* (op, arg1, arg2) */
-#define SYS_GUI_WINDOW_INFO 350  /* (struct gui_window_info *) */
-#define SYS_GUI_WINDOW_FLAGS 351 /* (GUI_WINDOW_FLAG_*) */
-#define SYS_GUI_WINDOW_CMD 352   /* (GUI_WINDOW_CMD_*) */
-#define SYS_GUI_WINDOW_TITLE 353 /* (const char *title) */
-#define SYS_TTY_READ 354         /* (buffer, count) -> bytes, console input */
-#define SYS_TTY_IOCTL 355        /* (TTY_* request, argument pointer) */
-#define SYS_POLL 356             /* (struct kernel_pollfd *, count, timeout_ms) */
-#define SYS_MMAP 357             /* (struct kernel_mmap_args *) -> address */
-#define SYS_MUNMAP 358           /* (address, length) */
-#define SYS_MPROTECT 359         /* (address, length, KMAP_PROT_*) */
-#define SYS_MREMAP 360           /* (old, old_len, new_len, KMAP_REMAP_*) -> address */
-#define SYS_DISPLAY_SCALE_INFO 361 /* (struct display_scale_info *) */
-#define SYS_SOCKET 362       /* (domain, type|flags, protocol) -> fd */
-#define SYS_CONNECT 363      /* (fd, sockaddr *, len) */
-#define SYS_BIND 364         /* (fd, sockaddr *, len) */
-#define SYS_LISTEN 365       /* (fd, backlog) */
-#define SYS_ACCEPT 366       /* (fd, sockaddr *, socklen_t *, flags) -> fd */
-#define SYS_SOCK_SHUTDOWN 367    /* (fd, how) */
-#define SYS_SOCKNAME 368     /* (fd, sockaddr *, socklen_t *, peer) */
-#define SYS_SETSOCKOPT 369   /* (fd, level<<32|name, value *, len) */
-#define SYS_GETSOCKOPT 370   /* (fd, level<<32|name, value *, len *) */
-#define SYS_DNS_RESOLVE 371  /* (name, timeout_ms, uint32_t *ipv4_be) */
-#define SYS_SOCK_SEND 372    /* (fd, buf, len, msg_flags) */
-#define SYS_SOCK_RECV 373    /* (fd, buf, len, msg_flags) */
-#define SYS_UTIMES 374       /* (path, atime, mtime), 0xFFFFFFFF = now */
-#define SYS_THREAD_CREATE 375 /* (struct kernel_thread_args *) -> tid */
-#define SYS_THREAD_EXIT 376   /* (unmap_address, unmap_length), no return */
-#define SYS_FUTEX 377         /* (FUTEX_*, uaddr, value, timeout_ms in rsi) */
-#define SYS_SET_FS_BASE 378   /* (base) -> 0 */
-#define SYS_GETTID 379        /* () -> tid */
-#define SYS_EVENTFD 380          /* (initial, EFD_* flags) -> fd */
-#define SYS_TIMERFD_CREATE 381   /* (clock_id, TFD_* flags) -> fd */
-#define SYS_TIMERFD_SETTIME 382  /* (fd, flags, new itimerspec *, old itimerspec * in rsi) */
-#define SYS_TIMERFD_GETTIME 383  /* (fd, itimerspec *) */
-#define SYS_EPOLL_CREATE 384     /* (EPOLL_CLOEXEC flag) -> fd */
-#define SYS_EPOLL_CTL 385        /* (epfd, op, fd, struct epoll_event * in rsi) */
-#define SYS_EPOLL_WAIT 386       /* (epfd, events *, max, timeout_ms in rsi) */
-#define SYS_SOCKETPAIR 387       /* (domain, type|flags, protocol, int fds[2] in rsi) */
-#define SYS_SENDMSG 388          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
-#define SYS_RECVMSG 389          /* (fd, struct kernel_msghdr *, msg_flags) -> bytes */
-#define SYS_MEMFD_CREATE 390     /* (name, flags) -> fd */
-#define SYS_SHM_OPEN 391         /* (name, O_* flags) -> fd */
-#define SYS_SHM_UNLINK 392       /* (name) */
-#define SYS_MADVISE 393          /* (address, length, advice) */
-#define SYS_DISPLAY_CLAIM 398     /* () -> 0; caller (PROCESS_CAP_DISPLAY or root) owns the screen */
-#define SYS_FB_MAP 399            /* (struct fb_map_info *) -> 0; maps the front framebuffer */
-#define SYS_INPUT_OPEN 400        /* () -> fd delivering struct input_record */
-#define SYS_FB_DAMAGE 401         /* (x, y, w, h) -> 0; flush a front-buffer rect to the device */
-#define SYS_DISPLAY_RELEASE 402   /* () -> 0; give the screen back to the kernel */
-#define SYS_SENDTO 403            /* (fd, buf, len, flags, const sockaddr_in *dst|0) -> bytes */
-#define SYS_RECVFROM 404          /* (fd, buf, len, flags, sockaddr_in *src|0) -> bytes */
-#define SYS_NET_CONFIGURE 405     /* (const struct net_if_config *) -> 0; root or NET_ADMIN */
-#define SYS_KLOG_WRITE 406        /* (level 0..3, const char *message) -> 0; appends to the kernel journal */
-#define SYS_CLOCK_ADJUST 407      /* (op CLOCK_ADJ_*, delta_ms, int64_t *previous|0) -> 0; root or SYS_TIME */
-#define SYS_NET_SOCKETS 408       /* (struct net_socket_entry *, capacity, offset) -> entries written */
-#define SYS_SYNC 410              /* () -> 0; write all dirty ext2 buffers to disk */
-#define SYS_GUI_START 411         /* () -> 0; root: start the graphical session on VT7 */
-#define SYS_VT_ACTIVATE 412       /* (index 0..5 text, 6 graphics) -> 0; root or the VT's own process */
-#define SYS_VT_ACTIVE 413         /* () -> active VT index, -1 without text consoles */
-#define SYS_DISK_IO 414           /* (struct disk_io_request *) -> sectors; root or STORAGE_ADMIN */
-#define SYS_RENAME_PATH 409       /* (old path, new path) -> 0; POSIX rename, replaces the target */
-#define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
-#define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
-#define SYS_TIME_ZONE 395        /* (op, name buffer, capacity): 0 get, 1 set (root) */
+#define SYS_DESKTOP_CLAIM 346
+#define SYS_DESKTOP_BLIT 347
+#define SYS_DESKTOP_WAIT 348
+#define SYS_DESKTOP_WM 349
+#define SYS_GUI_WINDOW_INFO 350
+#define SYS_GUI_WINDOW_FLAGS 351
+#define SYS_GUI_WINDOW_CMD 352
+#define SYS_GUI_WINDOW_TITLE 353
+#define SYS_TTY_READ 354
+#define SYS_TTY_IOCTL 355
+#define SYS_POLL 356
+#define SYS_MMAP 357
+#define SYS_MUNMAP 358
+#define SYS_MPROTECT 359
+#define SYS_MREMAP 360
+#define SYS_DISPLAY_SCALE_INFO 361
+#define SYS_SOCKET 362
+#define SYS_CONNECT 363
+#define SYS_BIND 364
+#define SYS_LISTEN 365
+#define SYS_ACCEPT 366
+#define SYS_SOCK_SHUTDOWN 367
+#define SYS_SOCKNAME 368
+#define SYS_SETSOCKOPT 369
+#define SYS_GETSOCKOPT 370
+#define SYS_DNS_RESOLVE 371
+#define SYS_SOCK_SEND 372
+#define SYS_SOCK_RECV 373
+#define SYS_UTIMES 374
+#define SYS_THREAD_CREATE 375
+#define SYS_THREAD_EXIT 376
+#define SYS_FUTEX 377
+#define SYS_SET_FS_BASE 378
+#define SYS_GETTID 379
+#define SYS_EVENTFD 380
+#define SYS_TIMERFD_CREATE 381
+#define SYS_TIMERFD_SETTIME 382
+#define SYS_TIMERFD_GETTIME 383
+#define SYS_EPOLL_CREATE 384
+#define SYS_EPOLL_CTL 385
+#define SYS_EPOLL_WAIT 386
+#define SYS_SOCKETPAIR 387
+#define SYS_SENDMSG 388
+#define SYS_RECVMSG 389
+#define SYS_MEMFD_CREATE 390
+#define SYS_SHM_OPEN 391
+#define SYS_SHM_UNLINK 392
+#define SYS_MADVISE 393
+#define SYS_DISPLAY_CLAIM 398
+#define SYS_FB_MAP 399
+#define SYS_INPUT_OPEN 400
+#define SYS_FB_DAMAGE 401
+#define SYS_DISPLAY_RELEASE 402
+#define SYS_SENDTO 403
+#define SYS_RECVFROM 404
+#define SYS_NET_CONFIGURE 405
+#define SYS_KLOG_WRITE 406
+#define SYS_CLOCK_ADJUST 407
+#define SYS_NET_SOCKETS 408
+#define SYS_SYNC 410
+#define SYS_GUI_START 411
+#define SYS_VT_ACTIVATE 412
+#define SYS_VT_ACTIVE 413
+#define SYS_DISK_IO 414
+#define SYS_RENAME_PATH 409
+#define SYS_SUDO 397
+#define SYS_OPENPTY 396
+#define SYS_TIME_ZONE 395
 #define TIME_ZONE_GET 0
 #define TIME_ZONE_SET 1
-#define SYS_SIGALTSTACK 394      /* (const struct kernel_stack *, struct kernel_stack *old) */
+#define SYS_SIGALTSTACK 394
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
