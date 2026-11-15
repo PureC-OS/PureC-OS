@@ -391,20 +391,9 @@ $(PROGRAM_DIR)/eat: $(OBJ_DIR)/utils/test/eat/main.o $(LIBPUREC) $(LINKER_SCRIPT
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
 
-
-
-
-
-
-
-
 $(PROGRAM_DIR)/mkfs: $(OBJ_DIR)/utils/mkfs/mkfs.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-
-
-
 
 $(PROGRAM_DIR)/battery: $(OBJ_DIR)/battery/battery.o $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
