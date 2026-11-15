@@ -1,3 +1,4 @@
+#include "../ipc/pty.h"
 #include "../sync/mutex.h"
 static mutex_t process_mutex;
 #include "../../drivers/display/gop.h"
@@ -584,6 +585,15 @@ static uint32_t spawn_parent_pid(const struct process *self)
 }
 
 static bool session_active;
+
+static bool process_on_text_console(const struct process *process)
+{
+  int32_t pty_id;
+  bool master;
+  if (process->descriptors[0] < 0 || !ofd_pty_info(process->descriptors[0], &pty_id, &master) || master)
+    return false;
+  return pty_is_kernel(pty_id);
+}
 static uint32_t session_uid;
 static uint32_t session_gid;
 
@@ -680,7 +690,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   process->sig_blocked = 0;
   process->uid = parent ? parent->uid : 0;
   process->gid = parent ? parent->gid : 0;
-  if (session_active && parent && parent->uid == 0 && parent->pid != 1)
+  if (session_active && parent && parent->uid == 0 && parent->pid != 1 &&
+      !process_on_text_console(parent))
   {
     process->uid = session_uid;
     process->gid = session_gid;
