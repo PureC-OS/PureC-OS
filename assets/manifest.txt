@@ -173,6 +173,7 @@
 /usr/share/man/mkfs.8 /usr/share/man/mkfs.8 - 0 assets/man/mkfs.8
 /usr/share/man/fdisk.8 /usr/share/man/fdisk.8 - 0 assets/man/fdisk.8
 /usr/share/man/iwxctl.8 /usr/share/man/iwxctl.8 - 0 assets/man/iwxctl.8
+/usr/share/man/blkid.8 /usr/share/man/blkid.8 - 0 assets/man/blkid.8
 /usr/share/man/sh.1 /usr/share/man/sh.1 - 0 assets/man/sh.1
 /usr/share/man/intro.1 /usr/share/man/intro.1 - 0 assets/man/intro.1
 /usr/share/man/egrep.1 /usr/share/man/egrep.1 - 0 assets/man/grep.1
@@ -186,6 +187,7 @@
 /sbin/mkfs /sbin/mkfs - 1 bin/programs/mkfs
 /sbin/fdisk /sbin/fdisk - 1 bin/programs/fdisk
 /usr/bin/iwxctl /usr/bin/iwxctl - 1 bin/programs/iwxctl
+/sbin/blkid /sbin/blkid - 1 bin/programs/blkid
 /bin/echo-dyn /bin/echo-dyn - 0 bin/programs/echo-dyn
 /bin/dltest-dyn /bin/dltest-dyn - 0 bin/programs/dltest-dyn
 /bin/battery /bin/battery - 1 bin/programs/battery

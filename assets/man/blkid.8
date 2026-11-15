@@ -1,0 +1,32 @@
+NAME
+       blkid - show partitions, file system types and UUIDs
+
+SYNOPSIS
+       **blkid** [__DEVICE__...]
+       **blkid** **-U** __UUID__
+
+DESCRIPTION
+       **blkid** reads the partition tables and the file system headers of
+       every disk and prints one line per partition:
+
+           /dev/sda1: LABEL="PUREC-ESP" UUID="2118-8683" TYPE="vfat" PARTUUID="..."
+
+       **UUID** identifies the file system. For ext2 it is the 128-bit value
+       written by **mkfs**(8) into the superblock; for FAT32 it is the
+       volume serial number. **PARTUUID** is the GUID of the GPT entry made
+       by **fdisk**(8).
+
+       With device names only those partitions are shown. A **/dev/** prefix
+       is accepted.
+
+       With **-U** the command prints the name of the partition whose file
+       system has the given UUID, nothing else. This is what the installer
+       and the boot configuration use to find the root partition.
+
+       The command needs root rights (it reads the disks directly).
+
+EXIT STATUS
+       0 something was found, 2 nothing was found, 1 on error.
+
+SEE ALSO
+       fdisk(8), mkfs(8)
