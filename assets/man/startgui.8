@@ -1,0 +1,14 @@
+NAME
+       startgui - start the graphical session
+
+SYNOPSIS
+       startgui
+
+DESCRIPTION
+       startgui asks the kernel to start the desktop and the graphical login
+       on virtual console 7 and switches the screen there. If the session is
+       already running it only switches to it. Only root may run it; init(8)
+       runs it at boot unless the kernel command line contains text.
+
+SEE ALSO
+       init(8), chvt(1)

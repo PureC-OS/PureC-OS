@@ -1,0 +1,28 @@
+NAME
+       getty - log in on a text console
+
+SYNOPSIS
+       getty [--noclear] ttyN
+
+DESCRIPTION
+       getty opens /dev/ttyN, makes it standard input, output and error,
+       prints /etc/issue (or a default banner) and asks for a user name and
+       a password. The password is checked against /etc/shadow. On success
+       getty switches to the user's uid and gid, changes to the home
+       directory, prints /etc/motd and starts the login shell from
+       /etc/passwd.
+
+       On a live system without /etc/shadow any name logs in as root.
+
+       After three wrong passwords getty exits and init(8) starts a new one.
+       In /etc/issue \n is replaced by the host name and \l by the tty name.
+
+OPTIONS
+       --noclear
+           do not clear the screen first (used on tty1 to keep the boot log)
+
+FILES
+       /etc/issue, /etc/motd, /etc/passwd, /etc/shadow
+
+SEE ALSO
+       init(8), chvt(1)
