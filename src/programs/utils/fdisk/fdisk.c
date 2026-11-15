@@ -194,13 +194,23 @@ static bool parse_header(struct disk *d, const uint8_t *hdr, uint64_t lba)
     return true;
 }
 
+static const char *short_name(const char *name)
+{
+    return strncmp(name, "/dev/", 5) == 0 ? name + 5 : name;
+}
+
+static bool same_disk(const char *a, const char *b)
+{
+    return strcmp(short_name(a), short_name(b)) == 0;
+}
+
 static bool load(struct disk *d, const char *name)
 {
     struct storage_device_info list[MAX_DISKS];
     int32_t n = pc_list_disks(list, MAX_DISKS);
     bool found = false;
     for (int32_t i = 0; i < n; i++)
-        if (strcmp(list[i].name, name) == 0) {
+        if (same_disk(list[i].name, name)) {
             d->info = list[i];
             found = true;
         }
@@ -610,7 +620,7 @@ static void help(void)
 static bool is_root_disk(const char *name)
 {
     char root[32];
-    return pc_get_root_device(root, sizeof(root)) >= 0 && strcmp(root, name) == 0;
+    return pc_get_root_device(root, sizeof(root)) >= 0 && same_disk(root, name);
 }
 
 static int interactive(const char *name)
@@ -700,7 +710,7 @@ static int list_all(int argc, char **argv, int first)
     for (int32_t i = 0; i < n; i++) {
         bool wanted = first >= argc;
         for (int a = first; a < argc; a++)
-            if (strcmp(argv[a], list[i].name) == 0)
+            if (same_disk(argv[a], list[i].name))
                 wanted = true;
         if (!wanted)
             continue;
@@ -730,10 +740,7 @@ int main(int argc, char **argv)
         return 0;
     }
     if (argc == 2 && argv[1][0] != '-') {
-        const char *name = argv[1];
-        if (!strncmp(name, "/dev/", 5))
-            name += 5;
-        return interactive(name);
+        return interactive(argv[1]);
     }
     return util_err("usage: fdisk -l [DISK...] | fdisk DISK");
 }
