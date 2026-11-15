@@ -1,6 +1,7 @@
 #include "vfs_backends.h"
 #include "vfs.h"
 #include "../arch/x86_64/idt/include/idt.h"
+#include "../boot/boot_options.h"
 #include "../drivers/interrupts/timer.h"
 #include "../io/storage/block_device.h"
 #include "../io/storage/storage_types.h"
@@ -58,6 +59,12 @@ static void emit(struct pbuf *out, const char *format, ...) {
 static void generate_version(struct pbuf *out, uint32_t pid) {
   (void)pid;
   emit(out, "PureC OS kernel 2.0.0 (x86_64)\n");
+}
+
+static void generate_cmdline(struct pbuf *out, uint32_t pid) {
+  (void)pid;
+  const char *cmd = boot_cmdline();
+  emit(out, "%s\n", cmd ? cmd : "");
 }
 
 static void generate_uptime(struct pbuf *out, uint32_t pid) {
@@ -251,6 +258,7 @@ static void generate_pid_cwd(struct pbuf *out, uint32_t pid) {
 
 static const struct proc_entry root_entries[] = {
     {"version", generate_version},       {"uptime", generate_uptime},
+    {"cmdline", generate_cmdline},
     {"meminfo", generate_meminfo},       {"cpuinfo", generate_cpuinfo},
     {"stat", generate_stat},
     {"mounts", generate_mounts},         {"interrupts", generate_interrupts},
