@@ -41,10 +41,9 @@ void init_process_start(void)
   }
   klog(KLOG_OK, "process: /bin/init started as PID 1");
 
-  if (vtcon_ready())
-    vtcon_start_thread();
-  else
-    klog(KLOG_ERROR, "vtcon: no text console, input is not polled");
+  if (!vtcon_ready())
+    klog(KLOG_WARN, "vtcon: no framebuffer text console");
+  vtcon_start_thread();
   boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
                        "init and consoles ready, starting scheduler");
 
