@@ -353,16 +353,18 @@ static bool alloc_shadow(uint32_t w, uint32_t h, uint32_t **out, uint64_t *phys,
 
 static void replay_boot_log(void)
 {
-    char buf[512];
-    uint64_t pos = 0;
-    for (;;) {
-        uint32_t n = klog_read_ring(pos, buf, sizeof(buf));
-        if (!n)
-            break;
-        pos += n;
-        for (uint32_t i = 0; i < n; i++)
-            vtcon_klog_putc(buf[i]);
-    }
+    uint32_t want = columns * rows;
+    if (want > KLOG_RING)
+        want = KLOG_RING;
+    uint32_t n = klog_copy_tail(klog_ring, want);
+    uint32_t start = 0;
+    while (start < n && klog_ring[start] != '\n')
+        start++;
+    if (start < n)
+        start++;
+    uint64_t flags = spin_lock_irqsave(&render_lock);
+    vt_write(cons[0].term, klog_ring + start, n - start, VT_FLAG_NL_CR);
+    spin_unlock_irqrestore(&render_lock, flags);
 }
 
 void vtcon_init(void)
@@ -414,9 +416,8 @@ void vtcon_init(void)
     spin_unlock_irqrestore(&render_lock, flags);
     gop_set_vt_owned(true);
     keyboard_init();
-    __atomic_store_n(&ready, true, __ATOMIC_RELEASE);
     replay_boot_log();
-    drain_klog();
+    __atomic_store_n(&ready, true, __ATOMIC_RELEASE);
     flush();
     klogf(KLOG_OK, "vtcon: %u consoles %ux%u (%ux%u px, font 8x16%s)", VTCON_COUNT, cols, rws, w, h,
           s > 1 ? " x2" : "");
@@ -530,8 +531,6 @@ int32_t vtcon_pty(int32_t index)
 
 int32_t vtcon_index_of_pty(int32_t pty_id)
 {
-    if (!vtcon_ready() && !cons[0].term)
-        return -1;
     for (int32_t i = 0; i < VTCON_COUNT; i++)
         if (cons[i].term && cons[i].pty == pty_id)
             return i;
