@@ -184,7 +184,6 @@ int sync_refresh(void)
     for (int i = 0; i < repos_total; i++) {
         struct repo *r = &repos[i];
         char dbfile[PKG_PATH_MAX], dbsig[PKG_PATH_MAX + 8], name[80];
-        snprintf(dbfile, sizeof(dbfile), "%s", rp("var/lib/pkg/sync/x"));
         snprintf(dbfile, sizeof(dbfile), "%s/%s.db", rp("var/lib/pkg/sync"), r->name);
         snprintf(dbsig, sizeof(dbsig), "%s.sig", dbfile);
         snprintf(name, sizeof(name), "%s.db", r->name);
