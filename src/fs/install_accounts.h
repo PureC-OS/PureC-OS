@@ -5,7 +5,7 @@
 #include <stdint.h>
 
 #define INSTALL_ACCOUNT_TEXT_MAX 4096
-#define INSTALL_SHELL_DEFAULT "/usr/bin/terminal"
+#define INSTALL_SHELL_DEFAULT "/bin/sh"
 #define INSTALL_USERS_GID 100
 
 struct install_account_files {

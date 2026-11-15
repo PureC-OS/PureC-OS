@@ -144,7 +144,9 @@ static void start_shell(const struct user_info *who)
         (void)chdir("/");
     }
     const char *shell = who->shell[0] ? who->shell : "/bin/sh";
-    if (access(shell, X_OK) != 0)
+    const char *base = strrchr(shell, '/');
+    base = base ? base + 1 : shell;
+    if (strcmp(base, "terminal") == 0 || access(shell, X_OK) != 0)
         shell = "/bin/sh";
     static char storage[10][160];
     char *envp[11];
