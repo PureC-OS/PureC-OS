@@ -183,6 +183,18 @@ static bool open_tty(const char *path, uint32_t flags, int32_t *result)
     *result = -KERR_NODEV;
     return true;
   }
+  struct process *self = process_current();
+  if (self && self->uid != 0)
+  {
+    int32_t own = object_get(0);
+    int32_t own_id;
+    bool own_master;
+    if (own < 0 || !ofd_pty_info(own, &own_id, &own_master) || own_master || own_id != pty_id)
+    {
+      *result = -KERR_ACCES;
+      return true;
+    }
+  }
   int32_t object = ofd_create_pty(pty_id, false);
   if (object < 0)
   {

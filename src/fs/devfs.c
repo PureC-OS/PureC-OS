@@ -17,7 +17,8 @@ enum devfs_kind {
   DEVFS_FULL,
   DEVFS_RANDOM,
   DEVFS_KMSG,
-  DEVFS_BLOCK
+  DEVFS_BLOCK,
+  DEVFS_TTY
 };
 
 struct devfs_node {
@@ -39,7 +40,10 @@ struct devfs_file {
 static const struct devfs_node char_nodes[] = {
     {"null", DEVFS_NULL},     {"zero", DEVFS_ZERO}, {"full", DEVFS_FULL},
     {"random", DEVFS_RANDOM}, {"urandom", DEVFS_RANDOM},
-    {"kmsg", DEVFS_KMSG}};
+    {"kmsg", DEVFS_KMSG},     {"console", DEVFS_TTY},
+    {"tty", DEVFS_TTY},       {"tty0", DEVFS_TTY},  {"tty1", DEVFS_TTY},
+    {"tty2", DEVFS_TTY},      {"tty3", DEVFS_TTY},  {"tty4", DEVFS_TTY},
+    {"tty5", DEVFS_TTY},      {"tty6", DEVFS_TTY}};
 
 #define CHAR_NODE_COUNT (sizeof(char_nodes) / sizeof(char_nodes[0]))
 
@@ -179,6 +183,8 @@ static int32_t devfs_read(void *context, int32_t descriptor, void *buffer,
                                     &file->klog_data_lost);
   case DEVFS_BLOCK:
     return block_read(file, bytes, count);
+  case DEVFS_TTY:
+    return FS_ERROR_UNSUPPORTED;
   }
   return FS_ERROR_INVALID;
 }
@@ -326,6 +332,8 @@ static int32_t devfs_write_file(void *context, const char *path,
   }
   case DEVFS_BLOCK:
     return FS_ERROR_READ_ONLY;
+  case DEVFS_TTY:
+    return FS_ERROR_UNSUPPORTED;
   }
   return FS_ERROR_INVALID;
 }
@@ -356,6 +364,9 @@ static int32_t devfs_get_meta(void *context, const char *path,
     break;
   case DEVFS_BLOCK:
     out->mode = 0600u;
+    break;
+  case DEVFS_TTY:
+    out->mode = 0620u;
     break;
   }
   return 0;
