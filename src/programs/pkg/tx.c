@@ -540,7 +540,11 @@ static int run_plan(struct plan *plan, const char *question)
         struct item *it = &plan->items[i];
         it->old = localdb_find(it->info.name);
         const char *what = it->old < 0 ? "installing" : (!strcmp(ldb.pkgs[it->old].version, it->info.version) ? "reinstalling" : "upgrading");
-        printf("(%d/%d) %s %s-%s\n", i + 1, plan->count, what, it->info.name, it->info.version);
+        if (it->old >= 0 && strcmp(ldb.pkgs[it->old].version, it->info.version) != 0)
+            printf("(%d/%d) %s %s (%s -> %s)\n", i + 1, plan->count, what, it->info.name, ldb.pkgs[it->old].version,
+                   it->info.version);
+        else
+            printf("(%d/%d) %s %s-%s\n", i + 1, plan->count, what, it->info.name, it->info.version);
         if (install_item(it) < 0)
             die("%s: failed, stopping", it->info.name);
         localdb_load();
