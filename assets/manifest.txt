@@ -292,25 +292,25 @@
 /usr/bin/apps-demo-rs /usr/bin/apps-demo-rs - 0 bin/programs/apps-demo-rs
 
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
-/usr/share/applications/files.desktop /usr/share/applications/files.desktop - 0 src/userspace/desktop_entries/files.desktop
-/usr/share/applications/monitor.desktop /usr/share/applications/monitor.desktop - 0 src/userspace/desktop_entries/monitor.desktop
-/usr/share/applications/terminal.desktop /usr/share/applications/terminal.desktop - 0 src/userspace/desktop_entries/terminal.desktop
-/usr/share/applications/qt-terminal.desktop /usr/share/applications/qt-terminal.desktop - 0 src/userspace/desktop_entries/qt-terminal.desktop
-/usr/share/applications/clock.desktop /usr/share/applications/clock.desktop - 0 src/userspace/desktop_entries/clock.desktop
-/usr/share/applications/calc.desktop /usr/share/applications/calc.desktop - 0 src/userspace/desktop_entries/calc.desktop
-/usr/share/applications/calendar.desktop /usr/share/applications/calendar.desktop - 0 src/userspace/desktop_entries/calendar.desktop
-/usr/share/applications/settings.desktop /usr/share/applications/settings.desktop - 0 src/userspace/desktop_entries/settings.desktop
-/usr/share/applications/install.desktop /usr/share/applications/install.desktop - 0 src/userspace/desktop_entries/install.desktop
-/usr/share/applications/disks.desktop /usr/share/applications/disks.desktop - 0 src/userspace/desktop_entries/disks.desktop
-/usr/share/applications/devmgr.desktop /usr/share/applications/devmgr.desktop - 0 src/userspace/desktop_entries/devmgr.desktop
-/usr/share/applications/tetris.desktop /usr/share/applications/tetris.desktop - 0 src/userspace/desktop_entries/tetris.desktop
-/usr/share/applications/puzzle15.desktop /usr/share/applications/puzzle15.desktop - 0 src/userspace/desktop_entries/puzzle15.desktop
-/usr/share/applications/logview.desktop /usr/share/applications/logview.desktop - 0 src/userspace/desktop_entries/logview.desktop
-/usr/share/applications/hexedit.desktop /usr/share/applications/hexedit.desktop - 0 src/userspace/desktop_entries/hexedit.desktop
-/usr/share/applications/notepad.desktop /usr/share/applications/notepad.desktop - 0 src/userspace/desktop_entries/notepad.desktop
+/usr/share/applications/files.desktop /usr/share/applications/files.desktop - 0 assets/applications/files.desktop
+/usr/share/applications/monitor.desktop /usr/share/applications/monitor.desktop - 0 assets/applications/monitor.desktop
+/usr/share/applications/terminal.desktop /usr/share/applications/terminal.desktop - 0 assets/applications/terminal.desktop
+/usr/share/applications/qt-terminal.desktop /usr/share/applications/qt-terminal.desktop - 0 assets/applications/qt-terminal.desktop
+/usr/share/applications/clock.desktop /usr/share/applications/clock.desktop - 0 assets/applications/clock.desktop
+/usr/share/applications/calc.desktop /usr/share/applications/calc.desktop - 0 assets/applications/calc.desktop
+/usr/share/applications/calendar.desktop /usr/share/applications/calendar.desktop - 0 assets/applications/calendar.desktop
+/usr/share/applications/settings.desktop /usr/share/applications/settings.desktop - 0 assets/applications/settings.desktop
+/usr/share/applications/install.desktop /usr/share/applications/install.desktop - 0 assets/applications/install.desktop
+/usr/share/applications/disks.desktop /usr/share/applications/disks.desktop - 0 assets/applications/disks.desktop
+/usr/share/applications/devmgr.desktop /usr/share/applications/devmgr.desktop - 0 assets/applications/devmgr.desktop
+/usr/share/applications/tetris.desktop /usr/share/applications/tetris.desktop - 0 assets/applications/tetris.desktop
+/usr/share/applications/puzzle15.desktop /usr/share/applications/puzzle15.desktop - 0 assets/applications/puzzle15.desktop
+/usr/share/applications/logview.desktop /usr/share/applications/logview.desktop - 0 assets/applications/logview.desktop
+/usr/share/applications/hexedit.desktop /usr/share/applications/hexedit.desktop - 0 assets/applications/hexedit.desktop
+/usr/share/applications/notepad.desktop /usr/share/applications/notepad.desktop - 0 assets/applications/notepad.desktop
 /usr/share/applications/pl.desktop /usr/share/applications/pl.desktop - 0 userspace/desktop_entries/pl.desktop
 /usr/share/applications/desktop-rs.desktop /usr/share/applications/desktop-rs.desktop - 0 userspace/desktop_entries/desktop-rs.desktop
-/usr/share/applications/2048.desktop /usr/share/applications/2048.desktop - 0 src/userspace/desktop_entries/2048.desktop
+/usr/share/applications/2048.desktop /usr/share/applications/2048.desktop - 0 assets/applications/2048.desktop
 
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a

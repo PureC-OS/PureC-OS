@@ -86,7 +86,6 @@ C_SOURCES := \
 	arch/x86_64/mmio.c \
 	kernel/syscall/syscall.c \
 	kernel/syscall/sudo.c \
-	userspace/user_config.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \
 	drivers/interrupts/pic.c \
@@ -96,8 +95,6 @@ C_SOURCES := \
 	drivers/display/display_owner.c \
 	drivers/display/console_vt.c \
 	drivers/display/vt_font.c \
-	gfx/compositor.c \
-	gfx/blit.c \
 	drivers/display/vbe.c \
 	drivers/display/svga.c \
 	drivers/display/svga3d.c \
@@ -108,6 +105,7 @@ C_SOURCES := \
 	drivers/net/iwx/iwx.c \
 	lib/string.c \
 	kernel/diagnostics/klog.c \
+	kernel/diagnostics/klog_disk.c \
 	kernel/diagnostics/boot_diag.c \
 	kernel/diagnostics/ksym.c \
 	kernel/diagnostics/qr.c \
@@ -173,30 +171,12 @@ C_SOURCES := \
 	kernel/diagnostics/journal.c \
 	lib/format.c \
 	fs/initramfs.c \
-	userspace/display.c \
-	userspace/display_mode.c \
-	userspace/fs.c \
-	userspace/personalization.c \
-	userspace/wallpaper.c \
-	userspace/audio.c \
-	userspace/audio_overlay.c \
-	userspace/userspace.c \
-	userspace/rs_session.c \
-	userspace/window_manager.c \
-	userspace/apps/datetime_service.c \
-	userspace/apps/desktop_entries.c \
-	userspace/apps/desktop_icons.c \
-	userspace/apps/clock_app.c \
-	userspace/apps/calendar_app.c \
-	userspace/apps/calculator_app.c \
-	userspace/apps/desktop_apps.c \
-	userspace/apps/bottom_panel.c \
 	kernel/process/scheduler.c \
 	drivers/power/power.c \
 	drivers/audio/audio_hda.c \
 	drivers/audio/audio.c \
 	kernel/devices/device_manager.c
-CPP_SOURCES := userspace/apps/audio_panel.cpp
+CPP_SOURCES :=
 ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
 	arch/x86_64/idt/asm/idt.asm \
