@@ -32,7 +32,7 @@ static int entry_count;
 static bool text_mode;
 
 static const char default_inittab[] =
-    "tty1:respawn:/sbin/getty --noclear tty1\n"
+    "tty1:respawn:/sbin/getty tty1\n"
     "tty2:respawn:/sbin/getty tty2\n"
     "tty3:respawn:/sbin/getty tty3\n"
     "tty4:respawn:/sbin/getty tty4\n"

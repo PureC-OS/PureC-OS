@@ -720,6 +720,10 @@ static void vt_thread(void *arg)
     (void)arg;
     __atomic_store_n(&thread_running, true, __ATOMIC_RELEASE);
     klog(KLOG_INFO, "vtcon: console and input thread started");
+    if (!boot_console_verbose()) {
+        klog(KLOG_INFO, "vtcon: kernel messages on tty1 limited to warnings (boot with 'verbose' for all)");
+        quiet = true;
+    }
     for (;;) {
         idt_check_interrupt_rates();
         ps2_mouse_poll();
