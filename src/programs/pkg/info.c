@@ -1,5 +1,6 @@
 #include "pkg.h"
 #include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -51,8 +52,29 @@ int pkg_info_parse(const char *text, struct pkg_info *out)
             set_text(out->arch, sizeof(out->arch), value);
         else if (!strcmp(key, "size"))
             out->size = strtoull(value, NULL, 10);
+        else if (!strcmp(key, "csize"))
+            out->csize = strtoull(value, NULL, 10);
+        else if (!strcmp(key, "filename"))
+            set_text(out->filename, sizeof(out->filename), value);
+        else if (!strcmp(key, "sha512"))
+            set_text(out->sha512, sizeof(out->sha512), value);
+        else if (!strcmp(key, "installdate"))
+            out->installdate = strtol(value, NULL, 10);
+        else if (!strcmp(key, "reason"))
+            out->reason = atoi(value);
         else if (!strcmp(key, "depend") && *value && out->depend_count < PKG_DEPENDS_MAX)
             set_text(out->depends[out->depend_count++], PKG_DEP_MAX, value);
+        else if (!strcmp(key, "conflict") && *value && out->conflict_count < PKG_CONFLICTS_MAX)
+            set_text(out->conflicts[out->conflict_count++], PKG_NAME_MAX, value);
+        else if (!strcmp(key, "backup") && *value && out->backup_count < PKG_BACKUPS_MAX) {
+            struct pkg_backup *b = &out->backups[out->backup_count++];
+            char *space = strchr(value, ' ');
+            if (space) {
+                *space = '\0';
+                set_text(b->hash, sizeof(b->hash), trim(space + 1));
+            }
+            set_text(b->path, sizeof(b->path), value);
+        }
     }
     return out->name[0] && out->version[0] ? 0 : -1;
 }
@@ -97,4 +119,41 @@ int pkg_dep_satisfied(const char *op, const char *wanted, const char *have)
     if (!strcmp(op, "<"))
         return c < 0;
     return 0;
+}
+
+int pkg_info_format(const struct pkg_info *info, char *out, size_t cap)
+{
+    size_t pos = 0;
+#define EMIT(...) do { \
+        int n_ = snprintf(out + pos, cap - pos, __VA_ARGS__); \
+        if (n_ < 0 || (size_t)n_ >= cap - pos) \
+            return -1; \
+        pos += (size_t)n_; \
+    } while (0)
+    EMIT("pkgname = %s\npkgver = %s\n", info->name, info->version);
+    if (info->desc[0])
+        EMIT("pkgdesc = %s\n", info->desc);
+    if (info->arch[0])
+        EMIT("arch = %s\n", info->arch);
+    EMIT("size = %llu\n", (unsigned long long)info->size);
+    if (info->csize)
+        EMIT("csize = %llu\n", (unsigned long long)info->csize);
+    if (info->filename[0])
+        EMIT("filename = %s\n", info->filename);
+    if (info->sha512[0])
+        EMIT("sha512 = %s\n", info->sha512);
+    if (info->installdate)
+        EMIT("installdate = %ld\nreason = %d\n", info->installdate, info->reason);
+    for (int i = 0; i < info->depend_count; i++)
+        EMIT("depend = %s\n", info->depends[i]);
+    for (int i = 0; i < info->conflict_count; i++)
+        EMIT("conflict = %s\n", info->conflicts[i]);
+    for (int i = 0; i < info->backup_count; i++) {
+        if (info->backups[i].hash[0])
+            EMIT("backup = %s %s\n", info->backups[i].path, info->backups[i].hash);
+        else
+            EMIT("backup = %s\n", info->backups[i].path);
+    }
+#undef EMIT
+    return (int)pos;
 }
