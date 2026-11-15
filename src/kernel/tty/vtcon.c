@@ -26,6 +26,13 @@
 #define DEFAULT_FG 7u
 
 extern const uint8_t vt_font_8x16[256][16];
+extern const uint16_t vt_font_unicode[][2];
+extern const uint32_t vt_font_unicode_count;
+
+struct utf8_state {
+    uint32_t cp;
+    uint8_t need;
+};
 
 static const uint32_t palette[16] = {
     0x000000, 0xAA0000, 0x00AA00, 0xAA5500, 0x0000AA, 0xAA00AA, 0x00AAAA, 0xAAAAAA,
@@ -40,6 +47,7 @@ struct vtcon {
     bool app_cursor;
     char reply[REPLY_MAX];
     uint32_t reply_len;
+    struct utf8_state utf8;
     volatile uint32_t draining;
     volatile uint32_t pending;
 };
@@ -65,6 +73,7 @@ static uint32_t generation;
 static bool dirty_valid;
 static uint32_t dirty_x0, dirty_y0, dirty_x1, dirty_y1;
 
+static struct utf8_state klog_utf8;
 static uint8_t input_ring[INPUT_RING];
 static volatile uint32_t input_head, input_tail;
 static char klog_ring[KLOG_RING];
@@ -77,6 +86,70 @@ static bool try_lock(spinlock_t *lock, uint64_t *flags)
         return true;
     irq_restore(*flags);
     return false;
+}
+
+static uint8_t glyph_for(uint32_t cp)
+{
+    if (cp < 0x80)
+        return (uint8_t)cp;
+    uint32_t lo = 0, hi = vt_font_unicode_count;
+    while (lo < hi) {
+        uint32_t mid = (lo + hi) / 2;
+        if (vt_font_unicode[mid][0] == cp)
+            return (uint8_t)vt_font_unicode[mid][1];
+        if (vt_font_unicode[mid][0] < cp)
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return '?';
+}
+
+static uint32_t utf8_convert(struct utf8_state *st, const char *in, uint32_t count, char *out)
+{
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        uint8_t b = (uint8_t)in[i];
+        if (st->need) {
+            if ((b & 0xC0) == 0x80) {
+                st->cp = (st->cp << 6) | (b & 0x3F);
+                if (--st->need == 0)
+                    out[n++] = (char)glyph_for(st->cp);
+                continue;
+            }
+            st->need = 0;
+            out[n++] = '?';
+        }
+        if (b < 0x80)
+            out[n++] = (char)b;
+        else if ((b & 0xE0) == 0xC0) {
+            st->cp = b & 0x1F;
+            st->need = 1;
+        } else if ((b & 0xF0) == 0xE0) {
+            st->cp = b & 0x0F;
+            st->need = 2;
+        } else if ((b & 0xF8) == 0xF0) {
+            st->cp = b & 0x07;
+            st->need = 3;
+        } else {
+            out[n++] = '?';
+        }
+    }
+    return n;
+}
+
+static void write_utf8(struct vt_term *term, struct utf8_state *st, const char *data, uint32_t count,
+                       uint32_t vt_flags)
+{
+    char out[256];
+    while (count) {
+        uint32_t chunk = count < sizeof(out) ? count : sizeof(out);
+        uint32_t n = utf8_convert(st, data, chunk, out);
+        if (n)
+            vt_write(term, out, n, vt_flags);
+        data += chunk;
+        count -= chunk;
+    }
 }
 
 static void mark_dirty(uint32_t x, uint32_t y, uint32_t w, uint32_t h)
@@ -189,10 +262,13 @@ static bool op_scroll(void *ctx, uint32_t top, uint32_t bottom, uint32_t count, 
     if (y1 > screen_h || y0 >= y1 || shift >= y1 - y0)
         return false;
     uint64_t span = (uint64_t)(y1 - y0 - shift) * screen_w * sizeof(uint32_t);
-    if (up)
+    if (up) {
         memmove(&shadow[(uint64_t)y0 * screen_w], &shadow[(uint64_t)(y0 + shift) * screen_w], span);
-    else
+        memset(&shadow[(uint64_t)(y1 - shift) * screen_w], 0, (uint64_t)shift * screen_w * sizeof(uint32_t));
+    } else {
         memmove(&shadow[(uint64_t)(y0 + shift) * screen_w], &shadow[(uint64_t)y0 * screen_w], span);
+        memset(&shadow[(uint64_t)y0 * screen_w], 0, (uint64_t)shift * screen_w * sizeof(uint32_t));
+    }
     mark_dirty(0, y0, screen_w, y1 - y0);
     return true;
 }
@@ -271,7 +347,7 @@ static void send_replies(struct vtcon *c)
 static void render(struct vtcon *c, const char *data, uint32_t count, uint32_t vt_flags)
 {
     uint64_t flags = spin_lock_irqsave(&render_lock);
-    vt_write(c->term, data, count, vt_flags);
+    write_utf8(c->term, &c->utf8, data, count, vt_flags);
     spin_unlock_irqrestore(&render_lock, flags);
 }
 
@@ -318,7 +394,7 @@ static void drain_klog_locked(void)
             tail++;
         }
         __atomic_store_n(&klog_tail, tail, __ATOMIC_RELEASE);
-        vt_write(cons[0].term, buf, n, VT_FLAG_NL_CR);
+        write_utf8(cons[0].term, &klog_utf8, buf, n, VT_FLAG_NL_CR);
     }
 }
 
@@ -367,7 +443,7 @@ static void replay_boot_log(void)
     if (start < n)
         start++;
     uint64_t flags = spin_lock_irqsave(&render_lock);
-    vt_write(cons[0].term, klog_ring + start, n - start, VT_FLAG_NL_CR);
+    write_utf8(cons[0].term, &klog_utf8, klog_ring + start, n - start, VT_FLAG_NL_CR);
     spin_unlock_irqrestore(&render_lock, flags);
 }
 
