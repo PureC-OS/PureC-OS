@@ -1,0 +1,79 @@
+NAME
+       iwxctl - control Wi-Fi connections
+
+SYNOPSIS
+       **iwxctl**
+       **iwxctl** **device list**
+       **iwxctl** **station** __DEVICE__ **scan**|**get-networks**|**show**|**disconnect**
+       **iwxctl** **station** __DEVICE__ **connect** __SSID__ [**--passphrase** __PASS__]
+       **iwxctl** **scan**|**networks**|**show**|**disconnect**
+       **iwxctl** **connect** __SSID__ [**--passphrase** __PASS__]
+
+DESCRIPTION
+       **iwxctl** scans for wireless networks and connects to them through
+       the kernel Wi-Fi manager. It is modelled on **iwctl** from Linux. The
+       driver is the port of the OpenBSD iwx driver (Intel Wi-Fi 6, AX200 /
+       AX201 and relatives); the device is called **wlan0**.
+
+       Without arguments iwxctl starts an interactive prompt **[iwx]#** where
+       the same commands can be typed; **help** lists them and **exit**
+       leaves.
+
+       The **station** __DEVICE__ prefix is optional because there is one
+       Wi-Fi device; **iwxctl scan** equals **iwxctl station wlan0 scan**.
+
+COMMANDS
+       **device list**
+           Show the Wi-Fi device: name, MAC address and state.
+
+       **scan**
+           Start a scan, wait for it (up to 15 seconds) and print the
+           networks. The driver cannot scan while it is connected:
+           disconnect first.
+
+       **get-networks**, **networks**
+           Print the results of the last scan, strongest signal first. The
+           current network is marked with **>**. Columns: name, security
+           (**open**, **psk** = WPA2-Personal, **sae** = WPA3, **psk/sae**,
+           **wep**), channel, a four-step signal bar and the RSSI in dBm.
+
+       **connect** __SSID__
+           Connect to a network. A name with spaces may be written without
+           quotes. For a protected network the passphrase is asked for
+           without echo unless **--passphrase** is given. A name that is not
+           in the scan results is tried as a hidden WPA2 network. After the
+           association iwxctl waits for a DHCP address and prints it.
+
+       **disconnect**
+           Leave the current network.
+
+       **show**, **status**
+           Show the state, the network, BSSID, security, channel, RSSI, the
+           IPv4 address, gateway and DNS server, and the last error.
+
+PERMISSIONS
+       **scan**, **connect** and **disconnect** need root (uid 0) or the
+       NET_ADMIN capability. **device list**, **networks** and **show** work
+       for every user.
+
+LIMITATIONS
+       The driver connects to open networks only for now. WPA2-Personal
+       networks are found and shown, but the connection stops at the 4-way
+       handshake with the error "WPA2 4-way handshake is not implemented in
+       the driver yet". WPA3 and WEP are not supported.
+
+       The passphrase is never written to the kernel log.
+
+EXIT STATUS
+       0 on success, 1 on any error.
+
+EXAMPLES
+       iwxctl device list
+       iwxctl station wlan0 scan
+       iwxctl connect CafeGuest
+       iwxctl connect "My Home" --passphrase secret123
+       iwxctl show
+       iwxctl disconnect
+
+SEE ALSO
+       ip(8), ping(1), dhcpc(8), netd(8)

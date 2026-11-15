@@ -1,0 +1,97 @@
+NAME
+       fdisk - manipulate the GPT partition table of a disk
+
+SYNOPSIS
+       **fdisk** __DISK__
+       **fdisk** **-l**|**--list** [__DISK__...]
+
+DESCRIPTION
+       **fdisk** shows and edits GUID partition tables (GPT). With **-l** it
+       prints the table of every disk (or of the named disks) and exits.
+       With a __DISK__ name it starts an interactive session. A **/dev/**
+       prefix is accepted: **fdisk /dev/sdb** is the same as **fdisk sdb**.
+
+       All changes stay in memory until the **w** command writes them. **q**
+       leaves without touching the disk.
+
+       Partitions are named after the disk and the GPT entry number:
+       **sdb1** is entry 1 of **sdb**. Use that name with **mkfs**(8).
+
+COMMANDS
+       **g**   create a new, empty GPT (a new disk identifier, no partitions)
+       **n**   add a partition; asks for the number, the first sector and the
+           last sector. The last sector may be given as a size:
+           **+500M**, **+2G**, **+1T**, **+4096** (sectors). Defaults take the
+           first free, 1 MiB aligned area. New partitions get the type
+           **Linux filesystem**.
+       **d**   delete a partition
+       **t**   change the type of a partition (number or alias, **L** lists)
+       **l**   list the known partition types
+       **p**   print the partition table
+       **w**   write the table to disk and exit
+       **q**   quit without saving
+       **m**   show the command menu
+
+PARTITION TYPES
+         alias  name                     use
+         efi    EFI System               UEFI boot partition (FAT32)
+         linux  Linux filesystem         ext2 data or root partition
+         swap   Linux swap               used as swap at boot
+         basic  Microsoft basic data     also mounted as ext2 root
+         purec  PureC system (legacy)    older PureC installs
+
+       Unknown types are shown as **unknown** and kept as they are.
+
+WHAT IS WRITTEN
+       **w** writes, in this order:
+
+         - the partition entries at sectors 2-33 and the primary GPT header
+           at sector 1;
+         - the backup entries and the backup header at the end of the disk;
+         - a protective MBR entry (type 0xEE) in sector 0.
+
+       The boot code in sector 0 (the first 446 bytes) is kept, so a disk
+       that boots through the BIOS stays bootable. Both headers carry
+       CRC32 checksums. If the primary GPT is damaged but the backup is
+       good, fdisk loads the backup and **w** repairs the primary copy.
+
+       Disks with an old MBR (dos) table are shown read-only; **g** replaces
+       the table with GPT. Only 512-byte sectors are supported.
+
+PERMISSIONS
+       Reading and writing the disk needs root (uid 0) or the STORAGE_ADMIN
+       capability. Without them fdisk reports "permission denied".
+
+NOTES
+       The kernel reads partition tables at boot only. After **w**, reboot
+       before using the new partitions.
+
+       fdisk changes only the partition table, never the data inside
+       partitions. Deleting a partition and creating it again at the same
+       sectors keeps its contents.
+
+       Editing the disk that holds the running system is allowed; the new
+       layout is used after the next boot. Do not delete or move the root
+       partition.
+
+       USB disks cannot be written by fdisk yet; ATA and AHCI (SATA) disks
+       can.
+
+EXAMPLES
+       Show all disks:
+
+           fdisk -l
+
+       Split a new disk into a 1 GiB swap and an ext2 data partition:
+
+           fdisk sdb
+             g
+             n   (Enter, Enter, +1G)
+             t   (swap)
+             n   (Enter, Enter, Enter)
+             w
+           reboot
+           mkfs ext2 sdb2
+
+SEE ALSO
+       mkfs(8), df(1)

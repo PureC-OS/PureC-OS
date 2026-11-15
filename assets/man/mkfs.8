@@ -1,15 +1,112 @@
 NAME
-       mkfs - build a file system
+       mkfs - build a file system on a disk or a partition
 
 SYNOPSIS
-       mkfs FSTYPE DEVICE
+       **mkfs** __FSTYPE__ __DEVICE__
+       **mkfs** __FSTYPE__ __PARTITION__
+       **mkfs** **--list**|**-l**
+       **mkfs** **--help**|**-h**
 
 DESCRIPTION
-       Format DEVICE with a new file system of type FSTYPE (ext2 or fat32). All
-       data on DEVICE is destroyed.
+       **mkfs** creates a new, empty file system. Everything that was stored
+       in the target area is lost; there is no undo.
+
+       The target is either a whole disk or one partition of a disk:
+
+       __DEVICE__
+           a disk name as shown by **mkfs --list** or **fdisk -l**, for
+           example **sdb**. The file system starts at sector 0 and covers
+           the whole disk. Any partition table on that disk is destroyed.
+
+       __PARTITION__
+           a disk name followed by the GPT entry number, for example
+           **sdb2** for the second entry of the GPT on **sdb**. Only that
+           partition is written; the partition table and the other
+           partitions stay untouched. Create partitions with **fdisk**(8).
+
+       A **/dev/** prefix is accepted and ignored, so **mkfs ext2 /dev/sdb2**
+       works as well.
+
+FILE SYSTEMS
+       **ext2**
+           The native PureC OS file system. Layout written by mkfs:
+
+             block size          1024 bytes
+             blocks per group    8192
+             inodes per group    1024
+             inode size          128 bytes
+             root directory      inode 2, with **.** and **..**
+
+           The volume needs at least 1 MiB (1024 blocks) for a whole disk
+           and 128 blocks for a partition. Partitions must end below 2 TiB
+           (32-bit sector numbers).
+
+       Other types (fat32, ext3, ext4) are not supported by mkfs yet; the
+       FAT32 boot partition is created only by the installer image.
+
+OPTIONS
+       **-l**, **--list**
+           List the disks with size, model, write mode and transport
+           (ATA-PIO, AHCI, USB). The disk that holds the mounted root file
+           system is marked **[SYSTEM fs=...]**, offline disks are marked
+           **[offline]**. The current root file system type is printed at
+           the end.
+
+       **-h**, **--help**
+           Show a short usage summary.
+
+SAFETY
+       The kernel refuses to format
+
+         - the partition (or the whole disk) that holds the mounted root
+           file system;
+         - a disk that is read-only or offline;
+         - a disk with a sector size other than 512 bytes.
+
+       mkfs confirms the disk by its serial number before the kernel
+       writes anything, so a disk that was swapped while mkfs was running
+       is not formatted by mistake.
+
+       The kernel writes and flushes the ext2 buffer cache first and
+       returns to the root disk afterwards, so formatting a second disk
+       does not disturb the running system.
+
+PERMISSIONS
+       Formatting needs root (uid 0) or the STORAGE_ADMIN capability.
+       **mkfs --list** works for every user.
+
+EXIT STATUS
+       0 on success, 1 on any error. Errors are printed with a reason:
+
+         permission denied            not root
+         no such device               unknown disk name
+         it holds the mounted root    the target is in use
+         too small for ext2           below the minimum size
+         no GPT partition table       PARTITION given, disk has no GPT
+         no such partition            the GPT entry is empty
+         beyond 2 TiB                 partition end above 32-bit LBA
 
 EXAMPLES
-       mkfs ext2 /dev/sdb
+       Show the disks:
+
+           mkfs --list
+
+       Use a whole second disk as one ext2 volume:
+
+           mkfs ext2 sdb
+
+       Partition a disk and format one partition:
+
+           fdisk sdb          (g, n, w)
+           reboot
+           mkfs ext2 sdb1
+
+NOTES
+       The kernel does not re-read partition tables while running. After
+       changing partitions with fdisk, reboot before formatting them.
+
+       After formatting, the new file system is not mounted automatically,
+       except on a live system that runs without a root disk.
 
 SEE ALSO
-       df(1)
+       fdisk(8), df(1), du(1)

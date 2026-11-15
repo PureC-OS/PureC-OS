@@ -22,7 +22,7 @@ static uint32_t token_len(const char *text){
 }
 
 static void print_usage(void){
-    pc_write("usage: mkfs <fs-type> <device>\n");
+    pc_write("usage: mkfs <fs-type> <device|partition>\n");
     pc_write("       mkfs --list\n");
     pc_write("\n");
     pc_write("Supported filesystems:\n");
@@ -30,7 +30,8 @@ static void print_usage(void){
     pc_write("\n");
     pc_write("Examples:\n");
     pc_write("  mkfs --list            show available disks\n");
-    pc_write("  mkfs ext2 sdb          format sdb as EXT2\n");
+    pc_write("  mkfs ext2 sdb          format the whole disk sdb as EXT2\n");
+    pc_write("  mkfs ext2 sdb2         format partition 2 of sdb (see fdisk)\n");
 }
 
 static void print_size(uint64_t bytes){
@@ -119,7 +120,7 @@ static int command_list(void){
     return 0;
 }
 
-static int command_format(const char *fs_arg, const char *dev_arg){
+static int command_format(const char *fs_arg, char *dev_arg){
     uint8_t fs_type;
     if(pc_strcmp(fs_arg, "ext2") == 0){
         fs_type = MKFS_FS_EXT2;
@@ -145,11 +146,30 @@ static int command_format(const char *fs_arg, const char *dev_arg){
         return 1;
     }
 
+    if(dev_arg[0]=='/' && dev_arg[1]=='d' && dev_arg[2]=='e' && dev_arg[3]=='v' && dev_arg[4]=='/'){
+        uint32_t k = 0;
+        while(dev_arg[k + 5]){ dev_arg[k] = dev_arg[k + 5]; k++; }
+        dev_arg[k] = '\0';
+    }
     const struct storage_device_info *target = 0;
     for(int32_t i = 0; i < count; i++){
         if(pc_strcmp(devices[i].name, dev_arg) == 0){
             target = &devices[i];
             break;
+        }
+    }
+    bool partition = false;
+    if(!target){
+        uint32_t len = pc_strlen(dev_arg);
+        uint32_t base = len;
+        while(base && dev_arg[base - 1] >= '0' && dev_arg[base - 1] <= '9') base--;
+        if(base && base < len){
+            for(int32_t i = 0; i < count; i++){
+                uint32_t n = pc_strlen(devices[i].name);
+                bool same = n == base;
+                for(uint32_t j = 0; same && j < n; j++) if(devices[i].name[j] != dev_arg[j]) same = false;
+                if(same){ target = &devices[i]; partition = true; break; }
+            }
         }
     }
 
@@ -181,13 +201,26 @@ static int command_format(const char *fs_arg, const char *dev_arg){
     pc_write("ext2");
     pc_write("...\n");
 
-    int32_t result = pc_format_device_ex(target->name, target->serial, fs_type);
+    int32_t result = pc_format_device_ex(dev_arg, target->serial, fs_type);
     if(result < 0){
-        pc_write("mkfs: format failed (error ");
-        pc_write_i64(result);
-        pc_write(")\n");
+        pc_write("mkfs: format failed: ");
+        switch(result){
+            case -1:  pc_write("permission denied (run as root)"); break;
+            case -2:  pc_write("no such device"); break;
+            case -8:  pc_write("only 512-byte sectors are supported"); break;
+            case -10: pc_write("device is offline or read-only"); break;
+            case -11: pc_write("serial confirmation mismatch"); break;
+            case -12: pc_write("it holds the mounted root file system"); break;
+            case -13: pc_write("too small for ext2 (need at least 1 MiB)"); break;
+            case -14: pc_write("the disk has no GPT partition table (see fdisk)"); break;
+            case -15: pc_write("no such partition in the GPT"); break;
+            case -16: pc_write("the partition lies beyond 2 TiB"); break;
+            default:  pc_write("error "); pc_write_i64(result); break;
+        }
+        pc_write("\n");
         return 1;
     }
+    (void)partition;
 
     pc_write("mkfs: done\n");
     return 0;
