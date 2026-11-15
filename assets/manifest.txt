@@ -81,6 +81,7 @@
 /bin/date /bin/date - 1 bin/programs/date
 /bin/uptime /bin/uptime - 1 bin/programs/uptime
 /bin/sleep /bin/sleep - 1 bin/programs/sleep
+/bin/sync /bin/sync - 1 bin/programs/sync
 /bin/true /bin/true - 1 bin/programs/true
 /bin/false /bin/false - 1 bin/programs/false
 /bin/kill /bin/kill - 1 bin/programs/kill
@@ -158,6 +159,7 @@
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
 /usr/share/man/uptime.1 /usr/share/man/uptime.1 - 0 assets/man/uptime.1
 /usr/share/man/sleep.1 /usr/share/man/sleep.1 - 0 assets/man/sleep.1
+/usr/share/man/sync.1 /usr/share/man/sync.1 - 0 assets/man/sync.1
 /usr/share/man/true.1 /usr/share/man/true.1 - 0 assets/man/true.1
 /usr/share/man/false.1 /usr/share/man/false.1 - 0 assets/man/false.1
 /usr/share/man/kill.1 /usr/share/man/kill.1 - 0 assets/man/kill.1

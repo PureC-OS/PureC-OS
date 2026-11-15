@@ -433,6 +433,8 @@ int32_t pc_getrandom(void *buffer, uint32_t count){
     return (int32_t)pc_syscall(SYS_GETRANDOM,(uint64_t)(uintptr_t)buffer,count,0);
 }
 
+int32_t pc_sync(void){ return (int32_t)pc_syscall(SYS_SYNC,0,0,0); }
+
 int32_t pc_getuid(void){ return (int32_t)pc_syscall(SYS_GETUID,0,0,0); }
 static int32_t config_uid=-1;
 static char config_dir[128];

@@ -71,6 +71,7 @@ int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity);
 int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence);
 int32_t pc_file_stat(const char *path, struct file_stat_info *out);
 int32_t pc_getrandom(void *buffer, uint32_t count);
+int32_t pc_sync(void);
 int32_t pc_fb_blit(const uint32_t *pixels, uint32_t stride, uint32_t width,
                    uint32_t height, int32_t x, int32_t y, uint32_t flags);
 int32_t pc_time_get(struct time_info *out);

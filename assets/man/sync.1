@@ -1,0 +1,22 @@
+NAME
+       sync - write cached data to the disk
+
+SYNOPSIS
+       sync
+
+DESCRIPTION
+       The ext2 file system keeps modified blocks in memory and writes them to
+       the disk a little later (after a few seconds, or when the cache fills
+       up). **sync** forces all of these dirty blocks onto the disk at once and
+       returns when the write is done.
+
+       Run it before switching off a machine that is not shut down with
+       **poweroff**(8) or **reboot**(8), and before taking a disk away. A
+       FAT32 boot partition mounted on /boot is written through at once and
+       needs no sync.
+
+EXIT STATUS
+       0 on success, 1 if the data could not be written.
+
+SEE ALSO
+       poweroff(1), reboot(1)
