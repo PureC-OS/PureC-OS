@@ -7,6 +7,7 @@
 typedef void (*ext2_progress_callback)(uint32_t progress, const char *stage);
 
 bool ext2_init(void);
+bool ext2_init_root(void);
 bool ext2_is_mounted(void);
 const char *ext2_device_name(void);
 int32_t ext2_open(const char *path);

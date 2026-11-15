@@ -507,7 +507,7 @@ bool vfs_mount_root_with_fs(uint8_t fs_type) {
   MUTEX_SCOPE(&vfs_mutex);
   if (fs_type != VFS_FS_EXT2 && fs_type != VFS_FS_AUTO)
     return false;
-  if (ext2_init()) {
+  if (ext2_init_root()) {
     set_root_ops(VFS_FS_EXT2);
     return true;
   }
