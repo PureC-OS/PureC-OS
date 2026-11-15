@@ -17,7 +17,6 @@ static mutex_t process_mutex;
 #include "../../mm/shm.h"
 #include "../../mm/vmm.h"
 #include "../../net/transport/tcp.h"
-#include "../../userspace/window_manager.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../syscall/syscall.h"
@@ -1702,9 +1701,7 @@ static void process_terminate(int32_t status, int32_t signal)
         child->waiter_thread_id = -1;
       }
     }
-    window_manager_unregister(process->pid);
     display_owner_release(process->pid);
-    gop_console_release(process->pid);
     tty_process_exit(process->pid);
     tcp_release_owner(process->pid);
     fd_close_all(process);
@@ -2183,7 +2180,6 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   uint64_t old_pages = vmm_user_page_count(old_space);
   fd_close_on_exec(process);
   signal_exec_reset(process);
-  window_manager_unregister(process->pid);
   display_owner_release(process->pid);
   struct thread *thread = scheduler_current_thread();
   process->address_space = new_space;

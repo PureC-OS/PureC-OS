@@ -7,7 +7,6 @@
 #include "../display/vga.h"
 #include "../../gfx/text.h"
 #include "../../kernel/diagnostics/klog.h"
-#include "../../gfx/compositor.h"
 #include <stdint.h>
 
 #define PS2_DATA 0x60
@@ -362,7 +361,6 @@ static void draw_cursor(int32_t x, int32_t y)
         first_draw = false;
         old_x = x;
         old_y = y;
-        compositor_cursor_move(x, y);
         return;
     }
     if (!first_draw)

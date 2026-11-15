@@ -264,22 +264,12 @@ bool ofd_nonblocking(int32_t index)
 
 static void console_write(const char *text, uint32_t count)
 {
-  if (vtcon_ready() && !gop_console_is_active())
+  for (uint32_t i = 0; i < count; i++)
+    serial_putc(text[i]);
+  if (vtcon_ready())
   {
-    for (uint32_t i = 0; i < count; i++)
-      serial_putc(text[i]);
     if (scheduler_is_running())
       vtcon_console_write(text, count);
-    return;
-  }
-  if (!tty_raw_mode())
-  {
-    for (uint32_t i = 0; i < count; i++)
-      serial_putc(text[i]);
-  }
-  if (gop_console_is_active())
-  {
-    gop_console_write(text, count);
     return;
   }
   for (uint32_t i = 0; i < count; i++)
