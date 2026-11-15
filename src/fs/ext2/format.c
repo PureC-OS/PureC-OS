@@ -5,6 +5,7 @@
 #include "include/ext2_format.h"
 #include "../../io/storage/block_device.h"
 #include "../../lib/string.h"
+#include "../../kernel/random/krandom.h"
 
 int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors);
 
@@ -184,8 +185,13 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors)
     sb[56] = 0x53;
     sb[57] = 0xEF;
     ext2_write_u16(sb + 58, 1);
+    ext2_write_u32(sb + 76, 1);
+    ext2_write_u32(sb + 84, 11);
     ext2_write_u16(sb + 88, 128);
     ext2_write_u32(sb + 92, 1);
+    krandom_fill(sb + 104, 16);
+    sb[104 + 6] = (uint8_t)((sb[104 + 6] & 0x0F) | 0x40);
+    sb[104 + 8] = (uint8_t)((sb[104 + 8] & 0x3F) | 0x80);
 
     uint8_t *blk = ext2_scratch_block();
 
