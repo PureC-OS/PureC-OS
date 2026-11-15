@@ -212,6 +212,7 @@
 #define SYS_GUI_START 411         /* () -> 0; root: start the graphical session on VT7 */
 #define SYS_VT_ACTIVATE 412       /* (index 0..5 text, 6 graphics) -> 0; root or the VT's own process */
 #define SYS_VT_ACTIVE 413         /* () -> active VT index, -1 without text consoles */
+#define SYS_DISK_IO 414           /* (struct disk_io_request *) -> sectors; root or STORAGE_ADMIN */
 #define SYS_RENAME_PATH 409       /* (old path, new path) -> 0; POSIX rename, replaces the target */
 #define SYS_SUDO 397              /* (const char *password) -> 0, caller becomes root if in wheel */
 #define SYS_OPENPTY 396           /* (int fds[2], flags) -> 0; fds[0]=master, fds[1]=slave */
@@ -927,6 +928,16 @@ struct file_perm_info {
   uint32_t uid;
   uint32_t gid;
   uint32_t reserved;
+};
+
+#define DISK_IO_MAX_SECTORS 128
+
+struct disk_io_request {
+  char device[16];
+  uint64_t lba;
+  uint64_t buffer;
+  uint32_t count;
+  uint32_t write;
 };
 
 struct user_info {

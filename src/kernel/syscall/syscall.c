@@ -63,6 +63,11 @@ static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
 
+static bool privileged(uint32_t capability)
+{
+  return process_current_uid() == 0 || process_has_capability(capability);
+}
+
 static bool readable(const void *buffer, uint64_t size)
 {
   return process_user_buffer(buffer, size, false);
@@ -1740,6 +1745,42 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_SYNC:
     return vfs_sync() < 0 ? -KERR_IO : 0;
+  case SYS_DISK_IO:
+  {
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
+      return -KERR_PERM;
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct disk_io_request)))
+      return -KERR_FAULT;
+    struct disk_io_request req = *(const struct disk_io_request *)(uintptr_t)a1;
+    req.device[sizeof(req.device) - 1] = '\0';
+    if (!req.count || req.count > DISK_IO_MAX_SECTORS || req.lba > 0xFFFFFFFFULL ||
+        req.lba + req.count > 0x100000000ULL)
+      return -KERR_INVAL;
+    uint64_t bytes = (uint64_t)req.count * 512u;
+    void *user = (void *)(uintptr_t)req.buffer;
+    if (req.write ? !readable(user, bytes) : !writable(user, bytes))
+      return -KERR_FAULT;
+    int32_t index = block_device_find(req.device);
+    struct storage_device_info info;
+    if (index < 0 || !block_device_get_info((uint32_t)index, &info))
+      return -KERR_NODEV;
+    if (info.sector_size != 512 || req.lba + req.count > info.sector_count)
+      return -KERR_INVAL;
+    if (req.write && !info.writable)
+      return -KERR_ACCES;
+    uint64_t pages = (bytes + 4095) / 4096;
+    uint64_t phys = pmm_allocate_contiguous(pages);
+    if (!phys)
+      return -KERR_NOMEM;
+    uint8_t *bounce = (uint8_t *)pmm_physical_to_virtual(phys);
+    if (req.write)
+      memcpy(bounce, user, bytes);
+    bool ok = block_device_raw_run((uint32_t)index, req.write != 0, (uint32_t)req.lba, bounce, req.count);
+    if (ok && !req.write)
+      memcpy(user, bounce, bytes);
+    pmm_free_contiguous(phys, pages);
+    return ok ? (int64_t)req.count : -KERR_IO;
+  }
   case SYS_VT_ACTIVATE:
   {
     struct process *self = process_current();
@@ -1869,7 +1910,7 @@ int64_t syscall_handler(struct syscall_regs *r)
         (struct storage_controller_info *)(uintptr_t)a1, (uint32_t)a2);
   case SYS_FS_FORMAT:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2) ||
@@ -1885,7 +1926,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FS_FORMAT_FORCE:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
@@ -1899,7 +1940,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_INSTALL_DEVICE:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
@@ -2229,7 +2270,7 @@ int64_t syscall_handler(struct syscall_regs *r)
     return keyboard_try_get_event(out) ? 1 : 0;
   }
   case SYS_INSTALL_START:
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -10;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
@@ -2256,7 +2297,7 @@ int64_t syscall_handler(struct syscall_regs *r)
     return 0;
   case SYS_INSTALL_START_EX:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -10;
     const struct install_start_request *req =
         (const struct install_start_request *)(uintptr_t)a1;
@@ -2329,6 +2370,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_SCAN:
   {
+    if (!privileged(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
     if (!wifi_has_device())
       return -1;
     return wifi_trigger_scan() ? 0 : -1;
@@ -2357,6 +2400,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_CONNECT:
   {
+    if (!privileged(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
     const struct wifi_connect_request *user_req =
         (const struct wifi_connect_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -2386,6 +2431,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_DISCONNECT:
   {
+    if (!privileged(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
     return wifi_disconnect() ? 0 : -1;
   }
   case SYS_WIFI_STATUS:
@@ -2466,6 +2513,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FS_FORMAT_CUSTOM:
   {
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
+      return -1;
     const struct custom_format_request *user_req =
         (const struct custom_format_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -2483,7 +2532,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FORMAT_DEVICE_EX:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     const struct format_request *req =
         (const struct format_request *)(uintptr_t)a1;

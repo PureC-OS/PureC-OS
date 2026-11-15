@@ -193,6 +193,7 @@ int32_t pc_save_klog(const char *device, const char *path);
 int32_t pc_get_root_device(char *buffer, uint32_t capacity);
 int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb);
 int32_t pc_format_device_ex(const char *device, const char *serial, uint8_t fs_type);
+int32_t pc_disk_io(const char *device, uint64_t lba, void *buffer, uint32_t count, bool write);
 int32_t pc_install_start_ex(const char *device, const char *serial, uint8_t fs_type);
 int32_t pc_get_fs_type(char *buffer, uint32_t capacity);
 int32_t pc_ext2_stat(const char *path, struct ext2_stat_info *out);
