@@ -63,10 +63,6 @@ static int compare_segments(const char *a, const char *b)
         prev1 = one;
         prev2 = two;
     }
-    while (*one && !isalnum((unsigned char)*one))
-        one++;
-    while (*two && !isalnum((unsigned char)*two))
-        two++;
     if (!*one && !*two)
         return 0;
     if ((!*one && !isalpha((unsigned char)*two)) || isalpha((unsigned char)*one))
