@@ -523,3 +523,8 @@ qt-apps:
 	cmake --build $(BIN_DIR)/qt-apps
 	@mkdir -p $(BIN_DIR)/programs
 	cp $(BIN_DIR)/qt-apps/terminal/qt-terminal $(BIN_DIR)/programs/qt-terminal
+PKG_SIGN_KEY ?= $(HOME)/.config/purec-pkg/signing.pem
+
+.PHONY: repo
+repo: programs
+	python3 $(ROOT_DIR)/mk/pkg/ports.py $(BIN_DIR)/repo $(if $(wildcard $(PKG_SIGN_KEY)),--sign $(PKG_SIGN_KEY),)

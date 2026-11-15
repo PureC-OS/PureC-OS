@@ -90,6 +90,29 @@ static int verify_digest(const unsigned char *digest, const unsigned char *sig, 
 #endif
 }
 
+static void scan_keys(const char *dir, const unsigned char *digest, const char *sig, size_t sig_len, int *keys,
+                      int *valid)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+        return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL && !*valid) {
+        size_t n = strlen(e->d_name);
+        if (n < 5 || strcmp(e->d_name + n - 4, ".pub") != 0)
+            continue;
+        char path[PKG_PATH_MAX + 300];
+        snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
+        unsigned char point[POINT_LEN];
+        if (load_key(path, point) < 0)
+            continue;
+        (*keys)++;
+        if (verify_digest(digest, (const unsigned char *)sig, sig_len, point))
+            *valid = 1;
+    }
+    closedir(d);
+}
+
 int sig_verify_file(const char *file, const char *signature_file)
 {
     unsigned char digest[PURE_SHA512_DIGEST_LEN];
@@ -101,27 +124,12 @@ int sig_verify_file(const char *file, const char *signature_file)
         free(sig);
         return SIG_BAD;
     }
-    DIR *d = opendir(rp("etc/pkg/keys"));
-    if (!d) {
-        free(sig);
-        return SIG_NOKEYS;
-    }
     int keys = 0, valid = 0;
-    struct dirent *e;
-    while ((e = readdir(d)) != NULL && !valid) {
-        size_t n = strlen(e->d_name);
-        if (n < 5 || strcmp(e->d_name + n - 4, ".pub") != 0)
-            continue;
-        char path[PKG_PATH_MAX + 300];
-        snprintf(path, sizeof(path), "%s/%s", rp("etc/pkg/keys"), e->d_name);
-        unsigned char point[POINT_LEN];
-        if (load_key(path, point) < 0)
-            continue;
-        keys++;
-        if (verify_digest(digest, (const unsigned char *)sig, sig_len, point))
-            valid = 1;
-    }
-    closedir(d);
+    char target_dir[PKG_PATH_MAX + 64];
+    snprintf(target_dir, sizeof(target_dir), "%s", rp("etc/pkg/keys"));
+    scan_keys(target_dir, digest, sig, sig_len, &keys, &valid);
+    if (!valid && strcmp(target_dir, "/etc/pkg/keys") != 0)
+        scan_keys("/etc/pkg/keys", digest, sig, sig_len, &keys, &valid);
     free(sig);
     if (valid)
         return SIG_OK;

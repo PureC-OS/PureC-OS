@@ -63,6 +63,18 @@ def git_version():
     return m.group(1) if m else "2.0.0"
 
 
+def header_tree(srcdir, destdir):
+    out = []
+    base = os.path.join(ROOT, srcdir)
+    for root, dirs, names in os.walk(base):
+        dirs.sort()
+        for name in sorted(names):
+            if name.endswith(".h"):
+                rel = os.path.relpath(os.path.join(root, name), base)
+                out.append(("%s/%s" % (destdir, rel), "%s/%s" % (srcdir, rel)))
+    return out
+
+
 def header_files(srcdir, destdir, pattern):
     out = []
     base = os.path.join(ROOT, srcdir)
@@ -93,7 +105,8 @@ PORTS = [
      "files": [("usr/bin/tcc", "bin/programs/tcc"), ("lib/tcc/libtcc1.a", "bin/lib/tcc/libtcc1.a")]
      + header_files("tcc/include", "lib/tcc/include", r".*\.h$")},
     {"name": "wolfssl", "version": wolf_version, "rel": 1, "desc": "wolfSSL TLS library (development files)",
-     "files": [("usr/lib/libwolf.a", "bin/lib/libwolf.a"), ("usr/include/wolfssl/user_settings.h", "wolfssl/purec/user_settings.h")]},
+     "files": [("usr/lib/libwolf.a", "bin/lib/libwolf.a"), ("usr/include/wolfssl/user_settings.h", "wolfssl/purec/user_settings.h")]
+     + header_tree("wolfssl/wolfssl", "usr/include/wolfssl")},
     {"name": "sdl2", "version": sdl_version, "rel": 1, "desc": "Simple DirectMedia Layer 2 (development files)",
      "files": [("usr/lib/libSDL2.a", "bin/lib/libSDL2.a"), ("usr/lib/libSDL2_mixer.a", "bin/lib/libSDL2_mixer.a")]
      + header_files("SDL/include", "usr/include/SDL2", r".*\.h$")},
