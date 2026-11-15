@@ -9,6 +9,8 @@ static int compare_segments(const char *a, const char *b)
         return 0;
     const char *one = a;
     const char *two = b;
+    const char *prev1 = a;
+    const char *prev2 = b;
     while (*one && *two) {
         while (*one && !isalnum((unsigned char)*one))
             one++;
@@ -16,6 +18,8 @@ static int compare_segments(const char *a, const char *b)
             two++;
         if (!*one || !*two)
             break;
+        if ((one - prev1) != (two - prev2))
+            return (one - prev1) < (two - prev2) ? -1 : 1;
         const char *s1 = one;
         const char *s2 = two;
         int numeric;
@@ -56,6 +60,8 @@ static int compare_segments(const char *a, const char *b)
             return n1 > n2 ? 1 : -1;
         one = s1;
         two = s2;
+        prev1 = one;
+        prev2 = two;
     }
     while (*one && !isalnum((unsigned char)*one))
         one++;
