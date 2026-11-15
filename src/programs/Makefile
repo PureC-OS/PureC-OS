@@ -136,7 +136,6 @@ TARGETS := \
 	$(PROGRAM_DIR)/snake \
 	$(PROGRAM_DIR)/tetris \
 	$(PROGRAM_DIR)/puzzle15 \
-	$(PROGRAM_DIR)/2048 \
 	$(PROGRAM_DIR)/terminal \
 	$(PROGRAM_DIR)/nano \
 	$(PROGRAM_DIR)/system \
@@ -366,19 +365,6 @@ $(PROGRAM_DIR)/devmgr: $(OBJ_DIR)/devmgr/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBP
 $(PROGRAM_DIR)/logview: $(OBJ_DIR)/logview/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/tetris: $(OBJ_DIR)/game/tetris/main.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/puzzle15: $(OBJ_DIR)/game/puzzle15/puzzle15.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
-$(PROGRAM_DIR)/2048: $(OBJ_DIR)/game/2048/game2048.o $(LIBPGUIW) $(LIBPUREGUI) $(LIBPUREAUDIO) $(LIBPUREC) $(LINKER_SCRIPT)
-	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(filter-out $(LINKER_SCRIPT),$^)
-
 
 
 $(PROGRAM_DIR)/hexedit: $(GENERAL_CPP_OBJECTS) $(LIBPUREGUI) $(LIBPUREFS) $(LIBPUREC) $(LINKER_SCRIPT)
