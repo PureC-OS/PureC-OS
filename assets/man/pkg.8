@@ -1,0 +1,78 @@
+NAME
+       pkg - package manager
+
+SYNOPSIS
+       **pkg** __operation__ [__options__] [__targets__]
+
+DESCRIPTION
+       **pkg** installs, removes and updates software packaged for PureC OS. It
+       works like **pacman**: a package is an archive (**name-version-arch.pkg.tar.gz**),
+       repositories are plain files (a database plus packages) on a web server,
+       and the list of installed packages lives in **/var/lib/pkg/local**.
+
+       Changing operations need root rights.
+
+OPERATIONS
+       **-S** __names__
+              install packages and the packages they depend on from the repositories.
+              **-Sy** first downloads fresh package databases, **-Su** upgrades every
+              package that has a newer version in a repository, **-Syu** does both
+              (like **pacman -Syu**): it shows the list and asks before changing anything.
+       **-Ss** __text__   search names and descriptions in the repositories
+       **-Si** __name__   information about a repository package
+       **-Sl** [__repo__] list repository packages
+       **-Sc**        delete cached package files that are not installed
+       **-R** __names__   remove packages. A package that another one needs is not removed
+              (see **--nodeps**). **-Rs** also removes the dependencies that were
+              installed only for them and nothing else needs.
+       **-Q** [__names__]  list installed packages. **-Qi** information, **-Ql** files,
+              **-Qo** __file__ the owner of a file, **-Qe** explicitly installed, **-Qd** installed
+              as a dependency, **-Qs** __text__ search, **-Qu** packages with an update in the
+              databases, **-Qk** check that the files exist, **-Qq** names only
+       **-U** __files__   install package files from disk
+       **-D** __names__   change the install reason: **--asdeps** or **--asexplicit**
+
+OPTIONS
+       **--root** __dir__    work on another root directory (databases, files and
+                      the configuration are all taken under it)
+       **--config** __file__ use another configuration file
+       **--noconfirm**  do not ask questions
+       **--needed**     do not reinstall a package that is up to date
+       **--force**      overwrite files that exist but belong to no package
+       **--nodeps**     do not check dependencies (**-Rd** is the same for removal)
+       **--asdeps**, **--asexplicit**
+                      set the install reason
+       **-v**, **--version**
+
+CONFIGURATION
+       **/etc/pkg.conf** has an **[options]** section (**Architecture**, **SigLevel**) and one
+       section per repository with one or more **Server** lines. **$repo** and **$arch** in
+       an address are replaced. An address is a web address (the **curl** program is used)
+       or **file:///path** / **/path** for a directory.
+
+           [options]
+           SigLevel = Optional
+
+           [ports]
+           Server = https://example.org/purec/$arch
+
+       **SigLevel** is **Never** (no check), **Optional** (a signature is checked when the
+       repository has one, a bad one is always refused) or **Required**. The database
+       is signed with ECDSA P-256; the public keys are the files **/etc/pkg/keys/*.pub**
+       (65 bytes, as hexadecimal text). Packages are checked by the SHA-512 sum in the
+       signed database.
+
+PACKAGES
+       Files listed in **backup** of a package are configuration files. When an upgrade
+       finds such a file changed by you, your file stays and the new one is written next
+       to it as **name.pkgnew**; when a package is removed a changed file is kept as
+       **name.pkgsave**. A package can carry scripts that run through **/bin/sh** with
+       **PKG_ROOT**, **PKG_NAME**, **PKG_VERSION** and **PKG_OLD_VERSION** set:
+       **post-install**, **post-upgrade**, **pre-remove**, **post-remove**.
+
+FILES
+       /etc/pkg.conf, /etc/pkg/keys/, /var/lib/pkg/local/, /var/lib/pkg/sync/,
+       /var/cache/pkg/
+
+SEE ALSO
+       curl(1), sync(1)
