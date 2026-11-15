@@ -2,6 +2,19 @@
 
 ## V2.0.0 переход на сетевой стек в userspace и время в userspace
 
+### Из репозитория убраны графические программы
+Фокус проекта — ядро и драйверы. Удалено всё графическое, что не является ядром, драйвером, библиотекой, языком или портом.
+
+**Удалено**
+- Программы на libgui из `src/programs`: installer, login, terminal, settings, files, monitor, disks, devmgr, logview, hexedit, imgview, raminfo, gltest, `utils/test/gui_demo`. Правила сборки и списки исходников в `src/programs/Makefile` вычищены, заодно убраны оставшиеся ссылки на уже удалённые игры и nano.
+- Сабмодуль `purec-notepad-os` (графический блокнот), цели `make notepad` и `make hexedit`, их пункты в `purec.py`.
+- Ресурсы стола: `src/wallpapers`, `src/audio` (звуки игр), `src/demo` (больше не копируется в ISO), `assets/icons`, `assets/applications`, `mk/gen_icons.py`.
+- `/usr/bin/hello-rs` из образа.
+
+**Перенесено**: `terminal/path.[ch]` (нормализация путей) используется `/bin/system`, поэтому переехал в `src/programs/system/path.[ch]`. `test-path` проверяет его там.
+
+**Не тронуто**: ядро и драйверы, библиотеки (libc, libfs, libaudio, libgui), языки и компиляторы (tcc, lua, micropython, make, libc++), все порты (curl, wolfSSL, git, vim, SDL, Doom, NetSurf, Qt, Ladybird), Rust `userspace/`, тестовые программы ядра.
+
 ### initramfs: без графики, без отладочной информации, с жёсткими ссылками
 Стола в ядре больше нет, поэтому из `assets/manifest.txt` убрано всё, чему нужна графика (87 записей). `assets/manifest-new.txt` не тронут, это запасной вариант.
 
