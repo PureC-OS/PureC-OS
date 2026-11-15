@@ -11,6 +11,8 @@
 - Ресурсы стола: `src/wallpapers`, `src/audio` (звуки игр), `src/demo` (больше не копируется в ISO), `assets/icons`, `assets/applications`, `mk/gen_icons.py`.
 - `/usr/bin/hello-rs` из образа.
 
+**Сборка git**: `make programs` (а значит и `make`/`make iso`) теперь собирает порт git, если есть исходники `git/`: сначала `mk/netsurf curl` (статический libcurl в `bin/ns-stage`), потом `mk/git`. Раньше git собирался только отдельной командой `make -C mk/git` и после очистки `bin/` пропадал из образа.
+
 **Перенесено**: `terminal/path.[ch]` (нормализация путей) используется `/bin/system`, поэтому переехал в `src/programs/system/path.[ch]`. `test-path` проверяет его там.
 
 **Не тронуто**: ядро и драйверы, библиотеки (libc, libfs, libaudio, libgui), языки и компиляторы (tcc, lua, micropython, make, libc++), все порты (curl, wolfSSL, git, vim, SDL, Doom, NetSurf, Qt, Ladybird), Rust `userspace/`, тестовые программы ядра.
