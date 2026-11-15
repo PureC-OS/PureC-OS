@@ -4,6 +4,7 @@
 #include "../../kernel/process/scheduler.h"
 #include "../../kernel/sync/spinlock.h"
 #include "../../kernel/tty/tty.h"
+#include "../../kernel/tty/vtcon.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -100,7 +101,21 @@ static uint8_t kbd_head = 0, kbd_tail = 0, kbd_count = 0;
 static uint8_t special_buf[KBD_SPECIAL_BUF_SIZE];
 static uint8_t special_head = 0, special_tail = 0, special_count = 0;
 
+static uint8_t hid_mods = 0;
+
+static bool alt_held(void){
+    return (hid_mods & (KEY_MOD_LALT | KEY_MOD_RALT)) != 0;
+}
+
+static bool ctrl_held(void){
+    return (hid_mods & (KEY_MOD_LCTRL | KEY_MOD_RCTRL)) != 0;
+}
+
 static void kbd_push(char c){
+    if(vtcon_keyboard_captured()){
+        vtcon_key_char(c, alt_held());
+        return;
+    }
     tty_feed_char(c);
     if(kbd_count >= KBD_BUF_SIZE) return;
     kbd_buf[kbd_head] = c;
@@ -120,7 +135,16 @@ static bool kbd_pop(char *out){
     return ok;
 }
 
+static void seq_push(const char *text){
+    if(vtcon_keyboard_captured()) vtcon_key_sequence(text);
+    else tty_feed_sequence(text);
+}
+
 static void special_push(uint8_t key){
+    if(vtcon_keyboard_captured()){
+        vtcon_key_special(key);
+        return;
+    }
     tty_feed_special(key);
     if(special_count >= KBD_SPECIAL_BUF_SIZE) return;
     special_buf[special_head] = key;
@@ -145,17 +169,16 @@ static void function_key_push(uint8_t number){
         "\033OS", "\033[15~", "\033[17~", "\033[18~", "\033[19~",
         "\033[20~", "\033[21~", "\033[23~", "\033[24~"
     };
-    if(number >= 4 && number <= 12) tty_feed_sequence(sequences[number-4]);
+    if(number >= 4 && number <= 12) seq_push(sequences[number-4]);
 }
 
 #define KBD_EVENT_BUF_SIZE 64
 static struct key_event event_buf[KBD_EVENT_BUF_SIZE];
 static uint8_t event_head = 0, event_tail = 0, event_count = 0;
-static uint8_t hid_mods = 0;
 static uint8_t hid_down[32];
 
-static void event_push(uint16_t scancode, bool pressed){
-    if(!scancode || scancode > 255) return;
+static bool event_push(uint16_t scancode, bool pressed){
+    if(!scancode || scancode > 255) return false;
     uint8_t mask = (uint8_t)(1u << (scancode & 7));
     uint8_t *slot = &hid_down[scancode >> 3];
     bool was_down = (*slot & mask) != 0;
@@ -164,7 +187,11 @@ static void event_push(uint16_t scancode, bool pressed){
     if(mod){
         if(pressed) hid_mods |= mod; else hid_mods &= (uint8_t)~mod;
     }
-    if(!pressed && !was_down) return;
+    if(!pressed && !was_down) return false;
+    if(pressed && scancode >= 0x3A && scancode <= 0x45
+       && vtcon_switch_combo((uint8_t)(scancode - 0x39), ctrl_held(), alt_held()))
+        return true;
+    if(pressed && vtcon_keyboard_captured()) return false;
     if(event_count >= KBD_EVENT_BUF_SIZE){
         event_tail = (event_tail + 1) % KBD_EVENT_BUF_SIZE;
         event_count--;
@@ -178,6 +205,7 @@ static void event_push(uint16_t scancode, bool pressed){
     };
     event_head = (event_head + 1) % KBD_EVENT_BUF_SIZE;
     event_count++;
+    return false;
 }
 
 static bool event_pop(struct key_event *out){
@@ -212,7 +240,7 @@ static void handle_scancode_set1(uint8_t sc){
         bool released=(sc&0x80)!=0;
         sc&=0x7F;
         set1_extended=false;
-        event_push(hid_from_set1(sc,1),!released);
+        if(event_push(hid_from_set1(sc,1),!released)) return;
         if(released) return;
         switch(sc){
             case 0x47: special_push(KEYBOARD_SPECIAL_HOME); break;
@@ -224,12 +252,12 @@ static void handle_scancode_set1(uint8_t sc){
             case 0x48: special_push(KEYBOARD_SPECIAL_UP); break;
             case 0x50: special_push(KEYBOARD_SPECIAL_DOWN); break;
             case 0x53: special_push(KEYBOARD_SPECIAL_DELETE); break;
-            case 0x52: tty_feed_sequence("\033[2~"); break;
+            case 0x52: seq_push("\033[2~"); break;
             default: break;
         }
         return;
     }
-    if(sc != 0xE1) event_push(hid_from_set1(sc&0x7F,0),!(sc&0x80));
+    if(sc != 0xE1 && event_push(hid_from_set1(sc&0x7F,0),!(sc&0x80))) return;
     if(sc == 0x1D){
         control_pressed = true;
         return;
@@ -302,7 +330,7 @@ static void handle_scancode_set2(uint8_t sc){
     set2_break_pending = false;
     set2_extended = false;
 
-    event_push(hid_from_set2(sc,extended),!released);
+    if(event_push(hid_from_set2(sc,extended),!released)) return;
     if(sc == 0x12 || sc == 0x59){
         shift_pressed = !released;
         return;
@@ -324,7 +352,7 @@ static void handle_scancode_set2(uint8_t sc){
         if(sc == 0x75) special_push(KEYBOARD_SPECIAL_UP);
         if(sc == 0x72) special_push(KEYBOARD_SPECIAL_DOWN);
         if(sc == 0x71) special_push(KEYBOARD_SPECIAL_DELETE);
-        if(sc == 0x70) tty_feed_sequence("\033[2~");
+        if(sc == 0x70) seq_push("\033[2~");
         return;
     }
     if(sc == 0x05){
@@ -527,6 +555,9 @@ char keyboard_getc(void){
 }
 
 void keyboard_init(void){
+    static bool initialized;
+    if(initialized) return;
+    initialized = true;
     uint64_t flags;
     __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
     uint8_t config = 0;
