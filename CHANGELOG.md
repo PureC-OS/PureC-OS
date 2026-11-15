@@ -2,6 +2,26 @@
 
 ## V2.0.0 переход на сетевой стек в userspace и время в userspace
 
+### Рабочий стол убран из ядра; init запускает только текстовые консоли
+Ядро больше не содержит графической оболочки. Загрузка идёт как в Linux: ядро → `/sbin/init` → getty на tty1–tty6 со строкой `login:`. Графический вход сам не поднимается.
+
+**Удалено из ядра**
+- `src/userspace/*` целиком: C-стол, оконный менеджер, панели, обои, персонализация, встроенные приложения (часы, календарь, калькулятор), `rs_session` (Rust-стол, `desktop=rs`), смена разрешения из `display.ini`.
+- `src/gfx/compositor.c` вместе с хост-тестами `test-compositor` и `test-window-manager`.
+- В `gop.c` — окна-консоли (`gop_console_*`) и все ветки композитора. Рисование идёт только в backbuffer и фреймбуфер.
+- Syscalls окон и прямого рисования: `SYS_GUI_WINDOW_*`, `SYS_FB_BLIT`, `SYS_DESKTOP_*`, `SYS_DRAW_RECT`, `SYS_DRAW_LINE`, `SYS_CLEAR`, `SYS_SCROLL_RECT_UP`, `SYS_FB_BEGIN_UPDATE`/`END_UPDATE`, `SYS_CONSOLE_*`, `SYS_DISPLAY_SET_MODE`, `SYS_DESKTOP_REDRAW`, а также `SYS_GUI_START` и `/sbin/startgui`. Номера в заголовке остались, вызовы возвращают ошибку.
+- Флаги cmdline `desktop=rs` и `gui=kernel`. Пункт Limine «Rust desktop» заменён на «verbose kernel log on tty1».
+
+**Что осталось и куда переехало**
+- Запись журнала ядра на диск (`/kernel.log`) — `src/kernel/diagnostics/klog_disk.c`, поток `kernel-log`.
+- Опрос мыши, USB hotplug, контроль частоты прерываний и клавиатура — в потоке `vtcon`.
+- Путь для будущего видеосервера в userspace: `SYS_DISPLAY_CLAIM`, `FB_MAP`, `INPUT_OPEN`, `FB_DAMAGE`, `DISPLAY_RELEASE`. Когда процесс забирает экран, консоль переходит на VT7, ввод уходит ему через `inputdev`. При освобождении экрана возвращается tty1.
+- `.desktop`-файлы перенесены в `assets/applications/` и по-прежнему ставятся в `/usr/share/applications`.
+
+**Следствие**: графические программы (login, Терминал-окно, Settings, Files и др.) без видеосервера в userspace не работают. Работа идёт в текстовых консолях.
+
+**Проверка**: ядро и init/getty собраны, хост-тесты devfs, procfs, tty, console_vt и blit проходят, манифест собирается.
+
 ### Виртуальные консоли tty1–tty6 в ядре; графику поднимает init
 Ядро теперь, как Linux, грузится в текстовую консоль. Рабочий стол больше не стартует из ядра сам: его запускает init через `/sbin/startgui`.
 
