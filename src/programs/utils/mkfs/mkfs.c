@@ -120,6 +120,11 @@ static int command_list(void){
     return 0;
 }
 
+static const char *short_name(const char *name){
+    if(name[0]=='/' && name[1]=='d' && name[2]=='e' && name[3]=='v' && name[4]=='/') return name + 5;
+    return name;
+}
+
 static int command_format(const char *fs_arg, char *dev_arg){
     uint8_t fs_type;
     if(pc_strcmp(fs_arg, "ext2") == 0){
@@ -146,29 +151,38 @@ static int command_format(const char *fs_arg, char *dev_arg){
         return 1;
     }
 
-    if(dev_arg[0]=='/' && dev_arg[1]=='d' && dev_arg[2]=='e' && dev_arg[3]=='v' && dev_arg[4]=='/'){
-        uint32_t k = 0;
-        while(dev_arg[k + 5]){ dev_arg[k] = dev_arg[k + 5]; k++; }
-        dev_arg[k] = '\0';
-    }
+    const char *want = short_name(dev_arg);
     const struct storage_device_info *target = 0;
     for(int32_t i = 0; i < count; i++){
-        if(pc_strcmp(devices[i].name, dev_arg) == 0){
+        if(pc_strcmp(short_name(devices[i].name), want) == 0){
             target = &devices[i];
             break;
         }
     }
     bool partition = false;
-    if(!target){
-        uint32_t len = pc_strlen(dev_arg);
+    char kernel_name[40];
+    if(target){
+        pc_copy(kernel_name, target->name, sizeof(kernel_name));
+    } else {
+        uint32_t len = pc_strlen(want);
         uint32_t base = len;
-        while(base && dev_arg[base - 1] >= '0' && dev_arg[base - 1] <= '9') base--;
+        while(base && want[base - 1] >= '0' && want[base - 1] <= '9') base--;
         if(base && base < len){
             for(int32_t i = 0; i < count; i++){
-                uint32_t n = pc_strlen(devices[i].name);
+                const char *dn = short_name(devices[i].name);
+                uint32_t n = pc_strlen(dn);
                 bool same = n == base;
-                for(uint32_t j = 0; same && j < n; j++) if(devices[i].name[j] != dev_arg[j]) same = false;
-                if(same){ target = &devices[i]; partition = true; break; }
+                for(uint32_t j = 0; same && j < n; j++) if(dn[j] != want[j]) same = false;
+                if(same){
+                    target = &devices[i];
+                    partition = true;
+                    uint32_t nl = pc_strlen(devices[i].name);
+                    pc_copy(kernel_name, devices[i].name, sizeof(kernel_name));
+                    if(nl + (len - base) + 1 <= sizeof(kernel_name)){
+                        for(uint32_t j = base; j <= len; j++) kernel_name[nl + j - base] = want[j];
+                    }
+                    break;
+                }
             }
         }
     }
@@ -201,7 +215,7 @@ static int command_format(const char *fs_arg, char *dev_arg){
     pc_write("ext2");
     pc_write("...\n");
 
-    int32_t result = pc_format_device_ex(dev_arg, target->serial, fs_type);
+    int32_t result = pc_format_device_ex(kernel_name, target->serial, fs_type);
     if(result < 0){
         pc_write("mkfs: format failed: ");
         switch(result){
