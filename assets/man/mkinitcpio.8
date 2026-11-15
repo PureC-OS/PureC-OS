@@ -1,0 +1,36 @@
+NAME
+       mkinitcpio - point the boot configuration at the root file system by UUID
+
+SYNOPSIS
+       **mkinitcpio** [**-r** __ROOT__] [**-b** __BOOTDIR__] [**-u**] [**-n**]
+
+DESCRIPTION
+       The kernel mounts its root file system only when the boot loader gives
+       it **root=UUID=**__uuid__ on the kernel command line. **mkinitcpio** finds
+       the UUID of the root partition and writes it into every boot entry of
+       the Limine configuration on the boot (EFI) partition:
+
+           __BOOTDIR__/limine.conf
+           __BOOTDIR__/EFI/BOOT/limine.conf
+           __BOOTDIR__/boot/limine/limine.conf
+
+       An entry without a **cmdline:** line gets one; an existing line keeps
+       its other options and only its **root=UUID=** part is replaced. Run it
+       again whenever the root partition is formatted or moved to another disk.
+
+OPTIONS
+       **-r** __ROOT__
+              root partition, for example **sda2** or **/dev/sdb2**. Without it
+              the partition the system is running from is used.
+       **-b** __BOOTDIR__
+              where the boot partition is mounted (default **/boot**).
+       **-u**   give the root file system a new UUID when it has none (an
+              ext2 file system made before UUIDs existed). Without this
+              option such a partition is reported and left alone.
+       **-n**   do not write anything, print the new configuration.
+
+EXIT STATUS
+       0 on success, 1 on error.
+
+SEE ALSO
+       blkid(8), mkfs(8), fdisk(8)
