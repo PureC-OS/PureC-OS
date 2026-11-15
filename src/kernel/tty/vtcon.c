@@ -10,6 +10,8 @@
 #include "../sync/mutex.h"
 #include "../sync/spinlock.h"
 #include "../diagnostics/klog.h"
+#include "../process/process.h"
+#include "../../boot/boot_options.h"
 
 #define CELL_W 8u
 #define CELL_H 16u
@@ -676,6 +678,12 @@ void vtcon_set_quiet(bool value)
     quiet = value;
 }
 
+void vtcon_note_open(int32_t index)
+{
+    if (index == 0 && !quiet && !boot_console_verbose() && process_current_pid() != 1)
+        quiet = true;
+}
+
 bool vtcon_klog_wants(int level)
 {
     if (!vtcon_ready())
@@ -721,6 +729,7 @@ static void gui_thread(void *arg)
     gui_running = true;
     gui_starting = false;
     (void)do_switch(VTCON_GRAPHICS);
+    scheduler_exit();
 }
 
 int32_t vtcon_gui_start(void)

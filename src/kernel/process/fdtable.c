@@ -201,6 +201,7 @@ static bool open_tty(const char *path, uint32_t flags, int32_t *result)
     *result = object;
     return true;
   }
+  vtcon_note_open(index);
   if (flags & 04000U)
     (void)ofd_flags_set(object, 04000U);
   *result = fd_install_ofd(object, flags & O_CLOEXEC_FLAG);
