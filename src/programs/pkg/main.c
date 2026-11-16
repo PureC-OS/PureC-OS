@@ -400,7 +400,7 @@ int main(int argc, char **argv)
         if (!status && (ntargets || u)) {
             localdb_load();
             syncdb_load();
-            if (!sdb.count)
+            if (!sdb.count && u && !ntargets)
                 die("nothing is known about the trusted repositories yet, run 'pkg -Sy' first");
             if (u)
                 tx_upgrade(0);

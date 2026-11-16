@@ -617,8 +617,10 @@ int tx_install(char **targets, int count, int local_files)
                 die("%s is not a trusted repository, add it to [trusted] in %s", targets[i], config_path());
         }
         int s = syncdb_find(name);
+        if (s < 0 && source_url(name))
+            die("%s: no %s-<version>-x86_64.pkg.tar.gz in the releases of %s", name, name, source_url(name));
         if (s < 0)
-            die("target not found: %s (run 'pkg -Sy' or add it to [trusted] in %s)", targets[i], config_path());
+            die("target not found: %s (it is not in [trusted] of %s)", targets[i], config_path());
         int installed = localdb_find(name);
         if (installed >= 0 && opt.needed && pkg_vercmp(ldb.pkgs[installed].version, sdb.pkgs[s].version) >= 0) {
             note(" %s-%s is up to date -- skipping", name, ldb.pkgs[installed].version);

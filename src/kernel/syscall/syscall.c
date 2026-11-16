@@ -154,6 +154,12 @@ static void install_worker(void *argument)
                                             install_progress);
   io_bulk_end();
   block_device_end_exclusive_io();
+  if (result >= 0)
+  {
+    int32_t target = block_device_find(install_device);
+    if (target < 0 || !vfs_fat32_mount_boot_device((uint32_t)target))
+      klog(KLOG_WARN, "install: new EFI partition not mounted on /boot");
+  }
   filesystem_syscall_unlock();
   __atomic_store_n(&install_worker_tid, -1, __ATOMIC_RELEASE);
   install_job.result = result;

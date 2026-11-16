@@ -310,12 +310,13 @@ static int set_enabled(char **names, int count, bool enable, bool now)
                     status = fail("cannot create %s", dir);
                     continue;
                 }
-                int fd = open(marker, O_WRONLY | O_CREAT, 0644);
-                if (fd < 0) {
+                FILE *mf = fopen(marker, "w");
+                if (!mf) {
                     status = fail("cannot create %s", marker);
                     continue;
                 }
-                close(fd);
+                fprintf(mf, "# enabled: %s is started by %s\n", name, targets[t]);
+                fclose(mf);
                 printf("Enabled %s in %s\n", name, targets[t]);
             } else {
                 if (unlink(marker) == 0)

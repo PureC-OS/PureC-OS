@@ -201,6 +201,12 @@ static int source_index(const char *name)
     return -1;
 }
 
+const char *source_url(const char *name)
+{
+    int i = source_index(name);
+    return i < 0 ? NULL : sources[i].url;
+}
+
 const char *source_by_url(const char *url)
 {
     char want[96];
