@@ -51,14 +51,17 @@ Man-страницы `init.8` (переписана) и `initctl.8`.
 
 **Проверено на хосте**: 18 проверок в пространстве имён PID, где init получает PID 1 (порядок, oneshot, лог, упавшая зависимость, шаблон, условие, restart/stop/start, SIGKILL, троттлинг, enable/disable, set-default, poweroff). В госте не проверено.
 
-### Консольный установщик
-`/sbin/installer` — установщик в духе archinstall.
-- Шаги: выбор диска (подтверждение вводом имени диска), имя хоста, часовой пояс, пароль root, сколько угодно пользователей (до 8) с флагом «администратор» → группа wheel (sudo), профиль, дополнительные пакеты, сводка. До подтверждения ничего не пишется.
-- Сама установка — прежний ядерный путь `pc_install_start_accounts` (GPT, ESP, ext2, копирование live-системы, учётные записи) с полосой прогресса.
-- После неё новый раздел — корень работающей системы. Установщик вызывает `mkinitcpio -u` (`root=UUID=`) и ставит пакеты через `pkg`.
-- Профиль «графический» скачивает пакет `userspace` из GitHub. Если его нет в `[trusted]`, установщик спрашивает адрес репозитория и дописывает его в `/etc/pkg/pkg.conf` установленной системы.
-- `/etc/init/default.target` получает `graphical.target`, если userspace встал, иначе `multi-user.target`.
-- Man `installer.8`. В госте не проверено.
+### Установщик в стиле archinstall
+`/sbin/installer` — меню, как у archinstall, а не анкета.
+- Главный экран: все настройки со значениями справа (Disk configuration, Hostname, Root password, User accounts, Profile, Additional packages, Timezone), под чертой Save configuration, Install, Abort. Внизу описание выделенного пункта. Незаданные обязательные значения подсвечены красным, Install не начнётся без диска и пароля root.
+- Управление: стрелки или j/k, Home/End, PgUp/PgDn, Enter, Esc/q назад, `/` поиск в списке (часовые пояса), пробел отмечает пакеты.
+- Disk configuration: список дисков (имя, размер, шина, модель), раскладка по умолчанию: GPT, EFI с Limine, ext2, swap на ATA/SATA.
+- User accounts: подменю «Add a user» (имя, полное имя, пароль дважды без эха, вопрос superuser → wheel/sudo), выбор пользователя → сменить пароль, повысить/понизить, удалить; «Confirm and exit».
+- Profile: Minimal или Desktop (пакет `userspace` из GitHub, `graphical.target`; если его нет в `[trusted]`, спрашивается адрес репо).
+- Additional packages: отметки из `[trusted]` в `/etc/pkg/pkg.conf`. Timezone: список зон ядра с поиском.
+- Save configuration / `installer --config FILE`: настройки без паролей (`/root/purec-install.conf`).
+- Install: итоговое Yes/No (по умолчанию No), затем ядерная установка с полосой прогресса, `mkinitcpio -u`, `pkg -S`, `/etc/init/default.target`, предложение перезагрузиться.
+- Проверено на хосте: 20 проверок через pty с заглушками ядерных вызовов (навигация, поиск, подменю пользователей, удаление, профиль, итоговый запрос к ядру с нужными полями). В госте не проверено.
 
 ### iwxctl, fdisk и mkfs для разделов
 Две новые консольные программы вместо графических Device Manager и Disks.
