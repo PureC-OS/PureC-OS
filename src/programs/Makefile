@@ -17,6 +17,7 @@ LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 PLAIN_SOURCES := \
 	init/main.c \
 	initctl/main.c \
+	installer/main.c \
 	getty/main.c \
 	system/main.c \
 	system/commands.c \
@@ -82,6 +83,7 @@ LUA_OBJECTS := $(LUA_SOURCES:%.c=$(OBJ_DIR)/%.o)
 TARGETS := \
 	$(PROGRAM_DIR)/init \
 	$(PROGRAM_DIR)/initctl \
+	$(PROGRAM_DIR)/installer \
 	$(PROGRAM_DIR)/getty \
 	$(PROGRAM_DIR)/system \
   	$(PROGRAM_DIR)/hello \
@@ -237,6 +239,10 @@ $(PROGRAM_DIR)/initctl: $(OBJ_DIR)/initctl/main.o $(LIB_DIR)/crt0.o $(LIBPUREC) 
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/initctl/main.o $(LIBPUREC)
 
+$(PROGRAM_DIR)/installer: $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIB_DIR)/crt0.o $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
+	@mkdir -p $(@D)
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPURECRYPT) $(LIBPUREC)
+
 $(PROGRAM_DIR)/getty: $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIB_DIR)/crt0.o $(LIBPURECRYPT) $(LIBPUREC) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/getty/main.o $(OBJ_DIR)/accounts/accounts.o $(OBJ_DIR)/accounts/accounts_core.o $(LIBPURECRYPT) $(LIBPUREC)
@@ -337,7 +343,7 @@ $(PROGRAM_DIR)/forktest: $(OBJ_DIR)/forktest/main.o $(LIB_DIR)/crt0.o $(LIBPUREF
 	@mkdir -p $(@D)
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/forktest/main.o $(LIBPUREFS) $(LIBPUREC)
 
-$(OBJ_DIR)/init/main.o $(OBJ_DIR)/initctl/main.o $(OBJ_DIR)/getty/main.o: $(OBJ_DIR)/%/main.o: $(ROOT_DIR)/src/programs/%/main.c
+$(OBJ_DIR)/init/main.o $(OBJ_DIR)/initctl/main.o $(OBJ_DIR)/installer/main.o $(OBJ_DIR)/getty/main.o: $(OBJ_DIR)/%/main.o: $(ROOT_DIR)/src/programs/%/main.c
 	@mkdir -p $(@D)
 	$(CC) $(CPPFLAGS) -I$(ROOT_DIR)/src/libc/include/hosted $(DEPFLAGS) $(USER_CFLAGS) -c $< -o $@
 
