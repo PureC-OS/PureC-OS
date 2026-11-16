@@ -3,6 +3,7 @@ import argparse
 import os
 import re
 import shutil
+import subprocess
 import sys
 
 PATTERN = re.compile(r"^(?P<name>[A-Za-z0-9._+-]+)-(?P<ver>[0-9][^-]*)-(?P<rel>[^-]+)-(?P<arch>x86_64|any)\.pkg\.tar\.gz$")
@@ -12,6 +13,7 @@ def main():
     ap = argparse.ArgumentParser(description="put packages into a registry checkout")
     ap.add_argument("--registry", required=True)
     ap.add_argument("--keep", type=int, default=1)
+    ap.add_argument("--key", default=os.path.expanduser("~/.config/purec-pkg/signing.pem"))
     ap.add_argument("packages", nargs="+")
     args = ap.parse_args()
     conf_path = os.path.join(args.registry, "repository.conf")
@@ -56,6 +58,15 @@ def main():
         path, desc = entries[name]
         out.append(f"{name} {path}" + (f" {desc}" if desc else ""))
     open(conf_path, "w", encoding="utf-8").write("\n".join(out) + "\n")
+    if os.path.exists(args.key):
+        signer = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pkgsign.py")
+        for conf in ("repository.conf", "registry.conf"):
+            path = os.path.join(args.registry, conf)
+            if os.path.exists(path):
+                subprocess.check_call([sys.executable, signer, "sign", args.key, path, path + ".sig"])
+        print("signed repository.conf, registry.conf")
+    else:
+        print("warning: no signing key, repository.conf is not signed", file=sys.stderr)
 
 
 main()

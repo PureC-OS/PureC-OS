@@ -11,6 +11,8 @@
 - `SigLevel = Required` проверяет и сам `repository.conf`: без подписи он отклоняется.
 - `pkg -Sl` показывает отдельный раздел `repository.conf` со списком его пакетов.
 - Для выкладки добавлен `mk/pkg/publish.py --registry Trusted <пакет>...`: копирует архив с подписью в `bin/ИМЯ/`, убирает старую версию (`--keep N` оставляет N версий) и переписывает строку в `repository.conf`.
+- `publish.py` сам подписывает `repository.conf` и `registry.conf` ключом `~/.config/purec-pkg/signing.pem` (`--key` меняет путь). Проверено на хосте с `SigLevel = Required` и боевым ключом: `pkg -S pkg` ставит пакет, а испорченный `repository.conf` отклоняется как «signature is invalid».
+- pkg 1.2.0 выложен в `Trusted/bin/pkg/` первым пакетом по новой схеме, установленный бинарь побайтно совпадает со сборкой.
 - Хост-тесты `programs/purec-os-pkg/tests/registry.sh`: 27 проверок, из них 9 новых. В ВМ не проверено.
 
 ### pkg не упирается в лимит GitHub API, ядро запускает обновлённые программы с диска
