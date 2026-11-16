@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +27,21 @@ static void lock_acquire(void)
     if (mkdirs(rp("var/lib/pkg"), 0755) < 0 && !is_directory(rp("var/lib/pkg")))
         die("cannot create %s: %s", rp("var/lib/pkg"), strerror(errno));
     int fd = open(rp("var/lib/pkg/db.lck"), O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (fd < 0 && errno == EEXIST) {
+        char text[32] = "";
+        int old = open(rp("var/lib/pkg/db.lck"), O_RDONLY);
+        if (old >= 0) {
+            ssize_t n = read(old, text, sizeof(text) - 1);
+            text[n > 0 ? n : 0] = '\0';
+            close(old);
+        }
+        long pid = atol(text);
+        if (pid <= 0 || (kill((pid_t)pid, 0) < 0 && errno == ESRCH)) {
+            warn("removing a stale lock left by %s", pid > 0 ? "a pkg that is no longer running" : "an interrupted pkg");
+            unlink(rp("var/lib/pkg/db.lck"));
+            fd = open(rp("var/lib/pkg/db.lck"), O_WRONLY | O_CREAT | O_EXCL, 0644);
+        }
+    }
     if (fd < 0) {
         if (errno == EEXIST)
             die("the database is locked by another pkg, remove %s if no other pkg is running", rp("var/lib/pkg/db.lck"));
@@ -33,6 +49,10 @@ static void lock_acquire(void)
             die("permission denied (run as root)");
         die("cannot lock the database: %s", strerror(errno));
     }
+    char me[24];
+    int n = snprintf(me, sizeof(me), "%ld\n", (long)getpid());
+    if (n > 0)
+        (void)write(fd, me, (size_t)n);
     close(fd);
     lock_held = 1;
     atexit(lock_release);
@@ -395,9 +415,12 @@ int main(int argc, char **argv)
     int status = 0;
     if (op == 'S') {
         config_load();
-        if (y && sync_refresh() < 0)
+        if (y && sync_refresh() < 0) {
             status = 1;
-        if (!status && (ntargets || u)) {
+            if (ntargets || u)
+                warn("some trusted repositories could not be checked, continuing with the others");
+        }
+        if (ntargets || u) {
             localdb_load();
             syncdb_load();
             if (!sdb.count && u && !ntargets)
@@ -406,7 +429,7 @@ int main(int argc, char **argv)
                 tx_upgrade(0);
             if (ntargets)
                 tx_install(targets, ntargets, 0);
-        } else if (!status && !y) {
+        } else if (!y) {
             usage();
             status = 1;
         }
