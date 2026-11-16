@@ -1,0 +1,37 @@
+NAME
+       initctl, systemctl - control the init service manager
+
+SYNOPSIS
+       **initctl** __command__ [__unit__...]
+
+DESCRIPTION
+       A unit name without a suffix means NAME.service. Commands that change
+       something need root.
+
+       **status** [__unit__...]
+              without units: overall state and failed units; with units: state,
+              main PID, command and the last lines of the output
+       **list** [**-a**]   loaded units; **-a** also the inactive ones
+       **list-files**     unit files on disk
+       **start**, **stop**, **restart** __unit__...
+              waits until the units settle and reports a failure
+       **kill** __unit__  SIGKILL to the main process (it restarts if Restart= says so)
+       **enable**, **disable** [**--now**] __unit__...
+              create or remove the marker in /etc/init/system/TARGET.wants for
+              every WantedBy= target; **--now** also starts or stops it
+       **mask**, **unmask** __unit__  an empty /etc/init/system/UNIT blocks it completely
+       **cat** __unit__   print the unit file
+       **log** [**-n** __N__] __unit__  last lines of /var/log/init/UNIT.log
+       **is-active**, **is-failed** __unit__
+       **daemon-reload**  read unit files again
+       **isolate** __target__  start the target, stop everything it does not want
+       **get-default**, **set-default** __target__
+       **poweroff**, **reboot**, **halt**
+
+EXAMPLES
+           initctl status netd
+           initctl enable --now getty@tty7
+           initctl set-default graphical.target
+
+SEE ALSO
+       init(8)
