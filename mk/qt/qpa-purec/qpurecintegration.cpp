@@ -7,6 +7,7 @@
 #include <QtGui/private/qfreetypefontdatabase_p.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 extern "C" {
 #include "vb.h"
@@ -46,8 +47,12 @@ void QPurecScreen::setAvailable(const QRect &rect)
 QPurecIntegration::QPurecIntegration(const QStringList &)
 {
     g_instance = this;
-    if (vb_connect() < 0)
-        qFatal("purec: cannot connect to videod (%s); is the display server running?", VB_SOCKET_PATH);
+    int tries = 0;
+    while (vb_connect() < 0) {
+        if (++tries >= 50)
+            qFatal("purec: cannot connect to videod (%s); is the display server running?", VB_SOCKET_PATH);
+        usleep(100000);
+    }
     if (!getenv("QT_QPA_FONTDIR"))
         setenv("QT_QPA_FONTDIR", "/usr/share/fonts", 0);
     m_screen = new QPurecScreen;
