@@ -957,7 +957,6 @@ static void handle_request(const char *id, char *text)
     }
     char out[480] = "";
     size_t used = 0;
-    bool error = false;
     for (char *name = strtok(NULL, " \t\n"); name; name = strtok(NULL, " \t\n")) {
         char full[NAME_LEN];
         if (!strchr(name, '.'))
@@ -967,18 +966,15 @@ static void handle_request(const char *id, char *text)
         struct unit *u = load_unit(full);
         if (!u) {
             used += (size_t)snprintf(out + used, sizeof(out) - used, "error: bad unit name %s\n", full);
-            error = true;
             continue;
         }
         if (u->masked) {
             used += (size_t)snprintf(out + used, sizeof(out) - used, "error: %s is masked\n", full);
-            error = true;
             continue;
         }
         if (!strcmp(verb, "start")) {
             if (!u->loaded) {
                 used += (size_t)snprintf(out + used, sizeof(out) - used, "error: %s not found\n", full);
-                error = true;
                 continue;
             }
             for (int i = 0; i < u->requires_n; i++)
@@ -996,7 +992,6 @@ static void handle_request(const char *id, char *text)
         } else if (!strcmp(verb, "restart")) {
             if (!u->loaded) {
                 used += (size_t)snprintf(out + used, sizeof(out) - used, "error: %s not found\n", full);
-                error = true;
                 continue;
             }
             stop_unit(u);
