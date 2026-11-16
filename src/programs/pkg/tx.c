@@ -102,6 +102,37 @@ static int scan_package(const char *file, struct package_scan *s)
     return 0;
 }
 
+int sync_complete(int index)
+{
+    if (index < 0 || index >= sdb.count)
+        return -1;
+    struct sync_meta *m = &sdb.meta[index];
+    if (m->complete)
+        return 0;
+    struct pkg_info *p = &sdb.pkgs[index];
+    char file[PKG_PATH_MAX];
+    if (fetch_package(index, file, sizeof(file)) < 0)
+        die("failed to retrieve %s from %s", p->name, m->repo);
+    struct package_scan scan;
+    if (scan_package(file, &scan) < 0)
+        die("%s: %s is not a valid package", p->name, file);
+    scan_free(&scan);
+    if (strcmp(scan.info.name, p->name) != 0)
+        die("%s: the release asset contains the package '%s'", p->name, scan.info.name);
+    if (strcmp(scan.info.version, p->version) != 0)
+        warn("%s: asset name says %s, the package says %s", p->name, p->version, scan.info.version);
+    struct stat st;
+    scan.info.csize = stat(file, &st) == 0 ? (uint64_t)st.st_size : p->csize;
+    snprintf(scan.info.filename, sizeof(scan.info.filename), "%s", p->filename);
+    if (!scan.info.desc[0])
+        snprintf(scan.info.desc, sizeof(scan.info.desc), "%s", p->desc);
+    hash_file(file, scan.info.sha512);
+    *p = scan.info;
+    snprintf(m->file, sizeof(m->file), "%s", file);
+    m->complete = 1;
+    return 0;
+}
+
 static int plan_find(const struct plan *p, const char *name)
 {
     for (int i = 0; i < p->count; i++)
@@ -151,7 +182,9 @@ static void resolve_dependencies(struct plan *plan, const struct pkg_info *info)
             continue;
         int s = syncdb_find(name);
         if (s < 0)
-            die("unable to satisfy dependency '%s' required by %s", info->depends[i], info->name);
+            die("unable to satisfy dependency '%s' required by %s (no trusted repository for it)", info->depends[i],
+                info->name);
+        sync_complete(s);
         if (!pkg_dep_satisfied(op, version, sdb.pkgs[s].version))
             die("dependency '%s' required by %s is not met by %s-%s in the repository", info->depends[i], info->name,
                 name, sdb.pkgs[s].version);
@@ -179,6 +212,8 @@ static void add_package(struct plan *plan, const struct pkg_info *info, int sync
     it->reason = reason;
     if (file)
         snprintf(it->file, sizeof(it->file), "%s", file);
+    else if (sync_index >= 0)
+        snprintf(it->file, sizeof(it->file), "%s", sdb.meta[sync_index].file);
     if (it->old >= 0 && reason == 1)
         it->reason = ldb.pkgs[it->old].reason;
 }
@@ -509,13 +544,13 @@ static int run_plan(struct plan *plan, const char *question)
         return 0;
     int need_download = 0;
     for (int i = 0; i < plan->count; i++)
-        if (plan->items[i].sync_index >= 0)
+        if (plan->items[i].sync_index >= 0 && !plan->items[i].file[0])
             need_download = 1;
     if (need_download)
         msg("Retrieving packages...");
     for (int i = 0; i < plan->count; i++) {
         struct item *it = &plan->items[i];
-        if (it->sync_index < 0)
+        if (it->sync_index < 0 || it->file[0])
             continue;
         if (fetch_package(it->sync_index, it->file, sizeof(it->file)) < 0)
             die("failed to retrieve %s", it->info.name);
@@ -562,6 +597,7 @@ static void plan_free(struct plan *plan)
 int tx_install(char **targets, int count, int local_files)
 {
     struct plan plan = {0};
+    int need_msg = 0;
     for (int i = 0; i < count; i++) {
         if (local_files) {
             struct package_scan scan;
@@ -574,10 +610,15 @@ int tx_install(char **targets, int count, int local_files)
             scan_free(&scan);
             continue;
         }
-        const char *name = strchr(targets[i], '/') ? strchr(targets[i], '/') + 1 : targets[i];
+        const char *name = targets[i];
+        if (strstr(name, "://") || !strncmp(name, "github.com/", 11)) {
+            name = source_by_url(targets[i]);
+            if (!name)
+                die("%s is not a trusted repository, add it to [trusted] in %s", targets[i], config_path());
+        }
         int s = syncdb_find(name);
         if (s < 0)
-            die("target not found: %s", targets[i]);
+            die("target not found: %s (run 'pkg -Sy' or add it to [trusted] in %s)", targets[i], config_path());
         int installed = localdb_find(name);
         if (installed >= 0 && opt.needed && pkg_vercmp(ldb.pkgs[installed].version, sdb.pkgs[s].version) >= 0) {
             note(" %s-%s is up to date -- skipping", name, ldb.pkgs[installed].version);
@@ -585,6 +626,9 @@ int tx_install(char **targets, int count, int local_files)
         }
         if (installed >= 0 && !opt.needed && !strcmp(ldb.pkgs[installed].version, sdb.pkgs[s].version))
             warn("%s-%s is already installed, reinstalling", name, ldb.pkgs[installed].version);
+        if (!need_msg++)
+            msg("Retrieving packages...");
+        sync_complete(s);
         add_package(&plan, &sdb.pkgs[s], s, NULL, opt.asdeps ? 1 : 0, NULL);
     }
     if (!plan.count) {
@@ -616,9 +660,15 @@ int tx_upgrade(int unused)
 {
     (void)unused;
     struct plan plan = {0};
+    int need_msg = 0;
     for (int i = 0; i < ldb.count; i++) {
         int s = syncdb_find(ldb.pkgs[i].name);
         if (s < 0 || pkg_vercmp(sdb.pkgs[s].version, ldb.pkgs[i].version) <= 0)
+            continue;
+        if (!need_msg++)
+            msg("Retrieving packages...");
+        sync_complete(s);
+        if (pkg_vercmp(sdb.pkgs[s].version, ldb.pkgs[i].version) <= 0)
             continue;
         add_package(&plan, &sdb.pkgs[s], s, NULL, ldb.pkgs[i].reason, NULL);
     }

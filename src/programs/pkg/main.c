@@ -42,12 +42,13 @@ static void usage(void)
 {
     printf("usage: pkg <operation> [options] [targets]\n\n"
            "operations:\n"
-           "  -S [targets]    install packages from the repositories\n"
-           "      -y          refresh the package databases (-Sy, -Syu)\n"
+           "  -S [targets]    install packages from the trusted GitHub repositories\n"
+           "                  (a target is a name from [trusted] or its GitHub URL)\n"
+           "      -y          ask GitHub for the latest releases (-Sy, -Syu)\n"
            "      -u          upgrade every package that has a newer version (-Su, -Syu)\n"
            "      -s TERM     search the repositories\n"
            "      -i NAME     show information about a repository package\n"
-           "      -l          list the repository packages\n"
+           "      -l          list the trusted repositories\n"
            "      -c          remove cached packages that are not installed\n"
            "  -R targets      remove packages (-Rs also removes unneeded dependencies)\n"
            "  -Q [targets]    query installed packages\n"
@@ -235,9 +236,12 @@ static int op_clean_cache(void)
         if (e->d_name[0] == '.')
             continue;
         int keep = 0;
-        for (int i = 0; i < ldb.count; i++)
-            if (!strcmp(ldb.pkgs[i].filename, e->d_name))
+        for (int i = 0; i < ldb.count; i++) {
+            size_t fl = strlen(ldb.pkgs[i].filename);
+            if (!strcmp(ldb.pkgs[i].filename, e->d_name) ||
+                (fl && !strncmp(ldb.pkgs[i].filename, e->d_name, fl) && !strcmp(e->d_name + fl, ".sig")))
                 keep = 1;
+        }
         if (keep)
             continue;
         char path[PKG_PATH_MAX + 300];
@@ -362,7 +366,7 @@ int main(int argc, char **argv)
         syncdb_load();
         int status = 0;
         if (!sdb.count)
-            warn("no package databases found, run 'pkg -Sy' first");
+            warn("nothing is known about the trusted repositories yet, run 'pkg -Sy' first");
         if (s) {
             for (int n = 0; n < sdb.count; n++)
                 for (int t = 0; t < ntargets; t++)
@@ -381,9 +385,7 @@ int main(int argc, char **argv)
                 }
             }
         } else {
-            for (int n = 0; n < sdb.count; n++)
-                if (!ntargets || !strcmp(sdb.meta[n].repo, targets[0]))
-                    printf("%s %s %s\n", sdb.meta[n].repo, sdb.pkgs[n].name, sdb.pkgs[n].version);
+            list_sources();
         }
         return status;
     }
@@ -399,7 +401,7 @@ int main(int argc, char **argv)
             localdb_load();
             syncdb_load();
             if (!sdb.count)
-                die("no package databases found, run 'pkg -Sy' first");
+                die("nothing is known about the trusted repositories yet, run 'pkg -Sy' first");
             if (u)
                 tx_upgrade(0);
             if (ntargets)

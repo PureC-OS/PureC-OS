@@ -373,7 +373,7 @@ $(PROGRAM_DIR)/httpsget: $(OBJ_DIR)/utils/test/httpsget/main.o $(LIB_DIR)/crt0.o
 	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/test/httpsget/main.o $(LIBWOLF) $(LIBPUREFS) $(LIBPUREC)
 
 ifneq ($(wildcard $(ROOT_DIR)/netsurf-libs/zlib/zlib.h),)
-PKG_SOURCES := main util db repo tx sig archive version info
+PKG_SOURCES := main util db repo json tx sig archive version info
 PKG_OBJECTS := $(PKG_SOURCES:%=$(OBJ_DIR)/pkg/%.o)
 PKG_CFLAGS := -I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/src/programs/pkg -I$(CRYPT_DIR)/include \
 	-I$(ROOT_DIR)/netsurf-libs/zlib -I$(ROOT_DIR)/wolfssl -I$(ROOT_DIR)/wolfssl/purec \
