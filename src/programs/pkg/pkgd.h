@@ -61,6 +61,7 @@ struct sync_meta {
     char sig[PKG_PATH_MAX];
     char file[PKG_PATH_MAX];
     int complete;
+    int local;
 };
 
 struct syncdb {
@@ -79,8 +80,7 @@ int sync_refresh(void);
 int fetch_package(int sync_index, char *out_path, size_t cap);
 int repo_count(void);
 const char *config_path(void);
-const char *source_by_url(const char *url);
-const char *source_url(const char *name);
+const char *package_for_url(const char *url, char *why, size_t cap);
 void list_sources(void);
 int sync_complete(int sync_index);
 

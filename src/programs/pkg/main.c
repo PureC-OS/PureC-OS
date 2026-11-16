@@ -62,13 +62,13 @@ static void usage(void)
 {
     printf("usage: pkg <operation> [options] [targets]\n\n"
            "operations:\n"
-           "  -S [targets]    install packages from the trusted GitHub repositories\n"
-           "                  (a target is a name from [trusted] or its GitHub URL)\n"
-           "      -y          ask GitHub for the latest releases (-Sy, -Syu)\n"
+           "  -S [targets]    install packages from the repositories of the registry\n"
+           "                  (a target is a package name or its GitHub repository URL)\n"
+           "      -y          download the registry and check the latest releases (-Sy, -Syu)\n"
            "      -u          upgrade every package that has a newer version (-Su, -Syu)\n"
            "      -s TERM     search the repositories\n"
            "      -i NAME     show information about a repository package\n"
-           "      -l          list the trusted repositories\n"
+           "      -l          list the registry, its repositories and their packages\n"
            "      -c          remove cached packages that are not installed\n"
            "  -R targets      remove packages (-Rs also removes unneeded dependencies)\n"
            "  -Q [targets]    query installed packages\n"
@@ -401,7 +401,12 @@ int main(int argc, char **argv)
                     fprintf(stderr, "error: package '%s' was not found\n", targets[t]);
                     status = 1;
                 } else {
-                    print_info(&sdb.pkgs[idx], sdb.meta[idx].repo, 0);
+                {
+                    char where[128];
+                    snprintf(where, sizeof(where), "%s%s", sdb.meta[idx].repo,
+                             sdb.meta[idx].local ? " (local, not from the registry)" : "");
+                    print_info(&sdb.pkgs[idx], where, 0);
+                }
                 }
             }
         } else {

@@ -612,15 +612,14 @@ int tx_install(char **targets, int count, int local_files)
         }
         const char *name = targets[i];
         if (strstr(name, "://") || !strncmp(name, "github.com/", 11)) {
-            name = source_by_url(targets[i]);
+            char why[256];
+            name = package_for_url(targets[i], why, sizeof(why));
             if (!name)
-                die("%s is not a trusted repository, add it to [trusted] in %s", targets[i], config_path());
+                die("%s", why);
         }
         int s = syncdb_find(name);
-        if (s < 0 && source_url(name))
-            die("%s: no %s-<version>-x86_64.pkg.tar.gz in the releases of %s", name, name, source_url(name));
         if (s < 0)
-            die("target not found: %s (it is not in [trusted] of %s)", targets[i], config_path());
+            die("target not found: %s (no repository of the registry provides it; pkg -Sy, pkg -Sl)", targets[i]);
         int installed = localdb_find(name);
         if (installed >= 0 && opt.needed && pkg_vercmp(ldb.pkgs[installed].version, sdb.pkgs[s].version) >= 0) {
             note(" %s-%s is up to date -- skipping", name, ldb.pkgs[installed].version);
