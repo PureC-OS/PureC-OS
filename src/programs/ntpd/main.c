@@ -464,7 +464,9 @@ int main(int argc, char **argv)
             wait = 1u << poll_exp;
         } else {
             rounds_failed++;
-            if (rounds_failed == 1 || rounds_failed % 10 == 0)
+            if (!peer_count && (rounds_failed == 1 || rounds_failed % 10 == 0))
+                syslog(LOG_INFO, "no NTP servers known yet, waiting for DHCP or /etc/ntp.conf");
+            else if (rounds_failed == 1 || rounds_failed % 10 == 0)
                 syslog(LOG_WARNING, "no usable reply from %d server(s)", peer_count);
             wait = RETRY_FIRST_S << (rounds_failed < 6 ? rounds_failed - 1 : 5);
             if (wait > RETRY_MAX_S)

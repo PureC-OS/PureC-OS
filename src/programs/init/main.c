@@ -35,7 +35,7 @@ static const char *const unit_dirs[] = {"/etc/init/system", "/run/init/system", 
 #define UNIT_DIR_COUNT (sizeof(unit_dirs) / sizeof(unit_dirs[0]))
 
 enum kind { K_SERVICE, K_TARGET };
-enum svc_type { T_SIMPLE, T_ONESHOT };
+enum svc_type { T_SIMPLE, T_ONESHOT, T_IDLE };
 enum restart { R_NO, R_ALWAYS, R_ON_FAILURE };
 enum state { S_INACTIVE, S_WAITING, S_ACTIVATING, S_ACTIVE, S_DEACTIVATING, S_FAILED, S_RESTARTING };
 
@@ -279,7 +279,7 @@ static void parse_unit(struct unit *u, char *text, const char *inst)
                         snprintf(u->condition_path, sizeof(u->condition_path), "%s", value);
                 } else if (section == SERVICE) {
                     if (!strcmp(key, "Type"))
-                        u->type = !strcmp(value, "oneshot") ? T_ONESHOT : T_SIMPLE;
+                        u->type = !strcmp(value, "oneshot") ? T_ONESHOT : !strcmp(value, "idle") ? T_IDLE : T_SIMPLE;
                     else if (!strcmp(key, "ExecStart"))
                         snprintf(u->exec, sizeof(u->exec), "%s", value);
                     else if (!strcmp(key, "ExecStartPre"))
@@ -584,6 +584,8 @@ static bool order_ready(const struct unit *u)
         const struct unit *o = &units[i];
         if (o == u || !o->wanted)
             continue;
+        if (u->kind == K_TARGET && o->kind == K_SERVICE && o->type == T_IDLE)
+            continue;
         if (orders_before(o, u) && !is_settled(o)) {
             blocked = true;
             if (o->state != S_WAITING)
@@ -599,6 +601,22 @@ static bool order_ready(const struct unit *u)
     return false;
 }
 
+static bool idle_ready(const struct unit *u)
+{
+    if (u->kind != K_SERVICE || u->type != T_IDLE || now_ms() - u->since_ms > 5000)
+        return true;
+    for (int i = 0; i < unit_count; i++) {
+        const struct unit *o = &units[i];
+        if (o == u || !o->wanted)
+            continue;
+        if (o->kind == K_SERVICE && o->type == T_IDLE)
+            continue;
+        if (o->state == S_WAITING || o->state == S_ACTIVATING)
+            return false;
+    }
+    return true;
+}
+
 static void fail(struct unit *u, const char *why)
 {
     snprintf(u->result, sizeof(u->result), "%s", why);
@@ -611,7 +629,9 @@ static void become_active(struct unit *u)
 {
     snprintf(u->result, sizeof(u->result), "success");
     set_state(u, S_ACTIVE);
-    if (u->kind == K_SERVICE)
+    if (u->kind == K_SERVICE && u->type == T_IDLE)
+        syslog(LOG_INFO, "Started %s", u->description[0] ? u->description : u->name);
+    else if (u->kind == K_SERVICE)
         console("[  OK  ] Started %s", u->description[0] ? u->description : u->name);
     else if (!strcmp(u->name, default_target))
         console("[  OK  ] Reached target %s", u->description[0] ? u->description : u->name);
@@ -651,7 +671,7 @@ static void run_phase(struct unit *u)
     u->pid = pid;
     u->started_ms = now_ms();
     set_state(u, S_ACTIVATING);
-    if (u->phase == 1 && u->type == T_SIMPLE) {
+    if (u->phase == 1 && (u->type == T_SIMPLE || u->type == T_IDLE)) {
         u->phase = 3;
         become_active(u);
     }
@@ -816,7 +836,7 @@ static void schedule(void)
                 mark_wanted(u);
                 progress = true;
             }
-            if (u->state == S_WAITING && u->wanted && !shutdown_mode && order_ready(u)) {
+            if (u->state == S_WAITING && u->wanted && !shutdown_mode && order_ready(u) && idle_ready(u)) {
                 start_unit(u);
                 progress = true;
             }

@@ -45,6 +45,8 @@ sdl2 = https://github.com/OWNER/SDL
 - Остановка: SIGTERM группе процессов, через 5 с SIGKILL. Выключение и перезагрузка останавливают службы в обратном порядке, потом sync.
 - Состояние пишется в `/run/init/units`, запросы приходят файлами в `/run/init/req` (принимаются только от root).
 
+**Type=idle** (как в systemd): служба стартует последней, когда ничего больше не запускается (не дольше 5 с ожидания), цели её не ждут, и `[ OK ] Started` для неё пишется только в журнал. `getty@.service` теперь idle: строки init больше не перемешиваются с приглашением входа на tty1 (было видно в ВМ).
+
 **initctl** (`/sbin/initctl`, он же `/bin/systemctl`): status, list [-a], list-files, start/stop/restart (ждёт и сообщает о сбое), kill, enable/disable [--now], mask/unmask, cat, log [-n N], is-active/is-failed, daemon-reload, isolate, get-default/set-default, poweroff/reboot/halt.
 
 **В образе**: `getty@.service` и getty@tty1…6 в multi-user, `netd.service` (Restart=on-failure). Ядро больше не запускает `/bin/netd` само, это делает init. `reboot`/`poweroff`/`halt` сначала просят init аккуратно всё остановить (`-f` — сразу).
@@ -52,6 +54,11 @@ sdl2 = https://github.com/OWNER/SDL
 Man-страницы `init.8` (переписана) и `initctl.8`.
 
 **Проверено на хосте**: 18 проверок в пространстве имён PID, где init получает PID 1 (порядок, oneshot, лог, упавшая зависимость, шаблон, условие, restart/stop/start, SIGKILL, троттлинг, enable/disable, set-default, poweroff). В госте не проверено.
+
+### df и statvfs
+- `df` показывает настоящий раздел корня (`/dev/sda2` — по `partition_lba` из суперблока и GPT, для root; без прав — `/dev/sda`), `-T` выводит тип. На live-системе корень — `rootfs` (ramfs, размер = RAM) вместо «statvfs: Function not implemented».
+- `statvfs` в libc для корня в RAM отвечает объёмом памяти, как tmpfs в Linux.
+- ntpd: пока DHCP не выдал ни одного NTP-сервера, пишет INFO «no NTP servers known yet», а не WARN на экран.
 
 ### Установщик в стиле archinstall
 `/sbin/installer` — меню, как у archinstall, а не анкета.

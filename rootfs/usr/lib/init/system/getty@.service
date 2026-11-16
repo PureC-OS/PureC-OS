@@ -4,6 +4,7 @@ After=sysinit.target
 
 [Service]
 ExecStart=/sbin/getty %i
+Type=idle
 Restart=always
 RestartSec=0
 StandardOutput=null

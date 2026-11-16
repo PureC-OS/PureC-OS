@@ -540,8 +540,20 @@ int statvfs(const char *path, struct statvfs *info)
     struct ext2_super_info super;
     if (pc_ext2_super(&super) < 0 || !super.block_size)
     {
-        errno = ENOSYS;
-        return -1;
+        struct memory_monitor_info m;
+        if (!pc_memory_info(&m))
+        {
+            errno = ENOSYS;
+            return -1;
+        }
+        memset(info, 0, sizeof(*info));
+        info->f_bsize = 4096;
+        info->f_frsize = 4096;
+        info->f_blocks = m.total_bytes / 4096;
+        info->f_bfree = m.total_bytes > m.used_bytes ? (m.total_bytes - m.used_bytes) / 4096 : 0;
+        info->f_bavail = info->f_bfree;
+        info->f_namemax = 255;
+        return 0;
     }
     memset(info, 0, sizeof(*info));
     info->f_bsize = super.block_size;

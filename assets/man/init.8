@@ -26,7 +26,10 @@ UNIT FILES
            ConditionPathExists=[!]/path  skip silently when not met
 
            [Service]
-           Type=simple                   or oneshot (runs to the end)
+           Type=simple                   or oneshot (runs to the end), or idle
+                                         (started last, when nothing else is
+                                         starting, targets do not wait for it;
+                                         used by getty)
            ExecStartPre=, ExecStart=, ExecStartPost=, ExecStop=
                                          full path; a leading - ignores failure
            Restart=no                    always, on-failure
