@@ -54,9 +54,18 @@ const char *localdb_owner(const char *path);
 void owners_invalidate(void);
 const char *localdb_dir(const struct pkg_info *p, char *out, size_t cap);
 
+struct sync_meta {
+    char repo[96];
+    char tag[64];
+    char url[PKG_PATH_MAX];
+    char sig[PKG_PATH_MAX];
+    char file[PKG_PATH_MAX];
+    int complete;
+};
+
 struct syncdb {
     struct pkg_info *pkgs;
-    char (*repo)[32];
+    struct sync_meta *meta;
     int count;
     int cap;
 };
@@ -69,6 +78,10 @@ int syncdb_find(const char *name);
 int sync_refresh(void);
 int fetch_package(int sync_index, char *out_path, size_t cap);
 int repo_count(void);
+const char *config_path(void);
+const char *source_by_url(const char *url);
+void list_sources(void);
+int sync_complete(int sync_index);
 
 int tx_install(char **targets, int count, int local_files);
 int tx_remove(char **targets, int count, int recursive);

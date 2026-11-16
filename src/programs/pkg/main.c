@@ -367,7 +367,7 @@ int main(int argc, char **argv)
             for (int n = 0; n < sdb.count; n++)
                 for (int t = 0; t < ntargets; t++)
                     if (contains_icase(sdb.pkgs[n].name, targets[t]) || contains_icase(sdb.pkgs[n].desc, targets[t])) {
-                        printf("%s/%s %s\n    %s\n", sdb.repo[n], sdb.pkgs[n].name, sdb.pkgs[n].version, sdb.pkgs[n].desc);
+                        printf("%s/%s %s\n    %s\n", sdb.meta[n].repo, sdb.pkgs[n].name, sdb.pkgs[n].version, sdb.pkgs[n].desc);
                         break;
                     }
         } else if (i) {
@@ -377,13 +377,13 @@ int main(int argc, char **argv)
                     fprintf(stderr, "error: package '%s' was not found\n", targets[t]);
                     status = 1;
                 } else {
-                    print_info(&sdb.pkgs[idx], sdb.repo[idx], 0);
+                    print_info(&sdb.pkgs[idx], sdb.meta[idx].repo, 0);
                 }
             }
         } else {
             for (int n = 0; n < sdb.count; n++)
-                if (!ntargets || !strcmp(sdb.repo[n], targets[0]))
-                    printf("%s %s %s\n", sdb.repo[n], sdb.pkgs[n].name, sdb.pkgs[n].version);
+                if (!ntargets || !strcmp(sdb.meta[n].repo, targets[0]))
+                    printf("%s %s %s\n", sdb.meta[n].repo, sdb.pkgs[n].name, sdb.pkgs[n].version);
         }
         return status;
     }
