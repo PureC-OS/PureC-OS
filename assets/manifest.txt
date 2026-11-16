@@ -341,7 +341,7 @@
 /etc/resolved.conf /etc/resolved.conf - 0 rootfs/etc/resolved.conf
 /etc/ntp.conf /etc/ntp.conf - 0 rootfs/etc/ntp.conf
 /etc/vimrc /etc/vimrc - 0 rootfs/etc/vimrc
-/etc/pkg.conf /etc/pkg.conf - 0 rootfs/etc/pkg.conf
+/etc/pkg/pkg.conf /etc/pkg/pkg.conf - 0 rootfs/etc/pkg/pkg.conf
 /etc/pkg/keys/purec.pub /etc/pkg/keys/purec.pub - 0 rootfs/etc/pkg/keys/purec.pub
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd

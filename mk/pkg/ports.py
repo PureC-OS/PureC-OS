@@ -116,7 +116,7 @@ PORTS = [
 
 
 def main():
-    p = argparse.ArgumentParser(description="build the port packages and the repository database")
+    p = argparse.ArgumentParser(description="build the port packages as GitHub release assets")
     p.add_argument("output")
     p.add_argument("--name", default="ports")
     p.add_argument("--sign")
@@ -145,14 +145,15 @@ def main():
             cmd += ["--depend", dep]
         for b in port.get("backup", []):
             cmd += ["--backup", b]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL)
+        out = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, text=True).stdout.strip().splitlines()[-1]
+        asset = os.path.join(args.output, out)
+        if args.sign:
+            subprocess.run([sys.executable, os.path.join(HERE, "pkgsign.py"), "sign", args.sign, asset, asset + ".sig"],
+                           check=True)
         built += 1
-        print("built %s" % port["name"])
-    cmd = [sys.executable, os.path.join(HERE, "mkrepo.py"), args.output, "--name", args.name]
-    if args.sign:
-        cmd += ["--sign", args.sign]
-    subprocess.run(cmd, check=True)
-    print("%d package(s) in %s" % (built, args.output))
+        print("built %s%s" % (out, " + .sig" if args.sign else ""))
+    print("%d package(s) in %s; upload each NAME-VERSION-x86_64.pkg.tar.gz (and .sig) as an asset of a "
+          "GitHub release in the repository listed for NAME in /etc/pkg/pkg.conf" % (built, args.output))
 
 
 if __name__ == "__main__":

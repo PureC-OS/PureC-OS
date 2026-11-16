@@ -6,21 +6,25 @@ SYNOPSIS
 
 DESCRIPTION
        **pkg** installs, removes and updates software packaged for PureC OS. It
-       works like **pacman**: a package is an archive (**name-version-arch.pkg.tar.gz**),
-       repositories are plain files (a database plus packages) on a web server,
-       and the list of installed packages lives in **/var/lib/pkg/local**.
+       works like **pacman**, but there is no package database on a server: every
+       package comes from its own GitHub repository listed as trusted in
+       **/etc/pkg/pkg.conf**. A package is a release asset
+       **name-version-arch.pkg.tar.gz**; the list of installed packages lives in
+       **/var/lib/pkg/local**.
 
        Changing operations need root rights.
 
 OPERATIONS
        **-S** __names__
-              install packages and the packages they depend on from the repositories.
-              **-Sy** first downloads fresh package databases, **-Su** upgrades every
-              package that has a newer version in a repository, **-Syu** does both
+              install packages and the packages they depend on. A name is a key of
+              the **[trusted]** section or the GitHub address of a trusted repository.
+              The package is downloaded first, its dependencies are read from it.
+              **-Sy** asks GitHub for the newest release of every trusted repository,
+              **-Su** upgrades every package that has a newer release, **-Syu** does both
               (like **pacman -Syu**): it shows the list and asks before changing anything.
-       **-Ss** __text__   search names and descriptions in the repositories
-       **-Si** __name__   information about a repository package
-       **-Sl** [__repo__] list repository packages
+       **-Ss** __text__   search the known releases
+       **-Si** __name__   information about a package (full after it was downloaded)
+       **-Sl**        list the trusted repositories and their newest versions
        **-Sc**        delete cached package files that are not installed
        **-R** __names__   remove packages. A package that another one needs is not removed
               (see **--nodeps**). **-Rs** also removes the dependencies that were
@@ -28,7 +32,7 @@ OPERATIONS
        **-Q** [__names__]  list installed packages. **-Qi** information, **-Ql** files,
               **-Qo** __file__ the owner of a file, **-Qe** explicitly installed, **-Qd** installed
               as a dependency, **-Qs** __text__ search, **-Qu** packages with an update in the
-              databases, **-Qk** check that the files exist, **-Qq** names only
+              releases, **-Qk** check that the files exist, **-Qq** names only
        **-U** __files__   install package files from disk
        **-D** __names__   change the install reason: **--asdeps** or **--asexplicit**
 
@@ -45,22 +49,27 @@ OPTIONS
        **-v**, **--version**
 
 CONFIGURATION
-       **/etc/pkg.conf** has an **[options]** section (**Architecture**, **SigLevel**) and one
-       section per repository with one or more **Server** lines. **$repo** and **$arch** in
-       an address are replaced. An address is a web address (the **curl** program is used)
-       or **file:///path** / **/path** for a directory.
+       **/etc/pkg/pkg.conf** (the old place **/etc/pkg.conf** is read when it is
+       missing) has an **[options]** section and a **[trusted]** section:
 
            [options]
            SigLevel = Optional
 
-           [ports]
-           Server = https://example.org/purec/$arch
+           [trusted]
+           userspace = https://github.com/owner/userspace
+           sdl2 = https://github.com/owner/SDL
 
-       **SigLevel** is **Never** (no check), **Optional** (a signature is checked when the
-       repository has one, a bad one is always refused) or **Required**. The database
-       is signed with ECDSA P-256; the public keys are the files **/etc/pkg/keys/*.pub**
-       (65 bytes, as hexadecimal text). Packages are checked by the SHA-512 sum in the
-       signed database.
+       **Architecture** (x86_64) picks the asset, **Prerelease = yes** also takes
+       prereleases, **API** changes the GitHub API address (a **file://** directory works
+       for tests). A release is used when it has an asset named
+       **name-version-arch.pkg.tar.gz** (or **-any**); among all releases the newest version
+       wins. Packages are downloaded with **curl**.
+
+       **SigLevel** is **Never** (no check), **Optional** (the asset **name.pkg.tar.gz.sig** is
+       checked when the release has one, a bad one is always refused) or **Required**.
+       The signature is ECDSA P-256 over SHA-512 of the package; the public keys are
+       the files **/etc/pkg/keys/*.pub** (65 bytes, as hexadecimal text). Without a
+       signature a package is trusted because it comes from a trusted repository.
 
 PACKAGES
        Files listed in **backup** of a package are configuration files. When an upgrade
@@ -71,7 +80,7 @@ PACKAGES
        **post-install**, **post-upgrade**, **pre-remove**, **post-remove**.
 
 FILES
-       /etc/pkg.conf, /etc/pkg/keys/, /var/lib/pkg/local/, /var/lib/pkg/sync/,
+       /etc/pkg/pkg.conf, /etc/pkg/keys/, /var/lib/pkg/local/, /var/lib/pkg/sync/,
        /var/cache/pkg/
 
 SEE ALSO
