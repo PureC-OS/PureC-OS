@@ -13,6 +13,7 @@
 - Для выкладки добавлен `mk/pkg/publish.py --registry Trusted <пакет>...`: копирует архив с подписью в `bin/ИМЯ/`, убирает старую версию (`--keep N` оставляет N версий) и переписывает строку в `repository.conf`.
 - `publish.py` сам подписывает `repository.conf` и `registry.conf` ключом `~/.config/purec-pkg/signing.pem` (`--key` меняет путь). Проверено на хосте с `SigLevel = Required` и боевым ключом: `pkg -S pkg` ставит пакет, а испорченный `repository.conf` отклоняется как «signature is invalid».
 - pkg 1.2.0 выложен в `Trusted/bin/pkg/` первым пакетом по новой схеме, установленный бинарь побайтно совпадает со сборкой.
+- Все пакеты реестра перенесены в `Trusted/bin/`: `pkg` 1.2.0, `userspace` 2.0.4, `video-backend` 1.0.3, `qt-login` 1.0.0, `qt-terminal` 1.0.1 (23 МБ, Qt-пакеты по 11 МБ). `pkg -S` ставит все пять с зависимостями при `SigLevel = Required`. В ВМ проверены `pkg` 1.1.1 → 1.2.0 и `userspace` 2.0.3 → 2.0.4 из `repository.conf` по HTTP.
 - Хост-тесты `programs/purec-os-pkg/tests/registry.sh`: 27 проверок, из них 9 новых. В ВМ не проверено.
 
 ### pkg не упирается в лимит GitHub API, ядро запускает обновлённые программы с диска
