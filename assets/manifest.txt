@@ -377,3 +377,7 @@
 
 # --- firmware ---
 /lib/firmware/iwx-so-a0-hr-b0-77 /lib/firmware/iwx-so-a0-hr-b0-77 - 0 third_party/openbsd-iwx/firmware/iwx-so-a0-hr-b0-77
+/usr/share/fonts/DejaVuSans.ttf /usr/share/fonts/DejaVuSans.ttf - 0 assets/fonts/DejaVuSans.ttf
+/usr/share/fonts/DejaVuSans-Bold.ttf /usr/share/fonts/DejaVuSans-Bold.ttf - 0 assets/fonts/DejaVuSans-Bold.ttf
+/usr/share/fonts/DejaVuSansMono.ttf /usr/share/fonts/DejaVuSansMono.ttf - 0 assets/fonts/DejaVuSansMono.ttf
+/usr/share/fonts/DejaVuSansMono-Bold.ttf /usr/share/fonts/DejaVuSansMono-Bold.ttf - 0 assets/fonts/DejaVuSansMono-Bold.ttf
