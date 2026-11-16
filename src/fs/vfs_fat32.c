@@ -56,6 +56,8 @@ static uint32_t find_esp(uint32_t device) {
   return 0;
 }
 
+static bool mount_esp(uint32_t device, uint32_t esp);
+
 void vfs_fat32_mount_boot(void) {
   static bool tried;
   if (tried)
@@ -75,9 +77,22 @@ void vfs_fat32_mount_boot(void) {
     klog(KLOG_INFO, "fat32: no EFI system partition found");
     return;
   }
+  (void)mount_esp(device, esp);
+}
+
+bool vfs_fat32_mount_boot_device(uint32_t device) {
+  uint32_t esp = find_esp(device);
+  if (!esp) {
+    klogf(KLOG_WARN, "fat32: dev %u has no EFI system partition", device);
+    return false;
+  }
+  return mount_esp(device, esp);
+}
+
+static bool mount_esp(uint32_t device, uint32_t esp) {
   if (!devman_load_module(FAT32_MODULE_NAME, FAT32_MODULE_PATH)) {
     klog(KLOG_WARN, "fat32: module not available, /boot stays on the root fs");
-    return;
+    return false;
   }
   uint64_t abi = kmod_get(FAT32_MODULE_NAME, FAT32_SYM_ABI);
   uint64_t attach = kmod_get(FAT32_MODULE_NAME, FAT32_SYM_ATTACH);
@@ -85,18 +100,19 @@ void vfs_fat32_mount_boot(void) {
   if (!abi || !attach || !ops ||
       ((fat32_abi_fn)abi)() != FAT32_MODULE_ABI) {
     klog(KLOG_WARN, "fat32: module ABI mismatch");
-    return;
+    return false;
   }
   void *context = ((fat32_attach_fn)attach)(device, esp);
   if (!context) {
     klogf(KLOG_WARN, "fat32: dev %u lba %u is not a FAT32 volume", device, esp);
-    return;
+    return false;
   }
   if (vfs_mount_replace("/boot", (const struct vfs_fs_ops *)ops, context,
                         "esp", 0) < 0) {
     klog(KLOG_WARN, "fat32: cannot mount /boot");
-    return;
+    return false;
   }
   klogf(KLOG_OK, "fat32: ESP (dev %u, lba %u) mounted on /boot (rw)", device,
         esp);
+  return true;
 }

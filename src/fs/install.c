@@ -1,3 +1,4 @@
+#include "vfs_fat32.h"
 #include "../kernel/time/tz.h"
 #include "../kernel/time/wallclock.h"
 #include "install.h"
@@ -906,6 +907,8 @@ int32_t installer_install_device(const char *device_name,
         return status;
     if (!block_device_flush())
         return FS_ERROR_IO;
+    if (!vfs_fat32_mount_boot_device((uint32_t)idx))
+        klog(KLOG_WARN, "install: new EFI partition not mounted on /boot");
     if (callback)
         callback(90, "System partition mounted");
     klog(KLOG_OK, "install: GPT and ext2 system partition ready");
