@@ -34,3 +34,7 @@
 [submodule "tcc"]
 	path = tcc
 	url = https://github.com/PureC-OS/PureC-TCC.git
+
+[submodule "video-backend"]
+	path = video-backend
+	url = https://github.com/PureC-OS/video-backend.git
