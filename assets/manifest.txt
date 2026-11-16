@@ -24,6 +24,7 @@
 /sbin/init /sbin/init - 1 bin/programs/init
 /sbin/getty /sbin/getty - 1 bin/programs/getty
 /sbin/initctl /sbin/initctl - 1 bin/programs/initctl
+/sbin/installer /sbin/installer - 1 bin/programs/installer
 /bin/systemctl /bin/systemctl - 0 bin/programs/initctl
 /bin/system /bin/system - 1 bin/programs/system
 /bin/ls /bin/ls - 1 bin/programs/ls
@@ -159,6 +160,7 @@
 /usr/share/man/tty.1 /usr/share/man/tty.1 - 0 assets/man/tty.1
 /usr/share/man/getty.8 /usr/share/man/getty.8 - 0 assets/man/getty.8
 /usr/share/man/initctl.8 /usr/share/man/initctl.8 - 0 assets/man/initctl.8
+/usr/share/man/installer.8 /usr/share/man/installer.8 - 0 assets/man/installer.8
 /usr/share/man/init.8 /usr/share/man/init.8 - 0 assets/man/init.8
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
 /usr/share/man/uptime.1 /usr/share/man/uptime.1 - 0 assets/man/uptime.1

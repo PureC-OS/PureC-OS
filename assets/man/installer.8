@@ -1,0 +1,36 @@
+NAME
+       installer - install PureC OS from the live medium to a disk
+
+SYNOPSIS
+       /sbin/installer
+
+DESCRIPTION
+       A console installer in the spirit of archinstall. Run it as root from
+       the live system. It asks, in this order:
+
+       disk       the whole disk is erased; type its name to confirm
+       hostname, time zone
+       root password
+       users      any number up to 8 (or none), each with a password and an
+                  "administrator" answer that puts the user into wheel (sudo)
+       profile    1 console only, 2 graphical: the package "userspace" is
+                  downloaded from its GitHub repository (asked for when it is
+                  not in [trusted] of /etc/pkg/pkg.conf)
+       packages   extra package names from /etc/pkg/pkg.conf
+
+       Nothing is written before the summary is confirmed. Then the kernel
+       writes a GPT (EFI system partition, ext2 root, swap on ATA/SATA disks),
+       copies the live system and writes the accounts. After that the new
+       partition is the running root, and the installer runs
+       "mkinitcpio -u" (root=UUID= in limine.conf), installs the packages with
+       pkg and sets /etc/init/default.target (graphical.target when the user
+       space was installed, otherwise multi-user.target).
+
+       Only /sbin/installer may write whole disks (the kernel gives the
+       storage right by the program path).
+
+FILES
+       /etc/pkg/pkg.conf, /etc/init/default.target
+
+SEE ALSO
+       pkg(8), init(8), mkinitcpio(8), fdisk(8), sudo(8)
