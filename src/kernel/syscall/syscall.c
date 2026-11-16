@@ -4,6 +4,8 @@
 #include "../tty/vtcon.h"
 #include "../../drivers/audio/audio.h"
 #include "../../drivers/display/gop.h"
+#include "../../drivers/display/svga.h"
+#include "../../drivers/display/svga3d.h"
 #include "../../drivers/display/vga.h"
 #include "../../drivers/input/keyboard.h"
 #include "../../drivers/interrupts/timer.h"
@@ -1316,6 +1318,29 @@ int64_t syscall_handler(struct syscall_regs *r)
   case SYS_DISPLAY_RELEASE:
     display_owner_release((uint32_t)process_current_pid());
     return 0;
+  case SYS_DISPLAY_SET_MODE:
+  {
+    if (display_owner_pid() != (uint32_t)process_current_pid())
+      return -KERR_PERM;
+    uint32_t width = (uint32_t)a1, height = (uint32_t)a2;
+    if (width < 640 || width > 7680 || height < 400 || height > 4320)
+      return -KERR_INVAL;
+    if (!svga_is_available())
+      return -KERR_NODEV;
+    uint32_t actual_w = 0, actual_h = 0;
+    bool was3d = svga3d_active();
+    svga3d_screen_teardown();
+    if (!svga_set_mode(width, height, &actual_w, &actual_h))
+      return -KERR_INVAL;
+    void *front3d = was3d ? svga3d_screen_setup(actual_w, actual_h) : 0;
+    bool applied = front3d ? gop_apply_live(front3d, actual_w, actual_h, actual_w, 32)
+                           : gop_apply_live(svga_fb_virt(), actual_w, actual_h, svga_pitch_pixels(), 32);
+    if (!applied)
+      return -KERR_NODEV;
+    mouse_set_bounds((int32_t)actual_w, (int32_t)actual_h);
+    klogf(KLOG_OK, "display: mode %ux%u", actual_w, actual_h);
+    return 0;
+  }
   case SYS_FB_MAP:
   {
     struct fb_map_info *out = (struct fb_map_info *)(uintptr_t)a1;
