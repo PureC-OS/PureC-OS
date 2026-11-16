@@ -46,3 +46,7 @@
 [submodule "qt-login"]
 	path = programs/PureC-OS-QT-Login
 	url = https://github.com/pablaofficeal/PureC-OS-QT-Login.git
+
+[submodule "purec-os-pkg"]
+	path = programs/purec-os-pkg
+	url = https://github.com/PureC-OS/purec-os-pkg.git
