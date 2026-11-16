@@ -9,6 +9,19 @@ import sys
 PATTERN = re.compile(r"^(?P<name>[A-Za-z0-9._+-]+)-(?P<ver>[0-9][^-]*)-(?P<rel>[^-]+)-(?P<arch>x86_64|any)\.pkg\.tar\.gz$")
 
 
+def embed_signature(signer, key, path):
+    lines = open(path, encoding="utf-8").read().splitlines()
+    while lines and (not lines[-1].strip() or lines[-1].startswith("#sig ")):
+        lines.pop()
+    body = "\n".join(lines) + "\n"
+    open(path, "w", encoding="utf-8").write(body)
+    sig = path + ".sigtmp"
+    subprocess.check_call([sys.executable, signer, "sign", key, path, sig])
+    digits = open(sig, "rb").read().hex()
+    os.unlink(sig)
+    open(path, "w", encoding="utf-8").write(body + "#sig " + digits + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser(description="put packages into a registry checkout")
     ap.add_argument("--registry", required=True)
@@ -63,7 +76,10 @@ def main():
         for conf in ("repository.conf", "registry.conf"):
             path = os.path.join(args.registry, conf)
             if os.path.exists(path):
-                subprocess.check_call([sys.executable, signer, "sign", args.key, path, path + ".sig"])
+                embed_signature(signer, args.key, path)
+            stale = path + ".sig"
+            if os.path.exists(stale):
+                os.unlink(stale)
         print("signed repository.conf, registry.conf")
     else:
         print("warning: no signing key, repository.conf is not signed", file=sys.stderr)
