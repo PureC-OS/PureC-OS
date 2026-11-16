@@ -2,6 +2,64 @@
 
 ## V2.0.0 переход на сетевой стек в userspace и время в userspace
 
+### pkg берёт пакеты прямо из релизов GitHub
+Центрального индекса пакетов больше нет. Каждый пакет живёт в своём репозитории на GitHub, а список доверенных репозиториев лежит в `/etc/pkg/pkg.conf` (старое место `/etc/pkg.conf` читается, если нового нет).
+
+```
+[options]
+SigLevel = Optional
+
+[trusted]
+userspace = https://github.com/OWNER/userspace
+sdl2 = https://github.com/OWNER/SDL
+```
+
+**Как это работает**
+- `pkg -Sy` для каждого доверенного репо делает один запрос к GitHub API (`/repos/OWNER/REPO/releases`) и из всех релизов (без черновиков и, по умолчанию, без prerelease) выбирает самую новую версию, у которой есть ассет `ИМЯ-ВЕРСИЯ-x86_64.pkg.tar.gz` или `-any`. Версия берётся из имени ассета, тег показывается рядом. Результат кэшируется в `/var/lib/pkg/sync/ИМЯ.src`.
+- `pkg -S ИМЯ` или `pkg -S https://github.com/OWNER/REPO` (только если репо в `[trusted]`; чужой адрес отклоняется). Пакет скачивается ещё при планировании, зависимости читаются из его `.PKGINFO` и ищутся тоже среди доверенных репо.
+- Подпись: ассет `ПАКЕТ.pkg.tar.gz.sig` в том же релизе (ECDSA P-256 над SHA-512, ключи `/etc/pkg/keys`). `SigLevel = Required` отклоняет пакет без подписи, `Optional` проверяет подпись, если она есть, а плохую отклоняет всегда. Размер сверяется с размером ассета из API.
+- `-Sl` показывает доверенные репо и найденные версии, `-Su`/`-Syu`/`-Qu` сравнивают установленную версию с релизом.
+- Опции: `Prerelease = yes`, `API =` (адрес GitHub API; `file://` для тестов).
+- Новый `json.c` — маленький разборщик JSON для ответов API.
+
+**Сборка пакетов**: `make repo` больше не строит индекс `.db`. Каждый пакет сразу подписывается (`.sig` рядом), их надо загрузить ассетами в релиз своего репозитория.
+
+**Проверено на хосте**: 22 проверки (`itest2.sh` с подменённым GitHub API: выбор нужного ассета, пропуск prerelease, зависимости из `.PKGINFO`, обновление, установка по URL, отказ для недоверенного URL, пустой репо, битый ассет, подписи Required, чужой ключ). На настоящем `api.github.com` разбор ответа проверен. В госте не проверено.
+
+### init как systemd: юниты, зависимости, initctl
+`/sbin/init` переписан в менеджер служб. `/etc/inittab` больше не читается.
+
+**Юниты** (`/etc/init/system` для администратора, `/run/init/system`, `/usr/lib/init/system` для пакетов; первый найденный выигрывает, пустой файл маскирует юнит):
+- `[Unit]`: Description, Requires, Wants, After, Before, Conflicts, ConditionPathExists (с `!`).
+- `[Service]`: Type=simple|oneshot, ExecStartPre/ExecStart/ExecStartPost/ExecStop (префикс `-` игнорирует ошибку), Restart=no|always|on-failure, RestartSec, RemainAfterExit, User, WorkingDirectory, Environment, StandardOutput=log|null|tty|tty:/dev/ttyN|file:|append:.
+- `[Install]`: WantedBy. Включение — файл-метка `ЦЕЛЬ.wants/ЮНИТ` (или `.requires`).
+- Шаблоны `имя@.service` с `%i`, `%I`, `%n` (например `getty@tty2.service`).
+- Цели: sysinit, multi-user, graphical (multi-user + display-manager.service), rescue. Цель ждёт всё, что хочет. Цель выбирается так: `init.unit=` в командной строке ядра, потом `text`/`3` → multi-user, `single`/`rescue` → rescue, потом `/etc/init/default.target`, иначе multi-user. Если ни один юнит не загрузился, init поднимает getty на tty1-6, как раньше.
+
+**Поведение**
+- Запуск параллельный, в порядке After/Before. Если Requires-зависимость упала, юнит помечается failed с причиной. Цикл из After распознаётся и разрывается с предупреждением.
+- Служба, упавшая 5 раз за 10 с, ставится на паузу на 10 с.
+- Вывод служб по умолчанию идёт в `/var/log/init/ЮНИТ.log` (ротация на 256 КБ). В консоль и syslog пишутся строки `[  OK  ] Started …` и `[FAILED] …`.
+- Остановка: SIGTERM группе процессов, через 5 с SIGKILL. Выключение и перезагрузка останавливают службы в обратном порядке, потом sync.
+- Состояние пишется в `/run/init/units`, запросы приходят файлами в `/run/init/req` (принимаются только от root).
+
+**initctl** (`/sbin/initctl`, он же `/bin/systemctl`): status, list [-a], list-files, start/stop/restart (ждёт и сообщает о сбое), kill, enable/disable [--now], mask/unmask, cat, log [-n N], is-active/is-failed, daemon-reload, isolate, get-default/set-default, poweroff/reboot/halt.
+
+**В образе**: `getty@.service` и getty@tty1…6 в multi-user, `netd.service` (Restart=on-failure). Ядро больше не запускает `/bin/netd` само, это делает init. `reboot`/`poweroff`/`halt` сначала просят init аккуратно всё остановить (`-f` — сразу).
+
+Man-страницы `init.8` (переписана) и `initctl.8`.
+
+**Проверено на хосте**: 18 проверок в пространстве имён PID, где init получает PID 1 (порядок, oneshot, лог, упавшая зависимость, шаблон, условие, restart/stop/start, SIGKILL, троттлинг, enable/disable, set-default, poweroff). В госте не проверено.
+
+### Консольный установщик
+`/sbin/installer` — установщик в духе archinstall.
+- Шаги: выбор диска (подтверждение вводом имени диска), имя хоста, часовой пояс, пароль root, сколько угодно пользователей (до 8) с флагом «администратор» → группа wheel (sudo), профиль, дополнительные пакеты, сводка. До подтверждения ничего не пишется.
+- Сама установка — прежний ядерный путь `pc_install_start_accounts` (GPT, ESP, ext2, копирование live-системы, учётные записи) с полосой прогресса.
+- После неё новый раздел — корень работающей системы. Установщик вызывает `mkinitcpio -u` (`root=UUID=`) и ставит пакеты через `pkg`.
+- Профиль «графический» скачивает пакет `userspace` из GitHub. Если его нет в `[trusted]`, установщик спрашивает адрес репозитория и дописывает его в `/etc/pkg/pkg.conf` установленной системы.
+- `/etc/init/default.target` получает `graphical.target`, если userspace встал, иначе `multi-user.target`.
+- Man `installer.8`. В госте не проверено.
+
 ### iwxctl, fdisk и mkfs для разделов
 Две новые консольные программы вместо графических Device Manager и Disks.
 
