@@ -36,6 +36,17 @@ QSizeF QPurecScreen::physicalSize() const
     return QSizeF(m_geometry.width() * 25.4 / 96.0, m_geometry.height() * 25.4 / 96.0);
 }
 
+void QPurecScreen::setSize(int width, int height)
+{
+    m_geometry = QRect(0, 0, width, height);
+    int x = 0, y = 0, aw = 0, ah = 0;
+    vb_work_area(&x, &y, &aw, &ah);
+    m_available = aw > 0 && ah > 0 ? QRect(x, y, aw, ah).intersected(m_geometry) : m_geometry;
+    if (m_available.isEmpty())
+        m_available = m_geometry;
+    QWindowSystemInterface::handleScreenGeometryChange(screen(), m_geometry, m_available);
+}
+
 void QPurecScreen::setAvailable(const QRect &rect)
 {
     if (rect.isEmpty() || rect == m_available)
@@ -153,6 +164,11 @@ void QPurecIntegration::pump()
 
 void QPurecIntegration::dispatch(const vb_event &event)
 {
+    if (event.type == VB_EVENT_SCREEN) {
+        if (event.width > 0 && event.height > 0)
+            m_screen->setSize(event.width, event.height);
+        return;
+    }
     if (event.type == VB_EVENT_WORKAREA) {
         int x = 0, y = 0, w = 0, h = 0;
         vb_work_area(&x, &y, &w, &h);

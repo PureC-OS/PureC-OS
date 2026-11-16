@@ -25,6 +25,7 @@ public:
     QSizeF physicalSize() const override;
     QString name() const override { return QStringLiteral("videod"); }
     void setAvailable(const QRect &rect);
+    void setSize(int width, int height);
 
 private:
     QRect m_geometry;
