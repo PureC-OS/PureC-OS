@@ -385,7 +385,7 @@ static int32_t install_header_module(const struct header_module *entry)
     uint64_t size;
     if (!boot_get_module(entry->module, &data, &size) || !data || !size || size > UINT32_MAX)
     {
-        klogf(entry->required ? KLOG_ERROR : KLOG_WARN,
+        klogf(entry->required ? KLOG_ERROR : KLOG_INFO,
               "install: header module %s missing (%s)",
               entry->module, entry->required ? "aborting" : "non-fatal, skipped");
         return entry->required ? FS_ERROR_NOT_FOUND : 0;

@@ -847,7 +847,7 @@ static void progress_bar(uint32_t progress, const char *stage)
     for (int i = 0; i < 30; i++)
         b[i] = i < filled ? '#' : '.';
     b[30] = 0;
-    printf("\r[%s] %3u%% %-40.40s", b, progress, stage);
+    printf("\r[%s] %3u%% %-48.48s", b, progress, stage);
     fflush(stdout);
 }
 

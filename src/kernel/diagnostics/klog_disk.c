@@ -37,12 +37,29 @@ void klog_disk_thread(void *arg)
         return;
     }
     klogf(KLOG_OK, "klog-disk: streaming enabled path=%s chunk=%u", KLOG_DISK_PATH, KLOG_DISK_CHUNK);
+    bool recreate = false;
     for (;;) {
         bool lost = false;
         pending += klog_read_since(&cursor, buffer + pending, sizeof(buffer) - pending, &lost);
         if (lost)
             klogf(KLOG_ERROR, "klog-disk: RAM ring overrun cursor advanced to=%llu total=%llu", cursor,
                   klog_total_bytes());
+        if (install_job_running()) {
+            pending = 0;
+            recreate = true;
+            scheduler_sleep(100);
+            continue;
+        }
+        if (recreate) {
+            recreate = false;
+            file_size = 0;
+            if (kernel_syscall(SYS_FILE_WRITE, (uint64_t)KLOG_DISK_PATH, 0, 0) < 0) {
+                klogf(KLOG_WARN, "klog-disk: cannot create %s on the new root; persistent logging disabled",
+                      KLOG_DISK_PATH);
+                scheduler_exit();
+                return;
+            }
+        }
         uint64_t now = timer_ticks();
         if (pending == 0 || (pending < sizeof(buffer) && now - last_flush < 1000)) {
             scheduler_sleep(20);
@@ -56,6 +73,16 @@ void klog_disk_thread(void *arg)
             return;
         }
         rc = kernel_syscall(SYS_FILE_APPEND, (uint64_t)KLOG_DISK_PATH, (uint64_t)buffer, amount);
+        if ((rc < 0 || (uint32_t)rc != amount) && install_job_running()) {
+            pending = 0;
+            recreate = true;
+            continue;
+        }
+        if ((rc < 0 || (uint32_t)rc != amount) &&
+            kernel_syscall(SYS_FILE_WRITE, (uint64_t)KLOG_DISK_PATH, 0, 0) >= 0) {
+            file_size = 0;
+            rc = kernel_syscall(SYS_FILE_APPEND, (uint64_t)KLOG_DISK_PATH, (uint64_t)buffer, amount);
+        }
         if (rc < 0 || (uint32_t)rc != amount) {
             klogf(KLOG_ERROR, "klog-disk: append failed status=%d requested=%u", (int)rc, amount);
             scheduler_exit();
