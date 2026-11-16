@@ -50,3 +50,7 @@
 [submodule "purec-os-pkg"]
 	path = programs/purec-os-pkg
 	url = https://github.com/PureC-OS/purec-os-pkg.git
+
+[submodule "trusted-pkg-url"]
+	path = Trusted
+	url = https://github.com/PureC-OS/PureC-OS-Trusted-PKG-URL.git
