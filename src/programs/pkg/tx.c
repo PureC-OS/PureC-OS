@@ -569,7 +569,7 @@ static int run_plan(struct plan *plan, const char *question)
         scan_free(&scan);
     }
     if (conflicts)
-        die("unresolved file conflicts, nothing was changed");
+        die("unresolved file conflicts, nothing was changed (--force overwrites files that belong to no package)");
     msg("Processing package changes...");
     for (int i = 0; i < plan->count; i++) {
         struct item *it = &plan->items[i];
