@@ -1,269 +1,406 @@
 #include "qpurecwindow.h"
 #include "qpurecintegration.h"
 
-#include <qpa/qwindowsysteminterface.h>
+#include <QtGui/qguiapplication.h>
+#include <QtGui/qpainter.h>
 #include <QtGui/qwindow.h>
+#include <qpa/qwindowsysteminterface.h>
+
+extern "C" {
+#include "vb.h"
+}
 
 QT_BEGIN_NAMESPACE
+
+static const int TitleHeight = 26;
+static const int CloseWidth = 34;
 
 QPurecWindow::QPurecWindow(QWindow *window)
     : QPlatformWindow(window)
 {
-    m_pg = {};
-    m_requested = window->geometry();
-    if (auto *integration = QPurecIntegration::instance())
-        integration->registerWindow(this);
+    m_title = window->title();
 }
 
 QPurecWindow::~QPurecWindow()
 {
-    closeNative();
-    if (auto *integration = QPurecIntegration::instance())
-        integration->unregisterWindow(this);
+    destroyNative();
 }
 
-bool QPurecWindow::openNative()
+bool QPurecWindow::isPopup() const
 {
-    auto *integration = QPurecIntegration::instance();
-    if (!integration || integration->nativeOwner())
+    Qt::WindowType type = window()->type();
+    return type == Qt::Popup || type == Qt::ToolTip || type == Qt::SplashScreen ||
+           (window()->flags() & Qt::WindowStaysOnTopHint && window()->flags() & Qt::FramelessWindowHint &&
+            window()->transientParent());
+}
+
+bool QPurecWindow::wantsDecoration() const
+{
+    if (isPopup())
         return false;
-    QWindow *w = window();
-    if (w->type() == Qt::Popup || w->type() == Qt::ToolTip)
+    if (window()->flags() & Qt::FramelessWindowHint)
         return false;
-    QRect screen = w->screen() ? w->screen()->geometry() : QRect(0, 0, 1024, 768);
-    int cw = qMax(w->width(), 160);
-    int ch = qMax(w->height(), 96);
-    uint32_t fw = uint32_t(cw + PG_WINDOW_BORDER * 2);
-    uint32_t fh = uint32_t(ch + PG_TITLEBAR_HEIGHT + PG_WINDOW_BORDER * 2);
-    if (int(fw) > screen.width()) fw = uint32_t(screen.width());
-    if (int(fh) > screen.height()) fh = uint32_t(screen.height());
-    QByteArray title = w->title().toUtf8();
-    bool ok;
-    m_gate = qEnvironmentVariableIntValue("PUREC_GATE") != 0;
-    if (m_gate || (int(fw) >= screen.width() && int(fh) >= screen.height()))
-        ok = pg_window_init(&m_pg, title.constData(), 0, 0, fw, fh);
-    else
-        ok = pg_window_center(&m_pg, title.constData(), fw, fh);
-    if (!ok) {
-        qWarning("purec: pg_window_init failed (%ux%u)", fw, fh);
+    if (window()->windowStates() & Qt::WindowFullScreen)
         return false;
-    }
-    if (m_gate)
-        pg_window_set_closable(&m_pg, false);
-    pg_window_set_esc_closes(&m_pg, false);
-    m_native = true;
-    integration->claimNative(this);
-    syncGeometry();
-    redrawFrame();
     return true;
 }
 
-void QPurecWindow::closeNative()
+QMargins QPurecWindow::frameMargins() const
+{
+    return m_decorated ? QMargins(0, TitleHeight, 0, 0) : QMargins();
+}
+
+void QPurecWindow::create()
+{
+    if (m_native)
+        return;
+    QRect g = geometry();
+    if (g.isEmpty())
+        g.setSize(QSize(640, 480));
+    QPurecScreen *screen = QPurecIntegration::instance()->screen();
+    Qt::WindowStates states = window()->windowStates();
+    bool fullscreen = states & Qt::WindowFullScreen;
+    bool maximized = states & Qt::WindowMaximized;
+    m_decorated = wantsDecoration();
+    m_titleHeight = m_decorated ? TitleHeight : 0;
+    int role = isPopup() ? VB_ROLE_POPUP : VB_ROLE_NORMAL;
+    int x = -1, y = -1;
+    if (fullscreen) {
+        g = screen->geometry();
+        x = 0;
+        y = 0;
+    } else if (maximized) {
+        QRect a = screen->availableGeometry();
+        g = QRect(a.x(), a.y() + m_titleHeight, a.width(), a.height() - m_titleHeight);
+        x = a.x();
+        y = a.y();
+    } else if (role == VB_ROLE_POPUP || window()->transientParent()) {
+        x = g.x();
+        y = g.y() - m_titleHeight;
+    }
+    QByteArray title = m_title.toUtf8();
+    m_native = vb_window_create_role(x, y, g.width(), g.height() + m_titleHeight, title.constData(), role);
+    if (!m_native) {
+        qWarning("purec: cannot create a %dx%d window", g.width(), g.height());
+        return;
+    }
+    QPurecIntegration::instance()->attach(m_native, this);
+    int nx = 0, ny = 0;
+    vb_window_position(m_native, &nx, &ny);
+    QRect actual(nx, ny + m_titleHeight, g.width(), g.height());
+    QPlatformWindow::setGeometry(actual);
+    QWindowSystemInterface::handleGeometryChange(window(), actual);
+    drawDecoration();
+    QPurecIntegration::instance()->pumpSoon();
+}
+
+void QPurecWindow::destroyNative()
 {
     if (!m_native)
         return;
-    pg_window_close(&m_pg);
-    m_native = false;
-    if (auto *integration = QPurecIntegration::instance())
-        integration->unregisterWindow(this);
+    QPurecIntegration::instance()->detach(m_native);
+    vb_window_destroy(m_native);
+    m_native = nullptr;
 }
 
 void QPurecWindow::setVisible(bool visible)
 {
     if (visible) {
-        if (!m_native)
-            openNative();
-        QRect rect(QPoint(0, 0), geometry().size());
-        QWindowSystemInterface::handleExposeEvent(window(), rect);
+        create();
+        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(), geometry().size()));
+        if (!isPopup())
+            QWindowSystemInterface::handleFocusWindowChanged(window(), Qt::ActiveWindowFocusReason);
     } else {
-        closeNative();
+        destroyNative();
         QWindowSystemInterface::handleExposeEvent(window(), QRegion());
     }
+    QWindowSystemInterface::flushWindowSystemEvents();
 }
 
 void QPurecWindow::setGeometry(const QRect &rect)
 {
-    m_requested = rect;
+    QRect old = geometry();
     QPlatformWindow::setGeometry(rect);
+    if (m_native && rect.size() != old.size()) {
+        destroyNative();
+        create();
+        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(), geometry().size()));
+        return;
+    }
+    QWindowSystemInterface::handleGeometryChange(window(), rect);
+}
+
+void QPurecWindow::setWindowState(Qt::WindowStates state)
+{
+    QPlatformWindow::setWindowState(state);
+    if (m_native) {
+        destroyNative();
+        create();
+        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(), geometry().size()));
+    }
 }
 
 void QPurecWindow::setWindowTitle(const QString &title)
 {
-    if (!m_native)
-        return;
-    QByteArray bytes = title.toUtf8();
-    qstrncpy(m_pg.title, bytes.constData(), sizeof(m_pg.title));
-    redrawFrame();
-}
-
-void QPurecWindow::syncGeometry()
-{
-    if (!m_native)
-        return;
-    QRect client(0, 0, int(m_pg.client.width), int(m_pg.client.height));
-    if (client.size() != geometry().size() && !client.isEmpty()) {
-        QPlatformWindow::setGeometry(QRect(QPoint(0, 0), client.size()));
-        QWindowSystemInterface::handleGeometryChange(window(), QRect(QPoint(0, 0), client.size()));
+    m_title = title;
+    if (m_native) {
+        vb_window_title(m_native, title.toUtf8().constData());
+        drawDecoration();
     }
 }
 
-void QPurecWindow::redrawFrame()
+void QPurecWindow::requestActivateWindow()
 {
-    if (!m_native)
+    if (m_native && !isPopup())
+        vb_window_raise(m_native);
+}
+
+void QPurecWindow::raise()
+{
+    if (m_native && !isPopup())
+        vb_window_raise(m_native);
+}
+
+void QPurecWindow::drawDecoration()
+{
+    if (!m_native || !m_decorated)
         return;
-    pg_window_begin(&m_pg);
-    pg_window_end(&m_pg);
-    if (!m_last.isNull() && !pg_window_is_minimized(&m_pg)) {
-        pg_window_blit(&m_pg, 0, 0, uint32_t(m_last.width()), uint32_t(m_last.height()),
-                       reinterpret_cast<const uint32_t *>(m_last.constBits()),
-                       uint32_t(m_last.bytesPerLine() / 4));
-    }
+    int w = vb_window_width(m_native);
+    QImage strip(reinterpret_cast<uchar *>(vb_window_pixels(m_native)), w, TitleHeight, w * 4,
+                 QImage::Format_RGB32);
+    QPainter p(&strip);
+    QColor bar = m_focused ? QColor(0x2E, 0x3A, 0x55) : QColor(0x26, 0x28, 0x30);
+    p.fillRect(strip.rect(), bar);
+    p.fillRect(QRect(0, TitleHeight - 1, w, 1), m_focused ? QColor(0x5B, 0x8D, 0xEF) : QColor(0x3A, 0x3F, 0x4B));
+    QRect close(w - CloseWidth, 0, CloseWidth, TitleHeight - 1);
+    if (m_closeHover)
+        p.fillRect(close, QColor(0xC8, 0x40, 0x40));
+    p.setPen(QColor(0xE6, 0xE6, 0xE6));
+    p.setRenderHint(QPainter::Antialiasing);
+    QPointF c = QRectF(close).center();
+    p.drawLine(c + QPointF(-5, -5), c + QPointF(5, 5));
+    p.drawLine(c + QPointF(-5, 5), c + QPointF(5, -5));
+    QFont font = QGuiApplication::font();
+    font.setPixelSize(13);
+    font.setBold(true);
+    p.setFont(font);
+    p.setPen(m_focused ? QColor(0xF0, 0xF0, 0xF0) : QColor(0xA0, 0xA4, 0xAC));
+    p.drawText(QRect(10, 0, w - CloseWidth - 20, TitleHeight - 1), Qt::AlignVCenter | Qt::AlignLeft,
+               p.fontMetrics().elidedText(m_title, Qt::ElideRight, w - CloseWidth - 20));
+    p.end();
+    vb_window_damage(m_native, 0, 0, w, TitleHeight);
 }
 
 void QPurecWindow::present(const QImage &image, const QRegion &region)
 {
-    if (!m_native || pg_window_is_minimized(&m_pg) || image.isNull())
+    if (!m_native)
         return;
-    m_last = image;
-    Q_UNUSED(region);
-    pg_window_blit(&m_pg, 0, 0, uint32_t(image.width()), uint32_t(image.height()),
-                   reinterpret_cast<const uint32_t *>(image.constBits()),
-                   uint32_t(image.bytesPerLine() / 4));
+    uint32_t *dst = vb_window_pixels(m_native);
+    int w = vb_window_width(m_native), h = vb_window_height(m_native) - m_titleHeight;
+    QRect bounds;
+    for (const QRect &r0 : region) {
+        QRect r = r0.intersected(QRect(0, 0, qMin(w, image.width()), qMin(h, image.height())));
+        if (r.isEmpty())
+            continue;
+        for (int y = r.top(); y <= r.bottom(); ++y) {
+            const uint32_t *src = reinterpret_cast<const uint32_t *>(image.constScanLine(y)) + r.left();
+            memcpy(dst + size_t(y + m_titleHeight) * size_t(w) + r.left(), src, size_t(r.width()) * 4);
+        }
+        bounds |= r;
+    }
+    if (!bounds.isEmpty())
+        vb_window_damage(m_native, bounds.x(), bounds.y() + m_titleHeight, bounds.width(), bounds.height());
 }
 
-int QPurecWindow::qtKeyForSpecial(int special)
+void QPurecWindow::syncGeometryFromNative()
 {
-    switch (special) {
-    case 1: return Qt::Key_F1;
-    case 2: return Qt::Key_F2;
-    case 3: return Qt::Key_F3;
-    case 4: return Qt::Key_Home;
-    case 5: return Qt::Key_End;
-    case 6: return Qt::Key_PageUp;
-    case 7: return Qt::Key_PageDown;
-    case 8: return Qt::Key_Left;
-    case 9: return Qt::Key_Right;
-    case 10: return Qt::Key_Up;
-    case 11: return Qt::Key_Down;
-    case 12: return Qt::Key_Delete;
-    default: return Qt::Key_unknown;
-    }
+    int x = 0, y = 0;
+    vb_window_position(m_native, &x, &y);
+    QRect g(QPoint(x, y + m_titleHeight), geometry().size());
+    QPlatformWindow::setGeometry(g);
+    QWindowSystemInterface::handleGeometryChange(window(), g);
 }
 
-int QPurecWindow::qtKeyForChar(int ch, QString *text, Qt::KeyboardModifiers *mods)
+static Qt::MouseButtons qtButtons(uint32_t b)
 {
-    *mods = Qt::NoModifier;
-    *text = QString();
-    if (ch == '\r' || ch == '\n') {
-        *text = QStringLiteral("\r");
-        return Qt::Key_Return;
+    Qt::MouseButtons out;
+    if (b & VB_BUTTON_LEFT)
+        out |= Qt::LeftButton;
+    if (b & VB_BUTTON_RIGHT)
+        out |= Qt::RightButton;
+    if (b & VB_BUTTON_MIDDLE)
+        out |= Qt::MiddleButton;
+    return out;
+}
+
+static Qt::KeyboardModifiers qtModifiers(uint8_t mods)
+{
+    Qt::KeyboardModifiers out;
+    if (mods & VB_MOD_SHIFT)
+        out |= Qt::ShiftModifier;
+    if (mods & VB_MOD_CTRL)
+        out |= Qt::ControlModifier;
+    if (mods & VB_MOD_ALT)
+        out |= Qt::AltModifier;
+    if (mods & VB_MOD_GUI)
+        out |= Qt::MetaModifier;
+    return out;
+}
+
+void QPurecWindow::pointer(const vb_event &e)
+{
+    QPoint local(e.x, e.y - m_titleHeight);
+    if (m_decorated && e.y < m_titleHeight && !(m_buttons & Qt::LeftButton)) {
+        int w = vb_window_width(m_native);
+        bool overClose = e.x >= w - CloseWidth;
+        if (overClose != m_closeHover) {
+            m_closeHover = overClose;
+            drawDecoration();
+        }
+        if ((e.changed & e.buttons & VB_BUTTON_LEFT)) {
+            if (overClose)
+                QWindowSystemInterface::handleCloseEvent(window());
+            else
+                vb_window_move(m_native);
+        }
+        return;
     }
-    if (ch == '\b' || ch == 127)
-        return Qt::Key_Backspace;
-    if (ch == '\t') {
-        *text = QStringLiteral("\t");
-        return Qt::Key_Tab;
+    if (m_closeHover) {
+        m_closeHover = false;
+        drawDecoration();
     }
-    if (ch == 27)
-        return Qt::Key_Escape;
-    if (ch > 0 && ch < 27) {
-        *mods = Qt::ControlModifier;
-        *text = QString(QChar(ch));
-        return Qt::Key_A + (ch - 1);
+    QPoint global = geometry().topLeft() + local;
+    Qt::MouseButtons buttons = qtButtons(e.buttons);
+    Qt::MouseButtons changed = qtButtons(e.changed);
+    Qt::KeyboardModifiers mods = QGuiApplication::queryKeyboardModifiers();
+    if (e.wheel) {
+        QWindowSystemInterface::handleWheelEvent(window(), local, global, QPoint(), QPoint(0, -e.wheel * 120), mods);
     }
-    if (ch >= ' ' && ch < 127) {
+    if (!changed) {
+        QWindowSystemInterface::handleMouseEvent(window(), local, global, buttons, Qt::NoButton, QEvent::MouseMove,
+                                                 mods);
+    } else {
+        const Qt::MouseButton order[3] = {Qt::LeftButton, Qt::RightButton, Qt::MiddleButton};
+        for (Qt::MouseButton b : order) {
+            if (!(changed & b))
+                continue;
+            QEvent::Type type = (buttons & b) ? QEvent::MouseButtonPress : QEvent::MouseButtonRelease;
+            QWindowSystemInterface::handleMouseEvent(window(), local, global, buttons, b, type, mods);
+        }
+    }
+    m_buttons = buttons;
+    m_lastLocal = local;
+}
+
+static int hidToQt(int usage, bool shift, QString *text)
+{
+    static const char lower[] = "abcdefghijklmnopqrstuvwxyz1234567890\r\x1b\b\t -=[]\\#;'`,./";
+    static const char upper[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ!@#$%^&*()\r\x1b\b\t _+{}|~:\"~<>?";
+    if (usage >= 0x04 && usage <= 0x38) {
+        char ch = (shift ? upper : lower)[usage - 0x04];
+        switch (usage) {
+        case 0x28: *text = QStringLiteral("\r"); return Qt::Key_Return;
+        case 0x29: *text = QString(QChar(0x1b)); return Qt::Key_Escape;
+        case 0x2A: *text = QString(QChar(0x08)); return Qt::Key_Backspace;
+        case 0x2B: *text = QStringLiteral("\t"); return shift ? Qt::Key_Backtab : Qt::Key_Tab;
+        default: break;
+        }
         *text = QString(QChar(ch));
         if (ch >= 'a' && ch <= 'z')
             return Qt::Key_A + (ch - 'a');
-        if (ch >= 'A' && ch <= 'Z') {
-            *mods = Qt::ShiftModifier;
-            return Qt::Key_A + (ch - 'A');
-        }
         return ch;
     }
-    if (ch >= 128) {
-        *text = QString(QChar(ch));
-        return Qt::Key_unknown;
+    if (usage >= 0x3A && usage <= 0x45)
+        return Qt::Key_F1 + (usage - 0x3A);
+    switch (usage) {
+    case 0x49: return Qt::Key_Insert;
+    case 0x4A: return Qt::Key_Home;
+    case 0x4B: return Qt::Key_PageUp;
+    case 0x4C: *text = QString(QChar(0x7f)); return Qt::Key_Delete;
+    case 0x4D: return Qt::Key_End;
+    case 0x4E: return Qt::Key_PageDown;
+    case 0x4F: return Qt::Key_Right;
+    case 0x50: return Qt::Key_Left;
+    case 0x51: return Qt::Key_Down;
+    case 0x52: return Qt::Key_Up;
+    case 0x54: *text = QStringLiteral("/"); return Qt::Key_Slash;
+    case 0x55: *text = QStringLiteral("*"); return Qt::Key_Asterisk;
+    case 0x56: *text = QStringLiteral("-"); return Qt::Key_Minus;
+    case 0x57: *text = QStringLiteral("+"); return Qt::Key_Plus;
+    case 0x58: *text = QStringLiteral("\r"); return Qt::Key_Enter;
+    case 0x62: *text = QStringLiteral("0"); return Qt::Key_0;
+    case 0x63: *text = QStringLiteral("."); return Qt::Key_Period;
+    case 0xE0: case 0xE4: return Qt::Key_Control;
+    case 0xE1: case 0xE5: return Qt::Key_Shift;
+    case 0xE2: return Qt::Key_Alt;
+    case 0xE6: return Qt::Key_AltGr;
+    case 0xE3: case 0xE7: return Qt::Key_Meta;
+    default: break;
     }
-    return Qt::Key_unknown;
+    if (usage >= 0x59 && usage <= 0x61) {
+        *text = QString(QChar('1' + (usage - 0x59)));
+        return Qt::Key_1 + (usage - 0x59);
+    }
+    return 0;
 }
 
-bool QPurecWindow::pollOne()
+void QPurecWindow::key(const vb_event &e)
 {
-    if (!m_native || !pg_window_is_open(&m_pg))
-        return false;
-    if (m_gate) {
-        if (m_pg.frame.x != 0 || m_pg.frame.y != 0)
-            (void)pg_window_move(&m_pg, 0, 0);
-        if (m_pg.minimized)
-            pg_window_restore(&m_pg);
+    Qt::KeyboardModifiers mods = qtModifiers(e.mods);
+    QString text;
+    int qtKey = hidToQt(e.key, mods & Qt::ShiftModifier, &text);
+    if (!qtKey)
+        return;
+    if ((mods & Qt::ControlModifier) && text.size() == 1) {
+        QChar c = text.at(0);
+        if (c.isLetter())
+            text = QString(QChar(c.toUpper().unicode() - '@'));
     }
-    struct pg_event ev;
-    if (!pg_window_poll_event(&m_pg, &ev))
-        return false;
-    QWindow *w = window();
-    switch (ev.type) {
-    case PG_EVENT_CLOSE:
-        qWarning("purec: close event from window manager");
-        m_native = false;
-        QWindowSystemInterface::handleCloseEvent(w);
+    QEvent::Type type = e.pressed ? QEvent::KeyPress : QEvent::KeyRelease;
+    QWindowSystemInterface::handleExtendedKeyEvent(window(), type, qtKey, mods, quint32(e.key), quint32(e.key),
+                                                   quint32(e.mods), e.pressed ? text : QString(), e.repeat);
+}
+
+void QPurecWindow::handleEvent(const vb_event &e)
+{
+    switch (e.type) {
+    case VB_EVENT_POINTER:
+        pointer(e);
         break;
-    case PG_EVENT_REPAINT:
-    case PG_EVENT_MOVE:
-    case PG_EVENT_MINIMIZE:
-        syncGeometry();
-        redrawFrame();
-        QWindowSystemInterface::handleExposeEvent(w, QRect(QPoint(0, 0), geometry().size()));
+    case VB_EVENT_ENTER:
+        QWindowSystemInterface::handleEnterEvent(window(), QPointF(e.x, e.y - m_titleHeight),
+                                                 QPointF(geometry().topLeft() + QPoint(e.x, e.y - m_titleHeight)));
         break;
-    case PG_EVENT_FOCUS:
-        QWindowSystemInterface::handleFocusWindowChanged(w);
-        redrawFrame();
-        break;
-    case PG_EVENT_KEY: {
-        QString text;
-        Qt::KeyboardModifiers mods;
-        int key = qtKeyForChar(ev.key, &text, &mods);
-        QWindowSystemInterface::handleKeyEvent(w, QEvent::KeyPress, key, mods, text);
-        QWindowSystemInterface::handleKeyEvent(w, QEvent::KeyRelease, key, mods, text);
-        break;
-    }
-    case PG_EVENT_SPECIAL_KEY: {
-        int key = qtKeyForSpecial(ev.key);
-        QWindowSystemInterface::handleKeyEvent(w, QEvent::KeyPress, key, Qt::NoModifier);
-        QWindowSystemInterface::handleKeyEvent(w, QEvent::KeyRelease, key, Qt::NoModifier);
-        break;
-    }
-    case PG_EVENT_MOUSE_MOVE:
-    case PG_EVENT_MOUSE_DOWN:
-    case PG_EVENT_MOUSE_UP: {
-        QPoint local(ev.x - int(m_pg.client.x), ev.y - int(m_pg.client.y));
-        QPoint global(ev.x, ev.y);
-        Qt::MouseButton changed = Qt::NoButton;
-        QEvent::Type type = QEvent::MouseMove;
-        if (ev.type == PG_EVENT_MOUSE_DOWN || ev.type == PG_EVENT_MOUSE_UP) {
-            changed = ev.button == 1 ? Qt::LeftButton : ev.button == 2 ? Qt::RightButton : Qt::MiddleButton;
-            if (ev.type == PG_EVENT_MOUSE_DOWN) {
-                m_buttons |= changed;
-                type = QEvent::MouseButtonPress;
-            } else {
-                m_buttons &= ~int(changed);
-                type = QEvent::MouseButtonRelease;
-            }
+    case VB_EVENT_LEAVE:
+        if (m_closeHover) {
+            m_closeHover = false;
+            drawDecoration();
         }
-        m_lastPos = local;
-        QWindowSystemInterface::handleMouseEvent(w, QPointF(local), QPointF(global),
-                                                 Qt::MouseButtons(m_buttons), changed, type);
+        QWindowSystemInterface::handleLeaveEvent(window());
         break;
-    }
+    case VB_EVENT_KEY:
+        key(e);
+        break;
+    case VB_EVENT_FOCUS:
+        m_focused = e.focused;
+        drawDecoration();
+        if (e.focused)
+            QWindowSystemInterface::handleFocusWindowChanged(window(), Qt::ActiveWindowFocusReason);
+        else if (QGuiApplication::focusWindow() == window())
+            QWindowSystemInterface::handleFocusWindowChanged(nullptr, Qt::ActiveWindowFocusReason);
+        break;
+    case VB_EVENT_CLOSE:
+        QWindowSystemInterface::handleCloseEvent(window());
+        break;
+    case VB_EVENT_POPUP_DONE:
+        QWindowSystemInterface::handleCloseEvent(window());
+        break;
+    case VB_EVENT_CONFIGURE:
+        syncGeometryFromNative();
+        break;
     default:
         break;
     }
-    int32_t wheel = pg_window_take_wheel(&m_pg);
-    if (wheel != 0) {
-        QPoint pos = m_lastPos;
-        QWindowSystemInterface::handleWheelEvent(w, pos, pos, QPoint(0, wheel * 120), QPoint(0, wheel * 120));
-    }
-    return true;
 }
 
 QT_END_NAMESPACE

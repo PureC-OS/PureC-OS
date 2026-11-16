@@ -38,3 +38,7 @@
 [submodule "video-backend"]
 	path = video-backend
 	url = https://github.com/PureC-OS/video-backend.git
+
+[submodule "qt-terminal"]
+	path = programs/PureC-OS-QT-Terminal
+	url = https://github.com/pablaofficeal/PureC-OS-QT-Terminal.git

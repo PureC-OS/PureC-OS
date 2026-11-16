@@ -3,8 +3,12 @@
 
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformscreen.h>
-#include <QtCore/qpointer.h>
+#include <QtCore/qhash.h>
+#include <QtCore/qsocketnotifier.h>
 #include <QtCore/qtimer.h>
+
+struct vb_window;
+struct vb_event;
 
 QT_BEGIN_NAMESPACE
 
@@ -15,12 +19,16 @@ class QPurecScreen : public QPlatformScreen
 public:
     QPurecScreen();
     QRect geometry() const override { return m_geometry; }
+    QRect availableGeometry() const override { return m_available; }
     int depth() const override { return 32; }
     QImage::Format format() const override { return QImage::Format_RGB32; }
     QSizeF physicalSize() const override;
-    void refresh();
+    QString name() const override { return QStringLiteral("videod"); }
+    void setAvailable(const QRect &rect);
+
 private:
     QRect m_geometry;
+    QRect m_available;
 };
 
 class QPurecIntegration : public QPlatformIntegration
@@ -36,22 +44,22 @@ public:
     QPlatformBackingStore *createPlatformBackingStore(QWindow *window) const override;
     QAbstractEventDispatcher *createEventDispatcher() const override;
 
-    void registerWindow(QPurecWindow *window);
-    void unregisterWindow(QPurecWindow *window);
-    QPurecWindow *nativeOwner() const { return m_owner; }
-    void claimNative(QPurecWindow *window) { if (!m_owner) m_owner = window; }
+    void attach(vb_window *native, QPurecWindow *window);
+    void detach(vb_window *native);
+    QPurecScreen *screen() const { return m_screen; }
+    void pumpSoon();
 
     static QPurecIntegration *instance();
 
 private:
     void pump();
+    void dispatch(const vb_event &event);
 
     mutable QPlatformFontDatabase *m_fontDatabase = nullptr;
     QPurecScreen *m_screen = nullptr;
+    QSocketNotifier *m_notifier = nullptr;
     QTimer m_timer;
-    QPurecWindow *m_owner = nullptr;
-    QList<QPurecWindow *> m_windows;
-    int m_buttons = 0;
+    QHash<vb_window *, QPurecWindow *> m_windows;
 };
 
 QT_END_NAMESPACE
