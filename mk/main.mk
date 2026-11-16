@@ -367,6 +367,7 @@ libraries:
 
 programs: libraries
 	$(MAKE) -C src/programs
+	@if test -f programs/purec-os-pkg/Makefile; then $(MAKE) -C programs/purec-os-pkg image; else echo "programs/purec-os-pkg not found: the image will have no pkg"; fi
 	$(MAKE) -C src/programs/micropython
 	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
 	@if test -f git/Makefile; then $(MAKE) -C mk/netsurf curl && $(MAKE) -C mk/git; else echo "git/ not found, skipping git port"; fi

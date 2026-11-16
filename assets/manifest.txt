@@ -166,7 +166,9 @@
 /usr/share/man/uptime.1 /usr/share/man/uptime.1 - 0 assets/man/uptime.1
 /usr/share/man/sleep.1 /usr/share/man/sleep.1 - 0 assets/man/sleep.1
 /usr/share/man/sync.1 /usr/share/man/sync.1 - 0 assets/man/sync.1
-/usr/share/man/pkg.8 /usr/share/man/pkg.8 - 0 assets/man/pkg.8
+/usr/share/man/pkg.8 /usr/share/man/pkg.8 - 0 programs/purec-os-pkg/pkg.8
+/var/lib/pkg/local/pkg/desc /var/lib/pkg/local/pkg/desc - 0 bin/pkg-image/desc
+/var/lib/pkg/local/pkg/files /var/lib/pkg/local/pkg/files - 0 bin/pkg-image/files
 /usr/share/man/true.1 /usr/share/man/true.1 - 0 assets/man/true.1
 /usr/share/man/false.1 /usr/share/man/false.1 - 0 assets/man/false.1
 /usr/share/man/kill.1 /usr/share/man/kill.1 - 0 assets/man/kill.1

@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -417,37 +418,53 @@ static void load_trusted(void)
     trusted_count = 0;
     userspace_in_conf = false;
     FILE *f = fopen(PKG_CONF, "r");
-    if (!f)
-        return;
-    char line[320];
-    bool in = false;
-    while (fgets(line, sizeof(line), f)) {
-        char *s = line;
-        while (*s == ' ' || *s == '\t')
-            s++;
-        if (*s == '[') {
-            in = !strncmp(s, "[trusted]", 9);
-            continue;
+    if (f) {
+        char line[320];
+        while (fgets(line, sizeof(line), f)) {
+            char *s = line;
+            while (*s == ' ' || *s == '\t')
+                s++;
+            if (!strncmp(s, "Registry", 8) && strchr(s, '='))
+                userspace_in_conf = true;
         }
-        if (!in || *s == '#' || !strchr(s, '='))
+        fclose(f);
+    }
+    DIR *d = opendir("/var/lib/pkg/sync");
+    if (!d)
+        return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL && trusted_count < MAX_TRUSTED) {
+        size_t n = strlen(e->d_name);
+        if (n <= 4 || strcmp(e->d_name + n - 4, ".src") != 0 || n - 4 >= 64)
             continue;
         char name[64];
-        int n = 0;
-        while (s[n] && s[n] != '=' && s[n] != ' ' && s[n] != '\t' && n < 63) {
-            name[n] = s[n];
-            n++;
-        }
-        name[n] = 0;
-        if (!n)
+        snprintf(name, sizeof(name), "%.*s", (int)(n - 4), e->d_name);
+        if (!strcmp(name, USERSPACE_PKG) || !strcmp(name, "pkg") || !strcmp(name, "video-backend"))
             continue;
-        if (!strcmp(name, USERSPACE_PKG)) {
-            userspace_in_conf = true;
-            continue;
-        }
-        if (trusted_count < MAX_TRUSTED)
-            snprintf(trusted[trusted_count++], 64, "%s", name);
+        snprintf(trusted[trusted_count++], 64, "%s", name);
     }
-    fclose(f);
+    closedir(d);
+}
+
+static void refresh_packages(void)
+{
+    pid_t pid = fork();
+    if (pid == 0) {
+        int null = open("/dev/null", O_RDWR);
+        if (null >= 0) {
+            dup2(null, 0);
+            dup2(null, 1);
+            dup2(null, 2);
+        }
+        execl("/usr/bin/pkg", "pkg", "-Sy", (char *)NULL);
+        _exit(127);
+    }
+    if (pid > 0) {
+        int status;
+        while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+        }
+    }
+    load_trusted();
 }
 
 static bool ask_password(const char *who, char *hash, size_t cap)
@@ -675,7 +692,7 @@ static void menu_profile(void)
         snprintf(url, sizeof(url), "%s", cfg.userspace_url[0] ? cfg.userspace_url : "https://github.com/");
         for (;;) {
             if (!text_input("Profile: Desktop", "GitHub repository of the user space:",
-                            "\"userspace\" is not in [trusted] of " PKG_CONF ". Give its address, it is added to the "
+                            "No package registry is set in " PKG_CONF ". Give the address of the user space repository, it is added to the "
                             "installed system as trusted.",
                             url, sizeof(url), false))
                 return;
@@ -691,9 +708,13 @@ static void menu_profile(void)
 static void menu_packages(void)
 {
     if (!trusted_count) {
-        message("Additional packages", "There are no trusted repositories in " PKG_CONF
-                                       ". Add lines like \"vim = https://github.com/OWNER/REPO\" under [trusted] "
-                                       "(or install packages later with pkg).");
+        header("Additional packages");
+        wrap_text(3, "Asking the package registry for the list of packages (pkg -Sy)...");
+        refresh_packages();
+    }
+    if (!trusted_count) {
+        message("Additional packages", "No packages are known: the registry could not be reached (is the network up?). "
+                                       "You can install packages later with pkg -Sy and pkg -S NAME.");
         return;
     }
     bool checked[MAX_TRUSTED] = {0};
@@ -705,8 +726,8 @@ static void menu_packages(void)
                 checked[i] = true;
     }
     int r = list_select("Additional packages", items, trusted_count, 0,
-                        "Packages come from the trusted GitHub repositories in " PKG_CONF
-                        " and are installed with pkg after the base system.",
+                        "Packages come from the repositories of the PureC OS registry and are installed with pkg "
+                        "after the base system.",
                         checked);
     if (r < 0)
         return;
@@ -903,21 +924,11 @@ static bool kernel_install(void)
 
 static bool add_trusted_line(const char *name, const char *url)
 {
-    FILE *f = fopen(PKG_CONF, "r");
-    bool has = false;
-    if (f) {
-        char line[320];
-        while (fgets(line, sizeof(line), f))
-            if (!strncmp(line, "[trusted]", 9))
-                has = true;
-        fclose(f);
-    }
-    f = fopen(PKG_CONF, "a");
+    (void)name;
+    FILE *f = fopen(PKG_CONF, "a");
     if (!f)
         return false;
-    if (!has)
-        fprintf(f, "\n[trusted]\n");
-    fprintf(f, "%s = %s\n", name, url);
+    fprintf(f, "\n[options]\nAllowLocalRepos = yes\n[trusted]\n%s\n", url);
     fclose(f);
     return true;
 }
@@ -1024,7 +1035,7 @@ static const char *const item_info[I_COUNT] = {
     "Password of the root account. Required.",
     "Add, change or delete users. Superusers are put into the group wheel and may use sudo.",
     "Minimal: text consoles. Desktop: also installs the graphical user space from GitHub.",
-    "Extra packages from the trusted GitHub repositories in " PKG_CONF ".",
+    "Extra packages from the repositories of the PureC OS registry.",
     "The time zone of the installed system.",
     "",
     "Write these choices (without passwords) to a file; load it with installer --config FILE.",
