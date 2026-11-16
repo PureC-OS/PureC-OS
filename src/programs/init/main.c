@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <errno.h>
+#include <stddef.h>
 #include <fcntl.h>
 #include <pwd.h>
 #include <signal.h>
@@ -75,6 +76,7 @@ struct unit {
     enum state state;
     bool wanted;
     bool stop_requested;
+    bool restart_pending;
     int phase;
     pid_t pid;
     int exit_status;
@@ -335,41 +337,25 @@ static void load_wants_dir(struct unit *u, const char *suffix, bool requires)
     }
 }
 
-static struct unit *load_unit(const char *name)
+static void fill_unit(struct unit *u)
 {
-    struct unit *u = find_unit(name);
-    if (u)
-        return u;
-    if (!valid_unit_name(name) || unit_count >= MAX_UNITS)
-        return NULL;
-    u = &units[unit_count++];
-    memset(u, 0, sizeof(*u));
-    snprintf(u->name, sizeof(u->name), "%s", name);
-    u->kind = ends_with(name, ".target") ? K_TARGET : K_SERVICE;
-    u->pid = -1;
-    u->restart_ms = 100;
     char templ[NAME_LEN], inst[NAME_LEN];
-    instance_of(name, templ, sizeof(templ), inst, sizeof(inst));
+    instance_of(u->name, templ, sizeof(templ), inst, sizeof(inst));
     static char text[8192];
     for (size_t d = 0; d < UNIT_DIR_COUNT && !u->loaded; d++) {
-        const char *candidates[2] = {name, templ[0] ? templ : NULL};
+        const char *candidates[2] = {u->name, templ[0] ? templ : NULL};
         for (int c = 0; c < 2 && candidates[c] && !u->loaded; c++) {
             char path[200];
             snprintf(path, sizeof(path), "%s/%s", unit_dirs[d], candidates[c]);
             struct stat st;
             if (stat(path, &st) != 0)
                 continue;
-            if (st.st_size == 0) {
-                u->masked = true;
-                u->loaded = true;
-                snprintf(u->path, sizeof(u->path), "%s", path);
-                break;
-            }
-            if (!read_file(path, text, sizeof(text)))
-                continue;
             snprintf(u->path, sizeof(u->path), "%s", path);
-            parse_unit(u, text, inst);
             u->loaded = true;
+            if (st.st_size == 0)
+                u->masked = true;
+            else if (read_file(path, text, sizeof(text)))
+                parse_unit(u, text, inst);
         }
     }
     load_wants_dir(u, ".wants", false);
@@ -380,6 +366,32 @@ static struct unit *load_unit(const char *name)
         for (int i = 0; i < u->requires_n; i++)
             add_word(u->after, &u->after_n, MAX_DEPS, u->requires[i]);
     }
+}
+
+static void reset_config(struct unit *u)
+{
+    char name[NAME_LEN];
+    snprintf(name, sizeof(name), "%s", u->name);
+    size_t from = offsetof(struct unit, path), to = offsetof(struct unit, state);
+    memset((char *)u + from, 0, to - from);
+    u->kind = ends_with(name, ".target") ? K_TARGET : K_SERVICE;
+    u->restart_ms = 100;
+}
+
+static struct unit *load_unit(const char *name)
+{
+    struct unit *u = find_unit(name);
+    if (u)
+        return u;
+    if (!valid_unit_name(name) || unit_count >= MAX_UNITS)
+        return NULL;
+    u = &units[unit_count++];
+    memset(u, 0, sizeof(*u));
+    snprintf(u->name, sizeof(u->name), "%s", name);
+    u->pid = -1;
+    reset_config(u);
+    fill_unit(u);
+    status_dirty = true;
     return u;
 }
 
@@ -425,7 +437,7 @@ static void mark_wanted(struct unit *u)
 
 static bool is_up(const struct unit *u)
 {
-    return u->state == S_ACTIVE;
+    return u->state == S_ACTIVE || (u->state == S_INACTIVE && !strcmp(u->result, "success"));
 }
 
 static bool is_settled(const struct unit *u)
@@ -567,14 +579,24 @@ static bool deps_failed(struct unit *u, char *why, size_t cap)
 
 static bool order_ready(const struct unit *u)
 {
+    bool blocked = false, only_waiting = true;
     for (int i = 0; i < unit_count; i++) {
         const struct unit *o = &units[i];
         if (o == u || !o->wanted)
             continue;
-        if (orders_before(o, u) && !is_settled(o))
-            return false;
+        if (orders_before(o, u) && !is_settled(o)) {
+            blocked = true;
+            if (o->state != S_WAITING)
+                only_waiting = false;
+        }
     }
-    return true;
+    if (!blocked)
+        return true;
+    if (only_waiting && now_ms() - u->since_ms > 5000) {
+        console("[ WARN ] ordering cycle around %s, starting it anyway", u->name);
+        return true;
+    }
+    return false;
 }
 
 static void fail(struct unit *u, const char *why)
@@ -605,14 +627,8 @@ static void run_phase(struct unit *u)
         if (u->type == T_ONESHOT && !u->remain) {
             snprintf(u->result, sizeof(u->result), "success");
             console("[  OK  ] Finished %s", u->description[0] ? u->description : u->name);
-            set_state(u, S_INACTIVE);
             u->wanted = false;
-            for (int i = 0; i < unit_count; i++)
-                if (units[i].state == S_WAITING)
-                    status_dirty = true;
-            u->state = S_ACTIVE;
-            u->since_ms = now_ms();
-            snprintf(u->result, sizeof(u->result), "exited");
+            set_state(u, S_INACTIVE);
         } else {
             become_active(u);
         }
@@ -794,6 +810,12 @@ static void schedule(void)
                 stop_unit(u);
                 progress = true;
             }
+            if (u->restart_pending && (u->state == S_INACTIVE || u->state == S_FAILED)) {
+                u->restart_pending = false;
+                u->wanted = false;
+                mark_wanted(u);
+                progress = true;
+            }
             if (u->state == S_WAITING && u->wanted && !shutdown_mode && order_ready(u)) {
                 start_unit(u);
                 progress = true;
@@ -885,57 +907,10 @@ static void begin_shutdown(int mode)
 
 static void reload_units(void)
 {
-    for (int i = 0; i < unit_count; i++) {
-        struct unit *u = &units[i];
-        struct unit keep = *u;
-        char name[NAME_LEN];
-        snprintf(name, sizeof(name), "%s", u->name);
-        memset(u, 0, sizeof(*u));
-        snprintf(u->name, sizeof(u->name), "%s", name);
-        unit_count--;
-        struct unit *fresh = &units[unit_count];
-        (void)fresh;
-        unit_count++;
-        u->kind = keep.kind;
-        u->pid = -1;
-        u->restart_ms = 100;
-        char templ[NAME_LEN], inst[NAME_LEN];
-        instance_of(name, templ, sizeof(templ), inst, sizeof(inst));
-        static char text[8192];
-        for (size_t d = 0; d < UNIT_DIR_COUNT && !u->loaded; d++) {
-            const char *candidates[2] = {name, templ[0] ? templ : NULL};
-            for (int c = 0; c < 2 && candidates[c] && !u->loaded; c++) {
-                char path[200];
-                snprintf(path, sizeof(path), "%s/%s", unit_dirs[d], candidates[c]);
-                struct stat st;
-                if (stat(path, &st) != 0)
-                    continue;
-                snprintf(u->path, sizeof(u->path), "%s", path);
-                u->loaded = true;
-                if (st.st_size == 0)
-                    u->masked = true;
-                else if (read_file(path, text, sizeof(text)))
-                    parse_unit(u, text, inst);
-            }
-        }
-        load_wants_dir(u, ".wants", false);
-        load_wants_dir(u, ".requires", true);
-        if (u->kind == K_TARGET) {
-            for (int k = 0; k < u->wants_n; k++)
-                add_word(u->after, &u->after_n, MAX_DEPS, u->wants[k]);
-            for (int k = 0; k < u->requires_n; k++)
-                add_word(u->after, &u->after_n, MAX_DEPS, u->requires[k]);
-        }
-        u->state = keep.state;
-        u->wanted = keep.wanted;
-        u->pid = keep.pid;
-        u->phase = keep.phase;
-        u->exit_status = keep.exit_status;
-        memcpy(u->result, keep.result, sizeof(u->result));
-        u->since_ms = keep.since_ms;
-        u->started_ms = keep.started_ms;
-        u->deadline_ms = keep.deadline_ms;
-        u->restarts = keep.restarts;
+    int count = unit_count;
+    for (int i = 0; i < count; i++) {
+        reset_config(&units[i]);
+        fill_unit(&units[i]);
     }
     for (int i = 0; i < unit_count; i++) {
         for (int k = 0; k < units[i].requires_n; k++)
@@ -1019,13 +994,13 @@ static void handle_request(const char *id, char *text)
                     if (!strcmp(units[i].requires[k], u->name) && units[i].wanted)
                         units[i].stop_requested = true;
         } else if (!strcmp(verb, "restart")) {
-            stop_unit(u);
-            u->wanted = false;
-            mark_wanted(u);
-            if (u->state == S_DEACTIVATING || u->state == S_ACTIVE) {
-                u->wanted = true;
-                u->state = u->state == S_ACTIVE ? S_WAITING : u->state;
+            if (!u->loaded) {
+                used += (size_t)snprintf(out + used, sizeof(out) - used, "error: %s not found\n", full);
+                error = true;
+                continue;
             }
+            stop_unit(u);
+            u->restart_pending = true;
         } else if (!strcmp(verb, "kill")) {
             kill_unit(u, SIGKILL);
         } else {
@@ -1037,7 +1012,7 @@ static void handle_request(const char *id, char *text)
     }
     if (!out[0])
         snprintf(out, sizeof(out), "ok\n");
-    reply(id, "%s%s", error ? "" : "", out);
+    reply(id, "%s", out);
 }
 
 static void poll_requests(void)
@@ -1132,7 +1107,7 @@ static void on_signal(int sig)
 {
     if (sig == SIGTERM || sig == SIGINT)
         shutdown_mode = shutdown_mode ? shutdown_mode : -2;
-    else if (sig == SIGUSR2 || sig == SIGPWR)
+    else if (sig == SIGUSR2)
         shutdown_mode = shutdown_mode ? shutdown_mode : -1;
 }
 
@@ -1144,7 +1119,9 @@ int main(void)
     signal(SIGTERM, on_signal);
     signal(SIGINT, on_signal);
     signal(SIGUSR2, on_signal);
+#ifdef SIGPWR
     signal(SIGPWR, on_signal);
+#endif
     signal(SIGHUP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
     mkdir("/run", 0755);
