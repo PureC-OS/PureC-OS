@@ -1,8 +1,0 @@
-# id:action:command
-# actions: sysinit, wait, once, respawn, graphical (skipped with "text" on the kernel command line)
-tty1:respawn:/sbin/getty tty1
-tty2:respawn:/sbin/getty tty2
-tty3:respawn:/sbin/getty tty3
-tty4:respawn:/sbin/getty tty4
-tty5:respawn:/sbin/getty tty5
-tty6:respawn:/sbin/getty tty6
