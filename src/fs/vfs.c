@@ -403,11 +403,13 @@ static bool overlay_find(const char *path, const void **data, uint32_t *size) {
   return initramfs_is_mounted() && initramfs_find(path, data, size);
 }
 
+bool vfs_root_on_disk(void) { return !live_mode; }
+
 static bool overlay_take(const struct vfs_resolved *resolved, const void **data,
                          uint32_t *size) {
   if (!overlay_find(resolved->path, data, size))
     return false;
-  if (strncmp(resolved->path, "/etc/", 5) != 0)
+  if (live_mode)
     return true;
   const struct vfs_fs_ops *ops = resolved->mount->ops;
   struct file_stat_info info;

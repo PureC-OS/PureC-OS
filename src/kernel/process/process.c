@@ -154,7 +154,9 @@ static bool spawn_load_image(const char *requested, struct spawn_image *out)
   out->path[sizeof(out->path) - 1] = 0;
   const void *ram = 0;
   uint32_t ram_size = 0;
-  if (initramfs_find(path, &ram, &ram_size))
+  struct file_stat_info disk = {0};
+  bool on_disk = vfs_root_on_disk() && vfs_stat(path, &disk) >= 0 && !disk.is_directory && disk.size;
+  if (!on_disk && initramfs_find(path, &ram, &ram_size))
   {
     out->data = ram;
     out->size = ram_size;
@@ -838,10 +840,12 @@ int32_t process_spawn_module(const char *path, const char *command_line)
   if (program_alias_resolve(path, &module_path) && module_path)
     spawn_capabilities |= process_path_capabilities(module_path);
   module_path = path;
-  if (initramfs_find(resolved, &initramfs_image, &initramfs_size))
+  struct file_stat_info disk = {0};
+  bool on_disk = vfs_root_on_disk() && vfs_stat(resolved, &disk) >= 0 && !disk.is_directory && disk.size;
+  if (!on_disk && initramfs_find(resolved, &initramfs_image, &initramfs_size))
     return process_spawn_elf(initramfs_image, initramfs_size, name,
                              command_line);
-  if (program_alias_resolve(path, &module_path) &&
+  if (!on_disk && program_alias_resolve(path, &module_path) &&
       initramfs_find(module_path, &initramfs_image, &initramfs_size))
     return process_spawn_elf(initramfs_image, initramfs_size, name,
                              command_line);

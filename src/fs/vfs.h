@@ -16,6 +16,9 @@
 #define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
 
+/* true when "/" is a disk file system: its files win over the boot image copies */
+bool vfs_root_on_disk(void);
+
 struct vfs_mount_info {
   char path[512];
   char source[64];
