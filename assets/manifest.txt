@@ -23,6 +23,8 @@
 # --- core programs (required) ---
 /sbin/init /sbin/init - 1 bin/programs/init
 /sbin/getty /sbin/getty - 1 bin/programs/getty
+/sbin/initctl /sbin/initctl - 1 bin/programs/initctl
+/bin/systemctl /bin/systemctl - 0 bin/programs/initctl
 /bin/system /bin/system - 1 bin/programs/system
 /bin/ls /bin/ls - 1 bin/programs/ls
 /bin/cat /bin/cat - 1 bin/programs/cat
@@ -156,6 +158,7 @@
 /usr/share/man/chvt.1 /usr/share/man/chvt.1 - 0 assets/man/chvt.1
 /usr/share/man/tty.1 /usr/share/man/tty.1 - 0 assets/man/tty.1
 /usr/share/man/getty.8 /usr/share/man/getty.8 - 0 assets/man/getty.8
+/usr/share/man/initctl.8 /usr/share/man/initctl.8 - 0 assets/man/initctl.8
 /usr/share/man/init.8 /usr/share/man/init.8 - 0 assets/man/init.8
 /usr/share/man/date.1 /usr/share/man/date.1 - 0 assets/man/date.1
 /usr/share/man/uptime.1 /usr/share/man/uptime.1 - 0 assets/man/uptime.1
@@ -345,7 +348,20 @@
 /etc/pkg/keys/purec.pub /etc/pkg/keys/purec.pub - 0 rootfs/etc/pkg/keys/purec.pub
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
-/etc/inittab /etc/inittab - 0 rootfs/etc/inittab
+/usr/lib/init/system/getty@.service /usr/lib/init/system/getty@.service - 0 rootfs/usr/lib/init/system/getty@.service
+/usr/lib/init/system/graphical.target /usr/lib/init/system/graphical.target - 0 rootfs/usr/lib/init/system/graphical.target
+/usr/lib/init/system/multi-user.target /usr/lib/init/system/multi-user.target - 0 rootfs/usr/lib/init/system/multi-user.target
+/usr/lib/init/system/netd.service /usr/lib/init/system/netd.service - 0 rootfs/usr/lib/init/system/netd.service
+/usr/lib/init/system/rescue.target /usr/lib/init/system/rescue.target - 0 rootfs/usr/lib/init/system/rescue.target
+/usr/lib/init/system/sysinit.target /usr/lib/init/system/sysinit.target - 0 rootfs/usr/lib/init/system/sysinit.target
+/usr/lib/init/system/multi-user.target.wants/getty@tty1.service /usr/lib/init/system/multi-user.target.wants/getty@tty1.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/getty@tty1.service
+/usr/lib/init/system/multi-user.target.wants/getty@tty2.service /usr/lib/init/system/multi-user.target.wants/getty@tty2.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/getty@tty2.service
+/usr/lib/init/system/multi-user.target.wants/getty@tty3.service /usr/lib/init/system/multi-user.target.wants/getty@tty3.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/getty@tty3.service
+/usr/lib/init/system/multi-user.target.wants/getty@tty4.service /usr/lib/init/system/multi-user.target.wants/getty@tty4.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/getty@tty4.service
+/usr/lib/init/system/multi-user.target.wants/getty@tty5.service /usr/lib/init/system/multi-user.target.wants/getty@tty5.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/getty@tty5.service
+/usr/lib/init/system/multi-user.target.wants/getty@tty6.service /usr/lib/init/system/multi-user.target.wants/getty@tty6.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/getty@tty6.service
+/usr/lib/init/system/multi-user.target.wants/netd.service /usr/lib/init/system/multi-user.target.wants/netd.service - 0 rootfs/usr/lib/init/system/multi-user.target.wants/netd.service
+/usr/lib/init/system/rescue.target.wants/getty@tty1.service /usr/lib/init/system/rescue.target.wants/getty@tty1.service - 0 rootfs/usr/lib/init/system/rescue.target.wants/getty@tty1.service
 /etc/issue /etc/issue - 0 rootfs/etc/issue
 
 # --- kernel modules (loaded by the device manager from /lib/modules) ---
