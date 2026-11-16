@@ -257,7 +257,6 @@
 /usr/bin/lua /usr/bin/lua - 0 bin/programs/lua
 /usr/bin/vim /usr/bin/vim - 0 bin/programs/vim
 /usr/bin/micropython /usr/bin/micropython - 0 bin/programs/micropython
-/usr/bin/init-rs /usr/bin/init-rs - 0 bin/programs/init-rs
 
 
 # --- system libraries ---
