@@ -54,3 +54,8 @@
 [submodule "trusted-pkg-url"]
 	path = Trusted
 	url = https://github.com/PureC-OS/PureC-OS-Trusted-PKG-URL.git
+
+
+[submodule "settings"]
+	path = programs/PureC-OS-Settings
+	url = https://github.com/pablaofficeal/PureC-OS-Settings.git
