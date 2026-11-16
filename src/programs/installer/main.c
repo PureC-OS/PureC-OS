@@ -389,13 +389,16 @@ static bool confirm(const char *title, const char *question, bool def)
     return r == 0;
 }
 
-static bool valid_host(const char *s)
+static bool valid_host(char *s)
 {
-    if (!*s || strlen(s) >= INSTALL_HOSTNAME_MAX || *s == '-')
+    size_t n = strlen(s);
+    if (!n || n >= INSTALL_HOSTNAME_MAX || s[0] == '-' || s[n - 1] == '-')
         return false;
-    for (const char *p = s; *p; p++)
-        if (!isalnum((unsigned char)*p) && *p != '-')
+    for (char *p = s; *p; p++) {
+        *p = (char)tolower((unsigned char)*p);
+        if (!isalnum((unsigned char)*p) && *p != '-' && *p != '.')
             return false;
+    }
     return true;
 }
 
@@ -539,7 +542,7 @@ static void menu_hostname(void)
             snprintf(cfg.hostname, sizeof(cfg.hostname), "%s", v);
             return;
         }
-        message("Hostname", "Only letters, digits and '-' (not first), up to 63 characters.");
+        message("Hostname", "Only letters, digits, '-' and '.', not starting or ending with '-', up to 63 characters.");
     }
 }
 
@@ -588,7 +591,10 @@ static void add_user(void)
     snprintf(u.name, sizeof(u.name), "%s", name);
     char gecos[INSTALL_GECOS_MAX] = "";
     if (text_input("Add a user", "Full name (optional):", NULL, gecos, sizeof(gecos), false))
-        snprintf(u.gecos, sizeof(u.gecos), "%s", gecos);
+        for (char *p = gecos; *p; p++)
+            if (*p == ':')
+                *p = ' ';
+    snprintf(u.gecos, sizeof(u.gecos), "%s", gecos[0] ? gecos : u.name);
     if (!ask_password(u.name, u.hash, sizeof(u.hash)))
         return;
     char q[96];
@@ -807,8 +813,7 @@ static int load_config(const char *path, char *report, size_t cap)
                 memset(u, 0, sizeof(*u));
                 snprintf(u->name, sizeof(u->name), "%s", name);
                 u->admin = !strcmp(role, "superuser");
-                if (used)
-                    snprintf(u->gecos, sizeof(u->gecos), "%s", val + used);
+                snprintf(u->gecos, sizeof(u->gecos), "%s", used && val[used] ? val + used : name);
                 size_t rl = strlen(report);
                 snprintf(report + rl, cap - rl, "%s%s", rl ? ", " : "", name);
             }
@@ -865,6 +870,10 @@ static bool kernel_install(void)
         printf("The kernel refused to start the installation (error %d).\n", rc);
         if (rc == -10)
             printf("Start the installer as /sbin/installer: only that path may write whole disks.\n");
+        else if (rc == -12)
+            printf("Another installation is already running.\n");
+        else if (rc == -14)
+            printf("The kernel rejected the accounts (hostname, password hash or a user).\n");
         return false;
     }
     struct install_status st;
