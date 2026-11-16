@@ -22,6 +22,8 @@ sdl2 = https://github.com/OWNER/SDL
 - Опции: `Prerelease = yes`, `API =` (адрес GitHub API; `file://` для тестов).
 - Новый `json.c` — маленький разборщик JSON для ответов API.
 
+**Репозитории по умолчанию** (из сабмодулей проекта): userspace → PureC-OS/PureC-OS-Userspace, sdl2 → PureC-OS/SDL, chocolate-doom, freedoom, vim, wolfssl → PureC-OS/<имя>, tcc → PureC-OS/PureC-TCC. Установщик больше не спрашивает адрес userspace.
+
 **Сборка пакетов**: `make repo` больше не строит индекс `.db`. Каждый пакет сразу подписывается (`.sig` рядом), их надо загрузить ассетами в релиз своего репозитория.
 
 **Проверено на хосте**: 22 проверки (`itest2.sh` с подменённым GitHub API: выбор нужного ассета, пропуск prerelease, зависимости из `.PKGINFO`, обновление, установка по URL, отказ для недоверенного URL, пустой репо, битый ассет, подписи Required, чужой ключ). На настоящем `api.github.com` разбор ответа проверен. В госте не проверено.
