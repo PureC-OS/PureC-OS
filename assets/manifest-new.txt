@@ -251,9 +251,6 @@
 /bin/login /bin/login - 0 bin/programs/login
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/gltest /usr/bin/gltest - 0 bin/programs/gltest
-/usr/bin/sdltest /usr/bin/sdltest - 0 bin/programs/sdltest
-/usr/bin/doom /usr/bin/doom - 0 bin/programs/chocolate-doom
-/usr/share/doom/freedoom1.wad /usr/share/doom/freedoom1.wad - 0 assets/doom/freedoom1.wad
 /usr/bin/burn /usr/bin/burn - 0 bin/programs/burn
 /usr/bin/eat /usr/bin/eat - 0 bin/programs/eat
 /usr/bin/tcc /usr/bin/tcc - 0 bin/programs/tcc
@@ -294,13 +291,9 @@
 /lib/libdltest2.so /lib/libdltest2.so - 0 bin/lib/libdltest2.so
 /lib/pc-ld.o /lib/pc-ld.o - 0 bin/lib/pc-ld.o
 /lib/libpurefs.a /lib/libpurefs.a - 1 bin/lib/libpurefs.a
-/lib/libpuregui.a /lib/libpuregui.a - 1 bin/lib/libpuregui.a
-/lib/libpguiw.a /lib/libpguiw.a - 1 bin/lib/libpguiw.a
 /lib/libpureaudio.a /lib/libpureaudio.a - 0 bin/lib/libpureaudio.a
 
 # --- development headers (required, except audio/tcc extras) ---
-/usr/include/puregui.h /usr/include/puregui.h - 1 src/libgui/include/puregui.h
-/usr/include/pguiw.h /usr/include/pguiw.h - 1 src/libgui/include/pguiw.h
 /usr/include/purefs.h /usr/include/purefs.h - 1 src/libfs/include/purefs.h
 /usr/include/pureaudio.h /usr/include/pureaudio.h - 0 src/libaudio/include/pureaudio.h
 /usr/include/assert.h /usr/include/assert.h - 1 src/libc/include/hosted/assert.h

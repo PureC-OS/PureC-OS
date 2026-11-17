@@ -6,8 +6,6 @@ OBJ_DIR := $(BIN_DIR)/obj/programs
 PROGRAM_DIR := $(BIN_DIR)/programs
 LIB_DIR := $(BIN_DIR)/lib
 LIBPUREC := $(LIB_DIR)/libpurec.a
-LIBPUREGUI := $(LIB_DIR)/libpuregui.a
-LIBPGUIW := $(LIB_DIR)/libpguiw.a
 LIBPUREFS := $(LIB_DIR)/libpurefs.a
 LIBPUREAUDIO := $(LIB_DIR)/libpureaudio.a
 LIBPURECRYPT := $(LIB_DIR)/libpurecrypt.a
@@ -207,9 +205,6 @@ $(PROGRAM_DIR)/$(1): $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIB_DIR)
 	$(LD) -S -T $(LINKER_SCRIPT) -o $$@ $(LIB_DIR)/crt0.o $(OBJ_DIR)/utils/$(1)/$(1).o $(UTIL_LIB_OBJECTS) $(LIBPUREFS) $(LIBPUREC)
 endef
 $(foreach u,$(UTILS),$(eval $(call UTIL_RULE,$(u))))
-
-$(LIBPUREGUI) $(LIBPGUIW):
-	$(MAKE) -C $(ROOT_DIR)/src/libgui
 
 $(LIBPUREFS):
 	$(MAKE) -C $(ROOT_DIR)/src/libfs

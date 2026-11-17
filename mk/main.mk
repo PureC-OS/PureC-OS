@@ -361,7 +361,6 @@ all: iso
 
 libraries:
 	$(MAKE) -C src/libc
-	$(MAKE) -C src/libgui
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
@@ -369,10 +368,7 @@ programs: libraries
 	$(MAKE) -C src/programs
 	@if test -f programs/purec-os-pkg/Makefile; then $(MAKE) -C programs/purec-os-pkg image; else echo "programs/purec-os-pkg not found: the image will have no pkg"; fi
 	$(MAKE) -C src/programs/micropython
-	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
 	@if test -f git/Makefile; then $(MAKE) -C mk/netsurf curl && $(MAKE) -C mk/git; else echo "git/ not found, skipping git port"; fi
-	$(MAKE) -C src/doom
-	$(MAKE) -C src/chocolate
 	$(MAKE) -C src/make
 	@$(MAKE) userspace || echo "WARNING: Rust userspace build failed; ISO will ship without desktop-rs"
 
@@ -471,7 +467,6 @@ iso: kernel programs
 clean:
 	$(MAKE) -C src/kernel      clean 2>/dev/null || true
 	$(MAKE) -C src/libc        clean 2>/dev/null || true
-	$(MAKE) -C src/libgui      clean 2>/dev/null || true
 	$(MAKE) -C src/libfs       clean 2>/dev/null || true
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true
