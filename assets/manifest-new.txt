@@ -2,6 +2,7 @@
 /sbin/getty /sbin/getty - 1 bin/programs/getty
 /sbin/installer /sbin/installer - 1 bin/programs/installer
 /usr/games/snake /usr/games/snake - 1 bin/programs/snake
+/usr/bin/curl /usr/bin/curl - 1 bin/programs/curl
 /usr/bin/nano /usr/bin/nano - 1 bin/programs/nano
 /bin/system /bin/system - 1 bin/programs/system
 /usr/bin/raminfo /usr/bin/raminfo - 0 bin/programs/raminfo

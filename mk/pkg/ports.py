@@ -95,8 +95,6 @@ PORTS = [
      "files": [("usr/bin/micropython", "bin/programs/micropython")]},
     {"name": "make", "version": make_version, "rel": 1, "desc": "GNU make",
      "files": [("usr/bin/make", "bin/programs/make")]},
-    {"name": "curl", "version": curl_version, "rel": 1, "desc": "URL transfer tool (wolfSSL)",
-     "files": [("usr/bin/curl", "bin/programs/curl")]},
     {"name": "git", "version": git_version, "rel": 1, "desc": "Distributed version control",
      "files": [("usr/bin/git", "bin/programs/git"), ("usr/libexec/git-core/git", "bin/programs/git"),
                ("usr/libexec/git-core/git-remote-http", "bin/programs/git-remote-http"),

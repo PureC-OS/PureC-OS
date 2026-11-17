@@ -85,6 +85,7 @@
 /bin/uptime /bin/uptime - 1 bin/programs/uptime
 /bin/sleep /bin/sleep - 1 bin/programs/sleep
 /bin/sync /bin/sync - 1 bin/programs/sync
+/usr/bin/curl /usr/bin/curl - 1 bin/programs/curl
 /usr/bin/pkg /usr/bin/pkg - 0 bin/programs/pkg
 /bin/true /bin/true - 1 bin/programs/true
 /bin/false /bin/false - 1 bin/programs/false
