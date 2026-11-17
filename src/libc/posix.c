@@ -257,6 +257,20 @@ int uname(struct utsname *name)
     strcpy(name->sysname, "PureC");
     strcpy(name->nodename, "purec");
     strcpy(name->release, "2.0.0");
+    int32_t rfd = pc_file_open("/sys/kernel/release");
+    if (rfd >= 0)
+    {
+        char rel[sizeof(name->release)];
+        int32_t rn = pc_file_read(rfd, rel, sizeof(rel) - 1);
+        pc_file_close(rfd);
+        while (rn > 0 && (rel[rn - 1] == '\n' || rel[rn - 1] == ' '))
+            rn--;
+        if (rn > 0)
+        {
+            rel[rn] = 0;
+            strcpy(name->release, rel);
+        }
+    }
     strcpy(name->version, "#1 SMP PureC OS");
     strcpy(name->machine, "x86_64");
     char host[64];
