@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 
 PATTERN = re.compile(r"^(?P<name>[A-Za-z0-9._+-]+)-(?P<ver>[0-9][^-]*)-(?P<rel>[^-]+)-(?P<arch>x86_64|any)\.pkg\.tar\.gz$")
 
@@ -58,7 +59,12 @@ def main():
         else:
             print(f"warning: {base} has no signature", file=sys.stderr)
         old = entries.get(name, ["", ""])
-        entries[name] = [f"bin/{name}/{base}", old[1]]
+        desc = old[1]
+        with tarfile.open(pkg) as t:
+            for line in t.extractfile(".PKGINFO").read().decode().splitlines():
+                if line.startswith("pkgdesc = ") and line[10:].strip():
+                    desc = line[10:].strip()
+        entries[name] = [f"bin/{name}/{base}", desc]
         files = sorted(f for f in os.listdir(folder) if PATTERN.match(f))
         stale = [f for f in files if f != base]
         for f in stale[: max(0, len(stale) - (args.keep - 1))]:

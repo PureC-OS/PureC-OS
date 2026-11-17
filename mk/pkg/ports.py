@@ -100,7 +100,9 @@ PORTS = [
     {"name": "git", "version": git_version, "rel": 1, "desc": "Distributed version control",
      "files": [("usr/bin/git", "bin/programs/git"), ("usr/libexec/git-core/git", "bin/programs/git"),
                ("usr/libexec/git-core/git-remote-http", "bin/programs/git-remote-http"),
-               ("usr/libexec/git-core/git-remote-https", "bin/programs/git-remote-http")]},
+               ("usr/libexec/git-core/git-remote-https", "bin/programs/git-remote-http"),
+               ("usr/share/git-core/templates/description", "bin/git-templates/description"),
+               ("usr/share/git-core/templates/info/exclude", "bin/git-templates/info/exclude")]},
     {"name": "tcc", "version": tcc_version, "rel": 1, "desc": "Tiny C compiler",
      "files": [("usr/bin/tcc", "bin/programs/tcc"), ("lib/tcc/libtcc1.a", "bin/lib/tcc/libtcc1.a")]
      + header_files("tcc/include", "lib/tcc/include", r".*\.h$")},
