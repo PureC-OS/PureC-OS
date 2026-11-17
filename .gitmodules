@@ -59,3 +59,6 @@
 [submodule "settings"]
 	path = programs/PureC-OS-Settings
 	url = https://github.com/pablaofficeal/PureC-OS-Settings.git
+[submodule "PureC-OS-LibGui"]
+	path = PureC-OS-LibGui
+	url = https://github.com/PureC-OS/PureC-OS-LibGui.git
