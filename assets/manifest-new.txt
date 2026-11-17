@@ -209,10 +209,6 @@
 /usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
 /usr/bin/cmaketest /usr/bin/cmaketest - 0 bin/programs/cmaketest
 /usr/bin/qtcoretest /usr/bin/qtcoretest - 0 bin/programs/qtcoretest
-/usr/share/fonts/DejaVuSansMono.ttf /usr/share/fonts/DejaVuSansMono.ttf - 0 assets/fonts/DejaVuSansMono.ttf
-/usr/share/fonts/DejaVuSansMono-Bold.ttf /usr/share/fonts/DejaVuSansMono-Bold.ttf - 0 assets/fonts/DejaVuSansMono-Bold.ttf
-/usr/share/fonts/DejaVuSans.ttf /usr/share/fonts/DejaVuSans.ttf - 0 assets/fonts/DejaVuSans.ttf
-/usr/share/fonts/DejaVuSans-Bold.ttf /usr/share/fonts/DejaVuSans-Bold.ttf - 0 assets/fonts/DejaVuSans-Bold.ttf
 /usr/bin/posixtest /usr/bin/posixtest - 0 bin/programs/posixtest
 /usr/bin/fbtest /usr/bin/fbtest - 0 bin/programs/fbtest
 /usr/bin/udptest /usr/bin/udptest - 0 bin/programs/udptest

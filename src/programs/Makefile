@@ -108,12 +108,13 @@ TARGETS := \
  	$(PROGRAM_DIR)/eat \
  	$(PROGRAM_DIR)/cpuinfo \
  	$(PROGRAM_DIR)/hddcheck \
-	$(PROGRAM_DIR)/lua \
 	$(UTIL_TARGETS)
+
+PORT_TARGETS := $(PROGRAM_DIR)/lua
 	
 TCC_PRESENT := $(wildcard $(ROOT_DIR)/tcc/libtcc.c)
 ifneq ($(TCC_PRESENT),)
-TARGETS += $(PROGRAM_DIR)/tcc
+PORT_TARGETS += $(PROGRAM_DIR)/tcc
 endif
 
 VIM_DIR := $(ROOT_DIR)/vim/src
@@ -137,13 +138,15 @@ VIM_OBJECTS := $(VIM_SOURCES:%=$(OBJ_DIR)/vim/%.o) $(OBJ_DIR)/vim/pathdef.o \
 	$(OBJ_DIR)/vim/purec_compat.o
 VIM_CFLAGS := -I$(VIM_DIR) -I$(VIM_DIR)/proto -I$(ROOT_DIR)/mk/vim \
 	-I$(ROOT_DIR)/src/libc/include/hosted -DHAVE_CONFIG_H -w
-TARGETS += $(PROGRAM_DIR)/vim
+PORT_TARGETS += $(PROGRAM_DIR)/vim
 -include $(VIM_OBJECTS:.o=.d)
 endif
 
 .NOTPARALLEL:
-.PHONY: all
+.PHONY: all ports
 all: $(TARGETS)
+
+ports: $(PORT_TARGETS)
 
 -include $(PLAIN_OBJECTS:.o=.d) $(GENERAL_OBJECTS:.o=.d) $(GENERAL_CPP_OBJECTS:.o=.d) $(LUA_OBJECTS:.o=.d) $(OBJ_DIR)/tcc/tcc.d
 

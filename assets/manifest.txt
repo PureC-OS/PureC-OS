@@ -242,23 +242,11 @@
 /usr/bin/journalctl /usr/bin/journalctl - 0 bin/programs/journalctl
 /usr/bin/httpget /usr/bin/httpget - 0 bin/programs/httpget
 /usr/bin/httpsget /usr/bin/httpsget - 0 bin/programs/httpsget
-/usr/bin/curl /usr/bin/curl - 0 bin/programs/curl
-/usr/bin/git /usr/bin/git - 0 bin/programs/git
-/usr/libexec/git-core/git /usr/libexec/git-core/git - 0 bin/programs/git
-/usr/libexec/git-core/git-remote-http /usr/libexec/git-core/git-remote-http - 0 bin/programs/git-remote-http
-/usr/libexec/git-core/git-remote-https /usr/libexec/git-core/git-remote-https - 0 bin/programs/git-remote-http
-/usr/share/git-core/templates/description /usr/share/git-core/templates/description - 0 bin/git-templates/description
-/usr/share/git-core/templates/info/exclude /usr/share/git-core/templates/info/exclude - 0 bin/git-templates/info/exclude
 /etc/ssl/cert.pem /etc/ssl/cert.pem - 0 rootfs/etc/ssl/cert.pem
-/usr/bin/make /usr/bin/make - 0 bin/programs/make
 /usr/share/purec/selftest.sh /usr/share/purec/selftest.sh - 0 tests/guest/selftest.sh
 /usr/bin/fputest /usr/bin/fputest - 0 bin/programs/fputest
 /usr/bin/burn /usr/bin/burn - 0 bin/programs/burn
 /usr/bin/eat /usr/bin/eat - 0 bin/programs/eat
-/usr/bin/tcc /usr/bin/tcc - 0 bin/programs/tcc
-/usr/bin/lua /usr/bin/lua - 0 bin/programs/lua
-/usr/bin/vim /usr/bin/vim - 0 bin/programs/vim
-/usr/bin/micropython /usr/bin/micropython - 0 bin/programs/micropython
 
 
 # --- system libraries ---
@@ -322,17 +310,6 @@
 /usr/include/sys/wait.h /usr/include/sys/wait.h - 1 src/libc/include/hosted/sys/wait.h
 /usr/include/termios.h /usr/include/termios.h - 1 src/libc/include/hosted/termios.h
 /lib/crt0.o /lib/crt0.o - 1 bin/lib/crt0.o
-/lib/tcc/libtcc1.a /lib/tcc/libtcc1.a - 0 bin/lib/tcc/libtcc1.a
-/lib/tcc/include/float.h /lib/tcc/include/float.h - 0 tcc/include/float.h
-/lib/tcc/include/stdarg.h /lib/tcc/include/stdarg.h - 0 tcc/include/stdarg.h
-/lib/tcc/include/stdbool.h /lib/tcc/include/stdbool.h - 0 tcc/include/stdbool.h
-/lib/tcc/include/stddef.h /lib/tcc/include/stddef.h - 0 tcc/include/stddef.h
-/lib/tcc/include/tgmath.h /lib/tcc/include/tgmath.h - 0 tcc/include/tgmath.h
-/lib/tcc/include/tccdefs.h /lib/tcc/include/tccdefs.h - 0 tcc/include/tccdefs.h
-/lib/tcc/include/varargs.h /lib/tcc/include/varargs.h - 0 tcc/include/varargs.h
-/lib/tcc/include/stdalign.h /lib/tcc/include/stdalign.h - 0 tcc/include/stdalign.h
-/lib/tcc/include/stdatomic.h /lib/tcc/include/stdatomic.h - 0 tcc/include/stdatomic.h
-/lib/tcc/include/stdnoreturn.h /lib/tcc/include/stdnoreturn.h - 0 tcc/include/stdnoreturn.h
 
 
 # --- /etc ---
@@ -346,7 +323,6 @@
 /etc/hosts /etc/hosts - 0 rootfs/etc/hosts
 /etc/resolved.conf /etc/resolved.conf - 0 rootfs/etc/resolved.conf
 /etc/ntp.conf /etc/ntp.conf - 0 rootfs/etc/ntp.conf
-/etc/vimrc /etc/vimrc - 0 rootfs/etc/vimrc
 /etc/pkg/pkg.conf /etc/pkg/pkg.conf - 0 rootfs/etc/pkg/pkg.conf
 /etc/pkg/keys/purec.pub /etc/pkg/keys/purec.pub - 0 rootfs/etc/pkg/keys/purec.pub
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
@@ -379,7 +355,3 @@
 
 # --- firmware ---
 /lib/firmware/iwx-so-a0-hr-b0-77 /lib/firmware/iwx-so-a0-hr-b0-77 - 0 third_party/openbsd-iwx/firmware/iwx-so-a0-hr-b0-77
-/usr/share/fonts/DejaVuSans.ttf /usr/share/fonts/DejaVuSans.ttf - 0 assets/fonts/DejaVuSans.ttf
-/usr/share/fonts/DejaVuSans-Bold.ttf /usr/share/fonts/DejaVuSans-Bold.ttf - 0 assets/fonts/DejaVuSans-Bold.ttf
-/usr/share/fonts/DejaVuSansMono.ttf /usr/share/fonts/DejaVuSansMono.ttf - 0 assets/fonts/DejaVuSansMono.ttf
-/usr/share/fonts/DejaVuSansMono-Bold.ttf /usr/share/fonts/DejaVuSansMono-Bold.ttf - 0 assets/fonts/DejaVuSansMono-Bold.ttf

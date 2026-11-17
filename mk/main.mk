@@ -14,7 +14,7 @@ ACPI_DIR            := $(ROOT_DIR)/acpi
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: ports test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
@@ -367,10 +367,12 @@ libraries:
 programs: libraries
 	$(MAKE) -C src/programs
 	@if test -f programs/purec-os-pkg/Makefile; then $(MAKE) -C programs/purec-os-pkg image; else echo "programs/purec-os-pkg not found: the image will have no pkg"; fi
+
+ports: libraries
+	$(MAKE) -C src/programs ports
 	$(MAKE) -C src/programs/micropython
 	@if test -f git/Makefile; then $(MAKE) -C mk/netsurf curl && $(MAKE) -C mk/git; else echo "git/ not found, skipping git port"; fi
 	$(MAKE) -C src/make
-	@$(MAKE) userspace || echo "WARNING: Rust userspace build failed; ISO will ship without desktop-rs"
 
 sdl2: libraries
 	$(MAKE) -C src/libsdl2
