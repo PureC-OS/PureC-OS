@@ -1,5 +1,6 @@
 ROOT_DIR ?= $(abspath ../..)
 include $(ROOT_DIR)/mk/toolchain.mk
+include $(ROOT_DIR)/src/kernel/kconfig
 OBJ_DIR := $(BIN_DIR)/obj/kernel
 KERNEL_DIR := $(BIN_DIR)/kernel
 TARGET := $(KERNEL_DIR)/kernel-limine.elf
@@ -223,7 +224,7 @@ $(IO_OBJECT): force
 
 $(GEN_STAMP): force
 	@mkdir -p $(@D)
-	@printf 'const char kernel_build_uuid[] = "%s";\nconst char kernel_build_time[] = "%s";\n' "$(BUILD_UUID)" "$(BUILD_DATE)" > $@
+	@printf 'const char kernel_build_uuid[] = "%s";\nconst char kernel_build_time[] = "%s";\nconst char kernel_name[] = "%s";\nconst char kernel_version[] = "%s";\n' "$(BUILD_UUID)" "$(BUILD_DATE)" "$(KERNEL_NAME)" "$(KERNEL_VERSION)" > $@
 
 $(GEN_STAMP_OBJ): $(GEN_STAMP)
 	@mkdir -p $(@D)

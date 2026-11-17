@@ -1,0 +1,14 @@
+# PureC OS kernel configuration.
+# Read by src/kernel/Makefile (build), mk/kernel-package.mk (the kernel
+# package) and mkinitcpio -P on installed systems (limine.conf entries).
+# Format: KEY=value, one per line, no quotes.
+
+KERNEL_NAME=PureC OS
+KERNEL_VERSION=2.0.0
+KERNEL_RELEASE=1
+KERNEL_ARCH=x86_64
+
+KERNEL_RESOLUTION=1920x1080x32
+KERNEL_FALLBACK_RESOLUTION=1280x800x32
+KERNEL_CMDLINE=
+KERNEL_TIMEOUT=10
