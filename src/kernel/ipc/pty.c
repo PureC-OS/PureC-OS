@@ -412,6 +412,60 @@ int32_t pty_read(int32_t id, bool master, void *buffer, uint32_t count, bool non
 
 #define PTY_KERNEL_CHUNK 2048u
 
+static bool out_room(const struct pty *p, uint8_t c)
+{
+    bool crlf = (p->termios.oflag & TTY_OFLAG_OPOST) && (p->termios.oflag & TTY_OFLAG_ONLCR) && c == '\n';
+    return p->out.count + (crlf ? 2u : 1u) <= PTY_RING;
+}
+
+static int32_t pty_write_slave(int32_t id, const uint8_t *in, uint32_t count, bool nonblock)
+{
+    int32_t self = scheduler_current_tid();
+    uint32_t done = 0;
+    for (;;) {
+        int32_t wake[PTY_WAITERS * 2];
+        uint32_t n = 0;
+        uint32_t before = done;
+        mutex_lock(&pty_mutex);
+        struct pty *p = pty_get(id);
+        if (!p) {
+            mutex_unlock(&pty_mutex);
+            return done ? (int32_t)done : -KERR_BADF;
+        }
+        if (!p->master_open) {
+            mutex_unlock(&pty_mutex);
+            return done ? (int32_t)done : -KERR_IO;
+        }
+        while (done < count && out_room(p, in[done]))
+            out_put(p, in[done++]);
+        if (done != before)
+            p->generation++;
+        n = waiters_take(p->master_waiters, wake);
+        n += waiters_take(p->slave_waiters, wake + n);
+        void (*drain)(int32_t) = p->out.count ? p->kernel_drain : 0;
+        bool full = done < count;
+        bool wait = full && !drain && !nonblock && !signal_pending_current();
+        if (wait)
+            waiters_add(p->slave_waiters, self);
+        mutex_unlock(&pty_mutex);
+        wake_all(wake, n);
+        if (drain)
+            drain(id);
+        if (!full)
+            return (int32_t)count;
+        if (drain) {
+            if (done == before)
+                return done ? (int32_t)done : (int32_t)count;
+            continue;
+        }
+        if (nonblock)
+            return done ? (int32_t)done : -KERR_AGAIN;
+        if (!wait)
+            return done ? (int32_t)done : -KERR_INTR;
+        scheduler_block();
+    }
+}
+
 static bool kernel_drained(int32_t id)
 {
     mutex_lock(&pty_mutex);
@@ -423,7 +477,6 @@ static bool kernel_drained(int32_t id)
 
 int32_t pty_write(int32_t id, bool master, const void *buffer, uint32_t count, bool nonblock)
 {
-    (void)nonblock;
     const uint8_t *in = (const uint8_t *)buffer;
     if (!master && count > PTY_KERNEL_CHUNK && kernel_drained(id)) {
         uint32_t done = 0;
@@ -436,6 +489,8 @@ int32_t pty_write(int32_t id, bool master, const void *buffer, uint32_t count, b
         }
         return (int32_t)count;
     }
+    if (!master)
+        return pty_write_slave(id, in, count, nonblock);
     int32_t wake[PTY_WAITERS * 2];
     uint32_t n = 0;
     uint32_t sig = 0, sig_pid = 0;
@@ -457,13 +512,6 @@ int32_t pty_write(int32_t id, bool master, const void *buffer, uint32_t count, b
                 sig_pid = p->fg_pid;
             }
         }
-    } else {
-        if (!p->master_open) {
-            mutex_unlock(&pty_mutex);
-            return -KERR_IO;
-        }
-        for (uint32_t i = 0; i < count; i++)
-            out_put(p, in[i]);
     }
     p->generation++;
     n = waiters_take(p->slave_waiters, wake);
