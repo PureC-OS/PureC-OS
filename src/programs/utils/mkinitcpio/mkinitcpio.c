@@ -605,10 +605,10 @@ static int write_limine(const char *boot, const struct kconf *k, const char *pre
         n += (size_t)snprintf(text + n, sizeof(text) - n, "    cmdline: %s\n", k->cmdline);
     if (has_fallback) {
         n += (size_t)snprintf(text + n, sizeof(text) - n,
-                              "\n/%s %s (previous kernel)\n    protocol: limine\n    resolution: %s\n"
+                              "\n/%s%s%s (previous kernel)\n    protocol: limine\n    resolution: %s\n"
                               "    kernel_path: boot():/boot/kernel-fallback.elf\n"
                               "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n    module_path: boot():/boot/initramfs.cpio\n",
-                              k->name, previous[0] ? previous : "", k->fallback_resolution);
+                              k->name, previous[0] ? " " : "", previous, k->fallback_resolution);
         if (k->cmdline[0])
             n += (size_t)snprintf(text + n, sizeof(text) - n, "    cmdline: %s\n", k->cmdline);
     }
