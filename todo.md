@@ -9,8 +9,8 @@
 - [x] Обновить Window Manager Что бы при перемещении окна не было мирцаный | priority:normal
 - [x] Доделать нормальные драйвера Видео Карты Что бы можно было менять разрешение экрана {Работаеть частично на bare metal и в VirtualBox не работаеть} | priority:normal
 - [x] Добавить возможность Менять розрешение экрана без перезагрузки ядра {Работаеть частично на bare metal и в VirtualBox не работаеть} | priority:normal
-- [ ] А так же будет сделана миграция UserSpace в Ring 3. | priority:normal
-- [ ] И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3. | priority:normal
+- [x] А так же будет сделана миграция UserSpace в Ring 3. (рабочий стол, окна и видеосервер вынесены из ядра в пакеты, 2026-11-15) | priority:normal
+- [x] И миграция остальных програм которые живут в Ring 0 они переходят в Ring 3. (графика ядра удалена 2026-11-15; терминал, вход, настройки — отдельные пакеты) | priority:normal
 - [x] Мой notepad++ при новом рендеренге текста в notepad++ исчез весь текст букви и цифры | priority:normal
 - [x] на taskbar батарея перекрывает время | priority:normal
 - [x] User space ведёт себя не так как задумано | priority:high | tags:bug | deadline:2026-09-23
@@ -18,6 +18,7 @@
   И полностью вся система падает с какой ошибкой я не знаю
   Просто зависает
 - [ ] При перетаскивании окна нагрузка на CPU очень сильно скачет (до 60%), и вся сессия начинает лагать | priority:high | tags:bug,perf
+  Статус: композитор удалён из ядра 2026-11-15, замер относится к старому коду; проверить заново в videod.
   Наблюдение владельца: если быстро дёргать окно, нагрузка на CPU скачет вплоть до 60%, а лагает уже не только окно, а вся сессия.
   Замер в VM (VirtualBox, 3 ядра, сборка 2d5b73f8 с очередями на ядро): монитор показал 40% (cpu0 43%, cpu1 21%, cpu2 53%), в покое 4–6%. Профиль RIP за 20 с во время перетаскивания: memcpy ~12% на cpu0 (композитор), wm_enter ~3%, tsc_milliseconds 2,5–9%, uheap_coalesce 1,6–2,5%, serial_putc 1,6–2,2%, issue_command и stop_port (ahci.c) 2–6% (этот опрос идёт и в покое).
   Причина не найдена, ничего не менялось. Предположения: композитор копирует окно целиком, ожидание замков wm и comp, вывод в serial на горячем пути, активное ожидание через tsc_milliseconds, фоновый опрос AHCI. Нужны стеки вызовов, чтобы выяснить, кто вызывает tsc_milliseconds и issue_command.
@@ -74,7 +75,7 @@
 ## touchpad
 
 - [x] Добавить поддержку touchpad (через ACPI) aspi только чтение устройства | priority:normal
-- [ ] Написать драйвер touchpad Через i2c | priority:normal
+- [x] Написать драйвер touchpad Через i2c | priority:normal
 - [ ] Провести тестирование драйвера touchpad на BareMetal | priority:high
   Частично было проверено и тачпад не работает
 
@@ -158,8 +159,8 @@
     - [ ] добавить поддержку жёстких ссылок | priority:normal
     - [ ] добавить поддержку символических ссылок | priority:normal
     - [ ] добавить журналирование для ext3 | priority:normal
-- [ ] Нужно добавить TmpFS в Ram | priority:normal
-  - [ ] TmpFS должна быть по умолчанию в /tmp | priority:normal
+- [x] Нужно добавить TmpFS в Ram | priority:normal
+  - [x] TmpFS должна быть по умолчанию в /tmp | priority:normal
   
 - [ ] доделать ext2 | priority:normal
   - [ ] на bare metal когда ставишь ОС на ext2 диск она поставилась но как только делаешь персонализацию ядро падает в kernel panic и файловая система перестает открыватся | priority:high
@@ -172,18 +173,18 @@
 
 ## Security
 
-- [ ] добавить права доступа к файлам и папкам (rwx) | priority:normal
+- [x] добавить права доступа к файлам и папкам (rwx) | priority:normal
 - [x] Добавить хеш паролей для входа (sha512) и проверять пароль при входе в ОС | priority:normal
   (реализовано чисто через purec-libxcrypt https://github.com/PureC-OS/libxcrypt)
 - [ ] добавыть в install созданыя юзеров которые будут добавляться в /home/username | priority:normal
 
 ## SO / линковка / адресное пространство
 
-- [/] Ревизия стандартов линковки ядра (linker-limine.ld, toolchain.mk, MOD_CFLAGS) | priority:high
-- [ ] Спецификация формата .so для PureC-OS (ET_DYN, PT_DYNAMIC, baselib) | priority:high
+- [x] Ревизия стандартов линковки ядра (linker-limine.ld, toolchain.mk, MOD_CFLAGS) | priority:high
+- [x] Спецификация формата .so для PureC-OS (ET_DYN, PT_DYNAMIC, baselib) | priority:high
 - [ ] Ревизия адресного пространства ядра (higher-half, USER_TOP, ELF_USER_MIN/MAX) | priority:high
-- [ ] Расширить elf.c: ET_DYN + PT_DYNAMIC + RELA (R_X86_64_RELATIVE/GLOB_DAT/JUMP_SLOT) | priority:normal
-- [ ] Toolchain под .so: -fPIC/-pie/-shared, userspace.ld + libpurec.so, kmod LD -r сохранить | priority:normal
+- [x] Расширить elf.c: ET_DYN + PT_DYNAMIC + RELA (R_X86_64_RELATIVE/GLOB_DAT/JUMP_SLOT) | priority:normal
+- [x] Toolchain под .so: -fPIC/-pie/-shared, userspace.ld + libpurec.so, kmod LD -r сохранить | priority:normal
 - [x] tcc: собрать libtcc1.a в /lib/tcc + манифест (фикс file libtcc1.a not found) | priority:high
 
 ## SO формат (ET_DYN)

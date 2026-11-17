@@ -80,7 +80,7 @@
 - `src/io/storage/block_device.c` — блочный слой вызывает `xhci_read_sector(s)` и `xhci_write_sector(s)` для накопителей USB.
 - `src/io/storage/storage_probe.c` — `storage_controller_list` находит контроллер и вызывает `xhci_init`.
 - `src/kernel/devices/device_manager.c`, `src/fs/` — информация о накопителях и повторное сканирование.
-- `src/userspace/userspace.c`, `src/kernel/syscall/syscall.c` — `xhci_poll_mouse` через `usb_mouse_poll`.
+- `src/kernel/tty/vtcon.c`, `src/kernel/syscall/syscall.c` — `usb_mouse_poll()`, который вызывает `xhci_poll_mouse` (`src/drivers/mouse/usb_mouse.c:42`).
 
 ## Ограничения
 

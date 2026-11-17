@@ -35,7 +35,7 @@
 - `src/drivers/usb/xhci.c:1119` — `usb_mouse_attach` после того, как xHCI настроил boot-интерфейс мыши (`configure_boot_mouse`).
 - `src/drivers/usb/xhci.c:346` и `:1607` — `usb_mouse_report` при получении отчёта.
 - `src/drivers/usb/xhci.c:1519` — `usb_mouse_detach` при отключении порта.
-- `src/userspace/userspace.c` и `src/kernel/syscall/syscall.c` — `usb_mouse_poll()` в цикле интерфейса и при системном вызове чтения мыши.
+- `src/kernel/syscall/syscall.c:1686` (системный вызов чтения мыши) и `src/kernel/tty/vtcon.c:731` (опрос ввода виртуальной консоли) — `usb_mouse_poll()`.
 
 ## Ограничения
 
