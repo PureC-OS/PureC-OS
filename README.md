@@ -258,30 +258,11 @@ git clone https://github.com/PureC-OS/PureC-OS.git
 cd PureC-OS
 ```
 
-fetch the external repositories (first run only):
+use the Python script for the build:
 
 ```bash
-./purec.py setup
+python purec.py
 ```
-
-build the kernel, the programs and the ISO:
-
-```bash
-make            # same as make iso
-make kernel     # kernel only
-make programs   # Ring-3 programs only
-make test       # host tests
-```
-
-or use the interactive menu, which also runs the image in QEMU:
-
-```bash
-./purec.py
-./purec.py build [all|kernel|programs|iso|libs|userspace]
-./purec.py run
-```
-
-The ISO is written to `bin/`. Packages for the desktop and the other graphical programs are not part of the ISO build; they are installed inside the system with `pkg` from the registry in `Trusted/`.
 
 ## Project layout
 
