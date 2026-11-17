@@ -2,7 +2,6 @@
 /sbin/getty /sbin/getty - 1 bin/programs/getty
 /sbin/installer /sbin/installer - 1 bin/programs/installer
 /usr/games/snake /usr/games/snake - 1 bin/programs/snake
-/usr/bin/terminal /usr/bin/terminal - 1 bin/programs/terminal
 /usr/bin/nano /usr/bin/nano - 1 bin/programs/nano
 /bin/system /bin/system - 1 bin/programs/system
 /usr/bin/raminfo /usr/bin/raminfo - 0 bin/programs/raminfo
@@ -195,7 +194,6 @@
 /usr/games/puzzle15 /usr/games/puzzle15 - 0 bin/programs/puzzle15
 /usr/games/2048 /usr/games/2048 - 0 bin/programs/2048
 
-/usr/bin/settings /usr/bin/settings - 0 bin/programs/settings
 /usr/bin/monitor /usr/bin/monitor - 0 bin/programs/monitor
 /usr/bin/disks /usr/bin/disks - 0 bin/programs/disks
 /usr/bin/devmgr /usr/bin/devmgr - 0 bin/programs/devmgr
@@ -211,7 +209,6 @@
 /usr/bin/thrtest /usr/bin/thrtest - 0 bin/programs/thrtest
 /usr/bin/cmaketest /usr/bin/cmaketest - 0 bin/programs/cmaketest
 /usr/bin/qtcoretest /usr/bin/qtcoretest - 0 bin/programs/qtcoretest
-/usr/bin/qt-terminal /usr/bin/qt-terminal - 0 bin/programs/qt-terminal
 /usr/share/fonts/DejaVuSansMono.ttf /usr/share/fonts/DejaVuSansMono.ttf - 0 assets/fonts/DejaVuSansMono.ttf
 /usr/share/fonts/DejaVuSansMono-Bold.ttf /usr/share/fonts/DejaVuSansMono-Bold.ttf - 0 assets/fonts/DejaVuSansMono-Bold.ttf
 /usr/share/fonts/DejaVuSans.ttf /usr/share/fonts/DejaVuSans.ttf - 0 assets/fonts/DejaVuSans.ttf
@@ -266,8 +263,6 @@
 # --- desktop entries (.desktop INI next to the binary, 8.3 aliases) ---
 /usr/share/applications/files.desktop /usr/share/applications/files.desktop - 0 assets/applications/files.desktop
 /usr/share/applications/monitor.desktop /usr/share/applications/monitor.desktop - 0 assets/applications/monitor.desktop
-/usr/share/applications/terminal.desktop /usr/share/applications/terminal.desktop - 0 assets/applications/terminal.desktop
-/usr/share/applications/qt-terminal.desktop /usr/share/applications/qt-terminal.desktop - 0 assets/applications/qt-terminal.desktop
 /usr/share/applications/clock.desktop /usr/share/applications/clock.desktop - 0 assets/applications/clock.desktop
 /usr/share/applications/calc.desktop /usr/share/applications/calc.desktop - 0 assets/applications/calc.desktop
 /usr/share/applications/calendar.desktop /usr/share/applications/calendar.desktop - 0 assets/applications/calendar.desktop
