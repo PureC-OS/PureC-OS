@@ -14,14 +14,16 @@
 #define PG_TITLEBAR_HEIGHT 26
 #define PG_WINDOW_BORDER 2
 
-struct pg_rect {
+struct pg_rect
+{
     uint32_t x;
     uint32_t y;
     uint32_t width;
     uint32_t height;
 };
 
-struct pg_theme {
+struct pg_theme
+{
     uint32_t desktop;
     uint32_t window;
     uint32_t titlebar;
@@ -39,8 +41,9 @@ struct pg_theme {
     uint32_t on_accent;
 };
 
-enum pg_event_type {
-    PG_EVENT_NONE=0,
+enum pg_event_type
+{
+    PG_EVENT_NONE = 0,
     PG_EVENT_KEY,
     PG_EVENT_MOUSE_MOVE,
     PG_EVENT_MOUSE_DOWN,
@@ -53,7 +56,8 @@ enum pg_event_type {
     PG_EVENT_CLOSE
 };
 
-struct pg_event {
+struct pg_event
+{
     enum pg_event_type type;
     int32_t x;
     int32_t y;
@@ -61,7 +65,8 @@ struct pg_event {
     uint8_t button;
 };
 
-struct pg_window {
+struct pg_window
+{
     struct pg_rect frame;
     struct pg_rect client;
     struct pg_theme theme;

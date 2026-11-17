@@ -45,14 +45,16 @@ static bool blocked(const struct pg_ui *u)
 static bool interact(struct pg_ui *u, uint32_t id, int x, int y, int w, int h)
 {
     bool over = !u->modal && !blocked(u) && pgu_hover(u, x, y, w, h);
-    if (over) {
+    if (over)
+    {
         u->hot = id;
         u->any_hot = true;
     }
     if (over && u->pressed)
         u->active = id;
     bool clicked = false;
-    if (u->released && u->active == id) {
+    if (u->released && u->active == id)
+    {
         clicked = over;
         u->active = 0;
     }
@@ -83,14 +85,18 @@ void pgu_icon_tile(struct pg_ui *u, int x, int y, int size, int icon, uint32_t c
 void pgu_card_title(struct pg_ui *u, int x, int y, int icon, const char *title, const char *subtitle)
 {
     int tx = x;
-    if (icon >= 0) {
+    if (icon >= 0)
+    {
         pgu_icon_tile(u, x, y, 34, icon, u->pal.accent);
         tx += 46;
     }
-    if (subtitle) {
+    if (subtitle)
+    {
         pgc_text(u->c, PGF_HEAD, tx, y - 1, title, u->pal.text);
         pgc_text(u->c, PGF_SMALL, tx, y + 19, subtitle, u->pal.text3);
-    } else {
+    }
+    else
+    {
         pgc_text(u->c, PGF_HEAD, tx, y + 7, title, u->pal.text);
     }
 }
@@ -101,14 +107,15 @@ int pgu_button_w(const char *label, int icon)
 }
 
 bool pgu_button(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, const char *label, int icon,
-               enum pgu_btn_style style)
+                enum pgu_btn_style style)
 {
     const struct pg_palette *p = &u->pal;
     bool clicked = interact(u, id, x, y, w, h);
     bool hot = u->hot == id && !u->modal && pgu_hover(u, x, y, w, h);
     bool pressed = u->active == id && hot;
     uint32_t bg, fg;
-    switch (style) {
+    switch (style)
+    {
     case PGU_BTN_PRIMARY:
         bg = p->accent;
         fg = p->on_accent;
@@ -136,7 +143,8 @@ bool pgu_button(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, const 
     int tw = pgc_text_w(PGF_MEDIUM, label) + (icon >= 0 ? 24 : 0);
     int tx = x + (w - tw) / 2;
     int ty = y + (h - pgc_font_h(PGF_MEDIUM)) / 2;
-    if (icon >= 0) {
+    if (icon >= 0)
+    {
         pgc_icon(u->c, icon, PG_ICON_S, tx, y + (h - 18) / 2, fg);
         tx += 24;
     }
@@ -162,20 +170,22 @@ bool pgu_toggle(struct pg_ui *u, uint32_t id, int x, int y, bool *value)
 }
 
 int pgu_slider(struct pg_ui *u, uint32_t id, int x, int y, int w, int *value, int min, int max,
-              uint32_t color)
+               uint32_t color)
 {
     const struct pg_palette *p = &u->pal;
     const int h = 28, track_h = 6;
     int result = 0;
     bool was_active = u->active == id;
     interact(u, id, x - 6, y, w + 12, h);
-    if (u->active == id && u->down) {
+    if (u->active == id && u->down)
+    {
         int v = min + (int)((int64_t)(u->mx - x) * (max - min) / (w ? w : 1));
         if (v < min)
             v = min;
         if (v > max)
             v = max;
-        if (v != *value) {
+        if (v != *value)
+        {
             *value = v;
             result = 1;
         }
@@ -188,7 +198,7 @@ int pgu_slider(struct pg_ui *u, uint32_t id, int x, int y, int w, int *value, in
     pgc_rrect(u->c, x, ty, w, track_h, track_h / 2, p->surface3, 255);
     if (fill > 0)
         pgc_rrect_grad(u->c, x, ty, fill > track_h ? fill : track_h, track_h, track_h / 2,
-                      pgc_mix(color, p->surface, 60), color, true);
+                       pgc_mix(color, p->surface, 60), color, true);
     bool hot = u->hot == id || u->active == id;
     int kr = hot ? 10 : 9;
     pgc_circle(u->c, x + fill, y + h / 2 + 1, kr + 1, 0x000000, 50);
@@ -198,27 +208,32 @@ int pgu_slider(struct pg_ui *u, uint32_t id, int x, int y, int w, int *value, in
 }
 
 bool pgu_segmented(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, const char *const *labels,
-                  int count, int *selected)
+                   int count, int *selected)
 {
     const struct pg_palette *p = &u->pal;
     bool changed = false;
     pgc_rrect(u->c, x, y, w, h, 9, p->surface2, 255);
     int seg = (w - 6) / (count ? count : 1);
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         int sx = x + 3 + i * seg;
         uint32_t sid = id + (uint32_t)i * 7919u;
-        if (interact(u, sid, sx, y + 3, seg, h - 6) && *selected != i) {
+        if (interact(u, sid, sx, y + 3, seg, h - 6) && *selected != i)
+        {
             *selected = i;
             changed = true;
         }
         bool sel = *selected == i;
-        if (sel) {
+        if (sel)
+        {
             pgc_rrect(u->c, sx, y + 3, seg, h - 6, 7, p->accent, 255);
-        } else if (u->hot == sid) {
+        }
+        else if (u->hot == sid)
+        {
             pgc_rrect(u->c, sx, y + 3, seg, h - 6, 7, p->surface3, 255);
         }
         pgc_text_center(u->c, PGF_MEDIUM, sx, y + (h - pgc_font_h(PGF_MEDIUM)) / 2, seg, labels[i],
-                       sel ? p->on_accent : p->text2);
+                        sel ? p->on_accent : p->text2);
     }
     return changed;
 }
@@ -237,10 +252,13 @@ bool pgu_row(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, bool sele
 bool pgu_radio(struct pg_ui *u, int x, int y, bool on)
 {
     const struct pg_palette *p = &u->pal;
-    if (on) {
+    if (on)
+    {
         pgc_circle(u->c, x + 9, y + 9, 9, p->accent, 255);
         pgc_circle(u->c, x + 9, y + 9, 4, p->on_accent, 255);
-    } else {
+    }
+    else
+    {
         pgc_circle(u->c, x + 9, y + 9, 9, p->border, 255);
         pgc_circle(u->c, x + 9, y + 9, 7, p->surface, 255);
     }
@@ -254,7 +272,7 @@ void pgu_check_mark(struct pg_ui *u, int x, int y, bool on)
 }
 
 bool pgu_textbox(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, char *buf, int cap,
-                bool password, const char *placeholder)
+                 bool password, const char *placeholder)
 {
     const struct pg_palette *p = &u->pal;
     bool submitted = false;
@@ -266,13 +284,19 @@ bool pgu_textbox(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, char 
     int len = 0;
     while (buf[len])
         len++;
-    if (focused && u->key) {
-        if (u->key == '\b' || u->key == 127) {
+    if (focused && u->key)
+    {
+        if (u->key == '\b' || u->key == 127)
+        {
             if (len > 0)
                 buf[--len] = 0;
-        } else if (u->key == '\n' || u->key == '\r') {
+        }
+        else if (u->key == '\n' || u->key == '\r')
+        {
             submitted = true;
-        } else if (u->key >= 32 && u->key < 127 && len < cap - 1) {
+        }
+        else if (u->key >= 32 && u->key < 127 && len < cap - 1)
+        {
             buf[len++] = (char)u->key;
             buf[len] = 0;
         }
@@ -310,7 +334,7 @@ void pgu_progress(struct pg_ui *u, int x, int y, int w, int h, uint32_t permille
     int fill = (int)((uint64_t)w * permille / 1000);
     if (fill > 0)
         pgc_rrect_grad(u->c, x, y, fill < h ? h : fill, h, h / 2, pgc_mix(color, u->pal.surface, 50),
-                      color, true);
+                       color, true);
 }
 
 int pgu_badge(struct pg_ui *u, int x, int y, const char *text, uint32_t color)
@@ -339,7 +363,10 @@ void pgu_separator(struct pg_ui *u, int x, int y, int w)
 
 void pgu_signal_bars(struct pg_ui *u, int x, int y, int rssi, uint32_t color)
 {
-    int level = rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : rssi >= -85 ? 1 : 0;
+    int level = rssi >= -55 ? 4 : rssi >= -65 ? 3
+                              : rssi >= -75   ? 2
+                              : rssi >= -85   ? 1
+                                              : 0;
     static const int ids[5] = {PGI_WIFI_STRENGTH_OUTLINE, PGI_WIFI_STRENGTH_1, PGI_WIFI_STRENGTH_2,
                                PGI_WIFI_STRENGTH_3, PGI_WIFI_STRENGTH_4};
     pgc_icon(u->c, ids[level], PG_ICON_S, x, y, color);
@@ -350,7 +377,8 @@ void pgu_feed(struct pg_ui *u, const struct pg_window *w, const struct pg_event 
     if (!u || !w || !ev)
         return;
     int mx = ev->x - (int32_t)w->client.x, my = ev->y - (int32_t)w->client.y;
-    switch (ev->type) {
+    switch (ev->type)
+    {
     case PG_EVENT_MOUSE_MOVE:
         u->mx = mx;
         u->my = my;
@@ -358,7 +386,8 @@ void pgu_feed(struct pg_ui *u, const struct pg_window *w, const struct pg_event 
     case PG_EVENT_MOUSE_DOWN:
         u->mx = mx;
         u->my = my;
-        if (ev->button == 1) {
+        if (ev->button == 1)
+        {
             u->down = true;
             u->pressed = true;
         }
@@ -366,7 +395,8 @@ void pgu_feed(struct pg_ui *u, const struct pg_window *w, const struct pg_event 
     case PG_EVENT_MOUSE_UP:
         u->mx = mx;
         u->my = my;
-        if (ev->button == 1) {
+        if (ev->button == 1)
+        {
             u->down = false;
             u->released = true;
         }
@@ -413,7 +443,8 @@ static void dropdown_overlay(struct pg_ui *u)
     pgc_rrect(u->c, x, y, u->dd_w, h, 10, p->light ? 0xffffff : p->surface, 255);
     pgc_rrect_stroke(u->c, x, y, u->dd_w, h, 10, p->border, 200);
     bool over_menu = u->mx >= x && u->my >= y && u->mx < x + u->dd_w && u->my < y + h;
-    for (int i = 0; i < u->dd_count; i++) {
+    for (int i = 0; i < u->dd_count; i++)
+    {
         int ry = y + 4 + i * row;
         bool hover = u->mx >= x && u->mx < x + u->dd_w && u->my >= ry && u->my < ry + row;
         if (hover)
@@ -422,7 +453,8 @@ static void dropdown_overlay(struct pg_ui *u)
                      u->dd_w - 44, u->dd_labels[i], i == u->dd_sel ? p->text : p->text2);
         if (i == u->dd_sel)
             pgc_icon(u->c, PGI_CHECK, PG_ICON_S, x + u->dd_w - 30, ry + (row - 18) / 2, p->accent);
-        if (hover && u->released) {
+        if (hover && u->released)
+        {
             u->dd_changed = u->dd_open;
             u->dd_result = i;
         }
@@ -455,10 +487,13 @@ bool pgu_checkbox(struct pg_ui *u, uint32_t id, int x, int y, const char *label,
     if (clicked)
         *value = !*value;
     bool hot = u->hot == id;
-    if (*value) {
+    if (*value)
+    {
         pgc_rrect(u->c, x, y, 22, 22, 6, hot ? pgc_lighten(p->accent, p->light ? -14 : 18) : p->accent, 255);
         pgc_icon(u->c, PGI_CHECK, PG_ICON_S, x + 2, y + 2, p->on_accent);
-    } else {
+    }
+    else
+    {
         pgc_rrect(u->c, x, y, 22, 22, 6, hot ? p->surface2 : (p->light ? 0xffffff : p->bg), 255);
         pgc_rrect_stroke(u->c, x, y, 22, 22, 6, hot ? p->accent : p->border, 255);
     }
@@ -472,9 +507,11 @@ bool pgu_dropdown(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, cons
 {
     const struct pg_palette *p = &u->pal;
     bool changed = false;
-    if (u->dd_changed == id) {
+    if (u->dd_changed == id)
+    {
         u->dd_changed = 0;
-        if (u->dd_result >= 0 && u->dd_result < count && u->dd_result != *selected) {
+        if (u->dd_result >= 0 && u->dd_result < count && u->dd_result != *selected)
+        {
             *selected = u->dd_result;
             changed = true;
         }
@@ -488,7 +525,8 @@ bool pgu_dropdown(struct pg_ui *u, uint32_t id, int x, int y, int w, int h, cons
     const char *cur = *selected >= 0 && *selected < count ? labels[*selected] : "";
     pgc_text_fit(u->c, PGF_BODY, x + 12, y + (h - pgc_font_h(PGF_BODY)) / 2, w - 44, cur, p->text);
     pgc_icon(u->c, PGI_CHEVRON_RIGHT, PG_ICON_S, x + w - 28, y + (h - 18) / 2, p->text3);
-    if (open) {
+    if (open)
+    {
         u->dd_x = x;
         u->dd_y = y + h + 4;
         u->dd_w = w;
@@ -505,10 +543,12 @@ bool pgu_tabs(struct pg_ui *u, uint32_t id, int x, int y, int w, const char *con
     const struct pg_palette *p = &u->pal;
     bool changed = false;
     int tx = x;
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         int tw = pgc_text_w(PGF_MEDIUM, labels[i]) + 28;
         uint32_t tid = id + (uint32_t)i * 104729u;
-        if (interact(u, tid, tx, y, tw, 38) && *selected != i) {
+        if (interact(u, tid, tx, y, tw, 38) && *selected != i)
+        {
             *selected = i;
             changed = true;
         }

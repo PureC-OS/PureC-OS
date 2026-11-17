@@ -1,10 +1,25 @@
 #pragma once
 #include <stdint.h>
 
-struct pgf_glyph { uint32_t off; uint8_t w, h; int8_t x, y; uint8_t adv; };
-struct pgf_font { uint8_t ascent, height; const struct pgf_glyph *glyphs; const uint8_t *bits; uint16_t ext_count; const uint32_t *ext_cp; const struct pgf_glyph *ext; };
+struct pgf_glyph
+{
+    uint32_t off;
+    uint8_t w, h;
+    int8_t x, y;
+    uint8_t adv;
+};
+struct pgf_font
+{
+    uint8_t ascent, height;
+    const struct pgf_glyph *glyphs;
+    const uint8_t *bits;
+    uint16_t ext_count;
+    const uint32_t *ext_cp;
+    const struct pgf_glyph *ext;
+};
 
-enum pgf_font_id {
+enum pgf_font_id
+{
     PGF_SMALL,
     PGF_BODY,
     PGF_MEDIUM,
@@ -22,7 +37,8 @@ enum pgf_font_id {
 };
 extern const struct pgf_font pgf_fonts[PGF_COUNT];
 
-enum pgf_icon_id {
+enum pgf_icon_id
+{
     PGI_WIFI,
     PGI_WIFI_OFF,
     PGI_WIFI_STRENGTH_1,

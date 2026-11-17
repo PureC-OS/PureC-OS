@@ -2,8 +2,9 @@
 
 #include "puregui.h"
 
-enum pg_widget_state {
-    PG_WIDGET_NORMAL=0,
+enum pg_widget_state
+{
+    PG_WIDGET_NORMAL = 0,
     PG_WIDGET_HOVER,
     PG_WIDGET_PRESSED,
     PG_WIDGET_DISABLED
