@@ -1,5 +1,7 @@
 #include "../lib/common.h"
 #include "libc/include/purec.h"
+#include <dirent.h>
+#include <sys/stat.h>
 
 #define SECTOR 512u
 #define TEXT_MAX 16384
@@ -325,15 +327,325 @@ static int update_file(const char *path, const char *uuid, bool dry)
     return 0;
 }
 
+#define KERNEL_DIR "usr/lib/kernel"
+
+struct kconf {
+    char name[64];
+    char version[32];
+    char resolution[32];
+    char fallback_resolution[32];
+    char cmdline[256];
+    int timeout;
+};
+
+static void trim(char *s)
+{
+    size_t n = strlen(s);
+    while (n && (s[n - 1] == '\n' || s[n - 1] == '\r' || s[n - 1] == ' ' || s[n - 1] == '\t'))
+        s[--n] = '\0';
+    size_t i = 0;
+    while (s[i] == ' ' || s[i] == '\t')
+        i++;
+    if (i)
+        memmove(s, s + i, strlen(s + i) + 1);
+}
+
+static void kconf_read(const char *path, struct kconf *k)
+{
+    snprintf(k->name, sizeof(k->name), "PureC OS");
+    k->version[0] = '\0';
+    snprintf(k->resolution, sizeof(k->resolution), "1920x1080x32");
+    snprintf(k->fallback_resolution, sizeof(k->fallback_resolution), "1280x800x32");
+    k->cmdline[0] = '\0';
+    k->timeout = 10;
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return;
+    char *line = NULL;
+    size_t cap = 0;
+    while (util_getline(&line, &cap, f) > 0) {
+        trim(line);
+        if (!line[0] || line[0] == '#')
+            continue;
+        char *eq = strchr(line, '=');
+        if (!eq)
+            continue;
+        *eq = '\0';
+        char *key = line, *value = eq + 1;
+        trim(key);
+        trim(value);
+        if (!strcmp(key, "KERNEL_NAME"))
+            snprintf(k->name, sizeof(k->name), "%s", value);
+        else if (!strcmp(key, "KERNEL_VERSION"))
+            snprintf(k->version, sizeof(k->version), "%s", value);
+        else if (!strcmp(key, "KERNEL_RESOLUTION"))
+            snprintf(k->resolution, sizeof(k->resolution), "%s", value);
+        else if (!strcmp(key, "KERNEL_FALLBACK_RESOLUTION"))
+            snprintf(k->fallback_resolution, sizeof(k->fallback_resolution), "%s", value);
+        else if (!strcmp(key, "KERNEL_CMDLINE"))
+            snprintf(k->cmdline, sizeof(k->cmdline), "%s", value);
+        else if (!strcmp(key, "KERNEL_TIMEOUT"))
+            k->timeout = atoi(value);
+    }
+    free(line);
+    fclose(f);
+}
+
+static int vercmp(const char *a, const char *b)
+{
+    while (*a || *b) {
+        while (*a && (*a < '0' || *a > '9'))
+            a++;
+        while (*b && (*b < '0' || *b > '9'))
+            b++;
+        long x = 0, y = 0;
+        while (*a >= '0' && *a <= '9')
+            x = x * 10 + (*a++ - '0');
+        while (*b >= '0' && *b <= '9')
+            y = y * 10 + (*b++ - '0');
+        if (x != y)
+            return x < y ? -1 : 1;
+    }
+    return 0;
+}
+
+static bool newest_kernel(const char *dir, char *out, size_t cap)
+{
+    DIR *d = opendir(dir);
+    if (!d)
+        return false;
+    out[0] = '\0';
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        if (e->d_name[0] == '.')
+            continue;
+        char conf[UTIL_PATH], sub[UTIL_PATH];
+        util_join(sub, sizeof(sub), dir, e->d_name);
+        util_join(conf, sizeof(conf), sub, "kernel.elf");
+        if (!util_exists(conf))
+            continue;
+        if (!out[0] || vercmp(e->d_name, out) > 0)
+            snprintf(out, cap, "%s", e->d_name);
+    }
+    closedir(d);
+    return out[0] != '\0';
+}
+
+static int copy_file(const char *src, const char *dst)
+{
+    FILE *in = fopen(src, "rb");
+    if (!in)
+        return util_perr(src);
+    FILE *out = fopen(dst, "wb");
+    if (!out) {
+        fclose(in);
+        return util_perr(dst);
+    }
+    int rc = util_copy_stream(in, out);
+    fclose(in);
+    if (fclose(out) != 0 || rc)
+        return util_err("%s: write failed", dst);
+    return 0;
+}
+
+static bool same_file(const char *a, const char *b)
+{
+    struct stat sa, sb;
+    if (stat(a, &sa) || stat(b, &sb) || sa.st_size != sb.st_size)
+        return false;
+    FILE *fa = fopen(a, "rb"), *fb = fopen(b, "rb");
+    bool same = fa && fb;
+    static char ba[65536], bb[65536];
+    while (same) {
+        size_t na = fread(ba, 1, sizeof(ba), fa), nb = fread(bb, 1, sizeof(bb), fb);
+        if (na != nb || memcmp(ba, bb, na))
+            same = false;
+        if (na < sizeof(ba))
+            break;
+    }
+    if (fa)
+        fclose(fa);
+    if (fb)
+        fclose(fb);
+    return same;
+}
+
+static void read_line(const char *path, char *out, size_t cap)
+{
+    out[0] = '\0';
+    FILE *f = fopen(path, "r");
+    if (!f)
+        return;
+    if (!fgets(out, (int)cap, f))
+        out[0] = '\0';
+    fclose(f);
+    trim(out);
+}
+
+static int write_line(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "w");
+    if (!f)
+        return util_perr(path);
+    fprintf(f, "%s\n", text);
+    if (fclose(f) != 0)
+        return util_err("%s: write failed", path);
+    return 0;
+}
+
+static int update_if_changed(const char *src, const char *dst, bool dry, const char *what)
+{
+    if (!util_exists(src) || same_file(src, dst))
+        return 0;
+    if (dry) {
+        printf("would install %s -> %s\n", what, dst);
+        return 0;
+    }
+    unlink(dst);
+    if (copy_file(src, dst))
+        return 1;
+    printf("installed %s -> %s\n", what, dst);
+    return 0;
+}
+
+static int install_kernel(const char *root, const char *boot, bool dry, struct kconf *k, char *previous, size_t pcap)
+{
+    char base[UTIL_PATH], version[64], dir[UTIL_PATH], path[UTIL_PATH];
+    util_join(base, sizeof(base), root[0] ? root : "/", KERNEL_DIR);
+    if (!newest_kernel(base, version, sizeof(version)))
+        return util_err("no kernel found in %s", base);
+    util_join(dir, sizeof(dir), base, version);
+    util_join(path, sizeof(path), dir, "kconfig");
+    kconf_read(path, k);
+    if (!k->version[0])
+        snprintf(k->version, sizeof(k->version), "%s", version);
+
+    char bootdir[UTIL_PATH], cur[UTIL_PATH], fb[UTIL_PATH], rel[UTIL_PATH], fbrel[UTIL_PATH], src[UTIL_PATH];
+    util_join(bootdir, sizeof(bootdir), boot, "boot");
+    util_join(cur, sizeof(cur), bootdir, "kernel.elf");
+    util_join(fb, sizeof(fb), bootdir, "kernel-fallback.elf");
+    util_join(rel, sizeof(rel), bootdir, "kernel.release");
+    util_join(fbrel, sizeof(fbrel), bootdir, "kernel-fallback.release");
+    util_join(src, sizeof(src), dir, "kernel.elf");
+    if (!util_is_dir(bootdir))
+        return util_err("%s: no boot directory (is the boot partition mounted?)", bootdir);
+
+    char current[64];
+    read_line(rel, current, sizeof(current));
+    if (util_exists(cur) && same_file(src, cur)) {
+        printf("kernel %s is already installed\n", k->version);
+    } else if (dry) {
+        printf("would install kernel %s -> %s (previous kernel -> %s)\n", k->version, cur, fb);
+        snprintf(previous, pcap, "%s", current);
+    } else {
+        if (util_exists(cur)) {
+            unlink(fb);
+            if (rename(cur, fb) != 0) {
+                if (copy_file(cur, fb))
+                    return 1;
+                unlink(cur);
+            }
+            write_line(fbrel, current[0] ? current : "unknown");
+        }
+        if (copy_file(src, cur)) {
+            if (util_exists(fb) && rename(fb, cur) == 0)
+                util_err("restored the previous kernel");
+            return 1;
+        }
+        write_line(rel, k->version);
+        printf("installed kernel %s -> %s\n", k->version, cur);
+    }
+    if (!previous[0])
+        read_line(fbrel, previous, pcap);
+
+    char initrd[UTIL_PATH], dst[UTIL_PATH];
+    util_join(initrd, sizeof(initrd), dir, "initramfs.cpio");
+    util_join(dst, sizeof(dst), bootdir, "initramfs.cpio");
+    if (update_if_changed(initrd, dst, dry, "initramfs"))
+        return 1;
+
+    char mods[UTIL_PATH], target[UTIL_PATH];
+    util_join(mods, sizeof(mods), dir, "modules");
+    util_join(target, sizeof(target), root[0] ? root : "/", "lib/modules");
+    DIR *d = opendir(mods);
+    if (d) {
+        struct dirent *e;
+        while ((e = readdir(d))) {
+            if (e->d_name[0] == '.')
+                continue;
+            util_join(src, sizeof(src), mods, e->d_name);
+            util_join(dst, sizeof(dst), target, e->d_name);
+            if (update_if_changed(src, dst, dry, e->d_name)) {
+                closedir(d);
+                return 1;
+            }
+        }
+        closedir(d);
+    }
+    return 0;
+}
+
+static int write_limine(const char *boot, const struct kconf *k, const char *previous, bool dry)
+{
+    char fb[UTIL_PATH], bootdir[UTIL_PATH];
+    util_join(bootdir, sizeof(bootdir), boot, "boot");
+    util_join(fb, sizeof(fb), bootdir, "kernel-fallback.elf");
+    bool has_fallback = util_exists(fb);
+    static char text[TEXT_MAX];
+    size_t n = 0;
+    n += (size_t)snprintf(text + n, sizeof(text) - n, "timeout: %d\nverbose: yes\n\n", k->timeout);
+    n += (size_t)snprintf(text + n, sizeof(text) - n,
+                          "/%s %s\n    protocol: limine\n    resolution: %s\n    kernel_path: boot():/boot/kernel.elf\n",
+                          k->name, k->version, k->resolution);
+    if (has_fallback)
+        n += (size_t)snprintf(text + n, sizeof(text) - n, "    module_path: boot():/boot/kernel-fallback.elf\n");
+    n += (size_t)snprintf(text + n, sizeof(text) - n,
+                          "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n    module_path: boot():/boot/initramfs.cpio\n");
+    if (k->cmdline[0])
+        n += (size_t)snprintf(text + n, sizeof(text) - n, "    cmdline: %s\n", k->cmdline);
+    if (has_fallback) {
+        n += (size_t)snprintf(text + n, sizeof(text) - n,
+                              "\n/%s %s (previous kernel)\n    protocol: limine\n    resolution: %s\n"
+                              "    kernel_path: boot():/boot/kernel-fallback.elf\n"
+                              "    module_path: boot():/EFI/BOOT/BOOTX64.EFI\n    module_path: boot():/boot/initramfs.cpio\n",
+                              k->name, previous[0] ? previous : "", k->fallback_resolution);
+        if (k->cmdline[0])
+            n += (size_t)snprintf(text + n, sizeof(text) - n, "    cmdline: %s\n", k->cmdline);
+    }
+    if (n >= sizeof(text))
+        return util_err("limine.conf is too large");
+    int done = 0;
+    for (size_t i = 0; i < CONF_COUNT; i++) {
+        char path[UTIL_PATH];
+        util_join(path, sizeof(path), boot, conf_paths[i]);
+        if (i > 0 && !util_exists(path))
+            continue;
+        if (dry) {
+            printf("--- %s\n%s", path, text);
+            done++;
+            continue;
+        }
+        FILE *f = fopen(path, "w");
+        if (!f)
+            return util_perr(path);
+        size_t w = fwrite(text, 1, n, f);
+        if (fclose(f) != 0 || w != n)
+            return util_err("%s: write failed", path);
+        printf("generated %s\n", path);
+        done++;
+    }
+    return done ? 0 : util_err("cannot write limine.conf under %s", boot);
+}
+
 int main(int argc, char **argv)
 {
     util_init(argc, argv);
     const char *root_arg = NULL;
-    const char *boot = "/boot";
-    bool assign = false, dry = false;
+    const char *boot = NULL;
+    bool assign = false, dry = false, preset = false;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--help")) {
-            util_usage("[-r ROOT] [-b BOOTDIR] [-u] [-n]");
+            util_usage("[-P] [-r ROOT] [-b BOOTDIR] [-u] [-n]");
             return 0;
         } else if (!strcmp(argv[i], "-r") && i + 1 < argc) {
             root_arg = argv[++i];
@@ -343,8 +655,30 @@ int main(int argc, char **argv)
             assign = true;
         } else if (!strcmp(argv[i], "-n")) {
             dry = true;
+        } else if (!strcmp(argv[i], "-P")) {
+            preset = true;
         } else {
-            return util_err("usage: mkinitcpio [-r ROOT] [-b BOOTDIR] [-u] [-n]");
+            return util_err("usage: mkinitcpio [-P] [-r ROOT] [-b BOOTDIR] [-u] [-n]");
+        }
+    }
+    const char *pkg_root = getenv("PKG_ROOT");
+    if (!pkg_root || !strcmp(pkg_root, "/"))
+        pkg_root = "";
+    char boot_buf[UTIL_PATH];
+    if (!boot) {
+        util_join(boot_buf, sizeof(boot_buf), pkg_root[0] ? pkg_root : "/", "boot");
+        boot = boot_buf;
+    }
+    if (preset) {
+        struct kconf k;
+        char previous[64] = "";
+        if (install_kernel(pkg_root, boot, dry, &k, previous, sizeof(previous)))
+            return 1;
+        if (write_limine(boot, &k, previous, dry))
+            return 1;
+        if (pkg_root[0] && !root_arg) {
+            util_err("installing into %s: run mkinitcpio -r ROOT there to set root=UUID", pkg_root);
+            return 1;
         }
     }
     struct root r;
