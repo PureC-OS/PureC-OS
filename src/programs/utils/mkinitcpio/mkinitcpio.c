@@ -524,8 +524,8 @@ static int install_kernel(const char *root, const char *boot, bool dry, struct k
     util_join(bootdir, sizeof(bootdir), boot, "boot");
     util_join(cur, sizeof(cur), bootdir, "kernel.elf");
     util_join(fb, sizeof(fb), bootdir, "kernel-fallback.elf");
-    util_join(rel, sizeof(rel), bootdir, "kernel.release");
-    util_join(fbrel, sizeof(fbrel), bootdir, "kernel-fallback.release");
+    util_join(rel, sizeof(rel), bootdir, "kernel.ver");
+    util_join(fbrel, sizeof(fbrel), bootdir, "kernel-fallback.ver");
     util_join(src, sizeof(src), dir, "kernel.elf");
     if (!util_is_dir(bootdir))
         return util_err("%s: no boot directory (is the boot partition mounted?)", bootdir);
