@@ -326,6 +326,8 @@
 /etc/ntp.conf /etc/ntp.conf - 0 rootfs/etc/ntp.conf
 /etc/pkg/pkg.conf /etc/pkg/pkg.conf - 0 rootfs/etc/pkg/pkg.conf
 /etc/pkg/keys/purec.pub /etc/pkg/keys/purec.pub - 0 rootfs/etc/pkg/keys/purec.pub
+/etc/pkg/keys/master/purec-master.pub /etc/pkg/keys/master/purec-master.pub - 0 rootfs/etc/pkg/keys/master/purec-master.pub
+/etc/pkg/keyring.conf /etc/pkg/keyring.conf - 0 rootfs/etc/pkg/keyring.conf
 /etc/fstab /etc/fstab - 0 rootfs/etc/fstab
 /etc/motd /etc/motd - 0 rootfs/etc/motd
 /usr/lib/init/system/getty@.service /usr/lib/init/system/getty@.service - 0 rootfs/usr/lib/init/system/getty@.service
