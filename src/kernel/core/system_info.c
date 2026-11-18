@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "system_info.h"
 #include "../../drivers/interrupts/timer.h"
 #include "../process/scheduler.h"
@@ -17,91 +18,19 @@ static uint64_t cpu_sample_idle_ticks;
 
 static uint64_t read_tsc(void)
 {
-  uint32_t low, high;
-  __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-  return ((uint64_t)high << 32) | low;
-}
-
-static void cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx, uint32_t *ecx,
-                  uint32_t *edx)
-{
-  __asm__ volatile("cpuid"
-                   : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
-                   : "a"(leaf), "c"(0));
-}
-
-static void copy_register(char *destination, uint32_t value)
-{
-  for (uint32_t byte = 0; byte < 4; byte++)
-  {
-    destination[byte] = (char)(value >> (byte * 8));
-  }
-}
-
-static void remove_leading_spaces(char *text)
-{
-  size_t start = 0;
-  while (text[start] == ' ')
-    start++;
-  if (start == 0)
-    return;
-
-  size_t destination = 0;
-  do
-  {
-    text[destination++] = text[start++];
-  } while (text[start - 1]);
+    return arch_read_timestamp();
 }
 
 static void detect_cpu_name(void)
 {
-  uint32_t eax, ebx, ecx, edx;
-  cpuid(0x80000000, &eax, &ebx, &ecx, &edx);
-
-  if (eax >= 0x80000004)
-  {
-    for (uint32_t part = 0; part < 3; part++)
-    {
-      cpuid(0x80000002 + part, &eax, &ebx, &ecx, &edx);
-      char *destination = &cpu_name[part * 16];
-      copy_register(destination, eax);
-      copy_register(destination + 4, ebx);
-      copy_register(destination + 8, ecx);
-      copy_register(destination + 12, edx);
-    }
-    cpu_name[CPU_NAME_CAPACITY - 1] = '\0';
-    remove_leading_spaces(cpu_name);
-    return;
-  }
-
-  cpuid(0, &eax, &ebx, &ecx, &edx);
-  copy_register(cpu_name, ebx);
-  copy_register(cpu_name + 4, edx);
-  copy_register(cpu_name + 8, ecx);
-  cpu_name[12] = '\0';
+  arch_cpu_name(cpu_name, CPU_NAME_CAPACITY);
 }
 
 static void detect_tsc_frequency(void)
 {
-  uint32_t eax, ebx, ecx, edx;
-  cpuid(0, &eax, &ebx, &ecx, &edx);
-  uint32_t maximum_leaf = eax;
-
-  if (maximum_leaf >= 0x15)
-  {
-    cpuid(0x15, &eax, &ebx, &ecx, &edx);
-    if (eax && ebx && ecx)
-    {
-      tsc_frequency_hz = ((uint64_t)ecx * ebx) / eax;
-      return;
-    }
-  }
-  if (maximum_leaf >= 0x16)
-  {
-    cpuid(0x16, &eax, &ebx, &ecx, &edx);
-    if (eax)
-      tsc_frequency_hz = (uint64_t)eax * 1000000;
-  }
+  uint64_t hz = arch_cpuid_tsc_hz();
+  if (hz)
+    tsc_frequency_hz = hz;
 }
 
 static void detect_usable_ram(const struct limine_memmap_response *memory_map)

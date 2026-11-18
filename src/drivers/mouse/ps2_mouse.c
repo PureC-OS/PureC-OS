@@ -1,12 +1,13 @@
-#include "vbox_mouse.h"
-#include "ps2_mouse.h"
-#include "usb_mouse.h"
-#include "../interrupts/pic.h"
-#include "../serial/serial.h"
-#include "../display/gop.h"
-#include "../display/vga.h"
-#include "../../gfx/text.h"
-#include "../../kernel/diagnostics/klog.h"
+#include <arch/x86_64/include/portio.h>
+#include <arch/arch.h>
+#include <drivers/mouse/vbox_mouse.h>
+#include <drivers/mouse/ps2_mouse.h>
+#include <drivers/mouse/usb_mouse.h>
+#include <drivers/serial/serial.h>
+#include <drivers/display/gop.h>
+#include <drivers/display/vga.h>
+#include <gfx/text.h>
+#include <kernel/diagnostics/klog.h>
 #include <stdint.h>
 
 #define PS2_DATA 0x60
@@ -15,22 +16,13 @@
 #define PS2_STATUS_OUTPUT_FULL 0x01
 #define PS2_STATUS_AUX_DATA 0x20
 
-static inline void outb(uint16_t p, uint8_t v) { __asm__ volatile("outb %0,%1" ::"a"(v), "Nd"(p)); }
-static inline uint8_t inb(uint16_t p)
-{
-    uint8_t r;
-    __asm__ volatile("inb %1,%0" : "=a"(r) : "Nd"(p));
-    return r;
-}
-static inline void io_wait(void) { outb(0x80, 0); }
-
 static bool ps2_wait_input(void)
 {
     for (int i = 0; i < 100000; i++)
     {
         if (!(inb(PS2_STATUS) & 2))
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -40,7 +32,7 @@ static bool ps2_wait_output(void)
     {
         if (inb(PS2_STATUS) & 1)
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -88,7 +80,7 @@ static uint8_t mouse_read_ack(void)
         if (ps2_read_data_timeout(&c))
             break;
         for (volatile int d = 0; d < 10000; d++)
-            __asm__ volatile("pause");
+            arch_cpu_relax();
     }
     return c;
 }
@@ -202,19 +194,19 @@ void mouse_set_bounds(int32_t w, int32_t h)
 void mouse_add_wheel(int32_t delta)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     state.wheel += delta;
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 struct mouse_state mouse_get_state(void)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     struct mouse_state snapshot = state;
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
     return snapshot;
 }
 struct mouse_debug_state mouse_get_debug_state(void)
@@ -249,11 +241,11 @@ void mouse_redraw(void)
 void mouse_flush_pending(void)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     bool pending = mouse_ui_pending;
     mouse_ui_pending = false;
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
     if (pending)
         refresh_mouse_ui();
 }
@@ -262,7 +254,7 @@ void mouse_begin_framebuffer_update(void)
 {
     gop_begin_batch();
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     debug_state.interrupts_enabled = (flags & (1ULL << 9)) != 0;
     if (framebuffer_update_depth == 0)
     {
@@ -275,13 +267,13 @@ void mouse_begin_framebuffer_update(void)
     }
     framebuffer_update_depth++;
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 void mouse_end_framebuffer_update(void)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     bool outermost = false;
     if (framebuffer_update_depth)
     {
@@ -294,18 +286,18 @@ void mouse_end_framebuffer_update(void)
     if (outermost)
         draw_cursor(state.x, state.y);
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 void mouse_end_framebuffer_update_keep(void)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     if (framebuffer_update_depth)
         framebuffer_update_depth--;
     gop_end_batch_keep();
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 static inline bool cursor_inside(int dx, int dy)
@@ -445,12 +437,12 @@ static int32_t accelerate_axis(int32_t delta, int32_t magnitude, int32_t *remain
 void mouse_set_absolute_mode(bool enabled)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     absolute_mode = enabled;
     accel_x = 0;
     accel_y = 0;
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 void mouse_handle_absolute(int32_t x16, int32_t y16)
@@ -464,7 +456,7 @@ void mouse_handle_absolute(int32_t x16, int32_t y16)
     if (y16 > 0xFFFF)
         y16 = 0xFFFF;
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     int32_t nx = (int32_t)(((int64_t)x16 * bound_w) / 0x10000);
     int32_t ny = (int32_t)(((int64_t)y16 * bound_h) / 0x10000);
     if (nx >= bound_w)
@@ -481,13 +473,13 @@ void mouse_handle_absolute(int32_t x16, int32_t y16)
         mouse_ui_pending = true;
     }
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     if (absolute_mode)
     {
         dx = 0;
@@ -518,7 +510,7 @@ void mouse_handle_relative(uint8_t buttons, int8_t dx, int8_t dy)
     if (state.x != old_x || state.y != old_y || state.buttons != old_buttons)
         mouse_ui_pending = true;
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
 }
 
 static void refresh_mouse_ui(void)
@@ -564,7 +556,7 @@ void ps2_mouse_handler(void)
 void ps2_mouse_poll(void)
 {
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+    flags = arch_irq_save();
     debug_state.interrupts_enabled = (flags & (1ULL << 9)) != 0;
     uint8_t status = inb(PS2_STATUS);
     debug_state.controller_status = status;
@@ -574,7 +566,7 @@ void ps2_mouse_poll(void)
         (void)process_mouse_byte(inb(PS2_DATA));
     }
     if (flags & (1ULL << 9))
-        __asm__ volatile("sti" ::: "memory");
+        arch_irq_enable();
     vbox_mouse_poll();
 }
 

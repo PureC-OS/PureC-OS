@@ -1,21 +1,21 @@
-#include "scheduler.h"
-#include "../../boot/boot_options.h"
-#include "../../arch/x86_64/fpu/include/fpu.h"
-#include "../../arch/x86_64/gdt/include/gdt.h"
-#include "../../arch/x86_64/idt/include/idt.h"
-#include "../../drivers/interrupts/timer.h"
-#include "../../lib/string.h"
-#include "../../mm/oom/oom_slab.h"
-#include "../../mm/pmm.h"
-#include "../../mm/vmm.h"
-#include "../diagnostics/klog.h"
-#include "../diagnostics/ksym.h"
-#include "../diagnostics/panic.h"
-#include "../smp/cpu.h"
-#include "../smp/lapic.h"
-#include "../smp/percpu.h"
-#include "../smp/smp.h"
-#include "../sync/spinlock.h"
+#include <arch/arch.h>
+#include <kernel/process/scheduler.h>
+#include <boot/boot_options.h>
+#include <arch/x86_64/fpu/include/fpu.h>
+#include <arch/x86_64/gdt/include/gdt.h>
+#include <arch/x86_64/idt/include/idt.h>
+#include <drivers/interrupts/timer.h>
+#include <lib/string.h>
+#include <mm/oom/oom_slab.h>
+#include <mm/pmm.h>
+#include <mm/vmm.h>
+#include <kernel/diagnostics/klog.h>
+#include <kernel/diagnostics/ksym.h>
+#include <kernel/diagnostics/panic.h>
+#include <kernel/smp/cpu.h>
+#include <kernel/smp/percpu.h>
+#include <kernel/smp/smp.h>
+#include <kernel/sync/spinlock.h>
 
 _Static_assert(sizeof(struct thread) <= 4096,
                "thread node must fit in a single PMM page");
@@ -403,18 +403,9 @@ static void validate_switch_target(const struct thread *prev,
   }
 }
 
-#define MSR_FS_BASE 0xC0000100U
 static inline void write_fs_base(uint64_t value)
 {
-#ifndef PUREC_HOST_TEST
-  __asm__ volatile("wrmsr"
-                   :
-                   : "c"(MSR_FS_BASE), "a"((uint32_t)value),
-                     "d"((uint32_t)(value >> 32))
-                   : "memory");
-#else
-  (void)value;
-#endif
+  arch_set_tls_base(value);
 }
 
 void scheduler_set_fs_base(uint64_t base)
@@ -465,7 +456,7 @@ static void thread_trampoline(void)
   finish_switch();
   struct thread *self = scheduler_current_thread();
   if (!self->user_mode)
-    __asm__ volatile("sti" ::: "memory");
+    arch_irq_enable();
   self->entry(self->arg);
   scheduler_exit();
   __builtin_unreachable();
@@ -1547,7 +1538,7 @@ void scheduler_start(void)
   spin_unlock_irqrestore(&runqueue_lock, flags);
   if (gdt_current_cpu_id() == 0)
   {
-    if (lapic_start_timer())
+    if (arch_local_timer_start())
       idt_mask_irq(0);
     smp_release_scheduler();
   }
@@ -1558,9 +1549,9 @@ void scheduler_idle_loop(void)
 {
   for (;;)
   {
-    __asm__ volatile("cli" ::: "memory");
+    arch_irq_disable();
     scheduler_yield();
-    __asm__ volatile("sti; hlt" ::: "memory");
+    arch_cpu_idle();
   }
 }
 

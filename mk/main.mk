@@ -1,4 +1,6 @@
 ROOT_DIR := $(CURDIR)
+ARCH ?= x86_64
+include $(ROOT_DIR)/src/arch/$(ARCH)/arch.mk
 override BIN_DIR    := $(ROOT_DIR)/bin
 KERNEL_DIR          := $(BIN_DIR)/kernel
 PROGRAM_DIR         := $(BIN_DIR)/programs
@@ -451,14 +453,14 @@ iso: kernel programs
 		done; \
 	done; \
 	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/lib/modules/" 2>/dev/null || true; \
-	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
+	cp "$$limine_share/$(ARCH_EFI_NAME)"              "$(ISO_ROOT)/EFI/BOOT/$(ARCH_EFI_NAME)"; \
 	sh "$(ROOT_DIR)/mk/make_esp_image.sh" "$(ISO_ROOT)" "$(ISO_ROOT)/boot/esp.img"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys"          "$(ISO_ROOT)/boot/limine/"; \
 	cp "$$limine_share/limine-bios-cd.bin"       "$(ISO_ROOT)/boot/limine/"; \
 	cp "$$limine_share/limine-uefi-cd.bin"       "$(ISO_ROOT)/boot/limine/"; \
-	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
+	cp "$$limine_share/$(ARCH_EFI_NAME)"              "$(ISO_ROOT)/EFI/BOOT/$(ARCH_EFI_NAME)"; \
 	[ -f "$$limine_share/BOOTIA32.EFI" ] && cp "$$limine_share/BOOTIA32.EFI" "$(ISO_ROOT)/EFI/BOOT/" || true; \
 	xorriso -as mkisofs \
 		-b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table \

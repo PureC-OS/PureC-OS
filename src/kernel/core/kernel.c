@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "../tty/vtcon.h"
 #include "../../drivers/mouse/vbox_mouse.h"
 #include "kernel.h"
@@ -39,12 +40,7 @@ static uint16_t g_vbe_probe_id = 0xFFFFu;
 static inline int64_t do_syscall(uint64_t n, uint64_t a1, uint64_t a2,
                                  uint64_t a3, uint64_t a4, uint64_t a5)
 {
-  int64_t ret;
-  __asm__ volatile("int $0x80"
-                   : "=a"(ret)
-                   : "a"(n), "b"(a1), "c"(a2), "d"(a3), "S"(a4), "D"(a5)
-                   : "r10", "r8", "memory");
-  return ret;
+  return arch_kernel_syscall(n, a1, a2, a3, a4, a5);
 }
 
 void kernel_main(struct limine_framebuffer *fb)
@@ -76,7 +72,7 @@ void kernel_main(struct limine_framebuffer *fb)
   power_init();
   process_init();
   klog(KLOG_INFO, "Testing IDT: int3 breakpoint...");
-  __asm__ volatile("int3");
+  arch_breakpoint();
   klog(KLOG_OK, "int3 handled, IDT working");
 
   boot_diag_checkpoint(BOOT_STAGE_SYSCALLS, "initializing syscall layer");

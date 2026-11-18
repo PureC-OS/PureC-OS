@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "io_sched.h"
 #include "../kernel/process/scheduler.h"
 #include "../drivers/interrupts/timer.h"
@@ -70,7 +71,7 @@ bool io_dev_lock(void)
             __atomic_add_fetch(&stats.lock_contended, 1, __ATOMIC_RELAXED);
             counted = true;
         }
-        __asm__ volatile("pause" ::: "memory");
+        arch_cpu_relax();
     }
     return held;
 }

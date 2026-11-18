@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "gop.h"
 #include "vga.h"
 #include "svga.h"
@@ -533,48 +534,48 @@ static void gop_present_nolock(void);
 
 void gop_present(void){
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    flags = arch_irq_save();
     bool preempt_guard=scheduler_preempt_disable();
     struct thread *thread=scheduler_current_thread();
-    bool service_irqs=(flags&(1ULL<<9))
+    bool service_irqs=(flags&ARCH_IRQ_FLAG)
         || (preempt_guard && thread && thread->user_mode);
     if(!present_deferred){
         uint64_t now = timer_ticks();
         if(last_present_tick==0 || now-last_present_tick
             >= GOP_PRESENT_MIN_INTERVAL_TICKS){
-            if(service_irqs) __asm__ volatile("sti":::"memory");
+            if(service_irqs) arch_irq_enable();
             gop_present_nolock();
-            if(service_irqs) __asm__ volatile("cli":::"memory");
+            if(service_irqs) arch_irq_disable();
             last_present_tick = now ? now : 1;
         }
     }
     if(preempt_guard) scheduler_preempt_enable();
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    arch_irq_restore(flags);
 }
 
 void gop_present_forced(void){
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    flags = arch_irq_save();
     bool preempt_guard=scheduler_preempt_disable();
     struct thread *thread=scheduler_current_thread();
-    bool service_irqs=(flags&(1ULL<<9))
+    bool service_irqs=(flags&ARCH_IRQ_FLAG)
         || (preempt_guard && thread && thread->user_mode);
-    if(service_irqs) __asm__ volatile("sti":::"memory");
+    if(service_irqs) arch_irq_enable();
     gop_present_nolock();
-    if(service_irqs) __asm__ volatile("cli":::"memory");
+    if(service_irqs) arch_irq_disable();
     uint64_t now = timer_ticks();
     last_present_tick = now ? now : 1;
     present_deferred = false;
     if(preempt_guard) scheduler_preempt_enable();
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    arch_irq_restore(flags);
 }
 
 void gop_defer_present(void){
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    flags = arch_irq_save();
     present_deferred = true;
     deferred_tick = timer_ticks();
-    if(flags&(1ULL<<9)) __asm__ volatile("sti":::"memory");
+    arch_irq_restore(flags);
 }
 
 bool gop_flush_needed(void){

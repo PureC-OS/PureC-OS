@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "klog_disk.h"
 #include "klog.h"
 #include "../../drivers/interrupts/timer.h"
@@ -14,12 +15,7 @@ static char buffer[KLOG_DISK_CHUNK];
 
 static inline int64_t kernel_syscall(uint64_t number, uint64_t a1, uint64_t a2, uint64_t a3)
 {
-    int64_t result;
-    __asm__ volatile("int $0x80"
-                     : "=a"(result)
-                     : "a"(number), "b"(a1), "c"(a2), "d"(a3)
-                     : "r10", "r8", "memory");
-    return result;
+    return arch_kernel_syscall(number, a1, a2, a3, 0, 0);
 }
 
 void klog_disk_thread(void *arg)

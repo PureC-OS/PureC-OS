@@ -1,27 +1,27 @@
-#include "limine.h"
+#include <arch/arch.h>
+#include <boot/limine.h>
 #include <stddef.h>
 #include <stdbool.h>
-#include "../drivers/display/gop.h"
-#include "../drivers/display/vga.h"
-#include "../drivers/display/fb.h"
-#include "../drivers/serial/serial.h"
-#include "../drivers/interrupts/pic.h"
-#include "../drivers/interrupts/timer.h"
-#include "../drivers/mouse/ps2_mouse.h"
-#include "../io/storage/ahci.h"
-#include "../drivers/audio/audio_hda.h"
-#include "../drivers/usb/xhci.h"
-#include "../drivers/usb/ehci.h"
-#include "../arch/x86_64/gdt/include/gdt.h"
-#include "../arch/x86_64/idt/include/idt.h"
-#include "../arch/x86_64/mmio.h"
-#include "../kernel/core/kernel.h"
-#include "../kernel/diagnostics/klog.h"
-#include "../kernel/diagnostics/boot_diag.h"
-#include "../kernel/diagnostics/panic.h"
-#include "../lib/string.h"
-#include "install_source.h"
-#include "../fs/initramfs.h"
+#include <drivers/display/gop.h>
+#include <drivers/display/vga.h>
+#include <drivers/display/fb.h>
+#include <drivers/serial/serial.h>
+#include <drivers/interrupts/timer.h>
+#include <drivers/mouse/ps2_mouse.h>
+#include <io/storage/ahci.h>
+#include <drivers/audio/audio_hda.h>
+#include <drivers/usb/xhci.h>
+#include <drivers/usb/ehci.h>
+#include <arch/x86_64/gdt/include/gdt.h>
+#include <arch/x86_64/idt/include/idt.h>
+#include <arch/x86_64/mmio.h>
+#include <kernel/core/kernel.h>
+#include <kernel/diagnostics/klog.h>
+#include <kernel/diagnostics/boot_diag.h>
+#include <kernel/diagnostics/panic.h>
+#include <lib/string.h>
+#include <boot/install_source.h>
+#include <fs/initramfs.h>
 
 __attribute__((used, section(".requests_start_marker")))
 static volatile LIMINE_REQUESTS_START_MARKER;
@@ -231,21 +231,21 @@ void _start(void) {
     serial_write_string("[EARLY 01] entered _start\n");
     if (LIMINE_BASE_REVISION_SUPPORTED == false) {
         serial_write_string("[EARLY PANIC] unsupported Limine base revision\n");
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     serial_write_string("[EARLY 02] Limine base revision supported\n");
     if (framebuffer_request.response == NULL
      || framebuffer_request.response->framebuffer_count < 1
      || framebuffer_request.response->framebuffers[0] == NULL) {
         serial_write_string("[EARLY PANIC] Limine supplied no framebuffer\n");
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     serial_write_string("[EARLY 03] framebuffer response present\n");
 
     fb_ptr = framebuffer_request.response->framebuffers[0];
     if(!fb_ptr->address || !fb_ptr->width || !fb_ptr->height || !fb_ptr->pitch){
         serial_write_string("[EARLY PANIC] invalid framebuffer geometry or address\n");
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     if(fb_ptr->bpp != 32){
         serial_write_string("[EARLY WARN] framebuffer bpp !=32, trying to continue\n");
@@ -305,7 +305,7 @@ void _start(void) {
     }
 
     klog(KLOG_INFO, "Initializing PIC...");
-    pic_remap(0x20,0x28); pic_mask_all();
+    arch_interrupts_early_init();
     klog(KLOG_OK, "PIC remapped: master 0x20 slave 0x28, all masked");
 
     klog(KLOG_INFO, "Loading GDT...");
@@ -325,9 +325,9 @@ void _start(void) {
     timer_init(1000);
 
     klog(KLOG_INFO, "Enabling interrupts...");
-    __asm__ volatile("cli");
+    arch_irq_disable();
     klog(KLOG_DEBUG, "CLI executed, preparing STI");
-    __asm__ volatile("sti");
+    arch_irq_enable();
     klog(KLOG_OK, "Interrupts enabled (STI)");
     boot_diag_checkpoint(BOOT_STAGE_INTERRUPTS, "interrupts enabled");
 

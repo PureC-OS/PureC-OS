@@ -2,6 +2,31 @@
 
 ## V2.0.0 переход на сетевой стек в userspace и время в userspace
 
+### Ядро: x86_64-код вынесен в src/arch (подготовка к ARM64)
+
+Первый шаг порта на aarch64: всё x86-специфичное собрано в `src/arch/x86_64` за общим интерфейсом, поведение не менялось.
+
+#### Сборка
+
+- `ARCH ?= x86_64` в `mk/toolchain.mk` и `mk/main.mk`; `src/arch/x86_64/arch.mk` задаёт кросс-префикс, флаги (`-mcmodel=kernel`, `-mno-red-zone`), nasm, линкер-скрипт, `BOOTX64.EFI` и списки arch-исходников.
+- `src/kernel/Makefile` останавливается с ошибкой, если `KERNEL_ARCH` в kconfig не совпадает с `ARCH`. Итоговые флаги компиляции прежние.
+
+#### Интерфейс arch
+
+- `src/arch/arch.h` — единая точка входа для общего кода; x86-реализации в `src/arch/x86_64/include/arch_x86_64.h`: прерывания (`arch_irq_*`), барьеры, `pause`/`hlt`, таймстемп, CPUID, MSR, TLB и CR*, база per-CPU, TLS (`arch_set_tls_base`), адрес page fault, регистры для паники, аппаратный RNG.
+- `arch_mmu.h` + `mmu.c`: обход и создание таблиц страниц, клонирование и уничтожение пользовательской части, NX/WP, флаги `ARCH_PTE_*` (`VMM_PAGE_*` стали их псевдонимами). В `src/mm/vmm.c` осталась только политика: VMA, COW, swap, счётчики ссылок.
+- `portio.h`: один заголовок портового ввода-вывода вместо ~12 своих копий `outb`/`inb` в драйверах (ATA, звук, PS/2, клавиатура, serial, PCI, PIC, PIT, VBE, SVGA, PCnet, RTC, VBox).
+
+#### Что переехало
+
+- В `src/arch/x86_64`: LAPIC, PIC, таймер, cpufreq, старт AP-ядер (`smp.c`), CPUID/MSR/бренд процессора (`cpu.c`), MMU (`mmu.c`). Asm из spinlock, percpu и panic спрятан за `arch_*`.
+- Остались вне `src/arch`: драйверы чисто x86-железа на портах, раскладка `syscall_regs`/`panic_registers`, GS-смещения в `percpu.h`, вызовы `gdt_current_cpu_id` — следующий шаг.
+
+#### Проверка
+
+- `make kernel` и `make iso` собираются; загрузка в QEMU (UEFI, 4 ядра) совпадает с эталонной до «Started Getty on tty6».
+- В VirtualBox пройдены `forktest`, `proctest`, `posixtest`, `thrtest`, `memtest`, `fputest`, `dltest-dyn` (везде failures=0), ping по IP и имени без потерь.
+
 ### pkg 1.3.0: ключи привязаны к репозиториям
 
 Раньше `pkg` принимал подпись любого ключа из `/etc/pkg/keys` для любого пакета: лишний ключ стороннего репо мог подписать и системные пакеты (поводом стал issue #1 в Trusted про подключение сторонних репозиториев).

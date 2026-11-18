@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "ar9285.h"
 #include "ath9k_hw.h"
 #include "arch/x86_64/mmio.h"
@@ -60,21 +61,18 @@ void ath9k_udelay(uint32_t us)
 {
     uint64_t freq = system_info_tsc_frequency_hz();
     uint64_t start, ticks;
-    uint32_t lo, hi;
 
     if (!freq)
         freq = 2000000000ULL;
     ticks = freq / 1000000ULL * us;
-    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-    start = ((uint64_t)hi << 32) | lo;
+    start = arch_read_timestamp();
     for (;;) {
         uint64_t now;
 
-        __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-        now = ((uint64_t)hi << 32) | lo;
+        now = arch_read_timestamp();
         if (now - start >= ticks)
             break;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
 }
 

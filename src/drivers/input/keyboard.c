@@ -1,3 +1,5 @@
+#include <arch/x86_64/include/portio.h>
+#include <arch/arch.h>
 #include "keyboard.h"
 #include "hid_keymap.h"
 #include "../../kernel/diagnostics/klog.h"
@@ -25,18 +27,6 @@
 #define KBD_DEVICE_DISABLE_SCAN 0xF5
 #define KBD_DEVICE_SCAN_SET     0xF0
 #define KBD_DEVICE_ENABLE_SCAN  0xF4
-
-static inline void outb(uint16_t port, uint8_t val) {
-    __asm__ volatile("outb %0,%1"::"a"(val),"Nd"(port)); 
-}
-static inline uint8_t inb(uint16_t port){ 
-    uint8_t ret; 
-    __asm__ volatile("inb %1,%0":"=a"(ret):"Nd"(port)); 
-    return ret; 
-}
-static inline void io_wait(void){ 
-    outb(0x80,0); 
-}
 
 static bool shift_pressed = false;
 static bool control_pressed = false;
@@ -548,7 +538,7 @@ char keyboard_getc(void){
     char c;
     while(!keyboard_try_getc(&c)){
         scheduler_yield();
-        __asm__ volatile("pause");
+        arch_cpu_relax();
         keyboard_poll();
     }
     return c;
@@ -559,7 +549,7 @@ void keyboard_init(void){
     if(initialized) return;
     initialized = true;
     uint64_t flags;
-    __asm__ volatile("pushfq; pop %0; cli":"=r"(flags)::"memory");
+    flags = arch_irq_save();
     uint8_t config = 0;
     bool config_ok = read_controller_config(&config);
     uint8_t detected_scan_set = config_ok && (config & KBD_CONFIG_TRANSLATION) ? 1 : 2;
@@ -570,7 +560,7 @@ void keyboard_init(void){
     outb(0x21, mask);
     bool self_test_ok = decoder_self_test();
     active_scan_set = detected_scan_set;
-    if(flags & (1ULL<<9)) __asm__ volatile("sti":::"memory");
+    arch_irq_restore(flags);
     if(!self_test_ok) klog(KLOG_ERROR, "keyboard: Scan Code Set 2 decoder self-test failed");
     if(!config_ok) klog(KLOG_WARN, "keyboard: 8042 config read failed, assuming Scan Code Set 2");
     if(!device_config_ok) klog(KLOG_WARN, "keyboard: device rejected Scan Code Set 2 setup");

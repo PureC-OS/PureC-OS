@@ -1,19 +1,19 @@
-#include "vfs_backends.h"
-#include "vfs.h"
-#include "../arch/x86_64/idt/include/idt.h"
-#include "../boot/boot_options.h"
-#include "../drivers/interrupts/timer.h"
-#include "../io/storage/block_device.h"
-#include "../io/storage/storage_types.h"
-#include "../io/swap.h"
-#include "../kernel/process/scheduler.h"
-#include "../kernel/process/process.h"
-#include "../kernel/smp/cpu.h"
-#include "../kernel/smp/cpufreq.h"
-#include "../kernel/syscall/syscall.h"
-#include "../lib/format.h"
-#include "../lib/string.h"
-#include "../mm/pmm.h"
+#include <arch/arch.h>
+#include <fs/vfs_backends.h>
+#include <fs/vfs.h>
+#include <arch/x86_64/idt/include/idt.h>
+#include <boot/boot_options.h>
+#include <drivers/interrupts/timer.h>
+#include <io/storage/block_device.h>
+#include <io/storage/storage_types.h>
+#include <io/swap.h>
+#include <kernel/process/scheduler.h>
+#include <kernel/process/process.h>
+#include <kernel/smp/cpu.h>
+#include <kernel/syscall/syscall.h>
+#include <lib/format.h>
+#include <lib/string.h>
+#include <mm/pmm.h>
 
 #define PROCFS_MAX_OPEN 16
 #define PROCFS_BUFFER 4096
@@ -90,35 +90,11 @@ static void generate_meminfo(struct pbuf *out, uint32_t pid) {
   emit(out, "SwapIn:      %8llu pages\n", (unsigned long long)swap.pages_in);
   emit(out, "SwapOut:     %8llu pages\n", (unsigned long long)swap.pages_out);
 }
-
-static void brand_string(char brand[49]) {
-  uint32_t maximum, ebx, ecx, edx;
-  __asm__ volatile("cpuid"
-                   : "=a"(maximum), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                   : "a"(0x80000000u), "c"(0));
-  brand[0] = '\0';
-  if (maximum < 0x80000004u)
-    return;
-  uint32_t words[12];
-  for (uint32_t leaf = 0; leaf < 3; leaf++)
-    __asm__ volatile("cpuid"
-                     : "=a"(words[leaf * 4]), "=b"(words[leaf * 4 + 1]),
-                       "=c"(words[leaf * 4 + 2]), "=d"(words[leaf * 4 + 3])
-                     : "a"(0x80000002u + leaf), "c"(0));
-  memcpy(brand, words, 48);
-  brand[48] = '\0';
-  char *start = brand;
-  while (*start == ' ')
-    start++;
-  if (start != brand)
-    memmove(brand, start, strlen(start) + 1);
-}
-
 static void generate_cpuinfo(struct pbuf *out, uint32_t pid) {
   (void)pid;
   char brand[49];
-  brand_string(brand);
-  uint32_t megahertz = cpufreq_measure_mhz();
+  arch_cpu_brand_string(brand);
+  uint32_t megahertz = arch_cpu_freq_mhz();
   uint32_t count = cpu_registered_count();
   for (uint32_t id = 0; id < count; id++) {
     const struct cpu_info *info = cpu_get_info(id);

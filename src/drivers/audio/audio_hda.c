@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "audio_hda.h"
 #include "../pci/pci.h"
 #include "../../arch/x86_64/mmio.h"
@@ -152,7 +153,7 @@ static bool wait_reset_state(bool asserted) {
         if (((read32(HDA_GCTL) & HDA_GCTL_RESET) != 0) == asserted) {
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     klogf(KLOG_ERROR, "audio: HDA reset wait timeout target=%u", asserted ? 1 : 0);
     return false;
@@ -178,7 +179,7 @@ static bool wait_stream_control(volatile uint8_t *stream, uint32_t mask,
         if (((read_stream_control(stream) & mask) != 0) == asserted) {
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -303,7 +304,7 @@ static bool send_verb(uint32_t verb, uint32_t *response) {
             trace_ring("response-received");
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     trace_ring("response-timeout");
     klogf(KLOG_ERROR,

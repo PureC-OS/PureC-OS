@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "mmio.h"
 #include "../../kernel/sync/spinlock.h"
 #include "../../kernel/smp/smp.h"
@@ -36,14 +37,6 @@ static uint8_t region_count;
 static uint8_t physical_address_bits;
 static bool configured;
 static bool ready;
-
-static void cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx,
-                  uint32_t *ecx, uint32_t *edx){
-    __asm__ volatile("cpuid"
-                     : "=a"(*eax),"=b"(*ebx),"=c"(*ecx),"=d"(*edx)
-                     : "a"(leaf),"c"(0));
-}
-
 static uint64_t pointer_physical(const void *pointer){
     return (uint64_t)(uintptr_t)pointer-kernel_virt_base+kernel_phys_base;
 }
@@ -79,7 +72,7 @@ static uint64_t *next_table(uint64_t *table, uint16_t index){
 
 static bool map_page(uint64_t virtual_address, uint64_t physical_address){
     uint64_t cr3;
-    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    cr3 = arch_read_cr3();
     uint64_t *pml4=physical_pointer(cr3&PAGE_ADDRESS_MASK);
     uint16_t pml4_index=(uint16_t)((virtual_address>>39)&0x1FF);
     uint16_t pdpt_index=(uint16_t)((virtual_address>>30)&0x1FF);
@@ -94,7 +87,7 @@ static bool map_page(uint64_t virtual_address, uint64_t physical_address){
     if(!pt) return false;
     pt[pt_index]=(physical_address&PAGE_ADDRESS_MASK)
         |PAGE_PRESENT|PAGE_WRITABLE|PAGE_WRITE_THROUGH|PAGE_CACHE_DISABLE;
-    __asm__ volatile("invlpg (%0)"::"r"(virtual_address):"memory");
+    arch_tlb_flush_page(virtual_address);
     return true;
 }
 
@@ -115,17 +108,17 @@ void mmio_init(void){
     region_count=0;
     physical_address_bits=36;
     uint32_t eax,ebx,ecx,edx;
-    cpuid(0x80000000U,&eax,&ebx,&ecx,&edx);
+    arch_cpuid(0x80000000U, 0,&eax,&ebx,&ecx,&edx);
     if(eax>=0x80000008U){
-        cpuid(0x80000008U,&eax,&ebx,&ecx,&edx);
+        arch_cpuid(0x80000008U, 0,&eax,&ebx,&ecx,&edx);
         uint8_t reported=(uint8_t)eax;
         if(reported>=32 && reported<=52) physical_address_bits=reported;
     }
 
     uint64_t cr3,cr4;
-    __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+    cr4 = arch_read_cr4();
     if(cr4&(1ULL<<12)) return;
-    __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
+    cr3 = arch_read_cr3();
     uint64_t *pml4=physical_pointer(cr3&PAGE_ADDRESS_MASK);
     for(uint16_t index=MMIO_FIRST_PML4_INDEX;index>=MMIO_LAST_PML4_INDEX;index--){
         if(!(pml4[index]&PAGE_PRESENT)){

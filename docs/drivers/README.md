@@ -8,8 +8,8 @@
 
 | Драйвер | Описание | Исходники |
 |---------|----------|-----------|
-| PIC 8259 | [pic.md](pic.md) | `src/drivers/interrupts/pic.c` |
-| Таймер PIT и TSC | [timer.md](timer.md) | `src/drivers/interrupts/timer.c` |
+| PIC 8259 | [pic.md](pic.md) | `src/arch/x86_64/pic.c` |
+| Таймер PIT и TSC | [timer.md](timer.md) | `src/arch/x86_64/timer.c` |
 
 ## Вывод на экран
 

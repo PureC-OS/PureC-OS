@@ -1,7 +1,10 @@
 ROOT_DIR ?= $(abspath $(CURDIR))
 BIN_DIR ?= $(ROOT_DIR)/bin
 
-CROSS ?= x86_64-elf-
+ARCH ?= x86_64
+include $(ROOT_DIR)/src/arch/$(ARCH)/arch.mk
+
+CROSS ?= $(ARCH_CROSS)
 CC := $(CROSS)gcc
 CXX := $(CROSS)g++
 AR := $(CROSS)ar
@@ -11,8 +14,8 @@ NASM ?= nasm
 CPPFLAGS := -I$(ROOT_DIR)/src
 DEPFLAGS := -MMD -MP
 COMMON_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fno-pic \
-	-m64 -mno-red-zone
-USER_CFLAGS := $(COMMON_CFLAGS) -mcmodel=small
+	$(ARCH_COMMON_CFLAGS)
+USER_CFLAGS := $(COMMON_CFLAGS) $(ARCH_USER_CFLAGS)
 USER_SO_CFLAGS := -g -O2 -ffreestanding -fno-stack-protector -fPIC \
 	-m64 -mno-red-zone -mcmodel=small -fno-plt
 SO_LINK_FLAGS := -shared --hash-style=sysv -z noexecstack
@@ -23,7 +26,7 @@ KMOD_SO_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fPIC \
 	-m64 -mno-red-zone -mcmodel=small -mgeneral-regs-only -fno-plt
 KMOD_SO_LDSCRIPT := $(ROOT_DIR)/mk/kmod-so.ld
 KMOD_SO_LINK := -shared --hash-style=sysv -z noexecstack -T $(ROOT_DIR)/mk/kmod-so.ld
-KERNEL_CFLAGS := $(COMMON_CFLAGS) -mcmodel=kernel -mgeneral-regs-only \
+KERNEL_CFLAGS := $(COMMON_CFLAGS) $(ARCH_KERNEL_CFLAGS) \
 	-fno-omit-frame-pointer \
 	-ffile-prefix-map=$(ROOT_DIR)/src/=src/ \
 	-fdebug-prefix-map=$(ROOT_DIR)/src/=src/

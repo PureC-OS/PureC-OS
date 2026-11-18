@@ -103,24 +103,16 @@ void rtc_encode(const struct civil_time *time, uint8_t status_b,
 }
 
 #ifndef PUREC_HOST_TEST
-static inline void port_out(uint16_t port, uint8_t value) {
-  __asm__ volatile("outb %0, %1" : : "a"(value), "Nd"(port));
-}
-
-static inline uint8_t port_in(uint16_t port) {
-  uint8_t value;
-  __asm__ volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
-  return value;
-}
+#include <arch/x86_64/include/portio.h>
 
 static uint8_t cmos_read(uint8_t reg) {
-  port_out(CMOS_INDEX, reg);
-  return port_in(CMOS_DATA);
+  outb(CMOS_INDEX, reg);
+  return inb(CMOS_DATA);
 }
 
 static void cmos_write(uint8_t reg, uint8_t value) {
-  port_out(CMOS_INDEX, reg);
-  port_out(CMOS_DATA, value);
+  outb(CMOS_INDEX, reg);
+  outb(CMOS_DATA, value);
 }
 
 static bool wait_stable(void) {

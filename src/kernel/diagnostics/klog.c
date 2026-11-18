@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "klog.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../drivers/display/gop.h"
@@ -50,9 +51,7 @@ static uint64_t klog_boot_tsc = 0;
 
 static inline uint64_t rdtsc(void)
 {
-  uint32_t lo, hi;
-  __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-  return ((uint64_t)hi << 32) | lo;
+    return arch_read_timestamp();
 }
 
 static enum klog_level screen_level = KLOG_INFO;

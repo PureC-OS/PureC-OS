@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "random_abi.h"
 #include "random_core.h"
 #include "sha512.h"
@@ -11,28 +12,20 @@ static uint32_t since_reseed;
 static const uint8_t personalization[] = "PureC-OS purecrypt hash-drbg v1";
 
 static int rdrand_available(void) {
-  uint32_t eax = 1, ebx, ecx = 0, edx;
-  __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
-  return (ecx >> 30) & 1u;
+  return arch_hw_random_available();
 }
 
 static int rdrand_u64(uint64_t *out) {
   for (int attempt = 0; attempt < RDRAND_RETRIES; attempt++) {
-    uint64_t value;
-    unsigned char ok;
-    __asm__ volatile("rdrand %0; setc %1" : "=r"(value), "=qm"(ok));
-    if (ok) {
-      *out = value;
+    if (arch_hw_random_u64(out))
       return 1;
-    }
   }
   return 0;
 }
 
-static uint64_t read_tsc(void) {
-  uint32_t low, high;
-  __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-  return ((uint64_t)high << 32) | low;
+static uint64_t read_tsc(void)
+{
+    return arch_read_timestamp();
 }
 
 static void gather_entropy(uint8_t out[ENTROPY_BYTES]) {

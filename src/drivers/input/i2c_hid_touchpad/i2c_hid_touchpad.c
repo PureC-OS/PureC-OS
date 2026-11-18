@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "i2c_hid_touchpad.h"
 #include "arch/x86_64/idt/include/idt.h"
 #include "arch/x86_64/mmio.h"
@@ -196,7 +197,7 @@ static void dw_write(uint32_t offset, uint32_t value)
 
 static void relax(void)
 {
-    __asm__ volatile("pause" ::: "memory");
+    arch_cpu_relax();
 }
 
 static void busy_wait_ms(uint32_t milliseconds)

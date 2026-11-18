@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "xhci.h"
 
 #include "../pci/pci.h"
@@ -205,9 +206,7 @@ bool xhci_topology_changed(void)
 
 static inline uint64_t rdtsc(void)
 {
-    uint32_t low, high;
-    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-    return ((uint64_t)high << 32) | low;
+    return arch_read_timestamp();
 }
 
 static uint32_t tsc_mhz(void)
@@ -216,12 +215,10 @@ static uint32_t tsc_mhz(void)
     if (cached)
         return cached;
     uint32_t eax, ebx, ecx, edx, maximum_leaf;
-    __asm__ volatile("cpuid" : "=a"(maximum_leaf), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                     : "a"(0), "c"(0));
+    arch_cpuid(0, 0, &maximum_leaf, &ebx, &ecx, &edx);
     if (maximum_leaf >= 0x15)
     {
-        __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                         : "a"(0x15), "c"(0));
+        arch_cpuid(0x15, 0, &eax, &ebx, &ecx, &edx);
         if (eax && ebx && ecx)
         {
             uint64_t mhz = (uint64_t)ecx * ebx / eax / 1000000ULL;
@@ -232,8 +229,7 @@ static uint32_t tsc_mhz(void)
     eax = maximum_leaf;
     if (eax >= 0x16)
     {
-        __asm__ volatile("cpuid" : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                         : "a"(0x16), "c"(0));
+        arch_cpuid(0x16, 0, &eax, &ebx, &ecx, &edx);
         if (eax >= 100 && eax <= 10000)
             return cached = eax;
     }
@@ -244,7 +240,7 @@ static void delay_ms(uint32_t milliseconds)
 {
     uint64_t deadline = rdtsc() + (uint64_t)tsc_mhz() * 1000ULL * milliseconds;
     while ((int64_t)(rdtsc() - deadline) < 0)
-        __asm__ volatile("pause");
+        arch_cpu_relax();
 }
 
 void xhci_set_address_mapping(uint64_t direct_map_offset, uint64_t physical_base,
@@ -318,7 +314,7 @@ static bool wait_register(volatile uint32_t *reg, uint32_t mask, bool set)
     {
         if (((*reg & mask) != 0) == set)
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -407,7 +403,7 @@ static bool next_event(uint8_t wanted_type, uint8_t slot, uint8_t endpoint,
         }
         else
         {
-            __asm__ volatile("pause");
+            arch_cpu_relax();
         }
     }
     probe_stats.last_error = XHCI_PROBE_EVENT_TIMEOUT;
@@ -1155,7 +1151,7 @@ static bool take_ownership(volatile uint32_t *capability, uint32_t hccparams1)
             uint64_t deadline = rdtsc() + (uint64_t)tsc_mhz() * 1000ULL * 1000ULL;
             while ((extended[0] & (1U << 16)) && (int64_t)(rdtsc() - deadline) < 0)
             {
-                __asm__ volatile("pause");
+                arch_cpu_relax();
             }
             uint32_t after = extended[0];
             if (after & (1U << 16))

@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "power.h"
 #include "../../boot/limine.h"
 #include "../../kernel/diagnostics/journal.h"
@@ -31,8 +32,7 @@ void power_reboot(void)
     (void)vfs_sync();
     journal_mark_clean_shutdown();
     acpi_reboot();
-    for (;;)
-        __asm__ volatile("cli; hlt");
+    arch_cpu_stop();
 }
 
 void power_shutdown(void)
@@ -40,8 +40,7 @@ void power_shutdown(void)
     (void)vfs_sync();
     journal_mark_clean_shutdown();
     acpi_shutdown();
-    for (;;)
-        __asm__ volatile("cli; hlt");
+    arch_cpu_stop();
 }
 
 bool power_battery_get(struct battery_info *out)

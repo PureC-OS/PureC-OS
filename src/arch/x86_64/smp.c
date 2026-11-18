@@ -1,18 +1,19 @@
-#include "smp.h"
-#include "cpu.h"
-#include "lapic.h"
-#include "percpu.h"
-#include "cpufreq.h"
-#include "../sync/spinlock.h"
-#include "../diagnostics/klog.h"
-#include "../diagnostics/panic.h"
-#include "../../drivers/interrupts/timer.h"
-#include "../process/scheduler.h"
-#include "../../boot/limine.h"
-#include "../../arch/x86_64/gdt/include/gdt.h"
-#include "../../arch/x86_64/idt/include/idt.h"
-#include "../../arch/x86_64/fpu/include/fpu.h"
-#include "../../mm/vmm.h"
+#include <arch/arch.h>
+#include <kernel/smp/smp.h>
+#include <kernel/smp/cpu.h>
+#include <arch/x86_64/lapic.h>
+#include <kernel/smp/percpu.h>
+#include <arch/x86_64/cpufreq.h>
+#include <kernel/sync/spinlock.h>
+#include <kernel/diagnostics/klog.h>
+#include <kernel/diagnostics/panic.h>
+#include <drivers/interrupts/timer.h>
+#include <kernel/process/scheduler.h>
+#include <boot/limine.h>
+#include <arch/x86_64/gdt/include/gdt.h>
+#include <arch/x86_64/idt/include/idt.h>
+#include <arch/x86_64/fpu/include/fpu.h>
+#include <mm/vmm.h>
 
 #include <stddef.h>
 
@@ -42,33 +43,6 @@ static spinlock_t tlb_lock = SPINLOCK_INIT;
 static uint64_t tlb_generation;
 
 extern void smp_ap_entry(struct limine_smp_info *info);
-
-static uint64_t read_tsc(void){
-    uint32_t low, high;
-    __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-    return ((uint64_t)high << 32) | low;
-}
-
-static uint64_t tsc_frequency(void){
-    uint32_t maximum, eax, ebx, ecx, edx;
-    __asm__ volatile("cpuid"
-                     : "=a"(maximum), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                     : "a"(0), "c"(0));
-    if(maximum >= 0x15){
-        __asm__ volatile("cpuid"
-                         : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                         : "a"(0x15), "c"(0));
-        if(eax && ebx && ecx) return ((uint64_t)ecx * ebx) / eax;
-    }
-    if(maximum >= 0x16){
-        __asm__ volatile("cpuid"
-                         : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
-                         : "a"(0x16), "c"(0));
-        if(eax) return (uint64_t)eax * 1000000ULL;
-    }
-    return 3000000000ULL;
-}
-
 static struct limine_smp_info *find_limine_cpu(
     struct limine_smp_response *response, const struct cpu_info *cpu){
     if(!response || !response->cpus || !cpu || !cpu->ids_valid) return NULL;
@@ -88,40 +62,42 @@ void smp_ap_main(struct ap_boot_context *context,
        || context->logical_id == 0
        || context->logical_id >= CPU_MAX_COUNT
        || context->lapic_id != limine_info->lapic_id){
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
 
     uint32_t id = context->logical_id;
     if(!percpu_install(id)){
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     if(!vmm_init_cpu()
        || !gdt_init_cpu(id, context->stack_top)){
         cpu_fail(id);
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     if(gdt_current_cpu_id() != id || scheduler_current_thread() != NULL){
         cpu_fail(id);
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     idt_init_cpu();
     if(!fpu_init_cpu()){
         cpu_fail(id);
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
 
     if(!lapic_init_cpu()){
         cpu_fail(id);
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     cpufreq_init_cpu();
     scheduler_init_cpu();
     if(!cpu_publish_idle(id)){
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
 
-    while(!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE))
-        __asm__ volatile("sti; hlt; cli" ::: "memory");
+    while(!__atomic_load_n(&scheduler_released, __ATOMIC_ACQUIRE)){
+        arch_cpu_idle();
+        arch_irq_disable();
+    }
     (void)lapic_start_timer();
     scheduler_start();
     scheduler_idle_loop();
@@ -147,14 +123,15 @@ bool smp_start_cpu(struct limine_smp_response *response,
     __atomic_store_n(&limine_info->goto_address, smp_ap_entry,
                      __ATOMIC_RELEASE);
 
-    uint64_t frequency = tsc_frequency();
+    uint64_t frequency = arch_cpuid_tsc_hz();
+    if(!frequency) frequency = 3000000000ULL;
     uint64_t duration = (frequency / 1000) * (timeout_ms ? timeout_ms : 1);
-    uint64_t start = read_tsc();
-    while(read_tsc() - start < duration){
+    uint64_t start = arch_read_timestamp();
+    while(arch_read_timestamp() - start < duration){
         enum cpu_state state = cpu_get_state(logical_id);
         if(state == CPU_IDLE) return true;
         if(state == CPU_FAILED) return false;
-        __asm__ volatile("pause" ::: "memory");
+        arch_cpu_relax();
     }
     if(!cpu_timeout_start(logical_id))
         return cpu_get_state(logical_id) == CPU_IDLE;
@@ -198,25 +175,18 @@ void smp_note_cr3(uint64_t cr3){
 }
 
 static void flush_local_user_tlb(void){
-    uint64_t cr3;
-    __asm__ volatile("mov %%cr3,%0; mov %0,%%cr3":"=r"(cr3)::"memory");
+    arch_tlb_flush_local_user();
 }
 
 static void flush_local_tlb(void){
-    /* Include global translations, and work independently of current CR3.
-       This kernel does not enable PCID. No allocation or locks in NMI. */
-    uint64_t cr4,cr3;
-    __asm__ volatile("mov %%cr4,%0; mov %%cr3,%1":"=r"(cr4),"=r"(cr3));
-    if(cr4&(1ULL<<7)){
-        __asm__ volatile("mov %0,%%cr4; mov %1,%%cr4"::"r"(cr4&~(1ULL<<7)),"r"(cr4):"memory");
-    } else __asm__ volatile("mov %0,%%cr3"::"r"(cr3):"memory");
+    arch_tlb_flush_local_global();
 }
 bool smp_handle_nmi(void){
     uint32_t id=gdt_current_cpu_id();
     if(id>=CPU_MAX_COUNT) return false;
     if(__atomic_load_n(&stop_mask,__ATOMIC_ACQUIRE)&(1U<<id)){
         __atomic_fetch_or(&stopped_mask,1U<<id,__ATOMIC_RELEASE);
-        for(;;) __asm__ volatile("cli; hlt");
+        arch_cpu_stop();
     }
     uint64_t request=__atomic_load_n(&tlb_request[id],__ATOMIC_ACQUIRE);
     if(request!=__atomic_load_n(&tlb_ack[id],__ATOMIC_RELAXED)){
@@ -252,7 +222,7 @@ static void tlb_shootdown_targets(uint64_t space){
         if(!(targets&(1U<<id))) continue;
         while(__atomic_load_n(&tlb_ack[id],__ATOMIC_ACQUIRE)!=generation){
             if(timer_ticks()-start>1000) kernel_panic("smp: TLB acknowledgement timeout");
-            __asm__ volatile("pause");
+            arch_cpu_relax();
         }
     }
     spin_unlock_irqrestore(&tlb_lock,flags);
@@ -271,6 +241,6 @@ void smp_stop_others(void){
     uint64_t start=timer_ticks();
     while((__atomic_load_n(&stopped_mask,__ATOMIC_ACQUIRE)&mask)!=mask){
         if(timer_ticks()-start>100) break;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
 }

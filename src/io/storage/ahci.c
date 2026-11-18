@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "ahci.h"
 
 #include "storage_probe.h"
@@ -209,7 +210,7 @@ static bool wait_idle(volatile uint32_t *port)
     {
         if (!(port[PORT_TFD] & (AHCI_TFD_BUSY | AHCI_TFD_DRQ)))
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -276,7 +277,7 @@ static bool issue_command(uint8_t index, uint8_t command, uint32_t lba,
             __sync_synchronize();
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     klogf(KLOG_WARN, "ahci: command 0x%x lba=%u count=%u timed out, resetting port",
           command, lba, sectors);

@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <arch/arch.h>
+
 #include "cpu.h"
 
 struct thread;
@@ -32,18 +34,10 @@ void percpu_set_current(uint32_t cpu_id, struct thread *thread);
 
 static inline uint32_t percpu_cpu_id(void)
 {
-    uint32_t id;
-    __asm__ volatile("movl %%gs:%c1, %0"
-                     : "=r"(id)
-                     : "i"(PERCPU_OFF_CPU_ID));
-    return id;
+    return ARCH_PERCPU_LOAD32(PERCPU_OFF_CPU_ID);
 }
 
 static inline struct thread *percpu_current(void)
 {
-    struct thread *thread;
-    __asm__ volatile("movq %%gs:%c1, %0"
-                     : "=r"(thread)
-                     : "i"(PERCPU_OFF_CURRENT));
-    return thread;
+    return (struct thread *)(uintptr_t)ARCH_PERCPU_LOAD64(PERCPU_OFF_CURRENT);
 }

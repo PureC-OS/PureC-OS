@@ -11,14 +11,6 @@
 
 static uint8_t fpu_template[FPU_STATE_SIZE] __attribute__((aligned(16)));
 static bool fpu_ready = false;
-
-static void cpuid(uint32_t leaf, uint32_t *eax, uint32_t *ebx,
-                  uint32_t *ecx, uint32_t *edx) {
-    __asm__ volatile("cpuid"
-                     : "=a"(*eax), "=b"(*ebx), "=c"(*ecx), "=d"(*edx)
-                     : "a"(leaf), "c"(0));
-}
-
 static uint64_t read_cr0(void) {
     uint64_t value;
     __asm__ volatile("mov %%cr0, %0" : "=r"(value));
@@ -41,7 +33,7 @@ static void write_cr4(uint64_t value) {
 
 bool fpu_init_cpu(void) {
     uint32_t eax, ebx, ecx, edx;
-    cpuid(1, &eax, &ebx, &ecx, &edx);
+    arch_cpuid(1, 0, &eax, &ebx, &ecx, &edx);
     if (!(edx & (1U << 24)) || !(edx & (1U << 25))) return false;
     write_cr0((read_cr0() & ~(FPU_CR0_EM | FPU_CR0_TS)) | FPU_CR0_NE);
     write_cr4(read_cr4() | FPU_CR4_OSFXSR | FPU_CR4_OSXMMEXCPT);

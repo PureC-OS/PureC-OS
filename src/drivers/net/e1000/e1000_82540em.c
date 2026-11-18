@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "e1000_82540em.h"
 #include "drivers/pci/pci.h"
 #include "arch/x86_64/mmio.h"
@@ -209,7 +210,7 @@ static bool reset_controller(void)
             (void)reg_read(E1000_REG_ICR);
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }

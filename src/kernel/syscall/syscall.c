@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "../ipc/pty.h"
 #include "../../io/io_sched.h"
 #include "syscall.h"
@@ -122,7 +123,7 @@ bool filesystem_syscall_acquire(void)
 static void install_progress(uint32_t progress, const char *stage)
 {
   uint64_t flags;
-  __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+  flags = arch_irq_save();
   install_job.progress = progress;
   if (stage)
     strncpy(install_job.stage, stage, sizeof(install_job.stage) - 1);
@@ -142,7 +143,7 @@ static void install_progress(uint32_t progress, const char *stage)
     entry->stage[sizeof(entry->stage) - 1] = '\0';
   }
   if (flags & (1ULL << 9))
-    __asm__ volatile("sti" ::: "memory");
+    arch_irq_enable();
 }
 
 static void install_worker(void *argument)

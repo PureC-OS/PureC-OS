@@ -1,6 +1,8 @@
-#include "timer.h"
-#include "../../kernel/process/scheduler.h"
-#include "../../kernel/diagnostics/klog.h"
+#include <arch/x86_64/include/portio.h>
+#include <arch/arch.h>
+#include <drivers/interrupts/timer.h>
+#include <kernel/process/scheduler.h>
+#include <kernel/diagnostics/klog.h>
 
 #define PIT_INPUT_HZ 1193182U
 #define PIT_COMMAND  0x43
@@ -12,54 +14,19 @@ static uint32_t timer_frequency_hz=1000;
 static uint64_t tsc_frequency_hz=3000000000ULL;
 static uint64_t tsc_start;
 
-static inline void outb(uint16_t port, uint8_t value){
-    __asm__ volatile("outb %0,%1"::"a"(value),"Nd"(port));
-}
-
-static inline uint8_t inb(uint16_t port){
-    uint8_t value;
-    __asm__ volatile("inb %1,%0":"=a"(value):"Nd"(port));
-    return value;
-}
-
-static inline uint64_t read_tsc(void){
-    uint32_t low,high;
-    __asm__ volatile("rdtsc":"=a"(low),"=d"(high));
-    return ((uint64_t)high<<32)|low;
-}
-
-static void detect_tsc_frequency(void){
-    uint32_t maximum_leaf,eax,ebx,ecx,edx;
-    __asm__ volatile("cpuid"
-                     : "=a"(maximum_leaf),"=b"(ebx),"=c"(ecx),"=d"(edx)
-                     : "a"(0),"c"(0));
-    if(maximum_leaf>=0x15){
-        __asm__ volatile("cpuid"
-                         : "=a"(eax),"=b"(ebx),"=c"(ecx),"=d"(edx)
-                         : "a"(0x15),"c"(0));
-        if(eax && ebx && ecx){
-            tsc_frequency_hz=((uint64_t)ecx*ebx)/eax;
-            return;
-        }
-    }
-    if(maximum_leaf>=0x16){
-        __asm__ volatile("cpuid"
-                         : "=a"(eax),"=b"(ebx),"=c"(ecx),"=d"(edx)
-                         : "a"(0x16),"c"(0));
-        if(eax) tsc_frequency_hz=(uint64_t)eax*1000000ULL;
-    }
-}
-
 static uint64_t tsc_milliseconds(void){
-    uint64_t elapsed=read_tsc()-tsc_start;
+    uint64_t elapsed=arch_read_timestamp()-tsc_start;
     uint64_t seconds=elapsed/tsc_frequency_hz;
     uint64_t remainder=elapsed%tsc_frequency_hz;
     return seconds*1000+(remainder*1000)/tsc_frequency_hz;
 }
 
 void timer_init(uint32_t frequency_hz){
-    detect_tsc_frequency();
-    tsc_start=read_tsc();
+    {
+        uint64_t hz=arch_cpuid_tsc_hz();
+        if(hz) tsc_frequency_hz=hz;
+    }
+    tsc_start=arch_read_timestamp();
     if(frequency_hz<100) frequency_hz=100;
     if(frequency_hz>2000) frequency_hz=2000;
     uint32_t divisor=(PIT_INPUT_HZ+frequency_hz/2)/frequency_hz;
@@ -80,19 +47,18 @@ void timer_tick(void){ tick_count++; }
 
 void timer_sleep(uint32_t milliseconds){
     if(!milliseconds) return;
-    uint64_t flags;
-    __asm__ volatile("pushfq; pop %0":"=r"(flags));
+    bool irq_on=arch_irq_enabled();
     struct thread *thread=scheduler_current_thread();
-    if((flags&(1ULL<<9)) && scheduler_is_running() && thread && !thread->idle){
+    if(irq_on && scheduler_is_running() && thread && !thread->idle){
         scheduler_sleep(milliseconds);
         return;
     }
     uint64_t start=tsc_milliseconds();
     while(tsc_milliseconds()-start<milliseconds){
-        uint64_t before=read_tsc();
-        if(flags&(1ULL<<9)) __asm__ volatile("hlt":::"memory");
-        else __asm__ volatile("pause":::"memory");
-        __atomic_fetch_add(&idle_tsc,read_tsc()-before,__ATOMIC_RELAXED);
+        uint64_t before=arch_read_timestamp();
+        if(irq_on) arch_cpu_halt();
+        else arch_cpu_relax();
+        __atomic_fetch_add(&idle_tsc,arch_read_timestamp()-before,__ATOMIC_RELAXED);
     }
 }
 

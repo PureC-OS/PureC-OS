@@ -1,5 +1,6 @@
 #pragma once
 #include <stdint.h>
+#include <arch/arch.h>
 
 struct panic_registers
 {
@@ -34,23 +35,10 @@ __attribute__((noreturn)) void kernel_panic_manual_at(
   {                                                                       \
     struct panic_registers __pr;                                          \
     uint64_t __rip = 0, __rsp = 0, __rbp = 0;                             \
-    __asm__ volatile("lea 0(%%rip), %0" : "=r"(__rip)::"memory");         \
-    __asm__ volatile("mov %%rsp, %0" : "=r"(__rsp)::"memory");            \
-    __asm__ volatile("mov %%rbp, %0" : "=r"(__rbp)::"memory");            \
-    __asm__ volatile("mov %%rax, %0" : "=m"(__pr.rax)::"memory");         \
-    __asm__ volatile("mov %%rbx, %0" : "=m"(__pr.rbx)::"memory");         \
-    __asm__ volatile("mov %%rcx, %0" : "=m"(__pr.rcx)::"memory");         \
-    __asm__ volatile("mov %%rdx, %0" : "=m"(__pr.rdx)::"memory");         \
-    __asm__ volatile("mov %%rsi, %0" : "=m"(__pr.rsi)::"memory");         \
-    __asm__ volatile("mov %%rdi, %0" : "=m"(__pr.rdi)::"memory");         \
-    __asm__ volatile("mov %%r8,  %0" : "=m"(__pr.r8)::"memory");          \
-    __asm__ volatile("mov %%r9,  %0" : "=m"(__pr.r9)::"memory");          \
-    __asm__ volatile("mov %%r10, %0" : "=m"(__pr.r10)::"memory");         \
-    __asm__ volatile("mov %%r11, %0" : "=m"(__pr.r11)::"memory");         \
-    __asm__ volatile("mov %%r12, %0" : "=m"(__pr.r12)::"memory");         \
-    __asm__ volatile("mov %%r13, %0" : "=m"(__pr.r13)::"memory");         \
-    __asm__ volatile("mov %%r14, %0" : "=m"(__pr.r14)::"memory");         \
-    __asm__ volatile("mov %%r15, %0" : "=m"(__pr.r15)::"memory");         \
+    __rip = arch_get_ip();                                                \
+    __rsp = arch_get_sp();                                                \
+    __rbp = arch_get_fp();                                                \
+    ARCH_CAPTURE_PANIC_REGS(__pr);                                        \
     __pr.rbp = __rbp;                                                     \
     kernel_panic_manual_at(__FILE__, __LINE__, __func__, (reason), __rip, \
                            __rsp, __rbp, &__pr);                          \

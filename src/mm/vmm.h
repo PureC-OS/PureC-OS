@@ -2,16 +2,17 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <arch/arch.h>
 
-#define VMM_PAGE_PRESENT (1ULL << 0)
-#define VMM_PAGE_WRITABLE (1ULL << 1)
-#define VMM_PAGE_USER (1ULL << 2)
-#define VMM_PAGE_COW (1ULL << 9)
-#define VMM_PAGE_SWAPENT (1ULL << 10)
-#define VMM_PAGE_ANON (1ULL << 11)
-#define VMM_PAGE_SHARED (1ULL << 52)
-#define VMM_PAGE_DEVICE (1ULL << 53)
-#define VMM_PAGE_NX (1ULL << 63)
+#define VMM_PAGE_PRESENT ARCH_PTE_PRESENT
+#define VMM_PAGE_WRITABLE ARCH_PTE_WRITABLE
+#define VMM_PAGE_USER ARCH_PTE_USER
+#define VMM_PAGE_COW ARCH_PTE_COW
+#define VMM_PAGE_SWAPENT ARCH_PTE_SWAPENT
+#define VMM_PAGE_ANON ARCH_PTE_ANON
+#define VMM_PAGE_SHARED ARCH_PTE_SHARED
+#define VMM_PAGE_DEVICE ARCH_PTE_DEVICE
+#define VMM_PAGE_NX ARCH_PTE_NX
 
 void vmm_init(void);
 bool vmm_init_cpu(void);

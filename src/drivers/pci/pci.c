@@ -1,3 +1,4 @@
+#include <arch/x86_64/include/portio.h>
 #include "pci.h"
 #include "../../kernel/sync/spinlock.h"
 static spinlock_t pci_lock = SPINLOCK_INIT;
@@ -12,23 +13,6 @@ static uint64_t pci_read_bar_locked(uint8_t bus, uint8_t slot, uint8_t function,
 #define PCI_HEADER_MULTI 0x80
 #define PCI_BAR_IO 0x01
 #define PCI_BAR_MEMORY_64 0x04
-
-static inline void outl(uint16_t port, uint32_t value)
-{
-    __asm__ volatile("outl %0,%1" ::"a"(value), "Nd"(port));
-}
-
-static inline void outw(uint16_t port, uint16_t value)
-{
-    __asm__ volatile("outw %0,%1" ::"a"(value), "Nd"(port));
-}
-
-static inline uint32_t inl(uint16_t port)
-{
-    uint32_t value;
-    __asm__ volatile("inl %1,%0" : "=a"(value) : "Nd"(port));
-    return value;
-}
 
 static uint32_t pci_read_config32_locked(uint8_t bus, uint8_t slot, uint8_t function,
                                          uint8_t offset)
@@ -224,7 +208,7 @@ void pci_write_config8(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offs
     uint64_t flags = spin_lock_irqsave(&pci_lock);
     uint32_t address = 0x80000000U | ((uint32_t)bus << 16) | ((uint32_t)slot << 11) | ((uint32_t)function << 8) | (offset & 0xFC);
     outl(PCI_CONFIG_ADDRESS, address);
-    __asm__ volatile("outb %0,%1" ::"a"(value), "Nd"((uint16_t)(PCI_CONFIG_DATA + (offset & 3))));
+    outb((uint16_t)(PCI_CONFIG_DATA + (offset & 3)), value);
     spin_unlock_irqrestore(&pci_lock, flags);
 }
 void pci_write_config16(uint8_t bus, uint8_t slot, uint8_t function, uint8_t offset, uint16_t value)

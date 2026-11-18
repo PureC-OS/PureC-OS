@@ -1,3 +1,5 @@
+#include <arch/arch.h>
+#include <arch/x86_64/include/portio.h>
 #include "vbox_mouse.h"
 #include "ps2_mouse.h"
 #include "../pci/pci.h"
@@ -71,11 +73,6 @@ static void probe_visitor(const struct pci_device_info *device, void *context)
     }
 }
 
-static inline void outl(uint16_t port, uint32_t value)
-{
-    __asm__ volatile("outl %0,%1" ::"a"(value), "Nd"(port) : "memory");
-}
-
 static int32_t submit(uint32_t type, uint32_t size)
 {
     struct vmmdev_header *header = (struct vmmdev_header *)req_virt;
@@ -85,9 +82,9 @@ static int32_t submit(uint32_t type, uint32_t size)
     header->rc = -1;
     header->reserved1 = 0;
     header->requestor = 0;
-    __asm__ volatile("" ::: "memory");
+    arch_compiler_barrier();
     outl(io_base, (uint32_t)req_phys);
-    __asm__ volatile("" ::: "memory");
+    arch_compiler_barrier();
     return ((volatile struct vmmdev_header *)req_virt)->rc;
 }
 

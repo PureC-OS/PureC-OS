@@ -1,3 +1,4 @@
+#include <arch/x86_64/include/portio.h>
 #include "ata_pio.h"
 
 #include "../../lib/string.h"
@@ -48,30 +49,6 @@ static struct ata_device devices[ATA_DEVICE_LIMIT];
 static uint8_t device_count;
 static uint8_t selected_device = ATA_NO_DEVICE;
 static bool probe_complete;
-
-static inline void outb(uint16_t port, uint8_t value)
-{
-    __asm__ volatile("outb %0,%1" ::"a"(value), "Nd"(port));
-}
-
-static inline uint8_t inb(uint16_t port)
-{
-    uint8_t value;
-    __asm__ volatile("inb %1,%0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-
-static inline uint16_t inw(uint16_t port)
-{
-    uint16_t value;
-    __asm__ volatile("inw %1,%0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-
-static inline void outw(uint16_t port, uint16_t value)
-{
-    __asm__ volatile("outw %0,%1" ::"a"(value), "Nd"(port));
-}
 
 static void delay_400ns(const struct ata_device *device)
 {

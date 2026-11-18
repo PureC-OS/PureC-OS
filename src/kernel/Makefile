@@ -1,13 +1,16 @@
 ROOT_DIR ?= $(abspath ../..)
 include $(ROOT_DIR)/mk/toolchain.mk
 include $(ROOT_DIR)/src/kernel/kconfig
+ifneq ($(KERNEL_ARCH),$(ARCH))
+$(error KERNEL_ARCH=$(KERNEL_ARCH) does not match ARCH=$(ARCH))
+endif
 OBJ_DIR := $(BIN_DIR)/obj/kernel
 KERNEL_DIR := $(BIN_DIR)/kernel
 TARGET := $(KERNEL_DIR)/kernel-limine.elf
 FALLBACK := $(KERNEL_DIR)/kernel-fallback.elf
 KERNEL_MAP := $(KERNEL_DIR)/kernel.map
 KERNEL_LD_MAP := $(KERNEL_DIR)/kernel-limine.ld.map
-LINKER_SCRIPT := $(ROOT_DIR)/linker-limine.ld
+LINKER_SCRIPT := $(ARCH_LINKER_SCRIPT)
 ACPI_DIR := $(ROOT_DIR)/acpi
 ACPI_REPO ?= https://github.com/PureC-OS/PureC-OS-ACPI.git
 ACPI_SOURCES := acpi/src/acpi.c acpi/src/acpi_s5.c acpi/src/acpi_power.c acpi/src/uacpi_glue.c acpi/src/uacpi_heap.c acpi/src/acpi_ec.c acpi/src/acpi_battery.c acpi/src/acpi_sensors.c \
@@ -37,16 +40,13 @@ CPPFLAGS += -I$(ATH9K_DIR)/include
 DOT11_DIR := $(ROOT_DIR)/src/net/802.11
 CPPFLAGS += -I$(DOT11_DIR)/include -I$(ROOT_DIR)/src
 
-C_SOURCES := \
+C_SOURCES := $(ARCH_C_SOURCES) \
 	boot/boot.c \
 	kernel/core/kernel.c \
 	kernel/core/init.c \
 	kernel/core/system_info.c \
 	kernel/smp/cpu.c \
 	kernel/smp/percpu.c \
-	kernel/smp/smp.c \
-	kernel/smp/lapic.c \
-	kernel/smp/cpufreq.c \
 	kernel/sync/mutex.c \
 	kernel/process/process.c \
 	kernel/process/program_alias.c \
@@ -81,16 +81,10 @@ C_SOURCES := \
 	mm/oom/oom_slab.c \
 	mm/oom/oom_gate.c \
 	mm/oom/oom_info.c \
-	arch/x86_64/gdt/c/gdt.c \
-	arch/x86_64/idt/c/idt.c \
-	arch/x86_64/fpu/fpu.c \
-	arch/x86_64/mmio.c \
 	kernel/syscall/syscall.c \
 	kernel/syscall/sudo.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \
-	drivers/interrupts/pic.c \
-	drivers/interrupts/timer.c \
 	drivers/display/fb.c \
 	drivers/display/gop.c \
 	drivers/display/display_owner.c \
@@ -178,12 +172,7 @@ C_SOURCES := \
 	drivers/audio/audio.c \
 	kernel/devices/device_manager.c
 CPP_SOURCES :=
-ASM_SOURCES := \
-	arch/x86_64/gdt/asm/gdt.asm \
-	arch/x86_64/idt/asm/idt.asm \
-	arch/x86_64/smp.asm \
-	arch/x86_64/scheduler.asm \
-	arch/x86_64/user.asm
+ASM_SOURCES := $(ARCH_ASM_SOURCES)
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPP_OBJECTS := $(CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
@@ -248,4 +237,4 @@ $(OBJ_DIR)/%.o: $(ROOT_DIR)/src/%.cpp
 
 $(OBJ_DIR)/%.asm.o: $(ROOT_DIR)/src/%.asm
 	@mkdir -p $(@D)
-	$(NASM) -f elf64 $< -o $@
+	$(NASM) -f $(ARCH_NASM_FORMAT) $(ARCH_NASM_FLAGS) $< -o $@

@@ -1,3 +1,4 @@
+#include <arch/x86_64/include/portio.h>
 #include "audio.h"
 #include "audio_hda.h"
 #include "../../kernel/core/system_info.h"
@@ -66,16 +67,6 @@ static const uint16_t test_durations_ms[] = {
     90,
     120
 };
-
-static inline void outb(uint16_t port, uint8_t value) {
-    __asm__ volatile("outb %0,%1"::"a"(value),"Nd"(port));
-}
-
-static inline uint8_t inb(uint16_t port) {
-    uint8_t value;
-    __asm__ volatile("inb %1,%0":"=a"(value):"Nd"(port));
-    return value;
-}
 
 static uint8_t clamp_volume(uint8_t volume) {
     return volume > 100 ? 100 : volume;

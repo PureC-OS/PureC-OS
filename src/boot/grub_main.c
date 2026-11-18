@@ -1,11 +1,11 @@
-#include "../drivers/serial/serial.h"
-#include "../drivers/display/vga.h"
-#include "../drivers/display/gop.h"
-#include "../drivers/interrupts/pic.h"
-#include "../drivers/mouse/ps2_mouse.h"
+#include <arch/arch.h>
+#include <drivers/serial/serial.h>
+#include <drivers/display/vga.h>
+#include <drivers/display/gop.h>
+#include <drivers/mouse/ps2_mouse.h>
 #include "../arch/x86_64/gdt.h"
 #include "../arch/x86_64/idt.h"
-#include "../kernel/syscall/syscall.h"
+#include <kernel/syscall/syscall.h>
 #include <stdint.h>
 
 // helper для int 0x80
@@ -47,8 +47,7 @@ void kernel_main_grub(uint32_t magic, uint32_t *mbi) {
         serial_write_string("[GOP] no FB, using VGA text\n");
     }
 
-    pic_remap(0x20, 0x28);
-    pic_mask_all();
+    arch_interrupts_early_init();
     serial_write_string("[PIC] remapped to 0x20/0x28, masked\n");
 
     gdt_init();
@@ -65,13 +64,13 @@ void kernel_main_grub(uint32_t magic, uint32_t *mbi) {
     if(gop_is_available()) gop_write("[MOUSE] PS/2 ready\n");
     vga_write("[MOUSE] ready\n");
 
-    __asm__ volatile("sti");
+    arch_irq_enable();
     serial_write_string("[INT] sti\n");
     vga_write("[INT] sti\n");
 
     serial_write_string("[TEST] int3\n");
     vga_write("int3 test...\n");
-    __asm__ volatile("int3");
+    arch_breakpoint();
     serial_write_string("[OK] int3 handled\n");
     vga_write("[OK] int3 handled\n");
     if(gop_is_available()) gop_write("[OK] int3 handled\n");
@@ -126,5 +125,5 @@ void kernel_main_grub(uint32_t magic, uint32_t *mbi) {
     }
 
     // halt
-    for(;;) __asm__ volatile("cli; hlt");
+    arch_cpu_stop();
 }

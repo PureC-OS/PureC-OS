@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "svga3d.h"
 #include "svga.h"
 #include "gop.h"
@@ -313,7 +314,7 @@ static bool cb_wait(uint32_t index) {
     struct cb_header *h = cb_hdr(index);
     uint64_t start = klog_uptime_us();
     while (h->status == CB_STATUS_NONE) {
-        __asm__ volatile("pause");
+        arch_cpu_relax();
         if (klog_uptime_us() - start > CB_TIMEOUT_US) {
             d.failed = true;
             status_set("svga3d: command buffer timeout");

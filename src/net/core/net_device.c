@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "net_device.h"
 #include "../../lib/string.h"
 
@@ -15,7 +16,7 @@ static uint32_t device_count;
 
 static void queue_lock(struct net_rx_queue *queue){
     while(__atomic_test_and_set(&queue->locked,__ATOMIC_ACQUIRE))
-        __asm__ volatile("pause");
+        arch_cpu_relax();
 }
 
 static void queue_unlock(struct net_rx_queue *queue){
