@@ -63,3 +63,7 @@
 [submodule "PureC-OS-LibGui"]
 	path = PureC-OS-LibGui
 	url = https://github.com/PureC-OS/PureC-OS-LibGui.git
+
+[submodule "PureC-OS-File-Manager"]
+	path = programs/PureC-OS-File-Manager
+	url = https://github.com/pablaofficeal/PureC-OS-File-Manager.git
