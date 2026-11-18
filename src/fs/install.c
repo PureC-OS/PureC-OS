@@ -383,7 +383,7 @@ static int32_t install_header_module(const struct header_module *entry)
 {
     const void *data;
     uint64_t size;
-    if (!boot_get_module(entry->module, &data, &size) || !data || !size || size > UINT32_MAX)
+    if (!boot_get_module(entry->module, &data, &size) || (!data && size) || size > UINT32_MAX)
     {
         klogf(entry->required ? KLOG_ERROR : KLOG_INFO,
               "install: header module %s missing (%s)",
@@ -595,7 +595,7 @@ static int32_t install_manifest_pass(bool dry_run, install_progress_callback cal
         {
             const void *probe;
             uint64_t probe_size;
-            bool present = boot_get_module(module, &probe, &probe_size) && probe && probe_size && probe_size <= UINT32_MAX;
+            bool present = boot_get_module(module, &probe, &probe_size) && (probe || !probe_size) && probe_size <= UINT32_MAX;
             if (required && !present)
             {
                 klogf(KLOG_ERROR, "install: manifest preflight missing %s",
