@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "krandom.h"
 #include "../../drivers/random/random_abi.h"
 #include "../devices/device_manager.h"
@@ -14,25 +15,17 @@ static random_reseed_fn module_reseed;
 static bool module_tried;
 static uint64_t fallback_state;
 
-static uint64_t read_tsc(void) {
-  uint32_t low, high;
-  __asm__ volatile("rdtsc" : "=a"(low), "=d"(high));
-  return ((uint64_t)high << 32) | low;
+static uint64_t read_tsc(void)
+{
+    return arch_read_timestamp();
 }
 
 static bool hardware_random(uint64_t *value) {
-  uint32_t eax = 1, ebx, ecx = 0, edx;
-  __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "+c"(ecx), "=d"(edx));
-  if (!(ecx & (1U << 30)))
+  if (!arch_hw_random_available())
     return false;
   for (int attempt = 0; attempt < 10; attempt++) {
-    uint64_t result;
-    unsigned char ok;
-    __asm__ volatile("rdrand %0; setc %1" : "=r"(result), "=qm"(ok));
-    if (ok) {
-      *value = result;
+    if (arch_hw_random_u64(value))
       return true;
-    }
   }
   return false;
 }

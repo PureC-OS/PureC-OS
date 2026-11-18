@@ -1,9 +1,11 @@
 #include "include/ext2_types.h"
+#include "include/ext2_bcache.h"
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_format.h"
 #include "../../io/storage/block_device.h"
 #include "../../lib/string.h"
+#include "../../kernel/random/krandom.h"
 
 int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors);
 
@@ -21,44 +23,106 @@ static bool write_zero_sectors(uint32_t lba, uint32_t count)
     }
     return true;
 }
-int32_t ext2_format_device_impl(const char *device_name, const char *serial_confirmation, const char *erase_confirmation)
+static int32_t check_target(const char *device_name, const char *serial_confirmation,
+                            const char *erase_confirmation, int32_t *index)
 {
     if (!device_name || !serial_confirmation || !erase_confirmation)
-    {
         return -3;
-    }
     int32_t idx = block_device_find(device_name);
     if (idx < 0)
-    {
         return -2;
-    }
     struct storage_device_info info;
     if (!block_device_get_info((uint32_t)idx, &info))
-    {
         return -3;
-    }
     if (!info.operational || !info.writable)
-    {
         return -10;
-    }
-    if (!info.serial[0] || strcmp(info.serial, serial_confirmation) != 0 || strcmp(erase_confirmation, "ERASE") != 0)
-    {
+    if (!info.serial[0] || strcmp(info.serial, serial_confirmation) != 0 ||
+        strcmp(erase_confirmation, "ERASE") != 0)
         return -11;
-    }
     if (info.sector_size != BLOCK_SECTOR_SIZE)
-    {
         return -8;
-    }
+    *index = idx;
+    return 0;
+}
+
+static bool root_on(const char *device_name)
+{
+    struct ext2_volume *vol = ext2_volume();
+    return vol->mounted && strcmp(block_device_name(), device_name) == 0;
+}
+
+static int32_t format_selected(int32_t idx, uint32_t lba, uint32_t sectors)
+{
+    int32_t previous = block_device_find(block_device_name());
+    ext2_bcache_reset(true);
     if (!block_device_select((uint32_t)idx))
-    {
         return -3;
-    }
-    uint32_t total_blocks = (uint32_t)info.sector_count / (1024 / BLOCK_SECTOR_SIZE);
-    if (total_blocks < 1024)
-    {
+    int32_t result = ext2_format_at(lba, sectors);
+    if (previous >= 0)
+        (void)block_device_select((uint32_t)previous);
+    return result;
+}
+
+int32_t ext2_format_device_impl(const char *device_name, const char *serial_confirmation, const char *erase_confirmation)
+{
+    int32_t idx;
+    int32_t rc = check_target(device_name, serial_confirmation, erase_confirmation, &idx);
+    if (rc < 0)
+        return rc;
+    if (root_on(device_name))
+        return -12;
+    struct storage_device_info info;
+    if (!block_device_get_info((uint32_t)idx, &info))
+        return -3;
+    if (info.sector_count / (1024 / BLOCK_SECTOR_SIZE) < 1024)
         return -13;
-    }
-    return ext2_format_at(0, info.sector_count);
+    return format_selected(idx, 0, (uint32_t)(info.sector_count > 0xFFFFFFFFULL ? 0xFFFFFFFFULL : info.sector_count));
+}
+
+static uint64_t le64(const uint8_t *p)
+{
+    uint64_t v = 0;
+    for (int i = 7; i >= 0; i--)
+        v = (v << 8) | p[i];
+    return v;
+}
+
+static uint32_t le32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
+int32_t ext2_format_partition(const char *device_name, uint32_t number, const char *serial_confirmation,
+                              const char *erase_confirmation)
+{
+    int32_t idx;
+    int32_t rc = check_target(device_name, serial_confirmation, erase_confirmation, &idx);
+    if (rc < 0)
+        return rc;
+    static uint8_t sec[BLOCK_SECTOR_SIZE];
+    if (!block_device_raw_run((uint32_t)idx, false, 1, sec, 1) || memcmp(sec, "EFI PART", 8) != 0)
+        return -14;
+    uint64_t entries_lba = le64(sec + 72);
+    uint32_t entry_count = le32(sec + 80);
+    uint32_t entry_size = le32(sec + 84);
+    if (entry_size != 128 || !number || number > entry_count || entries_lba > 0xFFFFFFFFULL)
+        return -15;
+    uint32_t per = BLOCK_SECTOR_SIZE / 128;
+    if (!block_device_raw_run((uint32_t)idx, false, (uint32_t)entries_lba + (number - 1) / per, sec, 1))
+        return -3;
+    const uint8_t *entry = sec + ((number - 1) % per) * 128;
+    bool used = false;
+    for (int i = 0; i < 16; i++)
+        if (entry[i])
+            used = true;
+    if (!used)
+        return -15;
+    uint64_t first = le64(entry + 32), last = le64(entry + 40);
+    if (last < first || last > 0xFFFFFFFFULL)
+        return -16;
+    if (root_on(device_name) && ext2_volume()->partition_lba == (uint32_t)first)
+        return -12;
+    return format_selected(idx, (uint32_t)first, (uint32_t)(last - first + 1));
 }
 
 int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors)
@@ -121,8 +185,13 @@ int32_t ext2_format_at(uint32_t part_lba, uint32_t part_sectors)
     sb[56] = 0x53;
     sb[57] = 0xEF;
     ext2_write_u16(sb + 58, 1);
+    ext2_write_u32(sb + 76, 1);
+    ext2_write_u32(sb + 84, 11);
     ext2_write_u16(sb + 88, 128);
     ext2_write_u32(sb + 92, 1);
+    krandom_fill(sb + 104, 16);
+    sb[104 + 6] = (uint8_t)((sb[104 + 6] & 0x0F) | 0x40);
+    sb[104 + 8] = (uint8_t)((sb[104 + 8] & 0x3F) | 0x80);
 
     uint8_t *blk = ext2_scratch_block();
 

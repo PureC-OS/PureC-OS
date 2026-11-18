@@ -1,3 +1,4 @@
+#include <arch/x86_64/include/portio.h>
 #include "vbe.h"
 #include "gop.h"
 #include "../pci/pci.h"
@@ -26,16 +27,6 @@
 
 #define VBE_ENABLE_ON  0x01
 #define VBE_ENABLE_LFB 0x40
-
-static inline void outw(uint16_t port, uint16_t value){
-    __asm__ volatile("outw %0,%1"::"a"(value),"Nd"(port));
-}
-
-static inline uint16_t inw(uint16_t port){
-    uint16_t value;
-    __asm__ volatile("inw %1,%0":"=a"(value):"Nd"(port));
-    return value;
-}
 
 static void vbe_write(uint16_t index, uint16_t value){
     outw(VBE_INDEX_PORT, index);

@@ -1,0 +1,4 @@
+[Unit]
+Description=Rescue Mode
+Requires=sysinit.target
+After=sysinit.target

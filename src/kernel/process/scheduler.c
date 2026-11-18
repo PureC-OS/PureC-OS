@@ -1,20 +1,21 @@
-#include "scheduler.h"
-#include "../../arch/x86_64/fpu/include/fpu.h"
-#include "../../arch/x86_64/gdt/include/gdt.h"
-#include "../../arch/x86_64/idt/include/idt.h"
-#include "../../drivers/interrupts/timer.h"
-#include "../../lib/string.h"
-#include "../../mm/oom/oom_slab.h"
-#include "../../mm/pmm.h"
-#include "../../mm/vmm.h"
-#include "../diagnostics/klog.h"
-#include "../diagnostics/ksym.h"
-#include "../diagnostics/panic.h"
-#include "../smp/cpu.h"
-#include "../smp/lapic.h"
-#include "../smp/percpu.h"
-#include "../smp/smp.h"
-#include "../sync/spinlock.h"
+#include <arch/arch.h>
+#include <kernel/process/scheduler.h>
+#include <boot/boot_options.h>
+#include <arch/x86_64/fpu/include/fpu.h>
+#include <arch/x86_64/gdt/include/gdt.h>
+#include <arch/x86_64/idt/include/idt.h>
+#include <drivers/interrupts/timer.h>
+#include <lib/string.h>
+#include <mm/oom/oom_slab.h>
+#include <mm/pmm.h>
+#include <mm/vmm.h>
+#include <kernel/diagnostics/klog.h>
+#include <kernel/diagnostics/ksym.h>
+#include <kernel/diagnostics/panic.h>
+#include <kernel/smp/cpu.h>
+#include <kernel/smp/percpu.h>
+#include <kernel/smp/smp.h>
+#include <kernel/sync/spinlock.h>
 
 _Static_assert(sizeof(struct thread) <= 4096,
                "thread node must fit in a single PMM page");
@@ -129,9 +130,11 @@ static uint64_t thread_weight(const struct thread *thread)
   return scheduler_weight(thread->qos);
 }
 
+static bool cpu0_funnel;
+
 static bool eligible(const struct thread *t, uint32_t id)
 {
-  if (t->kernel_only)
+  if (cpu0_funnel && t->kernel_only)
     return id == 0;
   return t->affinity < 0 || t->affinity == (int16_t)id;
 }
@@ -223,7 +226,7 @@ static uint32_t select_cpu(const struct thread *thread, uint32_t here)
   {
     if (eligible(thread, here))
       return here;
-    if (thread->kernel_only)
+    if (cpu0_funnel && thread->kernel_only)
       return 0;
     return thread->affinity >= 0 ? (uint32_t)thread->affinity : here;
   }
@@ -400,18 +403,9 @@ static void validate_switch_target(const struct thread *prev,
   }
 }
 
-#define MSR_FS_BASE 0xC0000100U
 static inline void write_fs_base(uint64_t value)
 {
-#ifndef PUREC_HOST_TEST
-  __asm__ volatile("wrmsr"
-                   :
-                   : "c"(MSR_FS_BASE), "a"((uint32_t)value),
-                     "d"((uint32_t)(value >> 32))
-                   : "memory");
-#else
-  (void)value;
-#endif
+  arch_set_tls_base(value);
 }
 
 void scheduler_set_fs_base(uint64_t base)
@@ -462,7 +456,7 @@ static void thread_trampoline(void)
   finish_switch();
   struct thread *self = scheduler_current_thread();
   if (!self->user_mode)
-    __asm__ volatile("sti" ::: "memory");
+    arch_irq_enable();
   self->entry(self->arg);
   scheduler_exit();
   __builtin_unreachable();
@@ -513,8 +507,10 @@ void scheduler_init(void)
   sleep_head = NULL;
   for (unsigned i = 0; i < THASH_SIZE; i++)
     thash_buckets[i] = NULL;
+  cpu0_funnel = boot_syscalls_cpu0();
   scheduler_init_cpu();
-  klogf(KLOG_OK, "sched: dynamic runqueue, limit=RAM");
+  klogf(KLOG_OK, "sched: dynamic runqueue, limit=RAM, syscalls %s",
+        cpu0_funnel ? "on CPU0 only (syscalls=cpu0)" : "on the calling CPU");
 }
 
 static struct thread *thread_node_alloc(void)
@@ -718,7 +714,7 @@ static int create_thread(void (*entry)(void *), void *arg, const char *name,
   t->qos = SCHED_QOS_DEFAULT;
   t->affinity = affinity;
   t->running_cpu = -1;
-  t->kernel_only = user_mode;
+  t->kernel_only = user_mode && cpu0_funnel;
   t->ticks_remaining = 0;
   t->virtual_runtime = 0;
   t->rq_cpu = -1;
@@ -1542,7 +1538,7 @@ void scheduler_start(void)
   spin_unlock_irqrestore(&runqueue_lock, flags);
   if (gdt_current_cpu_id() == 0)
   {
-    if (lapic_start_timer())
+    if (arch_local_timer_start())
       idt_mask_irq(0);
     smp_release_scheduler();
   }
@@ -1553,21 +1549,23 @@ void scheduler_idle_loop(void)
 {
   for (;;)
   {
-    __asm__ volatile("cli" ::: "memory");
+    arch_irq_disable();
     scheduler_yield();
-    __asm__ volatile("sti; hlt" ::: "memory");
+    arch_cpu_idle();
   }
 }
 
 void scheduler_enter_kernel(void)
 {
+  if (!cpu0_funnel)
+    return;
   struct thread *t = scheduler_current_thread();
   if (!t || !t->user_mode)
     return;
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);
   t->kernel_only = true;
   spin_unlock_irqrestore(&runqueue_lock, flags);
-  if (gdt_current_cpu_id() != 0)
+  if (cpu0_funnel && gdt_current_cpu_id() != 0)
   {
     smp_reschedule_cpu(0);
     scheduler_yield();
@@ -1575,6 +1573,8 @@ void scheduler_enter_kernel(void)
 }
 void scheduler_leave_kernel(void)
 {
+  if (!cpu0_funnel)
+    return;
   struct thread *t = scheduler_current_thread();
   if (!t || !t->user_mode)
     return;

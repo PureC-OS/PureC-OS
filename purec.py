@@ -4,7 +4,7 @@ PureC OS — Build & Setup TUI
 Usage:
     ./purec.py                  interactive menu (arrows / hotkeys / mouse)
     ./purec.py setup [repo]     clone all (or one) external repos
-    ./purec.py build [target]   build (all / kernel / programs / iso / libs / notepad / hexedit / userspace)
+    ./purec.py build [target]   build (all / kernel / programs / iso / libs / userspace)
     ./purec.py run              launch in QEMU
     ./purec.py debug            QEMU debug / run submenu
     ./purec.py clean            remove build artefacts
@@ -126,9 +126,6 @@ REPOS: List[Repo] = [
     Repo("PureC-OS-Userspace", "https://github.com/PureC-OS/PureC-OS-Userspace.git",
          "userspace",          "userspace",
          "Desktop + Ring-3 apps"),
-    Repo("PureC-notepad-OS",   "https://github.com/PureC-OS/PureC-notepad-OS.git",
-         "purec-notepad-os",   "purec-notepad-os/Makefile",
-         "Notepad with GUI & Syscall lib"),
 ]
 
 def _present(r: Repo) -> bool:
@@ -751,8 +748,6 @@ TARGETS = {
     "programs":  (["programs"], "Build Ring-3 programs"),
     "iso":       (["iso"], "Assemble ISO image"),
     "libs":      (["libraries"], "Build libraries"),
-    "notepad":   (["notepad"], "Build PureC Notepad"),
-    "hexedit":   (["hexedit"], "Build HexEdit"),
     "userspace": (["userspace"], "Build Userspace"),
 }
 

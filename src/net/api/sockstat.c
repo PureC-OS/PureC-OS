@@ -121,8 +121,6 @@ static void list_tcp(struct cursor *c)
     e->remote_port = info.remote_port;
     e->recv_queue = info.bytes_unread;
     e->send_queue = info.bytes_unsent;
-    if (info.device)
-      strncpy(e->device, info.device, sizeof(e->device) - 1);
     if (info.orphan)
     {
       e->flags |= NET_SOCK_FLAG_ORPHAN;

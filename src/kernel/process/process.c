@@ -1,3 +1,4 @@
+#include "../ipc/pty.h"
 #include "../sync/mutex.h"
 static mutex_t process_mutex;
 #include "../../drivers/display/gop.h"
@@ -16,7 +17,6 @@ static mutex_t process_mutex;
 #include "../../mm/shm.h"
 #include "../../mm/vmm.h"
 #include "../../net/transport/tcp.h"
-#include "../../userspace/window_manager.h"
 #include "../diagnostics/klog.h"
 #include "../diagnostics/panic.h"
 #include "../syscall/syscall.h"
@@ -154,7 +154,9 @@ static bool spawn_load_image(const char *requested, struct spawn_image *out)
   out->path[sizeof(out->path) - 1] = 0;
   const void *ram = 0;
   uint32_t ram_size = 0;
-  if (initramfs_find(path, &ram, &ram_size))
+  struct file_stat_info disk = {0};
+  bool on_disk = vfs_root_on_disk() && vfs_stat(path, &disk) >= 0 && !disk.is_directory && disk.size;
+  if (!on_disk && initramfs_find(path, &ram, &ram_size))
   {
     out->data = ram;
     out->size = ram_size;
@@ -584,6 +586,15 @@ static uint32_t spawn_parent_pid(const struct process *self)
 }
 
 static bool session_active;
+
+static bool process_on_text_console(const struct process *process)
+{
+  int32_t pty_id;
+  bool master;
+  if (process->descriptors[0] < 0 || !ofd_pty_info(process->descriptors[0], &pty_id, &master) || master)
+    return false;
+  return pty_is_kernel(pty_id);
+}
 static uint32_t session_uid;
 static uint32_t session_gid;
 
@@ -680,7 +691,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   process->sig_blocked = 0;
   process->uid = parent ? parent->uid : 0;
   process->gid = parent ? parent->gid : 0;
-  if (session_active && parent && parent->uid == 0 && parent->pid != 1)
+  if (session_active && parent && parent->uid == 0 && parent->pid != 1 &&
+      !process_on_text_console(parent))
   {
     process->uid = session_uid;
     process->gid = session_gid;
@@ -828,10 +840,12 @@ int32_t process_spawn_module(const char *path, const char *command_line)
   if (program_alias_resolve(path, &module_path) && module_path)
     spawn_capabilities |= process_path_capabilities(module_path);
   module_path = path;
-  if (initramfs_find(resolved, &initramfs_image, &initramfs_size))
+  struct file_stat_info disk = {0};
+  bool on_disk = vfs_root_on_disk() && vfs_stat(resolved, &disk) >= 0 && !disk.is_directory && disk.size;
+  if (!on_disk && initramfs_find(resolved, &initramfs_image, &initramfs_size))
     return process_spawn_elf(initramfs_image, initramfs_size, name,
                              command_line);
-  if (program_alias_resolve(path, &module_path) &&
+  if (!on_disk && program_alias_resolve(path, &module_path) &&
       initramfs_find(module_path, &initramfs_image, &initramfs_size))
     return process_spawn_elf(initramfs_image, initramfs_size, name,
                              command_line);
@@ -1691,9 +1705,7 @@ static void process_terminate(int32_t status, int32_t signal)
         child->waiter_thread_id = -1;
       }
     }
-    window_manager_unregister(process->pid);
     display_owner_release(process->pid);
-    gop_console_release(process->pid);
     tty_process_exit(process->pid);
     tcp_release_owner(process->pid);
     fd_close_all(process);
@@ -2172,7 +2184,6 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   uint64_t old_pages = vmm_user_page_count(old_space);
   fd_close_on_exec(process);
   signal_exec_reset(process);
-  window_manager_unregister(process->pid);
   display_owner_release(process->pid);
   struct thread *thread = scheduler_current_thread();
   process->address_space = new_space;

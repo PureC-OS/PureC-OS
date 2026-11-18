@@ -1,4 +1,5 @@
 #include "../ipc/pty.h"
+#include "../tty/vtcon.h"
 #include "fdtable.h"
 #include "../../fs/vfs.h"
 #include "../../lib/string.h"
@@ -160,11 +161,61 @@ int32_t fd_vfs_handle(int32_t fd)
   return object < 0 ? -1 : ofd_vfs_handle(object);
 }
 
+static bool open_tty(const char *path, uint32_t flags, int32_t *result)
+{
+  if (strcmp(path, "/dev/tty") == 0)
+  {
+    int32_t object = object_get(0);
+    int32_t id;
+    bool master;
+    if (object < 0 || !ofd_pty_info(object, &id, &master) || master)
+      *result = -KERR_NODEV;
+    else
+      *result = fd_dup(0, 0, (flags & O_CLOEXEC_FLAG) != 0);
+    return true;
+  }
+  int32_t index = vtcon_open_index(path);
+  if (index == -2)
+    return false;
+  int32_t pty_id = index < 0 ? -1 : vtcon_pty(index);
+  if (pty_id < 0)
+  {
+    *result = -KERR_NODEV;
+    return true;
+  }
+  struct process *self = process_current();
+  if (self && self->uid != 0)
+  {
+    int32_t own = object_get(0);
+    int32_t own_id;
+    bool own_master;
+    if (own < 0 || !ofd_pty_info(own, &own_id, &own_master) || own_master || own_id != pty_id)
+    {
+      *result = -KERR_ACCES;
+      return true;
+    }
+  }
+  int32_t object = ofd_create_pty(pty_id, false);
+  if (object < 0)
+  {
+    *result = object;
+    return true;
+  }
+  vtcon_note_open(index);
+  if (flags & 04000U)
+    (void)ofd_flags_set(object, 04000U);
+  *result = fd_install_ofd(object, flags & O_CLOEXEC_FLAG);
+  return true;
+}
+
 int32_t fd_open(const char *path, uint32_t flags)
 {
   struct process *process = process_current();
   if (!process)
     return -KERR_BADF;
+  int32_t tty;
+  if (path && strncmp(path, "/dev/", 5) == 0 && open_tty(path, flags, &tty))
+    return tty;
   if (!filesystem_syscall_acquire())
     return -KERR_AGAIN;
   int32_t handle = vfs_open_flags(path, flags);

@@ -11,6 +11,8 @@
 #include "include/hosted/utime.h"
 #include "include/hosted/sys/utsname.h"
 #include "include/hosted/unistd.h"
+#include "include/hosted/termios.h"
+#include <stdbool.h>
 #include "include/purec.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -157,6 +159,59 @@ int setpgid(pid_t pid, pid_t group)
 
 pid_t getpgrp(void) { return getpid(); }
 
+pid_t getpgid(pid_t pid) { return pid ? pid : getpid(); }
+
+pid_t getsid(pid_t pid) { return pid ? pid : getpid(); }
+
+pid_t setsid(void) { return getpid(); }
+
+char *getpass(const char *prompt)
+{
+    static char buffer[256];
+    int fd = open("/dev/tty", O_RDWR);
+    bool own = fd >= 0;
+    if (!own)
+        fd = 0;
+    if (prompt)
+        write(own ? fd : 2, prompt, strlen(prompt));
+    struct termios saved, quiet;
+    bool raw = tcgetattr(fd, &saved) == 0;
+    if (raw) {
+        quiet = saved;
+        quiet.c_lflag &= ~(tcflag_t)ECHO;
+        tcsetattr(fd, TCSAFLUSH, &quiet);
+    }
+    size_t n = 0;
+    char c;
+    while (read(fd, &c, 1) == 1 && c != '\n' && c != '\r')
+        if (n + 1 < sizeof(buffer))
+            buffer[n++] = c;
+    buffer[n] = 0;
+    if (raw)
+        tcsetattr(fd, TCSAFLUSH, &saved);
+    write(own ? fd : 2, "\n", 1);
+    if (own)
+        close(fd);
+    return buffer;
+}
+
+int setitimer(int which, const struct itimerval *value, struct itimerval *old)
+{
+    (void)which;
+    (void)value;
+    if (old)
+        memset(old, 0, sizeof(*old));
+    return 0;
+}
+
+int getitimer(int which, struct itimerval *value)
+{
+    (void)which;
+    if (value)
+        memset(value, 0, sizeof(*value));
+    return 0;
+}
+
 pid_t tcgetpgrp(int fd)
 {
     (void)fd;
@@ -201,7 +256,21 @@ int uname(struct utsname *name)
     memset(name, 0, sizeof(*name));
     strcpy(name->sysname, "PureC");
     strcpy(name->nodename, "purec");
-    strcpy(name->release, "1.2.29");
+    strcpy(name->release, "2.0.0");
+    int32_t rfd = pc_file_open("/sys/kernel/release");
+    if (rfd >= 0)
+    {
+        char rel[sizeof(name->release)];
+        int32_t rn = pc_file_read(rfd, rel, sizeof(rel) - 1);
+        pc_file_close(rfd);
+        while (rn > 0 && (rel[rn - 1] == '\n' || rel[rn - 1] == ' '))
+            rn--;
+        if (rn > 0)
+        {
+            rel[rn] = 0;
+            strcpy(name->release, rel);
+        }
+    }
     strcpy(name->version, "#1 SMP PureC OS");
     strcpy(name->machine, "x86_64");
     char host[64];
@@ -485,8 +554,20 @@ int statvfs(const char *path, struct statvfs *info)
     struct ext2_super_info super;
     if (pc_ext2_super(&super) < 0 || !super.block_size)
     {
-        errno = ENOSYS;
-        return -1;
+        struct memory_monitor_info m;
+        if (!pc_memory_info(&m))
+        {
+            errno = ENOSYS;
+            return -1;
+        }
+        memset(info, 0, sizeof(*info));
+        info->f_bsize = 4096;
+        info->f_frsize = 4096;
+        info->f_blocks = m.total_bytes / 4096;
+        info->f_bfree = m.total_bytes > m.used_bytes ? (m.total_bytes - m.used_bytes) / 4096 : 0;
+        info->f_bavail = info->f_bfree;
+        info->f_namemax = 255;
+        return 0;
     }
     memset(info, 0, sizeof(*info));
     info->f_bsize = super.block_size;

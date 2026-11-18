@@ -26,9 +26,9 @@
 
 ## Где используется
 
-- `src/kernel/syscall/syscall.c:893–906` — системные вызовы чтения символа, спец-клавиши и события (`keyboard_getc`, `keyboard_try_getc`, `keyboard_try_get_special`, `keyboard_try_get_event`).
-- `src/userspace/userspace.c:536` — `keyboard_init()` при инициализации пользовательского режима.
-- `src/userspace/userspace.c:502, 576, 596–606, 682, 698` — опрос из цикла интерфейса и поток, который передаёт символы активному окну.
+- `src/kernel/syscall/syscall.c:2286–2302` — системные вызовы чтения символа, спец-клавиши и события (`keyboard_getc`, `keyboard_try_getc`, `keyboard_try_get_special`, `keyboard_try_get_event`).
+- `src/kernel/tty/vtcon.c:498` — `keyboard_init()` при инициализации виртуальных консолей.
+- `src/kernel/tty/tty.c:226, 268` и `src/kernel/tty/vtcon.c:736` — `keyboard_poll()` из слоя TTY и цикла виртуальной консоли.
 
 ## Инициализация (`keyboard_init`)
 

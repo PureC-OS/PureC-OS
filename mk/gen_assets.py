@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import os
+import subprocess
 import shutil
 import sys
 
 MANIFEST_NAME = "manifest.txt"
 
 
-def cpio_newc_entry(name, data):
+def cpio_newc_entry(name, data, ino=0, nlink=1):
     encoded_name = name.encode("utf-8") + b"\0"
-    header = ("070701" + "%08x" % 0 + "%08x" % 0o100644 +
-              "%08x" % 0 + "%08x" % 0 + "%08x" % 1 + "%08x" % 0 +
+    header = ("070701" + "%08x" % ino + "%08x" % 0o100644 +
+              "%08x" % 0 + "%08x" % 0 + "%08x" % nlink + "%08x" % 0 +
               "%08x" % len(data) + "%08x" % 0 + "%08x" % 0 +
               "%08x" % 0 + "%08x" % 0 + "%08x" % len(encoded_name) +
               "%08x" % 0).encode("ascii")
@@ -21,12 +23,74 @@ def cpio_newc_entry(name, data):
     return result
 
 
-def write_initramfs(path, files):
+def find_strip():
+    for tool in (os.environ.get("STRIP"), "x86_64-elf-strip", "strip"):
+        if tool and shutil.which(tool):
+            return tool
+    return None
+
+
+def strippable(name, data):
+    if data[:4] != b"\x7fELF":
+        return False
+    if name.startswith("/lib/modules/") or name.endswith((".o", ".a", ".ko")):
+        return False
+    return True
+
+
+def stripped(tool, source, data, cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    key = hashlib.sha1(data).hexdigest()
+    out = os.path.join(cache_dir, key)
+    if not os.path.isfile(out):
+        tmp = out + ".tmp"
+        try:
+            subprocess.run([tool, "--strip-debug", "-o", tmp, source],
+                           check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.replace(tmp, out)
+        except (OSError, subprocess.CalledProcessError):
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            return data
+    with open(out, "rb") as handle:
+        return handle.read()
+
+
+def write_initramfs(path, files, cache_dir):
+    tool = find_strip()
+    contents = {}
+    for name, source in files.items():
+        with open(source, "rb") as input_file:
+            data = input_file.read()
+        if tool and strippable(name, data):
+            data = stripped(tool, source, data, cache_dir)
+        contents[name] = data
+    groups = {}
+    for name, data in contents.items():
+        groups.setdefault(hashlib.sha1(data).digest(), []).append(name)
+    inode = {}
+    links = {}
+    next_ino = 1
+    for names in groups.values():
+        if len(names) > 1 and contents[names[0]]:
+            for n in names:
+                inode[n] = next_ino
+                links[n] = len(names)
+            next_ino += 1
+    written = set()
+    saved = 0
     with open(path, "wb") as handle:
-        for name, source in files.items():
-            with open(source, "rb") as input_file:
-                handle.write(cpio_newc_entry(name.lstrip("/"), input_file.read()))
+        for name, data in contents.items():
+            ino = inode.get(name, 0)
+            if ino and ino in written:
+                handle.write(cpio_newc_entry(name.lstrip("/"), b"", ino, links[name]))
+                saved += len(data)
+                continue
+            if ino:
+                written.add(ino)
+            handle.write(cpio_newc_entry(name.lstrip("/"), data, ino, links.get(name, 1)))
         handle.write(cpio_newc_entry("TRAILER!!!", b""))
+    return saved
 
 
 def parse_manifest(path):
@@ -76,6 +140,7 @@ def main():
     parser.add_argument("--iso", required=True)
     parser.add_argument("--staged", required=True)
     parser.add_argument("--modules")
+    parser.add_argument("--stage")
     args = parser.parse_args()
 
     manifest_path = os.path.join(args.root, "assets", MANIFEST_NAME)
@@ -99,15 +164,38 @@ def main():
         shutil.copyfile(src, dst)
         staged_modules[module] = True
         initramfs_files[module] = src
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest_text = handle.read()
+    if args.stage:
+        generated = ["", "# --- generated from the package staging root: %s ---" % args.stage]
+        known = {entry["module"] for entry in entries}
+        for base, dirs, names in os.walk(args.stage):
+            dirs.sort()
+            for name in sorted(names):
+                full = os.path.join(base, name)
+                module = "/" + os.path.relpath(full, args.stage).replace(os.sep, "/")
+                if module in known:
+                    raise SystemExit("staging file %s duplicates a manifest entry" % module)
+                known.add(module)
+                stage_rel = os.path.relpath(full, args.root)
+                generated.append("%s %s - 1 %s" % (module, module, stage_rel))
+                initramfs_files[module] = full
+                dst = os.path.join(args.iso, module.lstrip("/"))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copyfile(full, dst)
+                staged_modules[module] = True
+        manifest_text = manifest_text.rstrip("\n") + "\n" + "\n".join(generated) + "\n"
     staged_manifest = os.path.join(args.staged, MANIFEST_NAME)
-    shutil.copyfile(manifest_path, staged_manifest)
+    with open(staged_manifest, "w", encoding="utf-8") as handle:
+        handle.write(manifest_text)
     iso_manifest = os.path.join(args.iso, MANIFEST_NAME)
-    shutil.copyfile(manifest_path, iso_manifest)
+    shutil.copyfile(staged_manifest, iso_manifest)
     staged_modules["/" + MANIFEST_NAME] = True
     initramfs_files["/" + MANIFEST_NAME] = staged_manifest
 
     initramfs_path = os.path.join(args.staged, "initramfs.cpio")
-    write_initramfs(initramfs_path, initramfs_files)
+    linked = write_initramfs(initramfs_path, initramfs_files,
+                             os.path.join(args.staged, "strip-cache"))
     iso_initramfs = os.path.join(args.iso, "boot", "initramfs.cpio")
     os.makedirs(os.path.dirname(iso_initramfs), exist_ok=True)
     shutil.copyfile(initramfs_path, iso_initramfs)
@@ -133,8 +221,9 @@ def main():
     with open(final_conf, "w", encoding="utf-8") as handle:
         handle.write(template.replace("@MODULES@", block))
 
-    print("gen_assets: %d entries, %d files in initramfs (%d KiB)"
-          % (len(entries), len(initramfs_files), os.path.getsize(initramfs_path) // 1024))
+    print("gen_assets: %d entries, %d files in initramfs (%d KiB, %d KiB saved by hard links)"
+          % (len(entries), len(initramfs_files), os.path.getsize(initramfs_path) // 1024,
+             linked // 1024))
 
 
 if __name__ == "__main__":

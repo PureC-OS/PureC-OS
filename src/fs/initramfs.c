@@ -13,6 +13,8 @@ struct initramfs_entry {
   uint32_t path_length;
   const void *data;
   uint32_t size;
+  uint32_t ino;
+  uint32_t nlink;
 };
 
 static const uint8_t *archive;
@@ -50,16 +52,18 @@ static bool hex8(const uint8_t *text, uint32_t *value) {
   return true;
 }
 
-static bool next_entry(uint32_t *offset, const char **name, uint32_t *name_size,
-                       const void **data, uint32_t *data_size) {
+static bool next_entry_links(uint32_t *offset, const char **name, uint32_t *name_size,
+                             const void **data, uint32_t *data_size, uint32_t *ino,
+                             uint32_t *nlink) {
   if (!archive || !offset || *offset > archive_size ||
       archive_size - *offset < CPIO_HEADER_SIZE)
     return false;
   const uint8_t *header = archive + *offset;
   if (memcmp(header, "070701", 6) && memcmp(header, "070702", 6))
     return false;
-  uint32_t size, namesize;
-  if (!hex8(header + 54, &size) || !hex8(header + 94, &namesize) || !namesize)
+  uint32_t size, namesize, inode, links;
+  if (!hex8(header + 54, &size) || !hex8(header + 94, &namesize) || !namesize ||
+      !hex8(header + 6, &inode) || !hex8(header + 38, &links))
     return false;
   uint64_t name_at = (uint64_t)*offset + CPIO_HEADER_SIZE;
   uint64_t data_at = (uint64_t)align4((uint32_t)(name_at + namesize));
@@ -72,7 +76,44 @@ static bool next_entry(uint32_t *offset, const char **name, uint32_t *name_size,
   *data = archive + data_at;
   *data_size = size;
   *offset = (uint32_t)next;
+  if (ino)
+    *ino = inode;
+  if (nlink)
+    *nlink = links;
   return true;
+}
+
+static bool next_entry(uint32_t *offset, const char **name, uint32_t *name_size,
+                       const void **data, uint32_t *data_size) {
+  return next_entry_links(offset, name, name_size, data, data_size, 0, 0);
+}
+
+static void resolve_links(void) {
+  uint32_t linked = 0;
+  for (uint32_t i = 0; i < file_count; i++) {
+    struct initramfs_entry *e = &file_index[i];
+    if (e->size || e->nlink < 2 || !e->ino)
+      continue;
+    for (uint32_t j = 0; j < file_count; j++) {
+      struct initramfs_entry *t = &file_index[j];
+      if (j != i && t->ino == e->ino && t->size) {
+        e->data = t->data;
+        e->size = t->size;
+        linked++;
+        break;
+      }
+    }
+  }
+  if (linked)
+    klogf(KLOG_INFO, "initramfs: %u hard links resolved", linked);
+}
+
+static uint32_t indexed_size(const char *name, uint32_t length, uint32_t fallback) {
+  uint64_t hash = path_hash(name, length);
+  for (uint32_t i = 0; i < file_count; i++)
+    if (file_index[i].path_length == length && file_index[i].path_hash == hash)
+      return file_index[i].size;
+  return fallback;
 }
 
 bool initramfs_boot_image(const void **data, uint64_t *size) {
@@ -95,10 +136,11 @@ bool initramfs_mount(void) {
   memset(file_index, 0, sizeof(file_index));
   uint32_t offset = 0;
   const char *name;
-  uint32_t namesize, filesize;
+  uint32_t namesize, filesize, ino, nlink;
   const void *filedata;
-  while (next_entry(&offset, &name, &namesize, &filedata, &filesize)) {
+  while (next_entry_links(&offset, &name, &namesize, &filedata, &filesize, &ino, &nlink)) {
     if (namesize == 10 && memcmp(name, "TRAILER!!!", 10) == 0) {
+      resolve_links();
       klogf(KLOG_OK, "initramfs: mounted %u files (%llu KiB)", file_count,
             (unsigned long long)(archive_size / 1024));
       return true;
@@ -111,6 +153,8 @@ bool initramfs_mount(void) {
     file_index[file_count].path_length = namesize;
     file_index[file_count].data = filedata;
     file_index[file_count].size = filesize;
+    file_index[file_count].ino = ino;
+    file_index[file_count].nlink = nlink;
     file_count++;
   }
   archive = 0;
@@ -204,7 +248,7 @@ static int32_t list_common(const char *path, void *entries, uint32_t capacity,
         continue;
       memcpy(out[count].name, base, n);
       out[count].name[n] = 0;
-      out[count].size = child ? filesize : 0;
+      out[count].size = child ? indexed_size(name, namesize, filesize) : 0;
       out[count].attributes = child ? 0 : FS_ATTRIBUTE_DIRECTORY;
       memset(out[count].reserved, 0, 3);
     } else {
@@ -220,7 +264,7 @@ static int32_t list_common(const char *path, void *entries, uint32_t capacity,
         continue;
       memcpy(out[count].name, base, n);
       out[count].name[n] = 0;
-      out[count].size = child ? filesize : 0;
+      out[count].size = child ? indexed_size(name, namesize, filesize) : 0;
       out[count].attributes = child ? 0 : FS_ATTRIBUTE_DIRECTORY;
     }
     count++;

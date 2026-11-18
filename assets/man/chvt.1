@@ -1,0 +1,26 @@
+NAME
+       chvt - switch the active virtual console
+
+SYNOPSIS
+       chvt N
+
+DESCRIPTION
+       chvt makes console N the one shown on the screen and the one that
+       receives the keyboard. Consoles 1-6 are text consoles (/dev/tty1 ..
+       /dev/tty6), console 7 is the screen of a userspace display server
+       while one holds it (SYS_DISPLAY_CLAIM).
+
+       The same switch is available from the keyboard: Ctrl+Alt+F1 .. F6
+       for the text consoles and Ctrl+Alt+F7 for the graphics. While a
+       display server holds the screen, switching to text is refused. On a text
+       console Alt+F1 .. F7 works without Ctrl.
+
+       root may switch to any console. Other users may switch only from a
+       process that runs on a text console.
+
+EXAMPLES
+       chvt 2
+       chvt 7
+
+SEE ALSO
+       tty(1), getty(8), init(8)

@@ -24,6 +24,7 @@
  * which were used as the reference documentation for this implementation.
  */
 
+#include <arch/arch.h>
 #include "iwx_compat.h"
 #include "iwx.h"
 
@@ -326,19 +327,17 @@ static bool iwx_started;
 
 static inline uint64_t iwx_rdtsc(void)
 {
-    uint32_t lo, hi;
-    __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-    return ((uint64_t)hi << 32) | lo;
+    return arch_read_timestamp();
 }
 
 static inline void iwx_pause(void)
 {
-    __asm__ volatile("pause" ::: "memory");
+    arch_cpu_relax();
 }
 
 static inline void iwx_mb(void)
 {
-    __asm__ volatile("mfence" ::: "memory");
+    arch_mb();
 }
 
 static void iwx_calibrate(void)

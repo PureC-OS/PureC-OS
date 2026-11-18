@@ -1,6 +1,7 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include <arch/arch.h>
 
 typedef struct {
   unsigned value;
@@ -8,28 +9,17 @@ typedef struct {
 #define SPINLOCK_INIT {0}
 
 static inline uint64_t irq_save(void) {
-#ifdef PUREC_HOST_TEST
-  return 0;
-#else
-  uint64_t flags;
-  __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
-  return flags;
-#endif
+  return arch_irq_save();
 }
 static inline void irq_restore(uint64_t flags) {
-#ifdef PUREC_HOST_TEST
-  (void)flags;
-#else
-  if (flags & (1ULL << 9))
-    __asm__ volatile("sti" ::: "memory");
-#endif
+  arch_irq_restore(flags);
 }
 static inline void spin_lock(spinlock_t *lock) {
   for (;;) {
     if (!__atomic_exchange_n(&lock->value, 1, __ATOMIC_ACQUIRE))
       return;
     while (__atomic_load_n(&lock->value, __ATOMIC_RELAXED))
-      __asm__ volatile("pause" ::: "memory");
+      arch_cpu_relax();
   }
 }
 static inline void spin_unlock(spinlock_t *lock) {

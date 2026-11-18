@@ -67,7 +67,7 @@
 ## Курсор и отрисовка
 
 - Курсор 32×32 пикселя, белый с чёрной рамкой (`cursor_pixel`). Фон под курсором сохраняется в `bg_buf` (`save_bg`) и восстанавливается перед перемещением (`restore_bg`).
-- Если GOP с backbuffer доступен, курсор передаётся композитору через `compositor_cursor_move`. Без backbuffer курсор рисуется прямо в framebuffer через `gop_put_pixel`, а фон сохраняется в `bg_buf`.
+- Курсор рисуется прямо поверх GOP через `gop_draw_rect` / `gop_put_pixel`, а фон сохраняется в `bg_buf`. Композитора, который забирал бы курсор, в дереве больше нет (удалён 2026-11-15).
 - Перерисовка откладывается, если прерывание пришло во время обновления экрана: флаг `mouse_ui_pending` сбрасывается в `mouse_flush_pending`.
 - Отладочный оверлей (`draw_debug_overlay`) показывает координаты, кнопки, счётчики прерываний и пакетов в шестнадцатеричном виде.
 
@@ -75,8 +75,8 @@
 
 - `src/boot/boot.c` и `src/boot/grub_main.c` — `ps2_mouse_init()` при загрузке.
 - `src/kernel/syscall/syscall.c` — системный вызов `GET_MOUSE` (через `mouse_get_state` и `ps2_mouse_poll`).
-- `src/userspace/userspace.c` — опрос мыши и USB-мыши в цикле, передача размеров экрана через `mouse_set_bounds`.
-- `src/userspace/display_mode.c` — `mouse_set_bounds` после смены режима.
+- `src/kernel/tty/vtcon.c:729–731` — опрос `ps2_mouse_poll()` и `usb_mouse_poll()` в цикле ввода виртуальной консоли.
+- `src/kernel/syscall/syscall.c:1340` — `mouse_set_bounds` после смены режима (`SYS_DISPLAY_SET_MODE`).
 - `src/drivers/usb/xhci.c` — через `usb_mouse_report` попадает в `mouse_handle_relative`.
 - `src/drivers/input/i2c_hid_touchpad/` — движение тачпада через `mouse_handle_relative`.
 

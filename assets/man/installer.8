@@ -1,0 +1,64 @@
+NAME
+       installer - install PureC OS from the live medium to a disk
+
+SYNOPSIS
+       /sbin/installer [--config FILE]
+
+DESCRIPTION
+       A menu installer in the style of archinstall. Run it as root on a text
+       console. The main menu lists every setting with its current value;
+       open any item in any order, change it, come back, then choose Install.
+
+           Disk configuration    sda 20.0 GiB  wipe, default layout
+           Hostname              purec
+           Root password         not set
+           User accounts         none (only root)
+           Profile               Minimal
+           Additional packages   none
+           Timezone              UTC
+           ----------------------------------------
+           Save configuration
+           Install
+           Abort
+
+       Values in red are missing; Install refuses to start until the disk and
+       the root password are set.
+
+KEYS
+       Up/Down (or j/k), Home/End, PgUp/PgDn  move
+       Enter                                  open / select
+       Space                                  toggle (Additional packages)
+       /                                      search in a list (Timezone ...)
+       Esc or q                               back / abort
+
+MENU
+       Disk configuration
+              choose the disk; it is erased and laid out automatically: GPT,
+              EFI partition with Limine, ext2 root, swap on ATA/SATA disks
+       Root password, Hostname, Timezone
+       User accounts
+              Add a user (name, full name, password, superuser = group wheel
+              and sudo); select a user to change the password, promote or
+              demote, delete; Confirm and exit
+       Profile
+              Minimal (text consoles) or Desktop: the package "userspace" is
+              downloaded from GitHub after the base system and graphical.target
+              becomes the default (asks for the repository address when it is
+              not in [trusted] of /etc/pkg/pkg.conf)
+       Additional packages
+              tick packages from the trusted repositories in /etc/pkg/pkg.conf
+       Save configuration
+              write the choices without passwords (default
+              /root/purec-install.conf); --config FILE loads them, passwords
+              are then asked in the menu
+       Install
+              shows a final Yes/No (No is preselected), then the kernel writes
+              the disk with a progress bar, mkinitcpio -u writes root=UUID=,
+              pkg installs the packages, /etc/init/default.target is set and
+              the installer offers to reboot
+
+FILES
+       /etc/pkg/pkg.conf, /etc/init/default.target, /root/purec-install.conf
+
+SEE ALSO
+       pkg(8), init(8), mkinitcpio(8), sudo(8)

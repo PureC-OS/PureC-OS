@@ -1,20 +1,20 @@
-#include "../include/idt.h"
-#include "../../../../drivers/serial/serial.h"
-#include "../../../../drivers/display/fb.h"
-#include "../../../../kernel/syscall/syscall.h"
-#include "../../../../kernel/diagnostics/panic.h"
-#include "../../../../drivers/interrupts/timer.h"
-#include "../../../../kernel/process/scheduler.h"
-#include "../../../../kernel/process/process.h"
-#include "../../../../kernel/process/signal.h"
-#include "../../../../kernel/diagnostics/klog.h"
+#include <arch/x86_64/idt/include/idt.h>
+#include <drivers/serial/serial.h>
+#include <drivers/display/fb.h>
+#include <kernel/syscall/syscall.h>
+#include <kernel/diagnostics/panic.h>
+#include <drivers/interrupts/timer.h>
+#include <kernel/process/scheduler.h>
+#include <kernel/process/process.h>
+#include <kernel/process/signal.h>
+#include <kernel/diagnostics/klog.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include "../../../../mm/vmm.h"
-#include "../../../../kernel/smp/smp.h"
-#include "../../../../kernel/smp/lapic.h"
-#include "../../../../kernel/smp/cpu.h"
-#include "../../gdt/include/gdt.h"
+#include <mm/vmm.h>
+#include <kernel/smp/smp.h>
+#include <arch/x86_64/lapic.h>
+#include <kernel/smp/cpu.h>
+#include <arch/x86_64/gdt/include/gdt.h>
 
 struct idt_entry {
     uint16_t offset_low;

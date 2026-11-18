@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "signal.h"
 #include "../../lib/string.h"
 #include "../../mm/oom/oom_slab.h"
@@ -258,7 +259,7 @@ void signal_deliver(struct syscall_regs *regs) {
 void signal_fault(int32_t sig, struct syscall_regs *regs) {
   struct process *process = process_current();
   uint64_t fault_address;
-  __asm__ volatile("mov %%cr2, %0" : "=r"(fault_address));
+  fault_address = arch_fault_address();
   klogf(KLOG_WARN, "fault: pid=%d signal=%d rip=%llx rsp=%llx cr2=%llx",
         process ? (int)process->pid : -1, (int)sig,
         (unsigned long long)regs->rip, (unsigned long long)regs->rsp,

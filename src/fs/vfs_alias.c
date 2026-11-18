@@ -39,7 +39,6 @@ static const struct alias aliases[] = {
     {"/bin/sound", "/usr/share/sounds", false},
     {"/game/sound", "/usr/share/sounds", false},
     {"/game", "/usr/games", false},
-    {"/walpaper", "/usr/share/wallpapers", false},
     {"/src/demo", "/usr/share/demo", false},
     {"/demo", "/usr/share/demo", false},
     {"/include", "/usr/include", false},

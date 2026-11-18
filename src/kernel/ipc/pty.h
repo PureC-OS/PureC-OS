@@ -9,3 +9,6 @@ int32_t pty_write(int32_t id, bool master, const void *buffer, uint32_t count, b
 int32_t pty_poll(int32_t id, bool master);
 uint64_t pty_generation(int32_t id);
 int64_t pty_ioctl(int32_t id, bool master, uint32_t request, uint64_t argument);
+int32_t pty_create_kernel(int32_t *id, void (*drain)(int32_t id), uint16_t columns, uint16_t rows);
+void pty_set_kernel_winsize(int32_t id, uint16_t columns, uint16_t rows);
+bool pty_is_kernel(int32_t id);

@@ -2,7 +2,7 @@
 
 Драйвер для эмулируемого видеоадаптера с интерфейсом Bochs VBE Dispi (`0xB0C0`–`0xB0C5`). Этот интерфейс отдаёт QEMU (`-vga std`), Bochs и часть совместимых эмуляторов. Драйвер умеет проверить наличие адаптера, узнать объём видеопамяти, найти framebuffer через PCI и переключить видеорежим через порты `0x1CE/0x1CF`.
 
-Драйвер не участвует в загрузке видео: он вызывается из `src/userspace/display_mode.c` по запросу системного вызова смены режима, а при старте только логирует ID адаптера в `kernel.c`.
+Драйвер не участвует в загрузке видео. При старте ядро только логирует ID адаптера (`vbe_debug_id()` в `kernel.c:97–98`). Смену режима в текущем дереве делает SVGA (`SYS_DISPLAY_SET_MODE`, `syscall.c:1321`); функции `vbe_set_mode`, `vbe_framebuffer_phys` и `vbe_map_framebuffer` вне `vbe.c` сейчас не вызываются.
 
 ## Расположение
 
@@ -39,8 +39,8 @@
 
 ## Где используется
 
-- `src/userspace/display_mode.c:32, 114–133` — смена режима по запросу системного вызова (код компилируется в ядро). Порядок вызовов: `vbe_is_available`, `vbe_framebuffer_phys`, `vbe_set_mode`, `vbe_map_framebuffer`.
-- `src/kernel/core/kernel.c:87-88` — лог `vbe_debug_id` при загрузке.
+- `src/drivers/display/vbe.c` — `vbe_set_mode` начинается с проверки `vbe_is_available`; внешних вызовов `vbe_set_mode`, `vbe_framebuffer_phys` и `vbe_map_framebuffer` в дереве нет.
+- `src/kernel/core/kernel.c:97–98` — лог `vbe_debug_id` при загрузке.
 - `src/drivers/display/gop.c` и `svga.c` — конкурирующий путь. Если SVGA II активен, `gop_apply_live` переключает GOP на его framebuffer, и VBE-режим больше не нужен.
 
 ## Внутреннее устройство

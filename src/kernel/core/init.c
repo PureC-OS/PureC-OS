@@ -1,3 +1,4 @@
+#include "../../fs/vfs.h"
 #include <acpi/acpi.h>
 #include "../../drivers/net/iwx/iwx.h"
 #include "../../io/swap.h"
@@ -9,8 +10,7 @@
 #include "../../net/core/net_service.h"
 #include "../../net/tests/qemu_network_test.h"
 #include "../../boot/boot_options.h"
-#include "../../userspace/rs_session.h"
-#include "../../userspace/userspace.h"
+#include "../diagnostics/klog_disk.h"
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/journal.h"
 #include "../diagnostics/klog.h"
@@ -19,6 +19,7 @@
 #include "../process/scheduler.h"
 #include "../smp/cpu.h"
 #include "../smp/smp.h"
+#include "../tty/vtcon.h"
 
 void init_process_start(void)
 {
@@ -40,27 +41,18 @@ void init_process_start(void)
   }
   klog(KLOG_OK, "process: /bin/init started as PID 1");
 
-  serial_write_string("[INIT] PID 1 registered, initializing desktop\n");
-  bool rust_desktop = boot_desktop_rust() && rs_session_start();
-  if (!rust_desktop)
-    userspace_init();
+  if (!vtcon_ready())
+    klog(KLOG_WARN, "vtcon: no framebuffer text console");
+  vtcon_start_thread();
   boot_diag_checkpoint(BOOT_STAGE_USERSPACE_RUN,
-                       "init and desktop ready, starting scheduler");
+                       "init and consoles ready, starting scheduler");
 
-  int32_t input_pid = process_spawn_service(
-      rust_desktop ? rs_session_input_thread : userspace_input_thread, 0,
-      "init-input", 1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
-  int32_t kbd_pid = rust_desktop
-                        ? 0
-                        : process_spawn_service(userspace_keyboard_thread, 0, "desktop-keyboard",
-                                                1, -1, SCHED_QOS_USER_INTERACTIVE, 0);
-  if (input_pid < 0 || kbd_pid < 0)
-    klog(KLOG_WARN, "sched: failed to start input service processes");
   int32_t log_tid =
-      scheduler_create_thread(userspace_log_thread, 0, "kernel-log", 3, -1);
+      scheduler_create_thread(klog_disk_thread, 0, "kernel-log", 3, -1);
   if (log_tid >= 0)
     scheduler_set_qos(log_tid, SCHED_QOS_BACKGROUND);
   journal_start();
+  vfs_writeback_start();
   (void)purec_i2c_hid_touchpad_start();
   acpi_ec_start_event_thread();
   (void)iwx_start();
@@ -69,11 +61,6 @@ void init_process_start(void)
                                           PROCESS_CAP_NET_ADMIN);
   if (net_pid < 0)
     klog(KLOG_WARN, "net: failed to create service process");
-  int32_t netd_pid = process_spawn_module("/bin/netd", "");
-  if (netd_pid < 0)
-    klog(KLOG_INFO, "net: /bin/netd not started, kernel DHCP stays in charge");
-  else
-    klogf(KLOG_OK, "net: netd started as pid %d", netd_pid);
   if (qemu_network_test_requested())
   {
     int t = scheduler_create_thread(qemu_network_test_thread, 0,

@@ -8,8 +8,8 @@
 
 | Драйвер | Описание | Исходники |
 |---------|----------|-----------|
-| PIC 8259 | [pic.md](pic.md) | `src/drivers/interrupts/pic.c` |
-| Таймер PIT и TSC | [timer.md](timer.md) | `src/drivers/interrupts/timer.c` |
+| PIC 8259 | [pic.md](pic.md) | `src/arch/x86_64/pic.c` |
+| Таймер PIT и TSC | [timer.md](timer.md) | `src/arch/x86_64/timer.c` |
 
 ## Вывод на экран
 
@@ -17,9 +17,12 @@
 |---------|----------|-----------|
 | VGA текстовый режим | [vga.md](vga.md) | `src/drivers/display/vga.c` |
 | Framebuffer (устаревший) | [fb.md](fb.md) | `src/drivers/display/fb.c` |
-| GOP и графическая консоль | [gop.md](gop.md) | `src/drivers/display/gop.c` |
+| GOP (framebuffer и поверхность VT-консоли) | [gop.md](gop.md) | `src/drivers/display/gop.c` |
 | VBE (Bochs DISPI) | [vbe.md](vbe.md) | `src/drivers/display/vbe.c` |
 | VMware SVGA II | [svga.md](svga.md) | `src/drivers/display/svga.c` |
+| SVGA 3D (VGPU10) | описания пока нет | `src/drivers/display/svga3d.c` |
+| Владелец экрана | описания пока нет | `src/drivers/display/display_owner.c` |
+| Текстовая консоль VT (vtcon) и шрифт | описания пока нет | `src/kernel/tty/vtcon.c`, `src/drivers/display/console_vt.c`, `src/drivers/display/vt_font.c` |
 
 ## Ввод
 
@@ -29,6 +32,7 @@
 | Тачпад I2C-HID | [i2c-hid-touchpad.md](i2c-hid-touchpad.md) | `src/drivers/input/i2c_hid_touchpad/` |
 | Мышь PS/2 и слой указателя | [ps2-mouse.md](ps2-mouse.md) | `src/drivers/mouse/ps2_mouse.c` |
 | Мышь USB | [usb-mouse.md](usb-mouse.md) | `src/drivers/mouse/usb_mouse.c` |
+| Мышь VirtualBox | описания пока нет | `src/drivers/mouse/vbox_mouse.c` |
 
 ## Звук
 
@@ -45,6 +49,7 @@
 | Intel 82543GC / 82544GC | [e1000-82543gc.md](e1000-82543gc.md) | `src/drivers/net/82543gc/` |
 | AMD PCnet-PCI | [pcnet-am79c970a.md](pcnet-am79c970a.md) | `src/drivers/net/pcnet/` |
 | Atheros AR9285 (Wi-Fi, порт ath9k) | [ath9k-ar9285.md](ath9k-ar9285.md) | `src/drivers/net/ath9k/` |
+| Intel AX201 (Wi-Fi, порт OpenBSD iwx) | описания пока нет | `src/drivers/net/iwx/` |
 
 ## Хранение
 

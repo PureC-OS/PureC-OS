@@ -7,6 +7,9 @@
 #include "../lib/format.h"
 #include "../lib/string.h"
 
+extern const char kernel_name[];
+extern const char kernel_version[];
+
 #define SYSFS_MAX_OPEN 16
 #define SYSFS_BUFFER 512
 #define SYSFS_MAX_NODES 512
@@ -17,6 +20,7 @@
 enum node_kind {
   KIND_DIR,
   KIND_KERNEL_VERSION,
+  KIND_KERNEL_RELEASE,
   KIND_CPU_ONLINE,
   KIND_CPU_APICID,
   KIND_PCI_VENDOR,
@@ -83,6 +87,7 @@ static void build_tree(void) {
   add_node("/", KIND_DIR, 0);
   add_node("/kernel", KIND_DIR, 0);
   add_node("/kernel/version", KIND_KERNEL_VERSION, 0);
+  add_node("/kernel/release", KIND_KERNEL_RELEASE, 0);
   add_node("/devices", KIND_DIR, 0);
   add_node("/devices/system", KIND_DIR, 0);
   add_node("/devices/system/cpu", KIND_DIR, 0);
@@ -147,7 +152,10 @@ static void generate(const struct node *node, char *out, uint32_t capacity) {
   out[0] = '\0';
   switch (node->kind) {
   case KIND_KERNEL_VERSION:
-    kformat(out, capacity, "PureC OS kernel 1.2.29 (x86_64)\n");
+    kformat(out, capacity, "%s kernel %s (x86_64)\n", kernel_name, kernel_version);
+    break;
+  case KIND_KERNEL_RELEASE:
+    kformat(out, capacity, "%s\n", kernel_version);
     break;
   case KIND_CPU_ONLINE:
     kformat(out, capacity, "%d\n", cpu_is_online(index) ? 1 : 0);

@@ -16,6 +16,9 @@
 #define VFS_FS_INITRAMFS 2
 #define VFS_FS_AUTO 255
 
+/* true when "/" is a disk file system: its files win over the boot image copies */
+bool vfs_root_on_disk(void);
+
 struct vfs_mount_info {
   char path[512];
   char source[64];
@@ -47,6 +50,7 @@ int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out);
 int32_t vfs_delete(const char *path);
 int32_t vfs_rename(const char *path, const char *new_name);
 int32_t vfs_move(const char *path, const char *destination_directory);
+int32_t vfs_rename_path(const char *from, const char *to);
 int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
                  uint32_t capacity);
 int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
@@ -80,3 +84,5 @@ int32_t vfs_ext2_inode(uint32_t ino, struct ext2_stat_info *out);
 int32_t vfs_ext2_super(struct ext2_super_info *out);
 int32_t vfs_ext2_blocks(const char *path, struct ext2_blocks_info *out);
 int32_t vfs_ext2_inode_blocks(uint32_t ino, struct ext2_blocks_info *out);
+int32_t vfs_sync(void);
+void vfs_writeback_start(void);

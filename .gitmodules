@@ -4,9 +4,6 @@
 [submodule "libxcrypt"]
 	path = libxcrypt
 	url = https://github.com/PureC-OS/libxcrypt.git
-[submodule "purec-notepad-os"]
-	path = purec-notepad-os
-	url = https://github.com/PureC-OS/PureC-notepad-OS.git
 [submodule "userspace"]
 	path = userspace
 	url = https://github.com/PureC-OS/PureC-OS-Userspace.git
@@ -37,3 +34,39 @@
 [submodule "tcc"]
 	path = tcc
 	url = https://github.com/PureC-OS/PureC-TCC.git
+
+[submodule "video-backend"]
+	path = video-backend
+	url = https://github.com/PureC-OS/video-backend.git
+
+[submodule "qt-terminal"]
+	path = programs/PureC-OS-QT-Terminal
+	url = https://github.com/pablaofficeal/PureC-OS-QT-Terminal.git
+
+[submodule "qt-login"]
+	path = programs/PureC-OS-QT-Login
+	url = https://github.com/pablaofficeal/PureC-OS-QT-Login.git
+
+[submodule "purec-os-pkg"]
+	path = programs/purec-os-pkg
+	url = https://github.com/PureC-OS/purec-os-pkg.git
+
+[submodule "trusted-pkg-url"]
+	path = Trusted
+	url = https://github.com/PureC-OS/PureC-OS-Trusted-PKG-URL.git
+
+
+[submodule "settings"]
+	path = programs/PureC-OS-Settings
+	url = https://github.com/pablaofficeal/PureC-OS-Settings.git
+	
+[submodule "PureC-OS-LibGui"]
+	path = PureC-OS-LibGui
+	url = https://github.com/PureC-OS/PureC-OS-LibGui.git
+
+[submodule "PureC-OS-File-Manager"]
+	path = programs/PureC-OS-File-Manager
+	url = https://github.com/pablaofficeal/PureC-OS-File-Manager.git
+[submodule "core-programs"]
+	path = programs/PureC-OS-Core-Programs
+	url = https://github.com/PureC-OS/PureC-OS-Core-Programs.git

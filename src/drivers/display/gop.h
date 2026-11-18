@@ -35,6 +35,10 @@ struct gop_front_info {
 
 bool gop_user_owned(void);
 void gop_kernel_reclaim(void);
+bool gop_vt_owned(void);
+void gop_set_vt_owned(bool owned);
+void gop_vt_geometry(uint32_t *width, uint32_t *height);
+void gop_vt_blit(uint32_t x, uint32_t y, uint32_t w, uint32_t h, const uint32_t *src, uint32_t stride);
 void gop_set_user_owned(bool owned);
 bool gop_front_physical(struct gop_front_info *out);
 void gop_user_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
@@ -58,18 +62,6 @@ void gop_set_color(uint32_t fg, uint32_t bg);
 void gop_putc(char c);
 void gop_write(const char *s);
 void gop_write_hex(uint64_t v);
-bool gop_console_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t foreground, uint32_t background);
-bool gop_console_configure_owner(uint32_t owner_pid, uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t foreground, uint32_t background);
-bool gop_console_is_active(void);
-void gop_console_putc(char character);
-void gop_console_write(const char *text, uint32_t count);
-bool gop_console_get_size(uint32_t *columns, uint32_t *rows, uint32_t *width, uint32_t *height);
-void gop_console_clear(void);
-void gop_console_disable(void);
-void gop_console_release(uint32_t owner_pid);
-void gop_set_console_font_size(uint32_t px);
-uint32_t gop_get_console_font_size(void);
-void gop_console_translate(uint32_t owner_pid, int32_t dx, int32_t dy);
 
 uint32_t gop_get_pixel(uint32_t x, uint32_t y);
 void gop_put_pixel(uint32_t x, uint32_t y, uint32_t color);

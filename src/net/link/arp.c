@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "arp.h"
 #include "../util/byteorder.h"
 #include "ethernet.h"
@@ -39,7 +40,7 @@ static volatile bool arp_lock;
 
 static void lock_cache(void){
     while(__atomic_test_and_set(&arp_lock,__ATOMIC_ACQUIRE))
-        __asm__ volatile("pause");
+        arch_cpu_relax();
 }
 
 static void unlock_cache(void){

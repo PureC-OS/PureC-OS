@@ -1,4 +1,6 @@
 ROOT_DIR := $(CURDIR)
+ARCH ?= x86_64
+include $(ROOT_DIR)/src/arch/$(ARCH)/arch.mk
 override BIN_DIR    := $(ROOT_DIR)/bin
 KERNEL_DIR          := $(BIN_DIR)/kernel
 PROGRAM_DIR         := $(BIN_DIR)/programs
@@ -10,20 +12,19 @@ CRYPT_DIR           := $(ROOT_DIR)/libxcrypt
 WOLFSSL_DIR         := $(ROOT_DIR)/wolfssl
 TCC_DIR             := $(ROOT_DIR)/tcc
 ACPI_DIR            := $(ROOT_DIR)/acpi
-NOTEPAD_DIR         := $(ROOT_DIR)/purec-notepad-os
 
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso hexedit notepad wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
-	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-compositor test-window-manager test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
+.PHONY: core-stage ports test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
 
 HOST_CC ?= cc
 HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 
-test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-compositor test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-window-manager test-malloc test-fenv
+test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-malloc test-fenv
 	@echo "All host tests passed"
 
 test-malloc:
@@ -64,7 +65,7 @@ test-fenv:
 test-box:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -D_GNU_SOURCE -fsanitize=address,undefined \
-		src/programs/box/main.c -o $(BIN_DIR)/tests/box
+		programs/PureC-OS-Core-Programs/box/main.c -o $(BIN_DIR)/tests/box
 	sh tests/box_test.sh $(BIN_DIR)/tests/box
 
 test-wolfcrypt:
@@ -148,7 +149,7 @@ test-program-alias:
 test-path:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
-		tests/path_test.c src/programs/terminal/path.c src/programs/files/path.c \
+		tests/path_test.c programs/PureC-OS-Core-Programs/system/path.c \
 		-o $(BIN_DIR)/tests/path_test
 	$(BIN_DIR)/tests/path_test
 
@@ -217,17 +218,7 @@ test-vfs-perm:
 		-o $(BIN_DIR)/tests/vfs_perm_test
 	$(BIN_DIR)/tests/vfs_perm_test
 
-test-compositor:
-	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
-		tests/compositor_test.c src/gfx/compositor.c src/gfx/blit.c -o $(BIN_DIR)/tests/compositor_test
-	$(BIN_DIR)/tests/compositor_test
 
-test-window-manager:
-	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -DPUREC_HOST_TEST -I$(ROOT_DIR)/src \
-		tests/window_manager_test.c src/userspace/window_manager.c -o $(BIN_DIR)/tests/window_manager_test
-	$(BIN_DIR)/tests/window_manager_test
 
 test-blit:
 	@mkdir -p $(BIN_DIR)/tests
@@ -288,7 +279,7 @@ test-install-accounts:
 test-accounts:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/libxcrypt/include tests/accounts_test.c \
-		src/programs/accounts/accounts_core.c src/fs/install_accounts.c \
+		programs/PureC-OS-Core-Programs/accounts/accounts_core.c src/fs/install_accounts.c \
 		libxcrypt/src/sha512.c libxcrypt/src/crypt_sha512.c -o $(BIN_DIR)/tests/accounts_test
 	$(BIN_DIR)/tests/accounts_test
 
@@ -372,19 +363,19 @@ all: iso
 
 libraries:
 	$(MAKE) -C src/libc
-	$(MAKE) -C src/libgui
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
-programs: libraries notepad
-	$(MAKE) -C src/programs
-	$(MAKE) -C src/programs/micropython
-	@if test -f SDL/src/SDL.c; then $(MAKE) -C src/libsdl2; else echo "SDL/ not found, skipping SDL2 port"; fi
-	$(MAKE) -C src/doom
-	$(MAKE) -C src/chocolate
+programs: libraries
+	$(MAKE) -C programs/PureC-OS-Core-Programs
+	@if test -f programs/purec-os-pkg/Makefile; then $(MAKE) -C programs/purec-os-pkg package; else echo "programs/purec-os-pkg not found: the image will have no pkg"; fi
+	$(MAKE) -C mk/netsurf curl
+
+ports: libraries
+	$(MAKE) -C programs/PureC-OS-Core-Programs ports
+	$(MAKE) -C programs/PureC-OS-Core-Programs/micropython
+	@if test -f git/Makefile; then $(MAKE) -C mk/git; else echo "git/ not found, skipping git port"; fi
 	$(MAKE) -C src/make
-	$(MAKE) -C $(ROOT_DIR)/lang ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
-	@$(MAKE) userspace || echo "WARNING: Rust userspace build failed; ISO will ship without desktop-rs"
 
 sdl2: libraries
 	$(MAKE) -C src/libsdl2
@@ -402,15 +393,7 @@ userspace:
 	@command -v cargo >/dev/null || { echo "cargo not found, skipping Rust userspace"; exit 0; }
 	$(MAKE) -C userspace ROOT_DIR=$(ROOT_DIR) BIN_DIR=$(BIN_DIR)
 
-notepad:
-	@test -f "$(NOTEPAD_DIR)/Makefile" || \
-	  { echo "ERROR: purec-notepad-os/ not found. Run: ./purec.py setup"; exit 1; }
-	$(MAKE) -C $(NOTEPAD_DIR)
-	@mkdir -p $(PROGRAM_DIR)
-	cp $(NOTEPAD_DIR)/bin/notepad $(PROGRAM_DIR)/notepad
 
-hexedit: libraries
-	$(MAKE) -C src/programs/hexedit
 
 wolf: $(WOLFSSL_DIR)/wolfcrypt/src/aes.c
 	$(MAKE) -C $(WOLFSSL_DIR) module
@@ -441,7 +424,12 @@ kernel:
 	$(MAKE) -C $(WOLFSSL_DIR)           module lib
 	$(MAKE) -C src/drivers/random       module
 
-iso: kernel programs
+core-stage: programs
+	$(MAKE) -C programs/PureC-OS-Core-Programs packages
+	$(MAKE) -C programs/purec-os-pkg host
+	sh mk/pkg/stage.sh "$(ROOT_DIR)" "$(BIN_DIR)/core-repo" "$(BIN_DIR)/stage" "$(ROOT_DIR)/programs/purec-os-pkg/build/host/pkg"
+
+iso: kernel programs core-stage
 	@set -eu; \
 	limine_share=""; \
 	for candidate in /usr/share/limine /tmp/limine-pkg/usr/share/limine; do \
@@ -457,17 +445,12 @@ iso: kernel programs
 	rm -rf "$(ISO_ROOT)"; \
 	mkdir -p "$(ISO_ROOT)/boot/limine" "$(ISO_ROOT)/EFI/BOOT" \
 		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
-		"$(ISO_ROOT)/lib/firmware" \
-		"$(ISO_ROOT)/src/demo"; \
-	if gcc -O2 src/demo/create_demo.c -o /tmp/create_demo 2>/dev/null; then \
-		/tmp/create_demo src/demo/screenshot.bmp 2>/dev/null || true; \
-	fi; \
+		"$(ISO_ROOT)/lib/firmware"; \
 	command -v python3 >/dev/null || { echo "python3 required (mk/gen_assets.py)" >&2; exit 1; }; \
-	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules"; \
+	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules" --stage "$(BIN_DIR)/stage"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
-	[ -d "$(ROOT_DIR)/src/demo" ] && cp -r $(ROOT_DIR)/src/demo/* "$(ISO_ROOT)/src/demo/" 2>/dev/null || true; \
 	for mod in ext2 crypt acpi wolf random e1000 e1000_82543gc pcnet_am79c970a ar9285; do \
 		for ext in elf ko; do \
 			f="$(BIN_DIR)/modules/$$mod.$$ext"; \
@@ -475,14 +458,14 @@ iso: kernel programs
 		done; \
 	done; \
 	[ -d "$(BIN_DIR)/modules" ] && cp -r "$(BIN_DIR)/modules/"* "$(ISO_ROOT)/lib/modules/" 2>/dev/null || true; \
-	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
+	cp "$$limine_share/$(ARCH_EFI_NAME)"              "$(ISO_ROOT)/EFI/BOOT/$(ARCH_EFI_NAME)"; \
 	sh "$(ROOT_DIR)/mk/make_esp_image.sh" "$(ISO_ROOT)" "$(ISO_ROOT)/boot/esp.img"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/boot/limine/limine.conf"; \
 	cp "$(LIMINE_CONFIG)"                        "$(ISO_ROOT)/limine.conf"; \
 	cp "$$limine_share/limine-bios.sys"          "$(ISO_ROOT)/boot/limine/"; \
 	cp "$$limine_share/limine-bios-cd.bin"       "$(ISO_ROOT)/boot/limine/"; \
 	cp "$$limine_share/limine-uefi-cd.bin"       "$(ISO_ROOT)/boot/limine/"; \
-	cp "$$limine_share/BOOTX64.EFI"              "$(ISO_ROOT)/EFI/BOOT/BOOTX64.EFI"; \
+	cp "$$limine_share/$(ARCH_EFI_NAME)"              "$(ISO_ROOT)/EFI/BOOT/$(ARCH_EFI_NAME)"; \
 	[ -f "$$limine_share/BOOTIA32.EFI" ] && cp "$$limine_share/BOOTIA32.EFI" "$(ISO_ROOT)/EFI/BOOT/" || true; \
 	xorriso -as mkisofs \
 		-b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table \
@@ -494,7 +477,6 @@ iso: kernel programs
 clean:
 	$(MAKE) -C src/kernel      clean 2>/dev/null || true
 	$(MAKE) -C src/libc        clean 2>/dev/null || true
-	$(MAKE) -C src/libgui      clean 2>/dev/null || true
 	$(MAKE) -C src/libfs       clean 2>/dev/null || true
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true
@@ -502,11 +484,11 @@ clean:
 	$(MAKE) -C src/chocolate   clean 2>/dev/null || true
 	$(MAKE) -C src/make        clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2_mixer clean 2>/dev/null || true
-	$(MAKE) -C src/programs    clean 2>/dev/null || true
+	$(MAKE) -C programs/PureC-OS-Core-Programs clean 2>/dev/null || true
 	$(MAKE) -C src/io          clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
 	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true
-	rm -rf $(BIN_DIR)/iso_root $(BIN_DIR)/staged
+	rm -rf $(BIN_DIR)/iso_root $(BIN_DIR)/staged $(BIN_DIR)/stage $(BIN_DIR)/core-repo
 	@echo "Clean done."
 
 help:
@@ -517,8 +499,6 @@ help:
 	@echo "  make kernel         build kernel only"
 	@echo "  make libraries      build libraries"
 	@echo "  make programs       build Ring-3 programs"
-	@echo "  make hexedit        build HexEdit"
-	@echo "  make notepad        build PureC Notepad"
 	@echo "  make wolf           build libwolf.a + wolf.ko (wolfSSL port)"
 	@echo "  make iso            assemble ISO image"
 	@echo "  make test           run all host tests"
@@ -549,3 +529,8 @@ qt-apps:
 	cmake --build $(BIN_DIR)/qt-apps
 	@mkdir -p $(BIN_DIR)/programs
 	cp $(BIN_DIR)/qt-apps/terminal/qt-terminal $(BIN_DIR)/programs/qt-terminal
+PKG_SIGN_KEY ?= $(HOME)/.config/purec-pkg/signing.pem
+
+.PHONY: repo
+repo: programs
+	python3 $(ROOT_DIR)/mk/pkg/ports.py $(BIN_DIR)/repo $(if $(wildcard $(PKG_SIGN_KEY)),--sign $(PKG_SIGN_KEY),)

@@ -248,10 +248,6 @@ bool wifi_connect(const char *ssid, const char *password){
 
     klogf(KLOG_INFO, "wifi: connecting to '%s' security=%s", ssid, wifi_security_name(security));
 
-    if(security != WIFI_SECURITY_OPEN){
-        klogf(KLOG_WARN, "wifi: [TEST MODE] password plaintext for '%s' -> '%s' (stored in /config/wifi.ini)", ssid, mgr.target_password);
-    }
-
     if(mgr.active->ops && mgr.active->ops->connect){
         bool ok = mgr.active->ops->connect(mgr.active->context, ssid, password);
         if(!ok){

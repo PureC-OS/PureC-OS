@@ -1,0 +1,2 @@
+#!/bin/sh
+"$PKG_ROOT/usr/lib/kernel/$PKG_VERSION/mkinitcpio" -P

@@ -1,6 +1,6 @@
+#include <arch/arch.h>
 #include "panic.h"
 #include "../../drivers/display/gop.h"
-#include "../../gfx/compositor.h"
 #include "../process/scheduler.h"
 #include "../smp/smp.h"
 #include "boot_diag.h"
@@ -56,8 +56,7 @@ static const char *exception_name(uint64_t vec)
 static __attribute__((noreturn)) void panic_halt(void)
 {
   gop_present_forced();
-  for (;;)
-    __asm__ volatile("cli; hlt");
+  arch_cpu_stop();
 }
 
 static void panic_origin(const char *file, int line, const char *func)
@@ -70,7 +69,7 @@ static void panic_origin(const char *file, int line, const char *func)
 static void panic_header(const char *title, const char *file, int line,
                          const char *func)
 {
-  __asm__ volatile("cli");
+  arch_irq_disable();
   if (panic_active)
     panic_halt();
   panic_active = true;
@@ -78,7 +77,6 @@ static void panic_header(const char *title, const char *file, int line,
   klog_panic_mode();
   gop_kernel_reclaim();
   gop_cancel_compose();
-  compositor_panic_disable();
   klog_set_screen_enabled(true);
   klog_clear();
 
@@ -115,10 +113,10 @@ static void panic_thread_info(void)
 static void panic_ctrl_regs(void)
 {
   uint64_t cr0, cr2, cr3, cr4;
-  __asm__ volatile("mov %%cr0, %0" : "=r"(cr0));
-  __asm__ volatile("mov %%cr2, %0" : "=r"(cr2));
-  __asm__ volatile("mov %%cr3, %0" : "=r"(cr3));
-  __asm__ volatile("mov %%cr4, %0" : "=r"(cr4));
+  cr0 = arch_read_cr0();
+  cr2 = arch_read_cr2();
+  cr3 = arch_read_cr3();
+  cr4 = arch_read_cr4();
   klogf(KLOG_ERROR, "CR0: %016llx  CR2: %016llx", (unsigned long long)cr0,
         (unsigned long long)cr2);
   klogf(KLOG_ERROR, "CR3: %016llx  CR4: %016llx", (unsigned long long)cr3,
@@ -256,8 +254,8 @@ void kernel_panic_at(const char *file, int line, const char *func,
   panic_ctrl_regs();
   panic_thread_info();
   uint64_t rbp, rsp;
-  __asm__ volatile("mov %%rbp, %0" : "=r"(rbp));
-  __asm__ volatile("mov %%rsp, %0" : "=r"(rsp));
+  rbp = arch_get_fp();
+  rsp = arch_get_sp();
   panic_call_trace(rbp, rsp);
   panic_qr_show(reason, file, line, func,
                 (uint64_t)__builtin_return_address(0), rbp);

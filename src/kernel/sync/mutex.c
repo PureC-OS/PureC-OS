@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "mutex.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../diagnostics/panic.h"
@@ -21,7 +22,7 @@ void mutex_lock(mutex_t *mutex) {
     if (scheduler_is_running())
       scheduler_sleep(1);
     else
-      __asm__ volatile("pause");
+      arch_cpu_relax();
   }
 }
 void mutex_unlock(mutex_t *mutex) {

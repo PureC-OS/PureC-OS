@@ -33,6 +33,7 @@ void klog_dump_with(void (*cb)(char c));
 uint32_t klog_read_since(uint64_t *cursor, char *buffer, uint32_t capacity,
                          bool *data_lost);
 uint64_t klog_total_bytes(void);
+uint32_t klog_copy_tail(char *out, uint32_t capacity);
 uint64_t klog_uptime_us(void);
 
 #define KLOG_BG 0x000000

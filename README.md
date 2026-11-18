@@ -4,14 +4,13 @@
 
 PureC OS is a simple 64-bit operating system written in C and x86_64 assembly language and a bit of C++20. It includes
 
-- UserSpace
-- Internet support only in VirtualBox I only described the interface in this block [Network Support](#network-support)
-- File system VFS and EXT2
-- Implemented screen, keyboard and disk drivers
-- Implemented USB drivers
-- User Programs In Ring 3
-- purec Syscall ~100
-- There is Login Screen and Login Gate (Ring-3) [This is for the future]
+- Ring-3 user programs (ELF64, dynamic `.so` loading), the PureC shell `sh`, and init with units (`init`, `initctl`, `systemctl`)
+- Network: TCP/UDP stack, DHCP client, DNS resolver, NTP client, ICMP ping, network drivers for Intel 82540EM, Intel 82543GC and AMD PCnet-PCI II (Wi-Fi drivers are in development, see [Network Support](#network-support))
+- File systems: VFS with ext2, FAT32, tmpfs, devfs, procfs and sysfs; initramfs at boot
+- Drivers: VGA text, GOP / VBE / VMware SVGA II framebuffers, PS/2 and USB keyboards and mice, AHCI and ATA PIO storage, Intel HDA audio, ACPI
+- USB host controllers: xHCI and EHCI
+- About 190 system calls, see [Syscall Reference](docs/syscalls-reference.md)
+- Text virtual consoles tty1-tty6 (`vtcon`) with `getty` and login. The desktop, graphical login, terminal, settings, LibGUI and the display server (`videod`) are separate packages installed with `pkg` from the registry in `Trusted/`
 
 ---
 
@@ -23,15 +22,17 @@ PureC OS is a simple 64-bit operating system written in C and x86_64 assembly la
 
 ## Network Support
 
-Intel Pro 1000 MT Desktop 82540EM Supported only in VirtualBox or QEMU
+Ethernet, supported in VirtualBox and QEMU:
 
-Intel Pro 1000 T Server 82543GC Supported only in VirtualBox or QEMU
+- Intel Pro 1000 MT Desktop 82540EM (`src/drivers/net/e1000`)
+- Intel Pro 1000 T Server 82543GC (`src/drivers/net/82543gc`)
+- PCnet-PCI II (Am79C970A) (`src/drivers/net/pcnet`)
 
-PCnet-PCI II (Am79C970A) Supported only in VirtualBox or QEMU
+Wi-Fi (in development):
 
-And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test version—there's almost nothing in it.
-
-802.11 association for Wi-Fi support will be implemented for future use.
+- Intel AX201 (`src/drivers/net/iwx`, a port of OpenBSD iwx, with the `iwxctl` utility)
+- Atheros AR9285 (`src/drivers/net/ath9k`, a port of Linux ath9k)
+- 802.11 association code lives in `src/net/802.11`
 
 ---
 
@@ -61,15 +62,21 @@ And in the TEST branch, there is also an Atheros AR9285 driver, but it's a test 
 
 Kernel: [PureC-OS](https://github.com/PureC-OS/PureC-OS) (this repository).
 
-Components not residing in the kernel core are pulled in via separate repositories using fetch targets in the main `Makefile` (`crypt-fetch`, `acpi-fetch`, `tcc-fetch`, `userspace-fetch`); they are automatically cloned during the build process if the corresponding directory does not exist:
+External sources are cloned by `./purec.py setup` (the `REPOS` list in `purec.py`). Submodules are listed in `.gitmodules`. Ports that have their own fetch script (`mk/git/fetch.sh`, `mk/netsurf/fetch.sh`, `mk/cxx/fetch.sh`, `mk/qt/fetch.sh`) are fetched by those scripts.
 
-| Repository                                                                    | Directory    | Purpose                                                                                                                                                                                |
-| ----------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [PureC-OS/PureC-OS-ACPI](https://github.com/PureC-OS/PureC-OS-ACPI)           | `acpi/`      | ACPI subsystem: RSDP/XSDT/FADT/DSDT tables, `_S5`, shutdown/reboot. Source code is compiled directly into the kernel image; a relocatable `bin/modules/acpi.elf` module is also built. |
-| [PureC-OS/libxcrypt](https://github.com/PureC-OS/libxcrypt)                   | `libxcrypt/` | SHA-512 / `$6$` password hashing. Source code is compiled into the kernel; a `bin/modules/crypt.elf` module is also built.                                                             |
-| [PureC-OS/PureC-TCC](https://github.com/PureC-OS/PureC-TCC)                   | `tcc/`       | C compiler (TCC port) for building Ring-3 programs within the OS.                                                                                                                      |
-| [PureC-OS/PureC-OS-Userspace](https://github.com/PureC-OS/PureC-OS-Userspace) | `userspace/` | Userspace: desktop environment, applications, and Ring-3 libraries (Rust/C).                                                                                                           |
-| [PureC-OS/PureC-notepad-OS](https://github.com/PureC-OS/PureC-notepad-OS)     | `notepad/`   | Notepad for PureC OS: a separate project containing the source code for the PureC OS Notepad; it includes its own Syscall Lib, GUI Lib, and linker script.                             |
+| Repository | Directory | Purpose |
+| ----------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [PureC-OS/PureC-OS-ACPI](https://github.com/PureC-OS/PureC-OS-ACPI) | `acpi/` | ACPI subsystem: RSDP/XSDT/FADT/DSDT tables, `_S5`, shutdown/reboot. Compiled into the kernel image; `bin/modules/acpi.elf` is also built. |
+| [PureC-OS/libxcrypt](https://github.com/PureC-OS/libxcrypt) | `libxcrypt/` | libpurecrypt: SHA-512 / `$6$` password hashing (in-house, not upstream libxcrypt). Compiled into the kernel; `bin/modules/crypt.elf` is also built. |
+| [PureC-OS/PureC-TCC](https://github.com/PureC-OS/PureC-TCC) | `tcc/` | C compiler (TCC port) for building Ring-3 programs within the OS. |
+| [PureC-OS/PureC-OS-Userspace](https://github.com/PureC-OS/PureC-OS-Userspace) | `userspace/` | Desktop (shell, panels, applications on `video-backend`), shipped as the `userspace` package. |
+| [PureC-OS/video-backend](https://github.com/PureC-OS/video-backend) | `video-backend/` | Display server `videod` and its client library, shipped as the `video-backend` package. |
+| [PureC-OS/PureC-OS-LibGui](https://github.com/PureC-OS/PureC-OS-LibGui) | `PureC-OS-LibGui/` | PureGUI toolkit (`libgui`), shipped as the `libgui` package. |
+| [pablaofficeal/PureC-OS-QT-Terminal](https://github.com/pablaofficeal/PureC-OS-QT-Terminal) | `programs/PureC-OS-QT-Terminal/` | Terminal emulator, shipped as the `terminal` package. |
+| [pablaofficeal/PureC-OS-QT-Login](https://github.com/pablaofficeal/PureC-OS-QT-Login) | `programs/PureC-OS-QT-Login/` | Graphical login screen, shipped as the `login` package. |
+| [pablaofficeal/PureC-OS-Settings](https://github.com/pablaofficeal/PureC-OS-Settings) | `programs/PureC-OS-Settings/` | System settings, shipped as the `settings` package. |
+| [PureC-OS/purec-os-pkg](https://github.com/PureC-OS/purec-os-pkg) | `programs/purec-os-pkg/` | Package manager `pkg`. |
+| [PureC-OS/PureC-OS-Trusted-PKG-URL](https://github.com/PureC-OS/PureC-OS-Trusted-PKG-URL) | `Trusted/` | Package registry: `registry.conf` (repositories) and `repository.conf` (packages). |
 
 ---
 
@@ -256,6 +263,17 @@ use the Python script for the build:
 ```bash
 python purec.py
 ```
+
+## Project layout
+
+- `src/`: kernel (`src/kernel`), drivers (`src/drivers`), storage and file systems (`src/io`, `src/fs`), network stack (`src/net`), C library (`src/libc`), and Ring-3 programs (`src/programs`: `init`, `getty`, `sh`, `installer`, `netd`, `dhcpc`, `resolved`, `ntpd`, the `utils` set, and others)
+- `mk/`: build fragments for ports (`git`, `curl`, `vim`, `qt`, `netsurf`, `cxx`, `tcc`, `sysroot`), asset generation (`gen_assets.py`) and the package tools (`pkg`)
+- `rootfs/`: `/etc` seed files installed by the installer
+- `assets/`: install manifest (`manifest.txt`), man pages and fonts
+- `programs/`: `purec-os-pkg` (package manager) and the Terminal, Login and Settings packages
+- `video-backend/`, `PureC-OS-LibGui/`, `userspace/`, `Trusted/`: packages and the package registry
+- `docs/`: documentation, including [drivers](docs/drivers/README.md) and [syscalls](docs/syscalls-reference.md)
+- `bin/`: build output (generated)
 
 ---
 

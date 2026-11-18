@@ -16,8 +16,8 @@
    - [4.4. Файловая Система и VFS](#44-файловая-система-и-vfs)
    - [4.5. Диагностика и Метаданные ext2](#45-диагностика-и-метаданные-ext2)
    - [4.6. Консоль и Терминальный Ввод/Вывод](#46-консоль-и-терминальный-вводвывод)
-   - [4.7. Графика и Framebuffer (GOP)](#47-графика-и-framebuffer-gop)
-   - [4.8. Оконный Менеджер PureGUI](#48-оконный-менеджер-puregui)
+   - [4.7. Framebuffer (GOP)](#47-framebuffer-gop)
+   - [4.8. Удалённые вызовы (графика и PureGUI)](#48-удалённые-вызовы-графика-и-puregui)
    - [4.9. Манипулятор Мышь](#49-манипулятор-мышь)
    - [4.10. Аудиосистема](#410-аудиосистема)
    - [4.11. Сеть и Wi-Fi](#411-сеть-и-wi-fi)
@@ -38,8 +38,8 @@
 | `rbx` | Аргумент 1 (`a1`) | Первый аргумент / указатель / дескриптор |
 | `rcx` | Аргумент 2 (`a2`) | Второй аргумент / размер / флаги |
 | `rdx` | Аргумент 3 (`a3`) | Третий аргумент / буфер / флаги |
-| `rsi` | Аргумент 4 (`a4`) | Четвертый аргумент (применяется в `SYS_DRAW_RECT`, `SYS_DRAW_LINE`) |
-| `rdi` | Аргумент 5 (`a5`) | Пятый аргумент (цвет в примитивах рисования) |
+| `rsi` | Аргумент 4 (`a4`) | Четвертый аргумент (например, флаги в `SYS_SENDTO` / `SYS_RECVFROM`) |
+| `rdi` | Аргумент 5 (`a5`) | Пятый аргумент (например, адрес `sockaddr` в `SYS_SENDTO` / `SYS_RECVFROM`) |
 
 ### Возвращаемые значения
 - **Результат возвращается в регистре `rax`**:
@@ -75,24 +75,24 @@
 | Номер | Имя макроса | Обертка в stdlib | Краткое назначение |
 |---|---|---|---|
 | **1** | `SYS_WRITE` | `pc_write()`, `write()` | Вывод строки в последовательный порт и консоль |
-| **2** | `SYS_CLEAR` | `pc_display_clear()` | Очистка экрана заданным цветом |
+| **2** | ~~`SYS_CLEAR`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **3** | `SYS_SLEEP` | `pc_sleep()`, `sleep()` | Блокировка потока на N миллисекунд |
 | **39** | `SYS_GETPID` | `pc_getpid()` | Получение идентификатора текущего процесса |
 | **57** | `SYS_FORK` | `pc_fork()` | Создание дочернего процесса |
 | **59** | `SYS_EXEC` | `pc_exec()`, `pc_exec_with_args()` | Запуск ELF64 процесса |
 | **60** | `SYS_EXIT` | `pc_exit()`, `exit()` | Завершение текущего процесса |
 | **61** | `SYS_WAIT` | `pc_wait()` | Ожидание завершения дочернего процесса |
-| **100** | `SYS_DRAW_RECT` | `pc_draw_rect()` | Рисование закрашенного прямоугольника |
-| **101** | `SYS_DRAW_LINE` | `pc_syscall(SYS_DRAW_LINE, ...)` | Рисование отрезка прямой линии |
+| **100** | ~~`SYS_DRAW_RECT`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **101** | ~~`SYS_DRAW_LINE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **102** | `SYS_GET_MOUSE` | `pc_mouse_get()` | Опрос координат и кнопок мыши |
 | **103** | `SYS_FB_INFO` | `pc_display_get_info()` | Получение параметров видеорежима (GOP) |
 | **104** | ~~`SYS_DRAW_TEXT`~~ удалён | — | Текст рисует userspace-бэкенд `src/gfx/text.h` поверх `SYS_DRAW_RECT`; `pc_draw_text()` в libc сохранён и работает без ядра |
 | **105** | ~~`SYS_DRAW_TEXT_SIZED`~~ удалён | — | Аналогично, `pc_draw_text_sized()` рендерится в userspace |
-| **106** | `SYS_SCROLL_RECT_UP` | `pc_syscall(SYS_SCROLL_RECT_UP, ...)` | Прокрутка прямоугольной области вверх |
+| **106** | ~~`SYS_SCROLL_RECT_UP`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **107** | ~~`SYS_SET_FONT_FACE`~~ удалён | — | Начертание — настройка бэкенда (`gfx_font_face_t`), у ядра шрифтов нет |
 | **108** | ~~`SYS_GET_FONT_FACE`~~ удалён | — | См. выше |
-| **109** | `SYS_FB_BEGIN_UPDATE` | `pc_display_begin_update()` | Захват кадра (скрытие курсора перед рисованием) |
-| **110** | `SYS_FB_END_UPDATE` | `pc_display_end_update()` | Окончание кадра (восстановление курсора) |
+| **109** | ~~`SYS_FB_BEGIN_UPDATE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **110** | ~~`SYS_FB_END_UPDATE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **200** | `SYS_FILE_OPEN` (`SYS_OPEN`) | `pc_file_open()`, `open()`, `fopen()` | Открытие файла по пути |
 | **201** | `SYS_FILE_READ` (`SYS_READ`) | `pc_file_read()`, `read()`, `fread()` | Чтение байт из дескриптора |
 | **202** | `SYS_FILE_DELETE` (`SYS_UNLINK`) | `pc_file_delete()`, `unlink()` | Удаление файла |
@@ -143,15 +143,15 @@
 | **244** | `SYS_GET_PROCESS_NAME` | `pc_get_process_name()` | Имя бинарника/алиаса текущего процесса |
 | **245** | `SYS_MOUSE_DEBUG_GET` | `pc_syscall(SYS_MOUSE_DEBUG_GET, ...)` | Состояние оверлея отладки мыши |
 | **246** | `SYS_MOUSE_DEBUG_SET` | `pc_syscall(SYS_MOUSE_DEBUG_SET, ...)` | Включение/выключение отладочного оверлея мыши |
-| **247** | `SYS_CONSOLE_CONFIGURE` | `pc_console_configure()` | Настройка окна текстовой консоли на экране |
-| **248** | `SYS_CONSOLE_CLEAR` | `pc_console_clear()` | Очистка окна текстовой консоли |
-| **249** | `SYS_CONSOLE_DISABLE` | `pc_console_disable()` | Отключение текстовой консоли |
-| **250** | `SYS_DESKTOP_REDRAW` | `pc_desktop_redraw()` | Запрос перерисовки рабочего стола композитором |
-| **251** | `SYS_GUI_WINDOW_REGISTER` | `pc_gui_window_register()` | Регистрация окна процесса в PureGUI |
-| **252** | `SYS_GUI_WINDOW_UPDATE` | `pc_gui_window_update()` | Обновление координат/размеров окна |
-| **253** | `SYS_GUI_WINDOW_UNREGISTER` | `pc_gui_window_unregister()` | Удаление окна процесса из менеджера окон |
-| **254** | `SYS_GUI_WINDOW_STATE` | `pc_gui_window_state()` | Опрос статуса окна (фокус, необходимость repaint) |
-| **255** | `SYS_GUI_WINDOW_REPAINT_DONE` | `pc_gui_window_repaint_done()` | Подтверждение завершения перерисовки окна |
+| **247** | ~~`SYS_CONSOLE_CONFIGURE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **248** | ~~`SYS_CONSOLE_CLEAR`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **249** | ~~`SYS_CONSOLE_DISABLE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **250** | ~~`SYS_DESKTOP_REDRAW`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **251** | ~~`SYS_GUI_WINDOW_REGISTER`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **252** | ~~`SYS_GUI_WINDOW_UPDATE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **253** | ~~`SYS_GUI_WINDOW_UNREGISTER`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **254** | ~~`SYS_GUI_WINDOW_STATE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **255** | ~~`SYS_GUI_WINDOW_REPAINT_DONE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **256** | `SYS_HEAP_GROW` | `pc_heap_grow()`, `malloc()` | Увеличение кучи процесса (аналог brk/sbrk) |
 | **257** | `SYS_PROCESS_LIST` | `pc_process_list()` | Список запущенных процессов и статистика |
 | **258** | `SYS_TRY_GET_SPECIAL` | `pc_try_get_special()` | Чтение спец. клавиш (стрелки, F-клавиши) |
@@ -203,7 +203,7 @@
 | **319** | `SYS_TIME_GET` | `pc_time_get()` | Текущее время и часовой пояс |
 | **320** | `SYS_TIME_SET` | `pc_time_set()` | Установка времени (только root) |
 | **321** | `SYS_FILE_STAT_EX` | `pc_file_stat_ex()` | Расширенные атрибуты файла |
-| **322** | `SYS_FB_BLIT` | `pc_fb_blit()` | Копирование пикселей в видеобуфер |
+| **322** | ~~`SYS_FB_BLIT`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **323** | `SYS_KEY_EVENT_GET` | `pc_key_event_get()` | Чтение события клавиатуры |
 | **324** | `SYS_EXECVE` | — | Замена образа процесса (`execve`) |
 | **325** | `SYS_WAITPID` | — | Ожидание конкретного дочернего процесса |
@@ -227,14 +227,14 @@
 | **343** | `SYS_FD_PATH` | — | Путь, связанный с дескриптором |
 | **344** | `SYS_FD_SEEK` | — | Позиционирование дескриптора |
 | **345** | `SYS_FD_TRUNCATE` | — | Усечение файла по дескриптору |
-| **346** | `SYS_DESKTOP_CLAIM` | — | Захват стола (только root, сессия `desktop=rs`) |
-| **347** | `SYS_DESKTOP_BLIT` | — | Вывод в слой стола |
-| **348** | `SYS_DESKTOP_WAIT` | — | Ожидание событий стола (`RS_WAIT_*`) |
-| **349** | `SYS_DESKTOP_WM` | — | Команды оконного менеджера стола |
-| **350** | `SYS_GUI_WINDOW_INFO` | `pc_gui_window_info()` | Информация об окне |
-| **351** | `SYS_GUI_WINDOW_FLAGS` | `pc_gui_window_set_flags()` | Флаги окна (`GUI_WINDOW_FLAG_*`) |
-| **352** | `SYS_GUI_WINDOW_CMD` | `pc_gui_window_command()` | Команда окну (`GUI_WINDOW_CMD_*`) |
-| **353** | `SYS_GUI_WINDOW_TITLE` | `pc_gui_window_set_title()` | Заголовок окна |
+| **346** | ~~`SYS_DESKTOP_CLAIM`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **347** | ~~`SYS_DESKTOP_BLIT`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **348** | ~~`SYS_DESKTOP_WAIT`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **349** | ~~`SYS_DESKTOP_WM`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **350** | ~~`SYS_GUI_WINDOW_INFO`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **351** | ~~`SYS_GUI_WINDOW_FLAGS`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **352** | ~~`SYS_GUI_WINDOW_CMD`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
+| **353** | ~~`SYS_GUI_WINDOW_TITLE`~~ удалён | — | Графика и оконный менеджер удалены из ядра (2026-11-15), вызов возвращает `-KERR_NOSYS` |
 | **354** | `SYS_TTY_READ` | — | Чтение ввода консоли |
 | **355** | `SYS_TTY_IOCTL` | `pc_tty_ioctl()` | Управление терминалом (`TTY_*`) |
 | **356** | `SYS_POLL` | — | Ожидание готовности дескрипторов |
@@ -284,6 +284,18 @@
 | **400** | `SYS_INPUT_OPEN` | `pc_input_open()` | Поток сырых событий ввода |
 | **401** | `SYS_FB_DAMAGE` | `pc_fb_damage()` | Показ области буфера на устройство |
 | **402** | `SYS_DISPLAY_RELEASE` | `pc_display_release()` | Возврат экрана ядру |
+| **403** | `SYS_SENDTO` | `sendto()` | Отправка данных сокета (с адресом получателя для UDP) |
+| **404** | `SYS_RECVFROM` | `recvfrom()` | Приём данных сокета с адресом отправителя |
+| **405** | `SYS_NET_CONFIGURE` | `pc_net_configure()` | Настройка сетевого интерфейса (IP, маска, шлюз, DNS); root или `NET_ADMIN` |
+| **406** | `SYS_KLOG_WRITE` | `syslog()` | Запись строки в klog от имени процесса |
+| **407** | `SYS_CLOCK_ADJUST` | `pc_clock_adjust()` | Ступенчатая или плавная коррекция часов, запись в RTC; root или право `SYS_TIME` |
+| **408** | `SYS_NET_SOCKETS` | `pc_net_sockets()` | Список сокетов системы (не-root видит только свои) |
+| **409** | `SYS_RENAME_PATH` | `rename()` | Переименование или перемещение пути |
+| **410** | `SYS_SYNC` | `pc_sync()` | Сброс буферов файловой системы на диск |
+| **411** | ~~`SYS_GUI_START`~~ удалён | — | Определён только в заголовке, ядро не обрабатывает |
+| **412** | `SYS_VT_ACTIVATE` | — | Переключение виртуальной консоли (`vtcon`) |
+| **413** | `SYS_VT_ACTIVE` | — | Индекс активной виртуальной консоли |
+| **414** | `SYS_DISK_IO` | `pc_disk_io()` | Прямое чтение/запись секторов диска; право `STORAGE_ADMIN` |
 
 ---
 
@@ -988,6 +1000,20 @@ void show_fs_type(void) {
 
 ---
 
+#### `SYS_RENAME_PATH` (409)
+- **Регистры**: `rax = 409`, `rbx = old_path`, `rcx = new_path`
+- **Обертка stdlib**: `int rename(const char *old_path, const char *new_path)`
+- **Описание**: Переименовывает или перемещает путь. Пути разрешаются относительно текущего каталога процесса.
+- **Возврат**: `0` или код `FS_ERROR_*`.
+
+#### `SYS_SYNC` (410)
+- **Регистры**: `rax = 410`
+- **Обертка stdlib**: `int32_t pc_sync(void)`
+- **Описание**: Сбрасывает буферы файловой системы (буферный кэш) на диск.
+- **Возврат**: `0` или `-KERR_IO`.
+
+---
+
 ### 4.5. Диагностика и Метаданные ext2
 
 #### `SYS_EXT2_STAT` (271)
@@ -1198,116 +1224,18 @@ void special_key_example(void) {
 
 ---
 
-#### `SYS_CONSOLE_CONFIGURE` (247)
-- **Регистры**: `rax = 247`, `rbx = (uintptr_t)req`
-- **Обертка stdlib**: `bool pc_console_configure(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t fg, uint32_t bg)`
-- **Структура**:
-```c
-struct framebuffer_console_request {
-    uint32_t x, y;
-    uint32_t width, height;
-    uint32_t foreground, background;
-};
-```
-- **Описание**: Ограничивает область текстового вывода заданным прямоугольником окна терминала на экране.
-- **Пример**:
-```c
-#include <purec.h>
+#### `SYS_VT_ACTIVATE` (412)
+- **Регистры**: `rax = 412`, `rbx = индекс консоли`
+- **Описание**: Переключает активную виртуальную консоль (`vtcon`, tty1–tty6). Root может переключать любую консоль; остальные процессы — только если их stdin принадлежит pty этой консоли.
+- **Возврат**: `0` или `-KERR_BUSY`, если переключение не удалось.
 
-void setup_terminal_console(void) {
-    // Консоль в координатах 100, 100 размером 640x400
-    pc_console_configure(100, 100, 640, 400, 0xFFFFFFFF, 0xFF1E1E2E);
-}
-```
+#### `SYS_VT_ACTIVE` (413)
+- **Регистры**: `rax = 413`
+- **Описание**: Возвращает индекс текущей активной виртуальной консоли.
 
 ---
 
-#### `SYS_CONSOLE_CLEAR` (248)
-- **Регистры**: `rax = 248`
-- **Обертка stdlib**: `void pc_console_clear(void)`
-- **Описание**: Очищает активное окно консоли фоновым цветом.
-- **Пример**:
-```c
-#include <purec.h>
-
-void clear_term(void) {
-    pc_console_clear();
-}
-```
-
----
-
-#### `SYS_CONSOLE_DISABLE` (249)
-- **Регистры**: `rax = 249`
-- **Обертка stdlib**: `void pc_console_disable(void)`
-- **Описание**: Отключает экранную консоль и восстанавливает полноэкранный графический режим.
-- **Пример**:
-```c
-#include <purec.h>
-
-void disable_term(void) {
-    pc_console_disable();
-}
-```
-
----
-
-### 4.7. Графика и Framebuffer (GOP)
-
-#### `SYS_CLEAR` (2)
-- **Регистры**: `rax = 2`, `rbx = color` (формат 0x00RRGGBB)
-- **Обертка stdlib**: `void pc_display_clear(uint32_t color)`
-- **Описание**: Заливает весь экран (framebuffer) заданным цветом.
-- **Пример**:
-```c
-#include <purec.h>
-
-void clear_screen(void) {
-    // Темно-синий фон Catppuccin
-    pc_display_clear(0x1E1E2E);
-}
-```
-
----
-
-#### `SYS_DRAW_RECT` (100)
-- **Регистры**: `rax = 100`, `rbx = x`, `rcx = y`, `rdx = w`, `rsi = h`, `rdi = color`
-- **Обертка stdlib**: `void pc_draw_rect(uint32_t x, uint32_t y, uint32_t width, uint32_t height, uint32_t color)`
-- **Описание**: Рисует сплошной прямоугольник в заданных координатах.
-- **Пример**:
-```c
-#include <purec.h>
-
-void draw_button(void) {
-    pc_display_begin_update();
-    pc_draw_rect(50, 50, 120, 40, 0x89B4FA); // Синяя кнопка
-    pc_display_end_update();
-}
-```
-
----
-
-#### `SYS_DRAW_LINE` (101)
-- **Регистры**: `rax = 101`, `rbx = x0`, `rcx = y0`, `rdx = x1`, `rsi = y1`, `rdi = color`
-- **Обертка stdlib**: Вызывается через `syscall5`
-- **Описание**: Рисует линию между точками `(x0, y0)` и `(x1, y1)`.
-- **Пример**:
-```c
-#include <purec.h>
-
-void draw_line_example(void) {
-    // Рисование диагональной линии красного цвета (0xFF0000)
-    __asm__ volatile(
-        "int $0x80"
-        :
-        : "a"((uint64_t)SYS_DRAW_LINE), "b"((uint64_t)10), "c"((uint64_t)10),
-          "d"((uint64_t)200), "S"((uint64_t)200), "D"((uint64_t)0xFF0000)
-        : "memory"
-    );
-}
-```
-
----
+### 4.7. Framebuffer (GOP)
 
 #### `SYS_FB_INFO` (103)
 - **Регистры**: `rax = 103`, `rbx = (uintptr_t)info`
@@ -1343,223 +1271,16 @@ void print_resolution(void) {
 
 ---
 
-#### `SYS_DRAW_TEXT` (104)
-- **Регистры**: `rax = 104`, `rbx = (uintptr_t)req`
-- **Обертка stdlib**: `void pc_draw_text(uint32_t x, uint32_t y, const char *text, uint32_t fg, uint32_t bg)`
-- **Структура**:
-```c
-struct framebuffer_text_request {
-    uint32_t x, y;
-    const char *text;
-    uint32_t fg, bg;
-    uint32_t size; // 8
-};
-```
-- **Пример**:
-```c
-#include <purec.h>
+### 4.8. Удалённые вызовы (графика и PureGUI)
 
-void draw_labels(void) {
-    pc_display_begin_update();
-    pc_draw_text(60, 60, "Click Me", 0x000000, 0x89B4FA);
-    pc_display_end_update();
-}
-```
+С 2026-11-15 графика ядра, композитор, стол и оконный менеджер удалены из ядра и из дерева `src/userspace`. Номера остались в `src/kernel/syscall/syscall.h`, но обработчика в `syscall.c` нет: вызов возвращает `-KERR_NOSYS`. Обёртки в libc могут остаться, но вызов из них получает ту же ошибку.
 
----
+- **Графика ядра**: `SYS_CLEAR` (2), `SYS_DRAW_RECT` (100), `SYS_DRAW_LINE` (101), `SYS_SCROLL_RECT_UP` (106), `SYS_FB_BEGIN_UPDATE` (109), `SYS_FB_END_UPDATE` (110), `SYS_FB_BLIT` (322)
+- **Текстовая консоль окна**: `SYS_CONSOLE_CONFIGURE` (247), `SYS_CONSOLE_CLEAR` (248), `SYS_CONSOLE_DISABLE` (249)
+- **Стол и композитор**: `SYS_DESKTOP_REDRAW` (250), `SYS_DESKTOP_CLAIM` (346), `SYS_DESKTOP_BLIT` (347), `SYS_DESKTOP_WAIT` (348), `SYS_DESKTOP_WM` (349), `SYS_GUI_START` (411)
+- **PureGUI (окна)**: `SYS_GUI_WINDOW_REGISTER` (251), `SYS_GUI_WINDOW_UPDATE` (252), `SYS_GUI_WINDOW_UNREGISTER` (253), `SYS_GUI_WINDOW_STATE` (254), `SYS_GUI_WINDOW_REPAINT_DONE` (255), `SYS_GUI_WINDOW_INFO` (350), `SYS_GUI_WINDOW_FLAGS` (351), `SYS_GUI_WINDOW_CMD` (352), `SYS_GUI_WINDOW_TITLE` (353)
 
-#### `SYS_DRAW_TEXT_SIZED` (105)
-- **Регистры**: `rax = 105`, `rbx = (uintptr_t)req`
-- **Обертка stdlib**: `void pc_draw_text_sized(uint32_t x, uint32_t y, const char *text, uint32_t fg, uint32_t bg, uint32_t size)`
-- **Описание**: Рисует масштабируемый текст (размер от 8 до 48 пикселей).
-- **Пример**:
-```c
-#include <purec.h>
-
-void draw_title(void) {
-    pc_display_begin_update();
-    pc_draw_text_sized(100, 50, "PureC OS 2.0", 0xCDD6F4, 0x1E1E2E, 24);
-    pc_display_end_update();
-}
-```
-
----
-
-#### `SYS_SCROLL_RECT_UP` (106)
-- **Регистры**: `rax = 106`, `rbx = (uintptr_t)req`
-- **Структура**:
-```c
-struct framebuffer_scroll_request {
-    uint32_t x, y, w, h;
-    uint32_t amount;
-    uint32_t fill_color;
-};
-```
-- **Описание**: Прокручивает указанный прямоугольник вверх на `amount` пикселей, а снизу освободившееся место заливает цветом `fill_color`.
-- **Пример**:
-```c
-#include <purec.h>
-
-void scroll_terminal_area(void) {
-    struct framebuffer_scroll_request req = {
-        .x = 0, .y = 0, .w = 800, .h = 600,
-        .amount = 16,
-        .fill_color = 0x000000
-    };
-    pc_syscall(SYS_SCROLL_RECT_UP, (uint64_t)&req, 0, 0);
-}
-```
-
----
-
-#### `SYS_SET_FONT_FACE` (107) и `SYS_GET_FONT_FACE` (108)
-- **Регистры**: `SYS_SET_FONT_FACE` (`rax = 107`, `rbx = face`), `SYS_GET_FONT_FACE` (`rax = 108`)
-- **Описание**: Устанавливает/получает гарнитуру шрифта (0 = Regular, 1 = Bold).
-- **Пример**:
-```c
-#include <purec.h>
-
-void font_example(void) {
-    // Установка полужирного шрифта:
-    pc_syscall(SYS_SET_FONT_FACE, 1, 0, 0);
-    pc_draw_text(10, 10, "Bold Text", 0xFFFFFF, 0x000000);
-
-    // Чтение текущего шрифта:
-    int64_t face = pc_syscall(SYS_GET_FONT_FACE, 0, 0, 0);
-}
-```
-
----
-
-#### `SYS_FB_BEGIN_UPDATE` (109) и `SYS_FB_END_UPDATE` (110)
-- **Регистры**: `rax = 109`, `rax = 110`
-- **Обертки stdlib**:
-  - `void pc_display_begin_update(void)`
-  - `void pc_display_end_update(void)`
-- **Описание**: Синхронизация отрисовки. `begin_update` временно скрывает аппаратный курсор мыши, чтобы прямое рисование в framebuffer не затирало фон под курсором. `end_update` восстанавливает курсор.
-- **Пример**:
-```c
-#include <purec.h>
-
-void atomic_frame_render(void) {
-    pc_display_begin_update();
-    pc_draw_rect(0, 0, 200, 200, 0x11111B);
-    pc_draw_text(10, 10, "Rendering...", 0xFFFFFF, 0x11111B);
-    pc_display_end_update();
-}
-```
-
----
-
-#### `SYS_DESKTOP_REDRAW` (250)
-- **Регистры**: `rax = 250`
-- **Обертка stdlib**: `void pc_desktop_redraw(void)`
-- **Описание**: Запрашивает у оконного менеджера и рабочего стола принудительную перерисовку фона, обоев и значков.
-- **Пример**:
-```c
-#include <purec.h>
-
-void request_desktop_refresh(void) {
-    pc_desktop_redraw();
-}
-```
-
----
-
-### 4.8. Оконный Менеджер PureGUI
-
-Оконный менеджер PureGUI позволяет процессам регистрировать свои окна, координировать фокус и перерисовку.
-
-#### `SYS_GUI_WINDOW_REGISTER` (251)
-- **Регистры**: `rax = 251`, `rbx = (uintptr_t)req`
-- **Обертка stdlib**: `bool pc_gui_window_register(const struct gui_window_request *request)`
-- **Структура**:
-```c
-struct gui_window_request {
-    uint32_t x, y;
-    uint32_t width, height;
-};
-```
-- **Пример**:
-```c
-#include <purec.h>
-
-void register_my_window(void) {
-    struct gui_window_request w = { .x = 100, .y = 100, .width = 400, .height = 300 };
-    if (pc_gui_window_register(&w)) {
-        pc_write("Окно зарегистрировано в PureGUI!\n");
-    }
-}
-```
-
----
-
-#### `SYS_GUI_WINDOW_UPDATE` (252)
-- **Регистры**: `rax = 252`, `rbx = (uintptr_t)req`
-- **Обертка stdlib**: `bool pc_gui_window_update(const struct gui_window_request *request)`
-- **Описание**: Обновляет позицию или размер окна после перетаскивания пользователем.
-- **Пример**:
-```c
-#include <purec.h>
-
-void move_window(uint32_t new_x, uint32_t new_y) {
-    struct gui_window_request w = { .x = new_x, .y = new_y, .width = 400, .height = 300 };
-    pc_gui_window_update(&w);
-}
-```
-
----
-
-#### `SYS_GUI_WINDOW_UNREGISTER` (253)
-- **Регистры**: `rax = 253`
-- **Обертка stdlib**: `void pc_gui_window_unregister(void)`
-- **Описание**: Удаляет окно вызывающего процесса из стека окон оконного менеджера при закрытии программы.
-- **Пример**:
-```c
-#include <purec.h>
-
-void close_window_example(void) {
-    pc_gui_window_unregister();
-}
-```
-
----
-
-#### `SYS_GUI_WINDOW_STATE` (254)
-- **Регистры**: `rax = 254`
-- **Обертка stdlib**: `uint32_t pc_gui_window_state(void)`
-- **Флаги**:
-  - `GUI_WINDOW_STATE_FOCUSED (1)`: Окно имеет фокус клавиатурного ввода.
-  - `GUI_WINDOW_STATE_REPAINT (2)`: Окно было перекрыто и требует перерисовки содержимого.
-- **Пример**:
-```c
-#include <purec.h>
-
-void check_window_events(void) {
-    uint32_t state = pc_gui_window_state();
-    if (state & GUI_WINDOW_STATE_REPAINT) {
-        // Перерисовать окно
-        pc_gui_window_repaint_done();
-    }
-}
-```
-
----
-
-#### `SYS_GUI_WINDOW_REPAINT_DONE` (255)
-- **Регистры**: `rax = 255`
-- **Обертка stdlib**: `void pc_gui_window_repaint_done(void)`
-- **Описание**: Подтверждает оконному менеджеру, что событие перерисовки окна успешно обработано.
-- **Пример**:
-```c
-#include <purec.h>
-
-void done_repainting(void) {
-    pc_gui_window_repaint_done();
-}
-```
-
----
+Окна, стол и вход в графическую среду теперь реализуются отдельными пакетами (видеосервер `videod` и клиенты через `pkg`), поверх `SYS_DISPLAY_CLAIM` / `SYS_FB_MAP` / `SYS_INPUT_OPEN` (раздел 4.15).
 
 ### 4.9. Манипулятор Мышь
 
@@ -1882,6 +1603,26 @@ void connect_home_wifi(void) {
 
 ---
 
+#### `SYS_SENDTO` (403) и `SYS_RECVFROM` (404)
+- **Регистры**: `rax = 403/404`, `rbx = fd`, `rcx = buffer`, `rdx = length`, `rsi = flags`, `rdi = struct sockaddr_in *` (необязательно)
+- **Обертки stdlib**: `sendto()`, `recvfrom()` (POSIX, `<sys/socket.h>`)
+- **Описание**: Отправка и приём данных сокета с адресом. Адрес можно не передавать (`rdi = 0`), тогда работает как `send()` / `recv()`.
+- **Возврат**: число переданных байт или `-errno`.
+
+#### `SYS_NET_CONFIGURE` (405)
+- **Регистры**: `rax = 405`, `rbx = struct net_if_config *`
+- **Обертка stdlib**: `int32_t pc_net_configure(const struct net_if_config *config)`
+- **Описание**: Меняет параметры сетевого интерфейса (`name`, `address`, `netmask`, `gateway`, `dns`, код операции `op`). Требует root или право `NET_ADMIN`.
+- **Возврат**: `0` или код ошибки.
+
+#### `SYS_NET_SOCKETS` (408)
+- **Регистры**: `rax = 408`, `rbx = struct net_socket_entry *`, `rcx = capacity` (до 512), `rdx = offset`
+- **Обертка stdlib**: `int32_t pc_net_sockets(struct net_socket_entry *out, uint32_t capacity, uint32_t offset)`
+- **Описание**: Список сокетов системы. Для процессов не из root записи чужих пользователей обнуляются (pid, fd, имя процесса).
+- **Возврат**: число записей.
+
+---
+
 ### 4.12. Накопители, Форматирование и Установка
 
 #### `SYS_DISK_LIST` (208)
@@ -2059,6 +1800,15 @@ void monitor_installation(void) {
     }
 }
 ```
+
+---
+
+#### `SYS_DISK_IO` (414)
+- **Регистры**: `rax = 414`, `rbx = struct disk_io_request *`
+- **Обертка stdlib**: `int32_t pc_disk_io(const char *device, uint64_t lba, void *buffer, uint32_t count, bool write)`
+- **Структура**: `char device[16]`, `uint64_t lba`, `uint64_t buffer`, `uint32_t count` (не более 128 секторов), `uint32_t write`.
+- **Описание**: Прямое чтение или запись секторов блочного устройства, минуя VFS. Требует право `STORAGE_ADMIN`.
+- **Возврат**: `0` или код ошибки.
 
 ---
 
@@ -2286,6 +2036,21 @@ void dump_kernel_log(void) {
 
 
 
+#### `SYS_KLOG_WRITE` (406)
+- **Регистры**: `rax = 406`, `rbx = уровень` (0 — INFO, 1 — OK, 2 — WARN, 3 — ERROR), `rcx = строка`
+- **Обертка stdlib**: `syslog()`
+- **Описание**: Пишет строку в klog в виде `имя[pid]: текст`. Переводы строк заменяются пробелами, строка обрезается до 239 символов.
+- **Возврат**: `0`.
+
+#### `SYS_CLOCK_ADJUST` (407)
+- **Регистры**: `rax = 407`, `rbx = операция`, `rcx = delta_ms`, `rdx = int64_t *previous` (необязательно)
+- **Обертка stdlib**: `int32_t pc_clock_adjust(uint32_t op, int64_t delta_ms, int64_t *previous_ms)`
+- **Операции**: `CLOCK_ADJ_STEP` (0) — ступенчатая установка, `CLOCK_ADJ_SLEW` (1) — плавная коррекция, `CLOCK_ADJ_QUERY` (2) — только чтение, `CLOCK_ADJ_SAVE_RTC` (3) — сохранить время в RTC.
+- **Права**: root или право `SYS_TIME`.
+- **Возврат**: `0` или код ошибки; в `previous` — предыдущее значение остатка коррекции (мс).
+
+---
+
 ### 4.14. Права Доступа и sudo
 
 #### `SYS_SUDO` (397)
@@ -2314,13 +2079,13 @@ int elevate_to_root(const char *password) {
 
 ### 4.15. Экран и Ввод (видеосервер, этап 2)
 
-Вызовы этого раздела нужны userspace-видеосервису (displayd). Процесс с правом `PROCESS_CAP_DISPLAY` (бит `1<<2`) или root забирает экран через `SYS_DISPLAY_CLAIM`. Пока экран занят, ядро не пишет в видеопамять: стол, окна, курсор и klog не выводятся. Ядро возвращает экран само, если владелец завершился или сделал `exec`, а при панике отбирает его первым делом (`gop_kernel_reclaim`). Страницы видеопамяти помечены `VMM_PAGE_DEVICE`: они не освобождаются, не уходят в своп и не учитываются при выборе жертвы OOM.
+Вызовы этого раздела нужны userspace-видеосервису (`videod`, пакет video-backend). Процесс с правом `PROCESS_CAP_DISPLAY` (бит `1<<2`) или root забирает экран через `SYS_DISPLAY_CLAIM`. Пока экран занят, ядро не пишет в видеопамять: стол, окна, курсор и klog не выводятся. Ядро возвращает экран само, если владелец завершился или сделал `exec`, а при панике отбирает его первым делом (`gop_kernel_reclaim`). Страницы видеопамяти помечены `VMM_PAGE_DEVICE`: они не освобождаются, не уходят в своп и не учитываются при выборе жертвы OOM.
 
 #### `SYS_DISPLAY_CLAIM` (398)
 - **Регистры**: `rax = 398`
 - **Обертка stdlib**: `int32_t pc_display_claim(void)`
 - **Возврат**: `0` — экран захвачен; `-EBUSY` (`KERR_BUSY` = 16) — экран уже занят другим процессом.
-- **Описание**: Переводит вывод на экран в режим владельца. Старый ядерный стол при этом не реагирует на ввод, а пересылает события владельцу через `SYS_INPUT_OPEN`.
+- **Описание**: Переводит вывод на экран в режим владельца. Ядро при этом не реагирует на ввод, а пересылает события владельцу через `SYS_INPUT_OPEN`.
 - **Пример**:
 ```c
 #include <purec.h>

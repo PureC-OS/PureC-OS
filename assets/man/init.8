@@ -1,0 +1,78 @@
+NAME
+       init - first process, service manager
+
+SYNOPSIS
+       /sbin/init
+
+DESCRIPTION
+       The kernel starts init as PID 1. Like systemd, init reads unit files,
+       starts the default target with everything it wants in dependency order,
+       restarts services that die and reaps every orphaned process. It is
+       controlled with initctl(8) (also installed as systemctl).
+
+UNIT FILES
+       Searched in /etc/init/system (administrator), /run/init/system and
+       /usr/lib/init/system (packages); the first found wins. An empty file
+       masks a unit. NAME@.service is a template: getty@tty2.service uses
+       getty@.service with %i (and %I) replaced by tty2, %n by the unit name.
+
+           [Unit]
+           Description=Network Daemon
+           Requires=sysinit.target       started first, failure stops us
+           Wants=other.service           started too, failure is ignored
+           After=sysinit.target          wait until these are up
+           Before=...                    the reverse of After
+           Conflicts=rescue.target       stopped when we start
+           ConditionPathExists=[!]/path  skip silently when not met
+
+           [Service]
+           Type=simple                   or oneshot (runs to the end), or idle
+                                         (started last, when nothing else is
+                                         starting, targets do not wait for it;
+                                         used by getty)
+           ExecStartPre=, ExecStart=, ExecStartPost=, ExecStop=
+                                         full path; a leading - ignores failure
+           Restart=no                    always, on-failure
+           RestartSec=1                  seconds (or 500ms, 2min)
+           RemainAfterExit=no            oneshot stays active
+           User=name                     run as this user
+           WorkingDirectory=/path
+           Environment=KEY=value         may repeat
+           StandardOutput=log            log (/var/log/init/NAME.log), null,
+                                         tty, tty:/dev/ttyN, file:PATH, append:PATH
+
+           [Install]
+           WantedBy=multi-user.target    used by initctl enable
+
+       A target groups units: it waits for everything it wants. Units are
+       enabled by a file named after the unit in TARGET.wants/ (or
+       TARGET.requires/) in a unit directory; initctl enable creates it.
+
+       A service that dies 5 times within 10 seconds is paused for 10
+       seconds. On poweroff and reboot services get SIGTERM, then SIGKILL
+       after 5 seconds.
+
+TARGETS
+       sysinit.target, multi-user.target (consoles, network), graphical.target
+       (multi-user plus display-manager.service), rescue.target (only tty1).
+
+KERNEL COMMAND LINE
+       init.unit=NAME.target
+           start this target instead of the default
+       text, 3, nogui
+           multi-user.target
+       single, 1, rescue
+           rescue.target
+       verbose, loglevel=7
+           keep printing all kernel messages on tty1
+
+       Without anything the target is read from /etc/init/default.target,
+       otherwise multi-user.target. When no unit can be loaded init runs getty
+       on tty1-tty6.
+
+FILES
+       /etc/init/system/, /usr/lib/init/system/, /etc/init/default.target,
+       /run/init/units (state), /run/init/req/ (requests), /var/log/init/
+
+SEE ALSO
+       initctl(8), getty(8), netd(8), chvt(1)

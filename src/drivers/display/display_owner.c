@@ -5,6 +5,7 @@
 #include "../../kernel/diagnostics/klog.h"
 #include "../../kernel/ipc/inputdev.h"
 #include "../../kernel/syscall/syscall.h"
+#include "../../kernel/tty/vtcon.h"
 #include "../../lib/string.h"
 
 
@@ -25,6 +26,7 @@ int32_t display_owner_claim(uint32_t pid)
   have_last = false;
   klog_set_screen_enabled(false);
   gop_set_user_owned(true);
+  vtcon_graphics_claimed(true);
   klogf(KLOG_INFO, "display: screen claimed by pid=%u", pid);
   return 0;
 }
@@ -35,6 +37,7 @@ void display_owner_release(uint32_t pid)
     return;
   owner_pid = 0;
   gop_set_user_owned(false);
+  vtcon_graphics_claimed(false);
   klogf(KLOG_INFO, "display: screen returned to the kernel (pid=%u)", pid);
 }
 

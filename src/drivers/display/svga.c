@@ -1,3 +1,4 @@
+#include <arch/x86_64/include/portio.h>
 #include "svga.h"
 #include "../pci/pci.h"
 #include "../../arch/x86_64/mmio.h"
@@ -43,15 +44,6 @@
 #define SVGA_CMD_RECT_FILL 2
 #define SVGA_CMD_RECT_COPY 3
 
-static inline void outl16(uint16_t port, uint32_t v) {
-    __asm__ volatile("outl %0,%1" ::"a"(v), "Nd"(port));
-}
-static inline uint32_t inl16(uint16_t port) {
-    uint32_t v;
-    __asm__ volatile("inl %1,%0" : "=a"(v) : "Nd"(port));
-    return v;
-}
-
 struct svga_dev {
     bool pci_found;
     uint8_t bus, slot, func;
@@ -93,12 +85,12 @@ bool svga_probe_only(void) {
 }
 
 static uint32_t svga_reg_read(uint16_t io, uint32_t idx) {
-    outl16(io, idx);
-    return inl16((uint16_t)(io + 1));
+    outl(io, idx);
+    return inl((uint16_t)(io + 1));
 }
 static void svga_reg_write(uint16_t io, uint32_t idx, uint32_t val) {
-    outl16(io, idx);
-    outl16((uint16_t)(io + 1), val);
+    outl(io, idx);
+    outl((uint16_t)(io + 1), val);
 }
 
 static void fifo_write_word(uint32_t word) {
@@ -410,15 +402,15 @@ bool svga_init(uint32_t want_w, uint32_t want_h, uint8_t want_bpp) {
 
     {
         uint32_t expect = pci_read_config32(g.bus, g.slot, g.func, 0x00);
-        outl16(0xCF8, (uint32_t)(0x80000000u | ((uint32_t)g.bus << 16) |
+        outl(0xCF8, (uint32_t)(0x80000000u | ((uint32_t)g.bus << 16) |
                                  ((uint32_t)g.slot << 11) | ((uint32_t)g.func << 8)));
-        uint32_t probe = inl16(0xCFC);
+        uint32_t probe = inl(0xCFC);
         klogf(probe == expect ? KLOG_INFO : KLOG_WARN, "svga: io selftest cfc=0x%x expect=0x%x %s",
               probe, expect, probe == expect ? "IO_OK" : "IO_BROKEN");
     }
     {
-        outl16(g.io_base, 15);
-        uint32_t vram_probe = inl16((uint16_t)(g.io_base + 1));
+        outl(g.io_base, 15);
+        uint32_t vram_probe = inl((uint16_t)(g.io_base + 1));
         klogf(KLOG_INFO, "svga: vram-size-first probe=0x%x", vram_probe);
         st_set("svga: vram=");
         st_hex(vram_probe);

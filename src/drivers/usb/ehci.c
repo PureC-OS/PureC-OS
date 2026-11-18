@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "ehci.h"
 
 #include "../pci/pci.h"
@@ -176,7 +177,7 @@ static void delay(void)
 {
     for (volatile uint32_t wait = 0; wait < 1000000; wait++)
     {
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
 }
 
@@ -186,7 +187,7 @@ static bool wait_register(volatile uint32_t *reg, uint32_t mask, bool set)
     {
         if (((*reg & mask) != 0) == set)
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -256,7 +257,7 @@ static bool execute_schedule(struct ehci_qtd *first,
             completed = (token & EHCI_QTD_ERRORS) == 0;
             break;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     operational[0] &= ~EHCI_CMD_ASYNC;
     (void)wait_register(&operational[1], EHCI_STS_ASYNC, false);

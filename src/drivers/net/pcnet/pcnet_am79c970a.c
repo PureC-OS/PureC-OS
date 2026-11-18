@@ -1,3 +1,5 @@
+#include <arch/x86_64/include/portio.h>
+#include <arch/arch.h>
 #include "pcnet_am79c970a.h"
 #include "drivers/interrupts/timer.h"
 #include "drivers/pci/pci.h"
@@ -115,66 +117,30 @@ struct pcnet_discovery
     uint32_t count;
 };
 
-static inline uint8_t port_inb(uint16_t port)
-{
-    uint8_t value;
-    __asm__ volatile("inb %1,%0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-
-static inline void port_outb(uint16_t port, uint8_t value)
-{
-    __asm__ volatile("outb %0,%1" ::"a"(value), "Nd"(port));
-}
-
-static inline uint16_t port_inw(uint16_t port)
-{
-    uint16_t value;
-    __asm__ volatile("inw %1,%0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-
-static inline void port_outw(uint16_t port, uint16_t value)
-{
-    __asm__ volatile("outw %0,%1" ::"a"(value), "Nd"(port));
-}
-
-static inline uint32_t port_inl(uint16_t port)
-{
-    uint32_t value;
-    __asm__ volatile("inl %1,%0" : "=a"(value) : "Nd"(port));
-    return value;
-}
-
-static inline void port_outl(uint16_t port, uint32_t value)
-{
-    __asm__ volatile("outl %0,%1" ::"a"(value), "Nd"(port));
-}
-
 static uint16_t pcnet_csr_read(struct pcnet_device *device, uint16_t csr)
 {
-    port_outl((uint16_t)(device->io_base + PCNET32_RAP), csr);
-    return (uint16_t)(port_inl((uint16_t)(device->io_base + PCNET32_RDP)) & 0xFFFFU);
+    outl((uint16_t)(device->io_base + PCNET32_RAP), csr);
+    return (uint16_t)(inl((uint16_t)(device->io_base + PCNET32_RDP)) & 0xFFFFU);
 }
 
 static void pcnet_csr_write(struct pcnet_device *device, uint16_t csr,
                             uint16_t value)
 {
-    port_outl((uint16_t)(device->io_base + PCNET32_RAP), csr);
-    port_outl((uint16_t)(device->io_base + PCNET32_RDP), value);
+    outl((uint16_t)(device->io_base + PCNET32_RAP), csr);
+    outl((uint16_t)(device->io_base + PCNET32_RDP), value);
 }
 
 static uint16_t pcnet_bcr_read(struct pcnet_device *device, uint16_t bcr)
 {
-    port_outl((uint16_t)(device->io_base + PCNET32_RAP), bcr);
-    return (uint16_t)(port_inl((uint16_t)(device->io_base + PCNET32_BDP)) & 0xFFFFU);
+    outl((uint16_t)(device->io_base + PCNET32_RAP), bcr);
+    return (uint16_t)(inl((uint16_t)(device->io_base + PCNET32_BDP)) & 0xFFFFU);
 }
 
 static void pcnet_bcr_write(struct pcnet_device *device, uint16_t bcr,
                             uint16_t value)
 {
-    port_outl((uint16_t)(device->io_base + PCNET32_RAP), bcr);
-    port_outl((uint16_t)(device->io_base + PCNET32_BDP), value);
+    outl((uint16_t)(device->io_base + PCNET32_RAP), bcr);
+    outl((uint16_t)(device->io_base + PCNET32_BDP), value);
 }
 
 static uint16_t pcnet_length_field(uint32_t length)
@@ -239,20 +205,20 @@ static bool pcnet_allocate_dma(struct pcnet_device *device)
 
 static void pcnet_soft_reset(struct pcnet_device *device)
 {
-    (void)port_inl((uint16_t)(device->io_base + PCNET32_RESET));
-    (void)port_inw((uint16_t)(device->io_base + PCNET16_RESET));
+    (void)inl((uint16_t)(device->io_base + PCNET32_RESET));
+    (void)inw((uint16_t)(device->io_base + PCNET16_RESET));
     timer_sleep(1);
 }
 
 static bool pcnet_enter_dword_mode(struct pcnet_device *device)
 {
-    port_outl((uint16_t)(device->io_base + PCNET32_RDP), 0);
+    outl((uint16_t)(device->io_base + PCNET32_RDP), 0);
     for (uint32_t attempt = 0; attempt < PCNET_INIT_TIMEOUT; attempt++)
     {
         uint16_t csr0 = pcnet_csr_read(device, 0);
         if ((csr0 & PCNET_CSR0_STOP) && !(csr0 & (PCNET_CSR0_INIT | PCNET_CSR0_STRT)))
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -309,7 +275,7 @@ static bool pcnet_start(struct pcnet_device *device)
             done = true;
             break;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     if (!done)
         return false;
@@ -320,7 +286,7 @@ static bool pcnet_start(struct pcnet_device *device)
         uint16_t csr0 = pcnet_csr_read(device, 0);
         if ((csr0 & (PCNET_CSR0_RXON | PCNET_CSR0_TXON)) == (PCNET_CSR0_RXON | PCNET_CSR0_TXON))
             return true;
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -454,7 +420,7 @@ static bool pcnet_init_one(struct pcnet_device *device,
 
     uint8_t mac[6];
     for (uint32_t index = 0; index < 6; index++)
-        mac[index] = port_inb((uint16_t)(device->io_base + index));
+        mac[index] = inb((uint16_t)(device->io_base + index));
     bool all_zero = true;
     bool all_ff = true;
     for (uint8_t index = 0; index < 6; index++)

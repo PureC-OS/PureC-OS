@@ -3,6 +3,7 @@ static mutex_t vfs_mutex;
 #include "../io/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
 #include "../kernel/process/process.h"
+#include "../kernel/process/scheduler.h"
 #include "../kernel/syscall/syscall.h"
 #include "../kernel/time/wallclock.h"
 #include "../lib/string.h"
@@ -17,6 +18,7 @@ static mutex_t vfs_mutex;
 #include "vfs.h"
 #include "vfs_alias.h"
 #include "vfs_backends.h"
+#include "ext2/include/ext2_bcache.h"
 #include "vfs_mount.h"
 #include "vfs_path.h"
 #include "vfs_perm.h"
@@ -250,8 +252,33 @@ static struct vfs_mount *meta_mount(const char *path, const char **relative,
   return mount;
 }
 
+static bool overlay_file_meta(const char *path, struct vfs_perm_meta *meta) {
+  const void *data = 0;
+  uint32_t size = 0;
+  if (!initramfs_is_mounted() || !initramfs_find(path, &data, &size))
+    return false;
+  const char *relative;
+  char buffer[2];
+  struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
+  if (strncmp(path, "/etc/", 5) == 0 && mount &&
+      mount->ops->get_meta(mount->context, relative, meta) >= 0)
+    return true;
+  if (vfs_perm_get(path, meta))
+    return true;
+  const uint8_t *bytes = (const uint8_t *)data;
+  bool elf = size >= 4 && bytes[0] == 0x7F && bytes[1] == 'E' &&
+             bytes[2] == 'L' && bytes[3] == 'F';
+  bool script = size >= 2 && bytes[0] == '#' && bytes[1] == '!';
+  meta->mode = (elf || script) ? 0755u : 0644u;
+  meta->uid = 0;
+  meta->gid = 0;
+  return true;
+}
+
 static void effective_meta(const char *path, bool directory,
                            struct vfs_perm_meta *meta) {
+  if (!directory && overlay_file_meta(path, meta))
+    return;
   const char *relative;
   char buffer[2];
   struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
@@ -303,9 +330,26 @@ static int32_t check_access(const char *path, bool directory, uint32_t want) {
              : FS_ERROR_DENIED;
 }
 
+static bool is_virtual_dir(const char *path);
+static bool overlay_dir(const char *path);
+
+static bool directory_exists(const char *path) {
+  struct vfs_resolved resolved;
+  if (resolve(path, &resolved) < 0)
+    return false;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  struct file_stat_info info;
+  if (ops->stat && mount_ready(resolved.mount) &&
+      ops->stat(resolved.mount->context, resolved.relative, &info) >= 0)
+    return info.is_directory != 0;
+  return is_virtual_dir(resolved.path) || overlay_dir(resolved.path);
+}
+
 static int32_t check_parent_write(const char *path) {
   char parent[VFS_PATH_MAX];
   parent_of(path, parent, sizeof(parent));
+  if (process_current_uid() != 0 && !directory_exists(parent))
+    return FS_ERROR_NOT_FOUND;
   return check_access(parent, true, VFS_PERM_W);
 }
 
@@ -359,11 +403,13 @@ static bool overlay_find(const char *path, const void **data, uint32_t *size) {
   return initramfs_is_mounted() && initramfs_find(path, data, size);
 }
 
+bool vfs_root_on_disk(void) { return !live_mode; }
+
 static bool overlay_take(const struct vfs_resolved *resolved, const void **data,
                          uint32_t *size) {
   if (!overlay_find(resolved->path, data, size))
     return false;
-  if (strncmp(resolved->path, "/etc/", 5) != 0)
+  if (live_mode)
     return true;
   const struct vfs_fs_ops *ops = resolved->mount->ops;
   struct file_stat_info info;
@@ -463,7 +509,7 @@ bool vfs_mount_root_with_fs(uint8_t fs_type) {
   MUTEX_SCOPE(&vfs_mutex);
   if (fs_type != VFS_FS_EXT2 && fs_type != VFS_FS_AUTO)
     return false;
-  if (ext2_init()) {
+  if (ext2_init_root()) {
     set_root_ops(VFS_FS_EXT2);
     return true;
   }
@@ -803,9 +849,11 @@ int32_t vfs_close(int32_t descriptor) {
     return 0;
   }
   int32_t r = 0;
+  bool writable = h->type == VFS_HANDLE_WRITABLE;
   if (h->type == VFS_HANDLE_BACKEND && h->mount->ops->close)
     r = h->mount->ops->close(h->mount->context, h->backend_descriptor);
   memset(h, 0, sizeof(*h));
+  (void)writable;
   return r;
 }
 
@@ -989,6 +1037,138 @@ int32_t vfs_rename(const char *path, const char *new_name) {
       vfs_perm_rename(resolved.path, renamed);
     }
   }
+  return status;
+}
+
+static const char *base_name(const char *path) {
+  const char *base = path;
+  for (const char *c = path; *c; c++)
+    if (*c == '/' && c[1])
+      base = c + 1;
+  return base;
+}
+
+static void join_path(char *out, uint32_t capacity, const char *dir,
+                      const char *name) {
+  uint32_t length = (uint32_t)strlen(dir);
+  if (length >= capacity)
+    length = capacity - 1;
+  memcpy(out, dir, length);
+  if (length > 1 && length + 1 < capacity)
+    out[length++] = '/';
+  else if (length == 1 && dir[0] != '/' && length + 1 < capacity)
+    out[length++] = '/';
+  uint32_t rest = (uint32_t)strlen(name);
+  if (length + rest >= capacity)
+    rest = capacity - 1 - length;
+  memcpy(out + length, name, rest);
+  out[length + rest] = '\0';
+}
+
+int32_t vfs_rename_path(const char *from, const char *to) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_resolved src;
+  struct vfs_resolved dst;
+  int32_t status = resolve(from, &src);
+  if (status < 0)
+    return status;
+  status = resolve(to, &dst);
+  if (status < 0)
+    return status;
+  if (src.mount != dst.mount)
+    return FS_ERROR_UNSUPPORTED;
+  if (strcmp(src.path, dst.path) == 0)
+    return 0;
+  if (vfs_mount_at(src.path) || vfs_mount_at(dst.path))
+    return FS_ERROR_BUSY;
+  const struct vfs_fs_ops *ops = src.mount->ops;
+  void *ctx = src.mount->context;
+  status = check_mutation(src.mount, ops->rename);
+  if (status < 0)
+    return status;
+  if (!ops->stat || !mount_ready(src.mount))
+    return FS_ERROR_UNSUPPORTED;
+  uint32_t src_length = (uint32_t)strlen(src.path);
+  if (strncmp(dst.path, src.path, src_length) == 0 && dst.path[src_length] == '/')
+    return FS_ERROR_INVALID;
+  status = check_parent_write(src.path);
+  if (status < 0)
+    return status;
+  status = check_parent_write(dst.path);
+  if (status < 0)
+    return status;
+  struct file_stat_info source_info;
+  struct file_stat_info target_info;
+  if (ops->stat(ctx, src.relative, &source_info) < 0)
+    return FS_ERROR_NOT_FOUND;
+  char src_parent_rel[VFS_PATH_MAX];
+  char dst_parent_rel[VFS_PATH_MAX];
+  parent_of(src.relative, src_parent_rel, sizeof(src_parent_rel));
+  parent_of(dst.relative, dst_parent_rel, sizeof(dst_parent_rel));
+  struct file_stat_info parent_info;
+  if (ops->stat(ctx, dst_parent_rel, &parent_info) < 0)
+    return FS_ERROR_NOT_FOUND;
+  if (!parent_info.is_directory)
+    return FS_ERROR_NOT_DIR;
+  bool same_parent = strcmp(src_parent_rel, dst_parent_rel) == 0;
+  const char *src_base = base_name(src.relative);
+  const char *dst_base = base_name(dst.relative);
+  bool same_base = strcmp(src_base, dst_base) == 0;
+  if (!same_parent) {
+    status = check_mutation(src.mount, ops->move);
+    if (status < 0)
+      return status;
+  }
+  if (ops->stat(ctx, dst.relative, &target_info) >= 0) {
+    if (target_info.is_directory && !source_info.is_directory)
+      return FS_ERROR_NOT_FILE;
+    if (!target_info.is_directory && source_info.is_directory)
+      return FS_ERROR_NOT_DIR;
+    status = check_mutation(src.mount, ops->unlink);
+    if (status < 0)
+      return status;
+    status = ops->unlink(ctx, dst.relative);
+    if (status < 0)
+      return status;
+    vfs_perm_forget(dst.path);
+  }
+  if (same_parent) {
+    status = ops->rename(ctx, src.relative, dst_base);
+  } else if (same_base) {
+    status = ops->move(ctx, src.relative, dst_parent_rel);
+  } else {
+    static uint32_t rename_serial;
+    char temp_name[40];
+    char temp_rel[VFS_PATH_MAX];
+    char moved_rel[VFS_PATH_MAX];
+    uint32_t serial = ++rename_serial;
+    char digits[12];
+    uint32_t n = 0;
+    do {
+      digits[n++] = (char)('0' + serial % 10);
+      serial /= 10;
+    } while (serial && n < sizeof(digits));
+    strcpy(temp_name, ".vfs-rename-");
+    uint32_t t = (uint32_t)strlen(temp_name);
+    while (n)
+      temp_name[t++] = digits[--n];
+    temp_name[t] = '\0';
+    status = ops->rename(ctx, src.relative, temp_name);
+    if (status < 0)
+      return status;
+    join_path(temp_rel, sizeof(temp_rel), src_parent_rel, temp_name);
+    status = ops->move(ctx, temp_rel, dst_parent_rel);
+    if (status < 0) {
+      (void)ops->rename(ctx, temp_rel, src_base);
+      return status;
+    }
+    join_path(moved_rel, sizeof(moved_rel), dst_parent_rel, temp_name);
+    status = ops->rename(ctx, moved_rel, dst_base);
+    if (status < 0)
+      return status;
+  }
+  if (status >= 0)
+    vfs_perm_rename(src.path, dst.path);
   return status;
 }
 
@@ -1510,6 +1690,24 @@ int32_t vfs_format_device_ex(const char *device_name,
     return FS_ERROR_INVALID;
   if (fs_type != VFS_FS_EXT2)
     return FS_ERROR_UNSUPPORTED;
+  uint32_t length = (uint32_t)strlen(device_name);
+  uint32_t digits = 0;
+  while (digits < length && device_name[length - 1 - digits] >= '0' &&
+         device_name[length - 1 - digits] <= '9')
+    digits++;
+  if (digits && digits < length && digits <= 3 && block_device_find(device_name) < 0) {
+    char disk[32];
+    uint32_t base = length - digits;
+    if (base >= sizeof(disk))
+      return FS_ERROR_INVALID;
+    memcpy(disk, device_name, base);
+    disk[base] = '\0';
+    uint32_t number = 0;
+    for (uint32_t i = base; i < length; i++)
+      number = number * 10 + (uint32_t)(device_name[i] - '0');
+    return ext2_format_partition_device(disk, number, serial_confirmation,
+                                        erase_confirmation);
+  }
   return ext2_format_device(device_name, serial_confirmation,
                             erase_confirmation);
 }
@@ -1777,9 +1975,8 @@ void vfs_selftest(void) {
   uint32_t failed = 0;
   failed += !selftest_stat("/", true);
   failed += !selftest_stat("/bin/ls", false);
-  failed += !selftest_stat("/usr/bin/terminal", false);
-  failed += !selftest_stat("/bin/program/terminal", false);
-  failed += !selftest_stat("/usr/share/applications", true);
+  failed += !selftest_stat("/bin/sh", false);
+  failed += !selftest_stat("/sbin/getty", false);
   failed += !selftest_stat("/sbin/init", false);
   failed += !selftest_stat("/etc/hostname", false);
   failed += !selftest_stat("/etc", true);
@@ -1806,4 +2003,24 @@ void vfs_selftest(void) {
     klogf(KLOG_WARN, "vfs: selftest FAILED checks=%u", failed);
   else
     klog(KLOG_OK, "vfs: selftest passed");
+}
+
+int32_t vfs_sync(void) {
+  MUTEX_SCOPE(&vfs_mutex);
+  return ext2_bcache_checkpoint() ? 0 : FS_ERROR_IO;
+}
+
+static void vfs_writeback_thread(void *arg) {
+  (void)arg;
+  for (;;) {
+    scheduler_sleep(1000);
+    MUTEX_SCOPE(&vfs_mutex);
+    ext2_bcache_tick();
+  }
+}
+
+void vfs_writeback_start(void) {
+  int tid = scheduler_create_thread(vfs_writeback_thread, 0, "ext2-writeback", 3, -1);
+  if (tid < 0)
+    klog(KLOG_WARN, "vfs: writeback thread not started, dirty blocks flush on pressure only");
 }

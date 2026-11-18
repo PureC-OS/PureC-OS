@@ -1,0 +1,20 @@
+NAME
+       tty - print the name of the terminal on standard input
+
+SYNOPSIS
+       tty [-s]
+
+DESCRIPTION
+       tty prints the device of the terminal connected to standard input,
+       for example /dev/tty2 on a text console. Terminal windows of the
+       graphical session report /dev/pts.
+
+OPTIONS
+       -s, --silent
+           print nothing, only set the exit status
+
+EXIT STATUS
+       0 when standard input is a terminal, 1 otherwise.
+
+SEE ALSO
+       chvt(1)

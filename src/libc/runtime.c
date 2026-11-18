@@ -433,6 +433,8 @@ int32_t pc_getrandom(void *buffer, uint32_t count){
     return (int32_t)pc_syscall(SYS_GETRANDOM,(uint64_t)(uintptr_t)buffer,count,0);
 }
 
+int32_t pc_sync(void){ return (int32_t)pc_syscall(SYS_SYNC,0,0,0); }
+
 int32_t pc_getuid(void){ return (int32_t)pc_syscall(SYS_GETUID,0,0,0); }
 static int32_t config_uid=-1;
 static char config_dir[128];
@@ -847,6 +849,17 @@ int32_t pc_format_custom(const char *device, uint32_t partition_count, const uin
     req.partition_count=partition_count;
     for(uint32_t i=0;i<partition_count && i<4;i++) req.sizes_gb[i]=sizes_gb[i];
     return (int32_t)pc_syscall(SYS_FS_FORMAT_CUSTOM, (uint64_t)(uintptr_t)&req, 0, 0);
+}
+
+int32_t pc_disk_io(const char *device, uint64_t lba, void *buffer, uint32_t count, bool write){
+    if(!device || !buffer) return -1;
+    struct disk_io_request req={0};
+    pc_copy(req.device, device, sizeof(req.device));
+    req.lba=lba;
+    req.buffer=(uint64_t)(uintptr_t)buffer;
+    req.count=count;
+    req.write=write ? 1u : 0u;
+    return (int32_t)pc_syscall(SYS_DISK_IO, (uint64_t)(uintptr_t)&req, 0, 0);
 }
 
 int32_t pc_format_device_ex(const char *device, const char *serial, uint8_t fs_type){

@@ -3,7 +3,7 @@
 This document records the requirements and the staged plan for replacing the
 current scheduler (`src/kernel/process/scheduler.c`) and process model
 (`src/kernel/process/process.c`). The work is done in stages; the system must
-boot and keep running the existing scenarios (desktop, terminal, Vim, TinyCC,
+boot and keep running the existing scenarios (desktop package, terminal, Vim, TinyCC,
 Make, Doom) after every stage.
 
 ## Why

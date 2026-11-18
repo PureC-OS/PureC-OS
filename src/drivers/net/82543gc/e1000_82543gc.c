@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "e1000_82543gc.h"
 #include "arch/x86_64/mmio.h"
 #include "drivers/interrupts/timer.h"
@@ -277,7 +278,7 @@ static bool gc_reset_controller(struct e1000_gc_device *device)
             (void)gc_reg_read(device, E1000_GC_REG_ICR);
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -297,7 +298,7 @@ static bool gc_mdio_read(struct e1000_gc_device *device, uint8_t phy,
             *value = (uint16_t)(mdic & E1000_GC_MDIC_DATA_MASK);
             return true;
         }
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }
@@ -312,7 +313,7 @@ static bool gc_mdio_write(struct e1000_gc_device *device, uint8_t phy,
         uint32_t mdic = gc_reg_read(device, E1000_GC_REG_MDIC);
         if (mdic & E1000_GC_MDIC_READY)
             return !(mdic & E1000_GC_MDIC_ERROR);
-        __asm__ volatile("pause");
+        arch_cpu_relax();
     }
     return false;
 }

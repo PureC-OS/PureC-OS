@@ -51,10 +51,9 @@
 
 ## Где используется
 
-- `src/kernel/core/kernel.c:93-95` — при `pref != 1` (не задан `video=gop`/`nogpu`/`video=safe`) вызывается `svga_init(1024, 768, 32)`, затем `gop_apply_live` переводит GOP на framebuffer SVGA.
-- `src/drivers/display/gop.c` — после записи в backbuffer вызывает `svga_update` для 32-битного пути.
-- `src/gfx/compositor.c:602` — композитор сообщает о грязной области через `svga_update`.
-- `src/boot/boot.c:109-112` — параметры загрузки `video=gop` / `nogpu` / `video=safe` запрещают SVGA, `video=svga` / `video=gpu` требуют его.
+- `src/kernel/core/kernel.c:105` — при `pref != 1` (не задан `video=gop`/`nogpu`/`video=safe`) вызывается `svga_init(1024, 768, 32)`, затем `gop_apply_live` переводит GOP на framebuffer SVGA (`kernel.c:111–113`).
+- `src/drivers/display/gop.c:58, 63, 203, 297, 331` — передаёт грязные области через `svga_update`; `src/drivers/display/svga3d.c:698` — полное обновление экрана при откате 3D в legacy-framebuffer (`fail_to_legacy`).
+- `src/boot/boot.c:118–122` — параметры загрузки `video=gop` / `nogpu` / `video=safe` запрещают SVGA, `video=svga` / `video=gpu` требуют его.
 
 ## Ограничения
 

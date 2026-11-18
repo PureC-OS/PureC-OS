@@ -1,5 +1,6 @@
 #include "include/ext2.h"
 #include "include/ext2_types.h"
+#include "include/ext2_bcache.h"
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_inode.h"
@@ -10,6 +11,7 @@
 #include "../../io/storage/block_device.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../lib/string.h"
+#include "../../boot/boot_options.h"
 
 bool ext2_mount_specific(const char *device)
 {
@@ -17,6 +19,7 @@ bool ext2_mount_specific(const char *device)
     {
         return false;
     }
+    ext2_bcache_reset(true);
     int32_t idx = block_device_find(device);
     if (idx < 0)
     {
@@ -54,6 +57,7 @@ bool ext2_mount_specific(const char *device)
             uint32_t per = BLOCK_SECTOR_SIZE / 128;
             uint8_t type_basic[16] = {0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99, 0xC7};
             uint8_t type_linux[16] = {0xAF, 0x3C, 0x4C, 0x24, 0x00, 0x00, 0x42, 0x4D, 0xA0, 0x76, 0x4D, 0x89, 0x41, 0xFF, 0x86, 0xFE};
+            uint8_t type_linux_fs[16] = {0xAF, 0x3D, 0xC6, 0x0F, 0x83, 0x84, 0x72, 0x47, 0x8E, 0x79, 0x3D, 0x69, 0xD8, 0x47, 0x7D, 0xE4};
             for (uint32_t i = 0; i < entry_count; i++)
             {
                 if (i % per == 0)
@@ -64,7 +68,8 @@ bool ext2_mount_specific(const char *device)
                     }
                 }
                 uint32_t off = (i % per) * 128;
-                bool typed = memcmp(sec + off, type_basic, 16) == 0 || memcmp(sec + off, type_linux, 16) == 0;
+                bool typed = memcmp(sec + off, type_basic, 16) == 0 || memcmp(sec + off, type_linux, 16) == 0 ||
+                             memcmp(sec + off, type_linux_fs, 16) == 0;
                 if (!typed)
                 {
                     continue;
@@ -127,6 +132,134 @@ bool ext2_init(void)
             return true;
         }
     }
+    return false;
+}
+
+static int hex_value(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
+    return -1;
+}
+
+static bool parse_uuid(const char *text, uint8_t out[16])
+{
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < 36; i++)
+    {
+        char c = text[i];
+        if (i == 8 || i == 13 || i == 18 || i == 23)
+        {
+            if (c != '-')
+                return false;
+            continue;
+        }
+        int hi = hex_value(c);
+        int lo = hex_value(text[i + 1]);
+        if (hi < 0 || lo < 0)
+            return false;
+        out[n++] = (uint8_t)((hi << 4) | lo);
+        i++;
+    }
+    char end = text[36];
+    return n == 16 && (end == '\0' || end == ' ' || end == '\t');
+}
+
+static bool cmdline_root_uuid(uint8_t out[16])
+{
+    const char *cmd = boot_cmdline();
+    static const char key[] = "root=UUID=";
+    if (!cmd)
+        return false;
+    for (const char *p = cmd; *p; p++)
+    {
+        if ((p == cmd || p[-1] == ' ' || p[-1] == '\t') && strncmp(p, key, sizeof(key) - 1) == 0)
+            return parse_uuid(p + sizeof(key) - 1, out);
+    }
+    return false;
+}
+
+static bool superblock_uuid_matches(uint32_t partition_lba, const uint8_t uuid[16])
+{
+    uint8_t *sec = ext2_scratch_sector();
+    if (!block_device_read(partition_lba + 2, sec))
+        return false;
+    if (ext2_read_u16(sec + 56) != EXT2_MAGIC || ext2_read_u32(sec + 76) < 1)
+        return false;
+    return memcmp(sec + 104, uuid, 16) == 0;
+}
+
+static bool mount_by_uuid(const uint8_t uuid[16])
+{
+    uint32_t n = block_device_count();
+    for (uint32_t d = 0; d < n; d++)
+    {
+        if (!block_device_select(d))
+            continue;
+        uint8_t *sec = ext2_scratch_sector();
+        bool has_gpt = block_device_read(1, sec) && memcmp(sec, "EFI PART", 8) == 0;
+        if (!has_gpt)
+        {
+            if (superblock_uuid_matches(0, uuid) && ext2_super_mount_at(0))
+            {
+                klogf(KLOG_OK, "ext2: root UUID found on %s", block_device_name());
+                return true;
+            }
+            continue;
+        }
+        uint64_t entries_lba = 0;
+        for (int b = 0; b < 8; b++)
+            entries_lba |= (uint64_t)sec[72 + b] << (b * 8);
+        uint32_t entry_count = ext2_read_u32(sec + 80);
+        uint32_t entry_size = ext2_read_u32(sec + 84);
+        if (!entry_count || entry_size != 128 || entries_lba > UINT32_MAX)
+            continue;
+        uint32_t per = BLOCK_SECTOR_SIZE / 128;
+        for (uint32_t i = 0; i < entry_count; i++)
+        {
+            sec = ext2_scratch_sector();
+            if (!block_device_read((uint32_t)entries_lba + i / per, sec))
+                break;
+            const uint8_t *entry = sec + (i % per) * 128;
+            uint64_t first = 0;
+            bool used = false;
+            for (int b = 0; b < 16; b++)
+                if (entry[b])
+                    used = true;
+            if (!used)
+                continue;
+            for (int b = 0; b < 8; b++)
+                first |= (uint64_t)entry[32 + b] << (b * 8);
+            if (first > UINT32_MAX)
+                continue;
+            if (superblock_uuid_matches((uint32_t)first, uuid) && ext2_super_mount_at((uint32_t)first))
+            {
+                klogf(KLOG_OK, "ext2: root UUID found on %s partition %u", block_device_name(), i + 1);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool ext2_init_root(void)
+{
+    struct ext2_volume *vol = ext2_volume();
+    if (vol->mounted)
+        return true;
+    uint8_t uuid[16];
+    if (!cmdline_root_uuid(uuid))
+        return false;
+    if (!block_device_init())
+        return false;
+    ext2_bcache_reset(true);
+    if (mount_by_uuid(uuid))
+        return true;
+    klog(KLOG_WARN, "ext2: root=UUID not found, staying on initramfs");
     return false;
 }
 
@@ -227,12 +360,20 @@ int32_t ext2_move(const char *a, const char *b)
 
 int32_t ext2_format_device(const char *device_name, const char *serial_confirmation, const char *erase_confirmation)
 {
+    bool had_root = ext2_volume()->mounted;
     int32_t r = ext2_format_device_impl(device_name, serial_confirmation, erase_confirmation);
-    if (r == 0)
-    {
-        ext2_volume()->mounted = false;
-        return ext2_init() ? 0 : -1;
-    }
+    if (r == 0 && !had_root)
+        (void)ext2_init_root();
+    return r;
+}
+
+int32_t ext2_format_partition_device(const char *device_name, uint32_t number,
+                                     const char *serial_confirmation, const char *erase_confirmation)
+{
+    bool had_root = ext2_volume()->mounted;
+    int32_t r = ext2_format_partition(device_name, number, serial_confirmation, erase_confirmation);
+    if (r == 0 && !had_root)
+        (void)ext2_init_root();
     return r;
 }
 

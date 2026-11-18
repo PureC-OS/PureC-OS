@@ -1,3 +1,4 @@
+#include <arch/arch.h>
 #include "klog.h"
 #include "../../arch/x86_64/gdt/include/gdt.h"
 #include "../../drivers/display/gop.h"
@@ -5,6 +6,7 @@
 #include "../../drivers/serial/serial.h"
 #include "../../lib/string.h"
 #include "../sync/spinlock.h"
+#include "../tty/vtcon.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -49,15 +51,20 @@ static uint64_t klog_boot_tsc = 0;
 
 static inline uint64_t rdtsc(void)
 {
-  uint32_t lo, hi;
-  __asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-  return ((uint64_t)hi << 32) | lo;
+    return arch_read_timestamp();
 }
+
+static enum klog_level screen_level = KLOG_INFO;
 
 static void klog_putc_raw(char c)
 {
   serial_putc(c);
-  if (klog_screen_enabled)
+  if (vtcon_ready())
+  {
+    if (!panic_output && vtcon_klog_wants(screen_level))
+      vtcon_klog_putc(c);
+  }
+  else if (klog_screen_enabled)
   {
     if (gop_is_available())
       gop_putc(c);
@@ -227,7 +234,20 @@ static void klog_print_level(enum klog_level lvl)
   klog_putc_raw('[');
   if (gop_is_available())
     gop_set_color(klog_level_color(lvl), KLOG_BG);
+  bool painted = vtcon_ready() && !panic_output && vtcon_klog_wants(lvl);
+  if (painted)
+  {
+    const char *seq = lvl == KLOG_OK ? "\033[32m" : lvl == KLOG_WARN ? "\033[1;33m" : lvl == KLOG_ERROR ? "\033[1;31m" : lvl == KLOG_DEBUG ? "\033[35m" : "\033[36m";
+    while (*seq)
+      vtcon_klog_putc(*seq++);
+  }
   klog_puts_raw(klog_level_str(lvl));
+  if (painted)
+  {
+    const char *seq = "\033[0m";
+    while (*seq)
+      vtcon_klog_putc(*seq++);
+  }
   if (gop_is_available())
     gop_set_color(KLOG_FG, KLOG_BG);
   klog_putc_raw(']');
@@ -238,6 +258,7 @@ static void klog_print_level(enum klog_level lvl)
 
 static void klog_emit_prefix(enum klog_level lvl)
 {
+  screen_level = lvl;
   klog_print_timestamp();
   klog_print_level(lvl);
   klog_puts_raw("[cpu");
@@ -284,6 +305,18 @@ void klog_init(void)
   {
     klog(KLOG_INFO, "Framebuffer: VGA text 80x25");
   }
+}
+
+uint32_t klog_copy_tail(char *out, uint32_t capacity)
+{
+  uint64_t end = klog_ring_pos;
+  uint64_t have = klog_ring_wrapped ? KLOG_RING_SIZE : end;
+  if (have > capacity)
+    have = capacity;
+  uint64_t start = end - have;
+  for (uint64_t i = 0; i < have; i++)
+    out[i] = klog_ring[(start + i) % KLOG_RING_SIZE];
+  return (uint32_t)have;
 }
 
 void klog_set_verbose(bool v) { klog_verbose = v; }

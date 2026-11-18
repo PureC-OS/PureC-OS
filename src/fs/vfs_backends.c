@@ -98,19 +98,15 @@ static int32_t ext2_op_move(void *context, const char *path,
 static int32_t ext2_op_write_file(void *context, const char *path,
                                   const void *buffer, uint32_t count) {
   (void)context;
-  int32_t result = ext2_write_file(path, buffer, count);
-  if (result >= 0)
-    block_device_flush();
-  return result;
+  return ext2_write_file(path, buffer, count);
 }
+
+void vfs_backends_sync(void) {}
 
 static int32_t ext2_op_append_file(void *context, const char *path,
                                    const void *buffer, uint32_t count) {
   (void)context;
-  int32_t result = ext2_append_file(path, buffer, count);
-  if (result >= 0)
-    block_device_flush();
-  return result;
+  return ext2_append_file(path, buffer, count);
 }
 
 static int32_t ext2_op_stat_ex(void *context, const char *path,
@@ -148,19 +144,13 @@ static int32_t ext2_op_get_meta(void *context, const char *path,
 static int32_t ext2_op_set_meta(void *context, const char *path,
                                 const struct vfs_perm_meta *meta) {
   (void)context;
-  int32_t status = ext2_meta_set(path, meta->mode, meta->uid, meta->gid);
-  if (status >= 0)
-    block_device_flush();
-  return status;
+  return ext2_meta_set(path, meta->mode, meta->uid, meta->gid);
 }
 
 static int32_t ext2_op_set_times(void *context, const char *path,
                                  uint32_t atime, uint32_t mtime) {
   (void)context;
-  int32_t status = ext2_meta_set_times(path, atime, mtime);
-  if (status >= 0)
-    block_device_flush();
-  return status;
+  return ext2_meta_set_times(path, atime, mtime);
 }
 
 const struct vfs_fs_ops vfs_ext2_ops = {
@@ -249,12 +239,43 @@ static int32_t initramfs_op_list_long(void *context, const char *path,
   return initramfs_list_long(directory, entries, capacity);
 }
 
+static int32_t initramfs_op_get_meta(void *context, const char *path,
+                                     struct vfs_perm_meta *out) {
+  (void)context;
+  if (vfs_perm_get(path, out))
+    return 0;
+  const void *data = 0;
+  uint32_t size = 0;
+  out->uid = 0;
+  out->gid = 0;
+  if (initramfs_find(path, &data, &size)) {
+    const uint8_t *bytes = (const uint8_t *)data;
+    bool elf = size >= 4 && bytes[0] == 0x7F && bytes[1] == 'E' &&
+               bytes[2] == 'L' && bytes[3] == 'F';
+    bool script = size >= 2 && bytes[0] == '#' && bytes[1] == '!';
+    out->mode = (elf || script) ? 0755u : 0644u;
+    return 0;
+  }
+  if (!initramfs_directory_exists(path))
+    return FS_ERROR_NOT_FOUND;
+  out->mode = 0755u;
+  return 0;
+}
+
+static int32_t initramfs_op_set_meta(void *context, const char *path,
+                                     const struct vfs_perm_meta *meta) {
+  (void)context;
+  return vfs_perm_set(path, meta);
+}
+
 const struct vfs_fs_ops vfs_initramfs_ops = {
     .name = "initramfs",
     .map = initramfs_op_map,
     .stat = initramfs_op_stat,
     .list = initramfs_op_list,
     .list_long = initramfs_op_list_long,
+    .get_meta = initramfs_op_get_meta,
+    .set_meta = initramfs_op_set_meta,
     .is_ready = initramfs_ready,
 };
 
@@ -265,7 +286,7 @@ struct kernelfs_file {
 };
 
 static const struct kernelfs_file kernelfs_files[] = {
-    {"/version", "version", "PureC OS kernel 1.2.29\n"},
+    {"/version", "version", "PureC OS kernel 2.0.0\n"},
     {"/panic", "panic.cfg", "panic-screan=classic\n #panic-screan=qr\n"},
     {"/init", "init",
      "pid1=/bin/init shell=/bin/program/terminal editor=/bin/program/nano\n"},

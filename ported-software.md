@@ -22,19 +22,21 @@ the build system.
 
 | Software | Upstream version | Upstream license | In-tree location | Kernel / Userspace | Ships in rootfs | Status |
 |---|---|---|---|---|---|---|
-| Lua | 5.4.8 | MIT | `src/programs/lua/` | Userspace | `/usr/bin/lua` (optional) | Working (REPL); `math` lib planned |
-| Vim | 9.2 (patch 1252) | Vim license | `vim/` (external checkout), `mk/vim/` | Userspace | `/usr/bin/vim`, `/etc/vimrc` (optional) | Builds and links (tiny features); **not run on PureC OS yet** |
-| MicroPython | ~1.30-preview | MIT | `src/programs/micropython/` | Userspace | `/usr/bin/micropython` (optional) | Working (REPL); no floats |
-| TinyCC (PureC-TCC) | 0.9.28rc | LGPL-2.1 | `tcc/` | Userspace | `/usr/bin/tcc`, `/lib/tcc/*` (optional) | Working (compile & run); self-hosting: rebuilds itself inside the OS from sources fetched with curl |
-| SDL2 | 2.33.0 | zlib | `SDL/` | Userspace (lib) | `/usr/bin/sdltest` (optional) | Working; software rendering only |
+| Lua | 5.4.8 | MIT | `src/programs/lua/` | Userspace | pkg `lua` (Trusted registry) | Working (REPL); `math` lib planned |
+| Vim | 9.2 (patch 1252) | Vim license | `vim/` (external checkout), `mk/vim/` | Userspace | pkg `vim` (Trusted registry) | Builds and links (tiny features); **not run on PureC OS yet** |
+| MicroPython | ~1.30-preview | MIT | `src/programs/micropython/` | Userspace | pkg `micropython` (Trusted registry) | Working (REPL); no floats |
+| TinyCC (PureC-TCC) | 0.9.28rc | LGPL-2.1 | `tcc/` | Userspace | pkg `tcc` (Trusted registry) | Working (compile & run); self-hosting: rebuilds itself inside the OS from sources fetched with curl |
+| Git | 2.56.1 (`mk/git/versions.txt`, `v2.56.1-493-g9354c5f040`) | GPL-2.0 | `git/` (fetched checkout, see `mk/git/fetch.sh`), `mk/git/` | Userspace | pkg `git` (Trusted registry) | Builds; HTTPS clone reported working in the VM |
+| Qt 6 (qtbase) | 6.12.0 (`mk/qt/versions.txt`) | LGPL-3.0 / commercial | `mk/qt/`, `programs/PureC-OS-QT-Terminal`, `programs/PureC-OS-QT-Login` | Userspace (static) | inside pkg `terminal` and `login` | Static build for the Terminal and Login packages; guest run not verified |
+| SDL2 | 2.33.0 | zlib | `SDL/` | Userspace (lib) | Not shipped | Working; software rendering only |
 | SDL2_mixer | n/a — in-house shim | n/a | `src/libsdl2_mixer/` | Userspace (lib) | via consumers | Working (channels + OPL hook) |
-| Chocolate Doom | 3.1.1 | GPL-2.0 | `chocolate-doom/`, `src/chocolate/` | Userspace | `/usr/bin/doom` (optional) | Working; Doom only, no netplay |
-| GNU Make | 4.4.1 | GPL-3.0-or-later | `gnumake/`, `src/make/` | Userspace | `/usr/bin/make` (optional) | Ported and starts (`make --version`); Makefile runs not yet verified; `-j1` only |
-| Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | `/usr/share/doom/freedoom1.wad` (optional) | Working (Phase 1) |
+| Chocolate Doom | 3.1.1 | GPL-2.0 | `chocolate-doom/`, `src/chocolate/` | Userspace | Not shipped | Working; Doom only, no netplay |
+| GNU Make | 4.4.1 | GPL-3.0-or-later | `gnumake/`, `src/make/` | Userspace | pkg `make` (Trusted registry) | Ported and starts (`make --version`); Makefile runs not yet verified; `-j1` only |
+| Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | Not shipped | Working (Phase 1) |
 | doomgeneric | unspecified | GPL-2.0 | `src/doom/` (+ external clone) | Userspace | Not shipped | Fallback driver; build skipped without sources |
 | wolfSSL | 5.9.4 | GPLv2/3 or commercial | `wolfssl/` | Kernel module + lib | `/lib/modules/wolf.*` | Userspace TLS in use by `httpsget`, curl and NetSurf (verified in the VM); kernel module buildable, no kernel consumer |
-| curl | 8.23.1-DEV | curl (MIT-style) | `curl/`, `mk/curl/` | Userspace | `/usr/bin/curl` (optional) | Working: HTTP and HTTPS (wolfSSL), gzip; IPv4 only |
-| NetSurf | submodule `netsurf/` (no release tag) | GPL-2.0 | `netsurf/`, `mk/netsurf/` | Userspace | `/usr/bin/netsurf` + `/usr/local/share/netsurf/*` (optional) | Working: framebuffer frontend in a PureC window, HTTPS, images, Cyrillic; no JavaScript, no SVG |
+| curl | 8.23.1-DEV | curl (MIT-style) | `curl/`, `mk/curl/` | Userspace | `/usr/bin/curl` (base manifest) | Working: HTTP and HTTPS (wolfSSL), gzip; IPv4 only |
+| NetSurf | submodule `netsurf/` (no release tag) | GPL-2.0 | `netsurf/`, `mk/netsurf/` | Userspace | Not shipped | Working: framebuffer frontend in a PureC window, HTTPS, images, Cyrillic; no JavaScript, no SVG |
 | NetSurf libraries (libcss, libdom, libhubbub, libparserutils, libwapcaplet, libnsgif, libnsbmp, libnsutils, libnslog, libnsfb, libutf8proc) | pinned in `mk/netsurf/versions.txt` | MIT | `netsurf-libs/` (fetched, git-ignored) | Userspace (static libs) | linked into `/usr/bin/netsurf` | Working (built by their own buildsystem into `bin/ns-stage`) |
 | zlib | 1.3.1 | zlib | `netsurf-libs/zlib/` | Userspace (static lib) | linked into curl and NetSurf | Working |
 | libpng | 1.6.47 | libpng | `netsurf-libs/libpng/` | Userspace (static lib) | linked into NetSurf | Working |
@@ -70,7 +72,7 @@ the build system.
   (`LUA_SOURCES` / `LUA_OBJECTS`). Built with `-DLUA_ANSI`, without
   `LUA_USE_POSIX`/`LUA_USE_DLOPEN`. Linked as a static Ring-3 ELF
   (`crt0.o + libpurec.a`, `linker-userspace.ld`) → `bin/programs/lua`.
-- **Ships as**: optional `/usr/bin/lua`.
+- **Ships as**: package `lua` from the Trusted registry (not in the base `assets/manifest.txt`); installs to `/usr/bin/lua`.
 - **Verification**: REPL exercised live on the PureC Terminal, including
   `os.exit()`.
 
@@ -112,7 +114,7 @@ the build system.
 - **Build**: `mk/main.mk` → `programs` → `make -C src/programs/micropython`
   (cross toolchain `x86_64-elf-gcc`); links `crt0.o + libpurec.a` via
   `linker-userspace.ld`.
-- **Ships as**: optional `/usr/bin/micropython`.
+- **Ships as**: package `micropython` from the Trusted registry (not in the base manifest); installs to `/usr/bin/micropython`.
 - **Verification**: `fact(10) == 3628800` verified on host; boot smoke PASS
   (CHANGELOG V1.2.27).
 
@@ -135,7 +137,7 @@ the build system.
 - **Build**: compiled by `src/programs/Makefile` into `bin/programs/tcc`;
   fetched as one of the setup-time subprojects (`tcc-fetch` via `purec.py`,
   see root `README.md`).
-- **Ships as**: optional `/usr/bin/tcc` plus `/lib/tcc/libtcc1.a` and run-time
+- **Ships as**: package `tcc` from the Trusted registry (not in the base manifest), providing `/usr/bin/tcc` plus `/lib/tcc/libtcc1.a` and run-time
   headers under `/lib/tcc/include/`.
 - **Verification**: compiles files without errors; compile-and-run from the OS
   shell works (CHANGELOG: "TCC finally works", and the `libtcc1.a` runtime fix
@@ -175,7 +177,7 @@ the build system.
 - **Build**: `mk/main.mk` target `sdl2` → `make -C src/libsdl2`; the target is
   skipped automatically if `SDL/src/SDL.c` is absent.
 - **Outputs**: `bin/lib/libSDL2.a` and a test program (`src/libsdl2/sdltest/`).
-- **Ships as**: optional `/usr/bin/sdltest`.
+- **Ships as**: not shipped (no entry in `assets/manifest.txt` or the Trusted registry).
 
 ## SDL2_mixer (compatibility shim)
 
@@ -204,7 +206,7 @@ the build system.
   `sdl2`); links `libSDL2_mixer.a libSDL2.a libpureaudio.a libpuregui.a
   libpurec.a` → `bin/programs/chocolate-doom`. Skipped if the fork checkout or
   `libSDL2.a` is missing.
-- **Ships as**: optional `/usr/bin/doom`. Game data comes from Freedoom
+- **Ships as**: not shipped (no entry in `assets/manifest.txt` or the Trusted registry). Game data would come from Freedoom
   (below).
 - **Verification**: tested on VirtualBox; the game starts and is playable
   (CHANGELOG V1.2.28).
@@ -217,7 +219,7 @@ the build system.
 - **Upstream**: Freedoom **0.13.0** (recorded in `freedoom/NEWS.adoc`),
   BSD-3-Clause. Freedoom is **game data, not a program** — levels, artwork,
   sounds, and music usable as a libre IWAD for Doom-compatible engines.
-- **Ships as**: optional `/usr/share/doom/freedoom1.wad` (Phase 1, ~28.8 MB).
+- **Ships as**: not shipped (Phase 1 data, ~28.8 MB; see the Freedoom section above).
 - **Provenance note**: the WAD under `assets/doom/` is not regenerated by any
   tracked build script; it is assumed to be built from the `freedoom/` tree
   out-of-band. Contributors updating the WAD should state the source revision
@@ -285,7 +287,7 @@ the build system.
   `Makefile.inc` through `mk/curl/list.mk`, minus the Windows/OpenSSL/other-
   backend files. The library objects are also archived as
   `bin/ns-stage/lib/libcurl.a` for NetSurf (`make -C mk/netsurf curl`).
-- **Ships as**: optional `/usr/bin/curl` (manifest); the CA bundle is
+- **Ships as**: `/usr/bin/curl` in the base manifest (`required = 1`); the CA bundle is
   `/etc/ssl/cert.pem`.
 - **Verification (VM)**: `curl https://google.com`, `curl -I` and plain HTTP
   work; curl was used inside the OS to download the TinyCC sources (see
@@ -327,7 +329,8 @@ the build system.
   `build-netsurf.sh` (NetSurf core with its own Makefile and our
   cross-compiler; its final link step is not used) and a manual `ld` link into
   `bin/programs/netsurf` (about 4.5 MB).
-- **Ships as**: optional `/usr/bin/netsurf` plus `/usr/local/share/netsurf/`
+- **Ships as**: not shipped (no entry in `assets/manifest.txt` or the Trusted registry); the resource layout below is what a package would install:
+  `/usr/local/share/netsurf/`
   (`Messages`, `default.css`, `internal.css`, `quirks.css`, `adblock.css`,
   `welcome.html`, `credits.html`, `licence.html`, `netsurf.png`,
   `favicon.png`, `Choices`). Resource files reach the system through the
@@ -413,7 +416,7 @@ the build system.
 - **Build**: `mk/main.mk` `programs` → `make -C src/make`; links `libpurefs.a
   libpurec.a` → `bin/programs/make`. Skipped if `gnumake/src/main.c` is
   missing. Standalone target: `make gnumake`.
-- **Ships as**: optional `/usr/bin/make`.
+- **Ships as**: package `make` from the Trusted registry (not in the base manifest).
 - **Verification**: tested on VirtualBox; `make --version` works and make
   parses Makefiles (it reports `missing separator` on a recipe indented with
   spaces). Running a full recipe is not yet confirmed. Recipe lines must start
@@ -439,7 +442,8 @@ The top-level `Makefile` includes `mk/main.mk`. Relevant targets:
 | Host tests | `test-wolfcrypt`, `test-accounts`, `test-hdrbg` | — |
 
 Sources fetched by `./purec.py setup` (see `purec.py`, `REPOS` list):
-wolfssl, libxcrypt, ACPI, uACPI, PureC-TCC, Userspace, Notepad.
+wolfssl, libxcrypt, PureC-OS-ACPI, uACPI, PureC-TCC and PureC-OS-Userspace
+(the `REPOS` list in `purec.py`).
 
 The NetSurf libraries, zlib, libpng, libjpeg-turbo, expat and the Unifont data
 are fetched by `mk/netsurf/fetch.sh` (git:// for the NetSurf libraries,
@@ -456,34 +460,35 @@ revision explicitly.
 
 ## Shipping
 
-Optional entries in `assets/manifest.txt` (consumed by `mk/gen_assets.py` and
-the installer in `src/fs/fat/fat32.c`):
+Two channels deliver software to a PureC OS system:
 
-- `/usr/bin/lua` — Lua 5.4.8 interpreter
-- `/usr/bin/micropython` — MicroPython REPL
-- `/usr/bin/tcc` — TinyCC driver; `/lib/tcc/libtcc1.a` + headers
-- `/usr/bin/curl` — curl tool (HTTP/HTTPS through wolfSSL); `/etc/ssl/cert.pem`
-  is the CA bundle it uses
-- `/usr/bin/netsurf` — NetSurf browser; `/usr/local/share/netsurf/*` —
-  messages, stylesheets, welcome page and the default `Choices`
-- `/usr/bin/sdltest` — SDL2 test program
-- `/usr/bin/doom` — Chocolate Doom; `/usr/share/doom/freedoom1.wad`
-- `/usr/bin/pl` — PureL (`lang/`, in-house Rust scripting language, upstream
-  Rust `no_std` target — see below)
-- `/usr/bin/notepad` — PureC-notepad-OS (submodule, in-house C++ editor — see
-  below)
-- `/lib/modules/` — `crypt.*`, `acpi.*`, `wolf.*` kernel modules
-- `/etc/` — passwd/group/hostname/motd/os-release/shells/fstab seed data
-  (`rootfs/etc/`)
+1. **Base manifest** `assets/manifest.txt` (consumed by `mk/gen_assets.py` and
+   the installer's generic manifest loop in `src/fs/install.c`). Entries with
+   `required = 1` are installed by the installer; `required = 0` entries are
+   skipped with a warning when missing. Ports that appear here:
+   - `/usr/bin/curl` — curl tool (HTTP/HTTPS through wolfSSL); `/etc/ssl/cert.pem`
+     is the CA bundle it uses (`required = 0`)
+   - `/usr/bin/sh`, `/bin/sh` — the PureC shell (not a third-party port)
+   - `/lib/modules/` — `crypt.*`, `acpi.*`, `wolf.*`, `random.*`, `e1000*.so`,
+     `pcnet_am79c970a.so`, `ar9285.so`, `ext2.so`, `fat32.so` (kernel modules)
+   - `/etc/` — passwd/group/hostname/motd/os-release/shells/fstab and related
+     seed data (`rootfs/etc/`)
+2. **Packages** `pkg` from the registry in `Trusted/` (`registry.conf` lists
+   the repositories, `repository.conf` lists the packages). Packages of
+   third-party ports listed there: `git`, `lua`, `make`, `micropython`, `tcc`,
+   `vim`, `wolfssl` (development files). `terminal` and `login` contain Qt 6.
+
+Not shipped by either channel at the moment: SDL2 (`sdltest`), Chocolate Doom,
+Freedoom data, NetSurf, doomgeneric.
 
 ## In-House Projects Often Collated with the Ports
 
 For completeness, the following are **not** third-party ports but are located
 adjacent to them and frequently mistaken for them:
 
-- `lang/` — **PureL**, an in-house scripting language implemented in Rust
+- `lang/` (not present in this checkout) — **PureL**, an in-house scripting language implemented in Rust
   (`no_std`, target `x86_64-unknown-none`, linked against
-  `userspace/crates/purec`); ships as `/usr/bin/pl`.
+  `userspace/crates/purec`); not shipped by the base manifest or the Trusted registry.
 - `libxcrypt/` — **libpurecrypt**, an in-house freestanding cryptography
   library (despite the directory name, this is **not** upstream libxcrypt).
   Implements SHA-512 and `$6$` (SHA512-crypt) password hashing,
@@ -495,9 +500,9 @@ adjacent to them and frequently mistaken for them:
   `bin/lib/libpurecrypt.a`. Consumers: `/etc` passwd hashing via
   `src/programs/accounts`, and the entropy driver `src/drivers/random`
   (HDRBG test). Ships as `/lib/modules/crypt.*`.
-- `purec-notepad-os/` — in-house C++20 Ring-3 GUI text editor (own syscall
+- `purec-notepad-os/` (not present in this checkout) — in-house C++20 Ring-3 GUI text editor (own syscall
   layer and mini GUI toolkit, no third-party code); ships as
-  `/usr/bin/notepad`.
+  not shipped by the base manifest or the Trusted registry.
 - `src/libsdl2_mixer/` — the in-house SDL2_mixer shim described above.
 - `bb/`, `demo/`, `db/`, `rootfs/` are build/config assets (Limine boot
   fragment template, README screenshots, build database, `/etc` seed), not

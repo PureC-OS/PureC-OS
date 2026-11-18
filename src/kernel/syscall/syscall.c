@@ -1,8 +1,12 @@
+#include <arch/arch.h>
 #include "../ipc/pty.h"
 #include "../../io/io_sched.h"
 #include "syscall.h"
+#include "../tty/vtcon.h"
 #include "../../drivers/audio/audio.h"
 #include "../../drivers/display/gop.h"
+#include "../../drivers/display/svga.h"
+#include "../../drivers/display/svga3d.h"
 #include "../../drivers/display/vga.h"
 #include "../../drivers/input/keyboard.h"
 #include "../../drivers/interrupts/timer.h"
@@ -18,11 +22,10 @@
 #include "../../fs/install.h"
 #include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
+#include "../../fs/vfs_fat32.h"
 #include "../../drivers/display/display_owner.h"
 #include "../ipc/inputdev.h"
 #include "sudo.h"
-#include "../../gfx/blit.h"
-#include "../../gfx/compositor.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
 #include "../../mm/shm.h"
@@ -37,10 +40,6 @@
 #include "../../net/network/ipv4.h"
 #include "../../net/transport/tcp.h"
 #include "../../net/wifi/wifi.h"
-#include "../../userspace/display_mode.h"
-#include "../../userspace/rs_session.h"
-#include "../../userspace/userspace.h"
-#include "../../userspace/window_manager.h"
 #include "../core/system_info.h"
 #include "../diagnostics/boot_diag.h"
 #include "../diagnostics/klog.h"
@@ -67,6 +66,11 @@ static struct install_status install_job;
 static struct install_log install_history;
 static char install_device[STORAGE_DEVICE_NAME_CAPACITY];
 static char install_serial[STORAGE_SERIAL_CAPACITY];
+
+static bool privileged(uint32_t capability)
+{
+  return process_current_uid() == 0 || process_has_capability(capability);
+}
 
 static bool readable(const void *buffer, uint64_t size)
 {
@@ -119,7 +123,7 @@ bool filesystem_syscall_acquire(void)
 static void install_progress(uint32_t progress, const char *stage)
 {
   uint64_t flags;
-  __asm__ volatile("pushfq; pop %0; cli" : "=r"(flags)::"memory");
+  flags = arch_irq_save();
   install_job.progress = progress;
   if (stage)
     strncpy(install_job.stage, stage, sizeof(install_job.stage) - 1);
@@ -139,7 +143,7 @@ static void install_progress(uint32_t progress, const char *stage)
     entry->stage[sizeof(entry->stage) - 1] = '\0';
   }
   if (flags & (1ULL << 9))
-    __asm__ volatile("sti" ::: "memory");
+    arch_irq_enable();
 }
 
 static void install_worker(void *argument)
@@ -153,6 +157,12 @@ static void install_worker(void *argument)
                                             install_progress);
   io_bulk_end();
   block_device_end_exclusive_io();
+  if (result >= 0)
+  {
+    int32_t target = block_device_find(install_device);
+    if (target < 0 || !vfs_fat32_mount_boot_device((uint32_t)target))
+      klog(KLOG_WARN, "install: new EFI partition not mounted on /boot");
+  }
   filesystem_syscall_unlock();
   __atomic_store_n(&install_worker_tid, -1, __ATOMIC_RELEASE);
   install_job.result = result;
@@ -940,43 +950,10 @@ int64_t syscall_handler(struct syscall_regs *r)
       return sent < 0 ? -1 : (int64_t)sent;
     }
     for (uint64_t i = 0; i < len; i++)
-    {
       serial_putc(s[i]);
-      if (gop_console_is_active())
-        gop_console_putc(s[i]);
-      else if (!rs_session_active())
-        gop_putc(s[i]);
-    }
+    if (vtcon_ready() && scheduler_is_running())
+      vtcon_console_write(s, (uint32_t)len);
     return (int64_t)len;
-  }
-  case SYS_CLEAR:
-  {
-    uint32_t color = (uint32_t)a1;
-    gop_clear(color);
-    if (!gop_is_available())
-      vga_clear();
-    return 0;
-  }
-  case SYS_DRAW_RECT:
-  {
-    uint32_t x = (uint32_t)a1, y = (uint32_t)a2, w = (uint32_t)a3,
-             h = (uint32_t)r->rsi;
-    uint32_t c = (uint32_t)r->rdi;
-    if (compositor_draw_rect((uint32_t)process_current_pid(), x, y, w, h, c))
-      return 0;
-    gop_draw_rect(x, y, w, h, c);
-    return 0;
-  }
-  case SYS_DRAW_LINE:
-  {
-    uint32_t x0 = (uint32_t)a1, y0 = (uint32_t)a2, x1 = (uint32_t)a3,
-             y1 = (uint32_t)r->rsi;
-    uint32_t c = (uint32_t)r->rdi;
-    if (compositor_draw_line((uint32_t)process_current_pid(), x0, y0, x1, y1,
-                             c))
-      return 0;
-    gop_draw_line(x0, y0, x1, y1, c);
-    return 0;
   }
   case SYS_FB_INFO:
   {
@@ -994,35 +971,7 @@ int64_t syscall_handler(struct syscall_regs *r)
             sizeof(info->protocol_name) - 1);
     return 0;
   }
-  case SYS_SCROLL_RECT_UP:
-  {
-    struct framebuffer_scroll_request *request =
-        (struct framebuffer_scroll_request *)(uintptr_t)a1;
-    if (!readable(request, sizeof(*request)))
-      return -1;
-    if (readable(request, sizeof(*request)) &&
-        compositor_scroll_rect_up((uint32_t)process_current_pid(), request->x,
-                                  request->y, request->w, request->h,
-                                  request->amount, request->fill_color))
-      return 0;
-    gop_scroll_rect_up(request->x, request->y, request->w, request->h,
-                       request->amount, request->fill_color);
-    return 0;
-  }
 
-  case SYS_FB_BEGIN_UPDATE:
-    if (compositor_begin_update((uint32_t)process_current_pid()))
-      return 0;
-    mouse_begin_framebuffer_update();
-    return 0;
-  case SYS_FB_END_UPDATE:
-    if (compositor_end_update((uint32_t)process_current_pid()))
-      return 0;
-    mouse_end_framebuffer_update();
-    return 0;
-  case SYS_DISPLAY_SET_MODE:
-    return display_mode_apply((uint32_t)a1, (uint32_t)a2, (uint8_t)a3,
-                              (uint32_t)r->rsi);
   case SYS_DISPLAY_SCALE_INFO:
   {
     struct display_scale_info *info =
@@ -1035,68 +984,6 @@ int64_t syscall_handler(struct syscall_regs *r)
     info->reserved = 0;
     return 0;
   }
-  case SYS_CONSOLE_CONFIGURE:
-  {
-    const struct framebuffer_console_request *request =
-        (const struct framebuffer_console_request *)(uintptr_t)a1;
-    if (!readable(request, sizeof(*request)))
-      return -1;
-    return gop_console_configure_owner((uint32_t)process_current_pid(),
-                                       request->x, request->y, request->width,
-                                       request->height, request->foreground,
-                                       request->background)
-               ? 0
-               : -1;
-  }
-  case SYS_CONSOLE_CLEAR:
-    if (!gop_console_is_active())
-      return -1;
-    gop_console_clear();
-    return 0;
-  case SYS_CONSOLE_DISABLE:
-    gop_console_disable();
-    return 0;
-  case SYS_DESKTOP_REDRAW:
-    userspace_redraw_desktop();
-    return 0;
-  case SYS_GUI_WINDOW_REGISTER:
-  {
-    const struct gui_window_request *request =
-        (const struct gui_window_request *)(uintptr_t)a1;
-    if (!readable(request, sizeof(*request)))
-      return -1;
-    if (!window_manager_register((uint32_t)process_current_pid(), request))
-      return -1;
-    scheduler_set_affinity(scheduler_current_tid(), 0);
-    return 0;
-  }
-  case SYS_GUI_WINDOW_UPDATE:
-  {
-    const struct gui_window_request *request =
-        (const struct gui_window_request *)(uintptr_t)a1;
-    if (!readable(request, sizeof(*request)))
-      return -1;
-    return window_manager_update((uint32_t)process_current_pid(), request) ? 0
-                                                                           : -1;
-  }
-  case SYS_GUI_WINDOW_UNREGISTER:
-    window_manager_unregister((uint32_t)process_current_pid());
-    return 0;
-  case SYS_GUI_WINDOW_INFO:
-  {
-    struct gui_window_info info;
-    if (!writable((void *)(uintptr_t)a1, sizeof(info)))
-      return -1;
-    if (!window_manager_info((uint32_t)process_current_pid(), &info))
-      return -1;
-    *(struct gui_window_info *)(uintptr_t)a1 = info;
-    return 0;
-  }
-  case SYS_GUI_WINDOW_FLAGS:
-    return window_manager_set_flags((uint32_t)process_current_pid(),
-                                    (uint32_t)a1)
-               ? 0
-               : -1;
   case SYS_TTY_READ:
     if (a2 > 0x7FFFFFFFULL || !writable((void *)(uintptr_t)a1, a2))
       return -KERR_FAULT;
@@ -1317,25 +1204,6 @@ int64_t syscall_handler(struct syscall_regs *r)
       memcpy((void *)(uintptr_t)a2, ready, (uint32_t)count * sizeof(ready[0]));
     return count;
   }
-  case SYS_GUI_WINDOW_TITLE:
-  {
-    if (!readable_string((const char *)(uintptr_t)a1))
-      return -1;
-    return window_manager_set_title((uint32_t)process_current_pid(),
-                                    (const char *)(uintptr_t)a1)
-               ? 0
-               : -1;
-  }
-  case SYS_GUI_WINDOW_CMD:
-    return window_manager_command((uint32_t)process_current_pid(),
-                                  (uint32_t)a1)
-               ? 0
-               : -1;
-  case SYS_GUI_WINDOW_STATE:
-    return window_manager_state((uint32_t)process_current_pid());
-  case SYS_GUI_WINDOW_REPAINT_DONE:
-    window_manager_finish_repaint((uint32_t)process_current_pid());
-    return 0;
   case SYS_GETPID:
     return process_current_pid();
   case SYS_GETRANDOM:
@@ -1345,44 +1213,6 @@ int64_t syscall_handler(struct syscall_regs *r)
     krandom_fill((void *)(uintptr_t)a1, (uint32_t)a2);
     return (int64_t)a2;
   }
-  case SYS_FB_BLIT:
-  {
-    if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
-      return -1;
-    struct fb_blit_request req =
-        *(const struct fb_blit_request *)(uintptr_t)a1;
-    uint64_t bytes;
-    if (!blit_source_bytes(req.stride, req.width, req.height, &bytes))
-      return -1;
-    if (!readable((const void *)(uintptr_t)req.pixels, bytes))
-      return -1;
-    if (!compositor_blit((uint32_t)process_current_pid(), req.x, req.y,
-                         req.width, req.height,
-                         (const uint32_t *)(uintptr_t)req.pixels, req.stride,
-                         req.flags))
-      return -2;
-    return 0;
-  }
-  case SYS_DESKTOP_CLAIM:
-    return rs_session_claim((uint32_t)process_current_pid(),
-                            process_current_uid());
-  case SYS_DESKTOP_BLIT:
-  {
-    if (!readable((const void *)(uintptr_t)a1, sizeof(struct fb_blit_request)))
-      return -1;
-    struct fb_blit_request req =
-        *(const struct fb_blit_request *)(uintptr_t)a1;
-    uint64_t bytes;
-    if (!blit_source_bytes(req.stride, req.width, req.height, &bytes))
-      return -1;
-    if (!readable((const void *)(uintptr_t)req.pixels, bytes))
-      return -1;
-    return rs_session_blit((uint32_t)process_current_pid(), &req);
-  }
-  case SYS_DESKTOP_WAIT:
-    return rs_session_wait((uint32_t)process_current_pid(), (uint32_t)a1);
-  case SYS_DESKTOP_WM:
-    return rs_session_wm((uint32_t)process_current_pid(), a1, a2, a3);
   case SYS_TIME_GET:
   {
     if (!writable((void *)(uintptr_t)a1, sizeof(struct time_info)))
@@ -1489,6 +1319,29 @@ int64_t syscall_handler(struct syscall_regs *r)
   case SYS_DISPLAY_RELEASE:
     display_owner_release((uint32_t)process_current_pid());
     return 0;
+  case SYS_DISPLAY_SET_MODE:
+  {
+    if (display_owner_pid() != (uint32_t)process_current_pid())
+      return -KERR_PERM;
+    uint32_t width = (uint32_t)a1, height = (uint32_t)a2;
+    if (width < 640 || width > 7680 || height < 400 || height > 4320)
+      return -KERR_INVAL;
+    if (!svga_is_available())
+      return -KERR_NODEV;
+    uint32_t actual_w = 0, actual_h = 0;
+    bool was3d = svga3d_active();
+    svga3d_screen_teardown();
+    if (!svga_set_mode(width, height, &actual_w, &actual_h))
+      return -KERR_INVAL;
+    void *front3d = was3d ? svga3d_screen_setup(actual_w, actual_h) : 0;
+    bool applied = front3d ? gop_apply_live(front3d, actual_w, actual_h, actual_w, 32)
+                           : gop_apply_live(svga_fb_virt(), actual_w, actual_h, svga_pitch_pixels(), 32);
+    if (!applied)
+      return -KERR_NODEV;
+    mouse_set_bounds((int32_t)actual_w, (int32_t)actual_h);
+    klogf(KLOG_OK, "display: mode %ux%u", actual_w, actual_h);
+    return 0;
+  }
   case SYS_FB_MAP:
   {
     struct fb_map_info *out = (struct fb_map_info *)(uintptr_t)a1;
@@ -1923,6 +1776,82 @@ int64_t syscall_handler(struct syscall_regs *r)
     filesystem_syscall_unlock();
     return result;
   }
+  case SYS_SYNC:
+    return vfs_sync() < 0 ? -KERR_IO : 0;
+  case SYS_DISK_IO:
+  {
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
+      return -KERR_PERM;
+    if (!readable((const void *)(uintptr_t)a1, sizeof(struct disk_io_request)))
+      return -KERR_FAULT;
+    struct disk_io_request req = *(const struct disk_io_request *)(uintptr_t)a1;
+    req.device[sizeof(req.device) - 1] = '\0';
+    if (!req.count || req.count > DISK_IO_MAX_SECTORS || req.lba > 0xFFFFFFFFULL ||
+        req.lba + req.count > 0x100000000ULL)
+      return -KERR_INVAL;
+    uint64_t bytes = (uint64_t)req.count * 512u;
+    void *user = (void *)(uintptr_t)req.buffer;
+    if (req.write ? !readable(user, bytes) : !writable(user, bytes))
+      return -KERR_FAULT;
+    int32_t index = block_device_find(req.device);
+    struct storage_device_info info;
+    if (index < 0 || !block_device_get_info((uint32_t)index, &info))
+      return -KERR_NODEV;
+    if (info.sector_size != 512 || req.lba + req.count > info.sector_count)
+      return -KERR_INVAL;
+    if (req.write && !info.writable)
+      return -KERR_ACCES;
+    uint64_t pages = (bytes + 4095) / 4096;
+    uint64_t phys = pmm_allocate_contiguous(pages);
+    if (!phys)
+      return -KERR_NOMEM;
+    uint8_t *bounce = (uint8_t *)pmm_physical_to_virtual(phys);
+    if (req.write)
+      memcpy(bounce, user, bytes);
+    bool ok = block_device_raw_run((uint32_t)index, req.write != 0, (uint32_t)req.lba, bounce, req.count);
+    if (ok && !req.write)
+      memcpy(user, bounce, bytes);
+    pmm_free_contiguous(phys, pages);
+    return ok ? (int64_t)req.count : -KERR_IO;
+  }
+  case SYS_VT_ACTIVATE:
+  {
+    struct process *self = process_current();
+    if (!self)
+      return -KERR_PERM;
+    if (self->uid != 0)
+    {
+      int32_t object = fd_object(0);
+      int32_t pty_id;
+      bool master;
+      if (object < 0 || !ofd_pty_info(object, &pty_id, &master) || vtcon_index_of_pty(pty_id) < 0)
+        return -KERR_PERM;
+    }
+    return vtcon_activate((int32_t)a1) < 0 ? -KERR_BUSY : 0;
+  }
+  case SYS_VT_ACTIVE:
+    return vtcon_active();
+  case SYS_RENAME_PATH:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !readable_string((const char *)(uintptr_t)a2))
+      return FS_ERROR_INVALID;
+    char old_abs[512];
+    char new_abs[512];
+    int32_t resolved = process_resolve_path((const char *)(uintptr_t)a1, old_abs,
+                                            sizeof(old_abs));
+    if (resolved < 0)
+      return FS_ERROR_NOT_FOUND;
+    resolved = process_resolve_path((const char *)(uintptr_t)a2, new_abs,
+                                    sizeof(new_abs));
+    if (resolved < 0)
+      return FS_ERROR_NOT_FOUND;
+    if (!filesystem_syscall_acquire())
+      return FS_ERROR_BUSY;
+    int32_t result = vfs_rename_path(old_abs, new_abs);
+    filesystem_syscall_unlock();
+    return result;
+  }
   case SYS_FILE_MOVE:
   {
     if (!readable_string((const char *)(uintptr_t)a1) ||
@@ -2014,7 +1943,7 @@ int64_t syscall_handler(struct syscall_regs *r)
         (struct storage_controller_info *)(uintptr_t)a1, (uint32_t)a2);
   case SYS_FS_FORMAT:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2) ||
@@ -2030,7 +1959,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FS_FORMAT_FORCE:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
@@ -2044,7 +1973,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_INSTALL_DEVICE:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
@@ -2374,7 +2303,7 @@ int64_t syscall_handler(struct syscall_regs *r)
     return keyboard_try_get_event(out) ? 1 : 0;
   }
   case SYS_INSTALL_START:
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -10;
     if (!readable_string((const char *)(uintptr_t)a1) ||
         !readable_string((const char *)(uintptr_t)a2))
@@ -2401,7 +2330,7 @@ int64_t syscall_handler(struct syscall_regs *r)
     return 0;
   case SYS_INSTALL_START_EX:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -10;
     const struct install_start_request *req =
         (const struct install_start_request *)(uintptr_t)a1;
@@ -2474,6 +2403,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_SCAN:
   {
+    if (!privileged(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
     if (!wifi_has_device())
       return -1;
     return wifi_trigger_scan() ? 0 : -1;
@@ -2502,6 +2433,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_CONNECT:
   {
+    if (!privileged(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
     const struct wifi_connect_request *user_req =
         (const struct wifi_connect_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -2531,6 +2464,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_DISCONNECT:
   {
+    if (!privileged(PROCESS_CAP_NET_ADMIN))
+      return -KERR_PERM;
     return wifi_disconnect() ? 0 : -1;
   }
   case SYS_WIFI_STATUS:
@@ -2611,6 +2546,8 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FS_FORMAT_CUSTOM:
   {
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
+      return -1;
     const struct custom_format_request *user_req =
         (const struct custom_format_request *)(uintptr_t)a1;
     if (!readable(user_req, sizeof(*user_req)))
@@ -2628,7 +2565,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_FORMAT_DEVICE_EX:
   {
-    if (!process_has_capability(PROCESS_CAP_STORAGE_ADMIN))
+    if (!privileged(PROCESS_CAP_STORAGE_ADMIN))
       return -1;
     const struct format_request *req =
         (const struct format_request *)(uintptr_t)a1;
@@ -3010,6 +2947,7 @@ void syscall_init(void)
     boot_diag_checkpoint(BOOT_STAGE_SYSCALLS,
                          "storage: initializing block transports");
     (void)block_device_init();
+    vfs_fat32_mount_boot();
     struct ahci_probe_stats ahci_stats;
     struct xhci_probe_stats xhci_stats;
     struct ehci_probe_stats ehci_stats;

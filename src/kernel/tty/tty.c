@@ -128,15 +128,7 @@ void tty_set_termios(const struct tty_termios *in, bool flush, uint32_t pid)
 
 void tty_get_winsize(struct tty_winsize *out)
 {
-  uint32_t columns = 0, rows = 0, xpixel = 0, ypixel = 0;
-  if (!gop_console_get_size(&columns, &rows, &xpixel, &ypixel) || !columns ||
-      !rows)
-  {
-    columns = TTY_DEFAULT_COLUMNS;
-    rows = TTY_DEFAULT_ROWS;
-    xpixel = 0;
-    ypixel = 0;
-  }
+  uint32_t columns = TTY_DEFAULT_COLUMNS, rows = TTY_DEFAULT_ROWS, xpixel = 0, ypixel = 0;
   out->columns = (uint16_t)columns;
   out->rows = (uint16_t)rows;
   out->xpixel = (uint16_t)xpixel;
