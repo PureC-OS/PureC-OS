@@ -16,7 +16,7 @@ ACPI_DIR            := $(ROOT_DIR)/acpi
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: ports test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: core-stage ports test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
@@ -65,7 +65,7 @@ test-fenv:
 test-box:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -D_GNU_SOURCE -fsanitize=address,undefined \
-		src/programs/box/main.c -o $(BIN_DIR)/tests/box
+		programs/PureC-OS-Core-Programs/box/main.c -o $(BIN_DIR)/tests/box
 	sh tests/box_test.sh $(BIN_DIR)/tests/box
 
 test-wolfcrypt:
@@ -149,7 +149,7 @@ test-program-alias:
 test-path:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) $(HOST_TEST_FLAGS) \
-		tests/path_test.c src/programs/system/path.c \
+		tests/path_test.c programs/PureC-OS-Core-Programs/system/path.c \
 		-o $(BIN_DIR)/tests/path_test
 	$(BIN_DIR)/tests/path_test
 
@@ -279,7 +279,7 @@ test-install-accounts:
 test-accounts:
 	@mkdir -p $(BIN_DIR)/tests
 	$(HOST_CC) $(HOST_TEST_FLAGS) -I$(ROOT_DIR)/libxcrypt/include tests/accounts_test.c \
-		src/programs/accounts/accounts_core.c src/fs/install_accounts.c \
+		programs/PureC-OS-Core-Programs/accounts/accounts_core.c src/fs/install_accounts.c \
 		libxcrypt/src/sha512.c libxcrypt/src/crypt_sha512.c -o $(BIN_DIR)/tests/accounts_test
 	$(BIN_DIR)/tests/accounts_test
 
@@ -367,13 +367,13 @@ libraries:
 	$(MAKE) -C src/libaudio
 
 programs: libraries
-	$(MAKE) -C src/programs
-	@if test -f programs/purec-os-pkg/Makefile; then $(MAKE) -C programs/purec-os-pkg image; else echo "programs/purec-os-pkg not found: the image will have no pkg"; fi
+	$(MAKE) -C programs/PureC-OS-Core-Programs
+	@if test -f programs/purec-os-pkg/Makefile; then $(MAKE) -C programs/purec-os-pkg package; else echo "programs/purec-os-pkg not found: the image will have no pkg"; fi
 	$(MAKE) -C mk/netsurf curl
 
 ports: libraries
-	$(MAKE) -C src/programs ports
-	$(MAKE) -C src/programs/micropython
+	$(MAKE) -C programs/PureC-OS-Core-Programs ports
+	$(MAKE) -C programs/PureC-OS-Core-Programs/micropython
 	@if test -f git/Makefile; then $(MAKE) -C mk/git; else echo "git/ not found, skipping git port"; fi
 	$(MAKE) -C src/make
 
@@ -424,7 +424,12 @@ kernel:
 	$(MAKE) -C $(WOLFSSL_DIR)           module lib
 	$(MAKE) -C src/drivers/random       module
 
-iso: kernel programs
+core-stage: programs
+	$(MAKE) -C programs/PureC-OS-Core-Programs packages
+	$(MAKE) -C programs/purec-os-pkg host
+	sh mk/pkg/stage.sh "$(ROOT_DIR)" "$(BIN_DIR)/core-repo" "$(BIN_DIR)/stage" "$(ROOT_DIR)/programs/purec-os-pkg/build/host/pkg"
+
+iso: kernel programs core-stage
 	@set -eu; \
 	limine_share=""; \
 	for candidate in /usr/share/limine /tmp/limine-pkg/usr/share/limine; do \
@@ -442,7 +447,7 @@ iso: kernel programs
 		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
 		"$(ISO_ROOT)/lib/firmware"; \
 	command -v python3 >/dev/null || { echo "python3 required (mk/gen_assets.py)" >&2; exit 1; }; \
-	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules"; \
+	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules" --stage "$(BIN_DIR)/stage"; \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \
@@ -479,11 +484,11 @@ clean:
 	$(MAKE) -C src/chocolate   clean 2>/dev/null || true
 	$(MAKE) -C src/make        clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2_mixer clean 2>/dev/null || true
-	$(MAKE) -C src/programs    clean 2>/dev/null || true
+	$(MAKE) -C programs/PureC-OS-Core-Programs clean 2>/dev/null || true
 	$(MAKE) -C src/io          clean 2>/dev/null || true
 	$(MAKE) -C src/fs/ext2     clean 2>/dev/null || true
 	$(MAKE) -C $(WOLFSSL_DIR)  clean 2>/dev/null || true
-	rm -rf $(BIN_DIR)/iso_root $(BIN_DIR)/staged
+	rm -rf $(BIN_DIR)/iso_root $(BIN_DIR)/staged $(BIN_DIR)/stage $(BIN_DIR)/core-repo
 	@echo "Clean done."
 
 help:

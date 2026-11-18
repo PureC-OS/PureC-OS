@@ -140,6 +140,7 @@ def main():
     parser.add_argument("--iso", required=True)
     parser.add_argument("--staged", required=True)
     parser.add_argument("--modules")
+    parser.add_argument("--stage")
     args = parser.parse_args()
 
     manifest_path = os.path.join(args.root, "assets", MANIFEST_NAME)
@@ -163,10 +164,32 @@ def main():
         shutil.copyfile(src, dst)
         staged_modules[module] = True
         initramfs_files[module] = src
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest_text = handle.read()
+    if args.stage:
+        generated = ["", "# --- generated from the package staging root: %s ---" % args.stage]
+        known = {entry["module"] for entry in entries}
+        for base, dirs, names in os.walk(args.stage):
+            dirs.sort()
+            for name in sorted(names):
+                full = os.path.join(base, name)
+                module = "/" + os.path.relpath(full, args.stage).replace(os.sep, "/")
+                if module in known:
+                    raise SystemExit("staging file %s duplicates a manifest entry" % module)
+                known.add(module)
+                stage_rel = os.path.relpath(full, args.root)
+                generated.append("%s %s - 1 %s" % (module, module, stage_rel))
+                initramfs_files[module] = full
+                dst = os.path.join(args.iso, module.lstrip("/"))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.copyfile(full, dst)
+                staged_modules[module] = True
+        manifest_text = manifest_text.rstrip("\n") + "\n" + "\n".join(generated) + "\n"
     staged_manifest = os.path.join(args.staged, MANIFEST_NAME)
-    shutil.copyfile(manifest_path, staged_manifest)
+    with open(staged_manifest, "w", encoding="utf-8") as handle:
+        handle.write(manifest_text)
     iso_manifest = os.path.join(args.iso, MANIFEST_NAME)
-    shutil.copyfile(manifest_path, iso_manifest)
+    shutil.copyfile(staged_manifest, iso_manifest)
     staged_modules["/" + MANIFEST_NAME] = True
     initramfs_files["/" + MANIFEST_NAME] = staged_manifest
 

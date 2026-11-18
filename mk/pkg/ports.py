@@ -24,7 +24,7 @@ def grab(path, pattern, default):
 
 
 def lua_version():
-    return grab("src/programs/lua/lua.h", r'LUA_VERSION_RELEASE\s+"(\d+)"', "0").join(["5.4.", ""])
+    return grab("programs/PureC-OS-Core-Programs/lua/lua.h", r'LUA_VERSION_RELEASE\s+"(\d+)"', "0").join(["5.4.", ""])
 
 
 def vim_version():

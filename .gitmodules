@@ -67,3 +67,6 @@
 [submodule "PureC-OS-File-Manager"]
 	path = programs/PureC-OS-File-Manager
 	url = https://github.com/pablaofficeal/PureC-OS-File-Manager.git
+[submodule "core-programs"]
+	path = programs/PureC-OS-Core-Programs
+	url = https://github.com/PureC-OS/PureC-OS-Core-Programs.git
