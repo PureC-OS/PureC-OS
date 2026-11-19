@@ -779,7 +779,7 @@ bool vtcon_klog_wants(int level)
         return false;
     if (!quiet)
         return level != KLOG_DEBUG;
-    return level == KLOG_WARN || level == KLOG_ERROR;
+    return level == KLOG_ERROR;
 }
 
 void vtcon_klog_putc(char character)

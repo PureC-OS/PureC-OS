@@ -158,7 +158,7 @@ void idt_check_interrupt_rates(void){
         uint64_t rate=(count-snapshot[v])*1000ULL/elapsed;
         snapshot[v]=count;
         if(v==0x80 || !rate) continue;
-        if(rate>IRQ_STORM_RATE && v!=SMP_TIMER_VECTOR)
+        if(rate>IRQ_STORM_RATE && v<SMP_RESCHEDULE_VECTOR)
             klogf(KLOG_WARN,"irq: storm? vector=0x%02x (irq%d) %llu/s",
                   v,(v>=32 && v<48) ? (int)(v-32) : -1,rate);
         for(unsigned slot=0;slot<3;slot++){
