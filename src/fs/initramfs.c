@@ -6,7 +6,7 @@
 
 #define CPIO_HEADER_SIZE 110u
 #define CPIO_ALIGNMENT 4u
-#define INITRAMFS_MAX_FILES 512u
+#define INITRAMFS_MAX_FILES 4096u
 
 struct initramfs_entry {
   uint64_t path_hash;

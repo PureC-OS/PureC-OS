@@ -4,8 +4,10 @@ include $(ROOT_DIR)/src/arch/$(ARCH)/arch.mk
 override BIN_DIR    := $(ROOT_DIR)/bin
 KERNEL_DIR          := $(BIN_DIR)/kernel
 PROGRAM_DIR         := $(BIN_DIR)/programs
-ISO_ROOT            := $(BIN_DIR)/iso_root
-ISO_IMAGE           := $(BIN_DIR)/purec_limine.iso
+ISO_ROOT            ?= $(BIN_DIR)/iso_root
+ISO_IMAGE           ?= $(BIN_DIR)/purec_limine.iso
+ISO_STAGE           ?= $(BIN_DIR)/stage
+GEN_ASSETS_ARGS     ?=
 LIMINE_CONFIG       := $(BIN_DIR)/staged/limine.conf
 
 CRYPT_DIR           := $(ROOT_DIR)/libxcrypt
@@ -16,7 +18,7 @@ ACPI_DIR            := $(ROOT_DIR)/acpi
 export ROOT_DIR BIN_DIR
 
 .DEFAULT_GOAL := all
-.PHONY: core-stage ports test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
+.PHONY: core-stage iso-image ports test-tz qt-apps qt-core-test cmake-test all libraries programs kernel io iso wolf clean help sdl2 doomgeneric chocolate-doom gnumake userspace \
 	test test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-pmm-refcount test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-ext2-meta test-tmpfs test-vfs-perm test-blit test-hid-keymap test-console-vt test-tty test-scanf test-libm test-civil test-tz test-install-accounts test-accounts test-hdrbg test-vfs-alias test-tcp \
 	test-initramfs test-dot11 test-devman test-ksym test-qr-encode test-qr-decode test-qemu-network test-qemu-network-e1000 \
 	test-qemu-network-8254xgc test-qemu-network-pcnet test-box test-malloc test-fenv test-vma test-qemu-toolchain
@@ -429,7 +431,9 @@ core-stage: programs
 	$(MAKE) -C programs/purec-os-pkg host
 	sh mk/pkg/stage.sh "$(ROOT_DIR)" "$(BIN_DIR)/core-repo" "$(BIN_DIR)/stage" "$(ROOT_DIR)/programs/purec-os-pkg/build/host/pkg"
 
-iso: kernel programs core-stage
+iso: kernel programs core-stage iso-image
+
+iso-image:
 	@set -eu; \
 	limine_share=""; \
 	for candidate in /usr/share/limine /tmp/limine-pkg/usr/share/limine; do \
@@ -447,7 +451,7 @@ iso: kernel programs core-stage
 		"$(ISO_ROOT)/bin/program" "$(ISO_ROOT)/lib/modules" \
 		"$(ISO_ROOT)/lib/firmware"; \
 	command -v python3 >/dev/null || { echo "python3 required (mk/gen_assets.py)" >&2; exit 1; }; \
-	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules" --stage "$(BIN_DIR)/stage"; \
+	python3 "$(ROOT_DIR)/mk/gen_assets.py" --root "$(ROOT_DIR)" --iso "$(ISO_ROOT)" --staged "$(BIN_DIR)/staged" --modules "$(BIN_DIR)/modules" --stage "$(ISO_STAGE)" $(GEN_ASSETS_ARGS); \
 	cp "$(KERNEL_DIR)/kernel-limine.elf"    "$(ISO_ROOT)/boot/kernel.elf"; \
 	cp "$(KERNEL_DIR)/kernel-fallback.elf"  "$(ISO_ROOT)/boot/kernel-fallback.elf"; \
 	[ -f "$(KERNEL_DIR)/kernel.map" ] && cp "$(KERNEL_DIR)/kernel.map" "$(ISO_ROOT)/boot/kernel.map" || true; \

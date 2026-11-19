@@ -450,7 +450,7 @@ static int32_t install_manifest_pass(bool dry_run, install_progress_callback cal
 {
     const void *blob;
     uint64_t blob_size;
-    if (!boot_get_module("/manifest.txt", &blob, &blob_size) || !blob || !blob_size || blob_size > 65536U)
+    if (!boot_get_module("/manifest.txt", &blob, &blob_size) || !blob || !blob_size || blob_size > 524288U)
     {
         klog(KLOG_ERROR, "install: missing /manifest.txt module");
         return FS_ERROR_NOT_FOUND;
