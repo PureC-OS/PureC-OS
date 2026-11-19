@@ -141,8 +141,6 @@ def main():
     parser.add_argument("--staged", required=True)
     parser.add_argument("--modules")
     parser.add_argument("--stage")
-    parser.add_argument("--overlay")
-    parser.add_argument("--compact", action="store_true")
     args = parser.parse_args()
 
     manifest_path = os.path.join(args.root, "assets", MANIFEST_NAME)
@@ -180,37 +178,13 @@ def main():
                     raise SystemExit("staging file %s duplicates a manifest entry" % module)
                 known.add(module)
                 stage_rel = os.path.relpath(full, args.root)
-                generated.append("%s %s - 1 %s" % (module, module, "-" if args.compact else stage_rel))
+                generated.append("%s %s - 1 %s" % (module, module, stage_rel))
                 initramfs_files[module] = full
                 dst = os.path.join(args.iso, module.lstrip("/"))
                 os.makedirs(os.path.dirname(dst), exist_ok=True)
                 shutil.copyfile(full, dst)
                 staged_modules[module] = True
         manifest_text = manifest_text.rstrip("\n") + "\n" + "\n".join(generated) + "\n"
-    if args.overlay:
-        import re
-        lines = ["", "# --- overlay: %s ---" % args.overlay]
-        for base, dirs, names in os.walk(args.overlay):
-            dirs.sort()
-            for name in sorted(names):
-                full = os.path.join(base, name)
-                module = "/" + os.path.relpath(full, args.overlay).replace(os.sep, "/")
-                stage_rel = "-" if args.compact else os.path.relpath(full, args.root)
-                pattern = re.compile(r"^%s\s+%s\s+\S+\s+[01]\s+\S+$" % (re.escape(module), re.escape(module)), re.M)
-                replacement = "%s %s - 0 %s" % (module, module, stage_rel)
-                if module in initramfs_files:
-                    manifest_text, count = pattern.subn(replacement, manifest_text)
-                    if not count:
-                        raise SystemExit("overlay: cannot replace manifest entry %s" % module)
-                else:
-                    lines.append("%s %s - 1 %s" % (module, module, stage_rel))
-                initramfs_files[module] = full
-                dst = os.path.join(args.iso, module.lstrip("/"))
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                shutil.copyfile(full, dst)
-                staged_modules[module] = True
-        if len(lines) > 2:
-            manifest_text = manifest_text.rstrip("\n") + "\n" + "\n".join(lines) + "\n"
     staged_manifest = os.path.join(args.staged, MANIFEST_NAME)
     with open(staged_manifest, "w", encoding="utf-8") as handle:
         handle.write(manifest_text)
