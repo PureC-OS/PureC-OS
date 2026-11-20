@@ -123,6 +123,22 @@ static bool password_ok(const char *name, const char *password)
   return ok;
 }
 
+bool sudo_may_manage_network(void)
+{
+  uint32_t uid = process_current_uid();
+  if (uid == 0)
+    return true;
+  uint32_t session_uid;
+  if (process_session_user(&session_uid, 0) && session_uid == uid)
+    return true;
+  struct user_info info;
+  if (vfs_user_lookup(0, uid, &info) < 0)
+    return false;
+  bool allowed = in_wheel(info.name, info.gid);
+  pure_memzero(sudo_buffer, sizeof(sudo_buffer));
+  return allowed;
+}
+
 int32_t sudo_elevate(const char *password)
 {
   uint32_t uid = process_current_uid();

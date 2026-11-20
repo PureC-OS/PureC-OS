@@ -288,7 +288,7 @@ void klog_init(void)
     vga_clear();
   }
 
-  klog(KLOG_INFO, "PureC OS 64-bit kernel v0.1.0 [Limine+GOP] booting...");
+  klog(KLOG_INFO, "PureC OS 64-bit kernel v2.0.0 [Limine+GOP] booting...");
   if (gop_is_available())
   {
     uint32_t w = gop_get_width();

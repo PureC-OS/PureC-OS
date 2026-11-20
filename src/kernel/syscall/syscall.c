@@ -72,6 +72,11 @@ static bool privileged(uint32_t capability)
   return process_current_uid() == 0 || process_has_capability(capability);
 }
 
+static bool wifi_allowed(void)
+{
+  return privileged(PROCESS_CAP_NET_ADMIN) || sudo_may_manage_network();
+}
+
 static bool readable(const void *buffer, uint64_t size)
 {
   return process_user_buffer(buffer, size, false);
@@ -2403,7 +2408,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_SCAN:
   {
-    if (!privileged(PROCESS_CAP_NET_ADMIN))
+    if (!wifi_allowed())
       return -KERR_PERM;
     if (!wifi_has_device())
       return -1;
@@ -2433,7 +2438,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_CONNECT:
   {
-    if (!privileged(PROCESS_CAP_NET_ADMIN))
+    if (!wifi_allowed())
       return -KERR_PERM;
     const struct wifi_connect_request *user_req =
         (const struct wifi_connect_request *)(uintptr_t)a1;
@@ -2464,7 +2469,7 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_WIFI_DISCONNECT:
   {
-    if (!privileged(PROCESS_CAP_NET_ADMIN))
+    if (!wifi_allowed())
       return -KERR_PERM;
     return wifi_disconnect() ? 0 : -1;
   }
