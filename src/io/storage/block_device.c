@@ -469,6 +469,44 @@ bool block_device_write_sectors(uint32_t lba, const void *buffer,
     return block_run(true, lba, (void *)buffer, count);
 }
 
+static bool select_transport(uint8_t transport, uint32_t index)
+{
+    switch (transport)
+    {
+    case STORAGE_TRANSPORT_ATA_PIO:
+        return ata_pio_select_device(index);
+    case STORAGE_TRANSPORT_AHCI:
+        return ahci_select_device(index);
+    case STORAGE_TRANSPORT_USB_MSC:
+        return xhci_select_device(index);
+    case STORAGE_TRANSPORT_USB_EHCI:
+        return ehci_select_device(index);
+    default:
+        return false;
+    }
+}
+
+static bool usb_raw_run(uint8_t transport, uint32_t transport_index, bool write,
+                        uint32_t lba, void *buffer, uint32_t count)
+{
+    usb_rescan_lock();
+    uint8_t saved_transport = active_transport;
+    uint32_t saved_index = active_index;
+    bool ok = select_transport(transport, transport_index);
+    if (ok)
+    {
+        bool ehci = transport == STORAGE_TRANSPORT_USB_EHCI;
+        ok = write ? usb_write_run(ehci, lba, buffer, count)
+                   : usb_read_run(ehci, lba, buffer, count);
+        if (saved_transport == STORAGE_TRANSPORT_USB_MSC || saved_transport == STORAGE_TRANSPORT_USB_EHCI)
+            (void)select_transport(saved_transport, saved_index);
+    }
+    active_transport = saved_transport;
+    active_index = saved_index;
+    usb_rescan_unlock();
+    return ok;
+}
+
 bool block_device_raw_run(uint32_t device_index, bool write, uint32_t lba,
                           void *buffer, uint32_t count)
 {
@@ -489,13 +527,24 @@ bool block_device_raw_run(uint32_t device_index, bool write, uint32_t lba,
         transport_index = device_index - ata_count;
     }
     else
-        return false;
+    {
+        uint32_t usb_index = device_index - ata_count - ahci_count;
+        uint32_t xhci_count = xhci_device_count();
+        bool ok;
+        if (usb_index < xhci_count)
+            ok = usb_raw_run(STORAGE_TRANSPORT_USB_MSC, usb_index, write, lba, buffer, count);
+        else if (usb_index - xhci_count < ehci_device_count())
+            ok = usb_raw_run(STORAGE_TRANSPORT_USB_EHCI, usb_index - xhci_count, write, lba, buffer, count);
+        else
+            return false;
+        if (ok)
+            io_account(write, count);
+        return ok;
+    }
     bool held = io_dev_lock();
     uint8_t saved_transport = active_transport;
     uint32_t saved_index = active_index;
-    bool selected = transport == STORAGE_TRANSPORT_ATA_PIO
-                        ? ata_pio_select_device(transport_index)
-                        : ahci_select_device(transport_index);
+    bool selected = select_transport(transport, transport_index);
     bool ok = selected;
     if (selected)
     {
@@ -505,10 +554,8 @@ bool block_device_raw_run(uint32_t device_index, bool write, uint32_t lba,
             ok = fixed_sector_op(write, lba + done, (uint8_t *)buffer + done * BLOCK_SECTOR_SIZE);
         active_transport = saved_transport;
         active_index = saved_index;
-        if (saved_transport == STORAGE_TRANSPORT_ATA_PIO)
-            (void)ata_pio_select_device(saved_index);
-        else if (saved_transport == STORAGE_TRANSPORT_AHCI)
-            (void)ahci_select_device(saved_index);
+        if (fixed_transport(saved_transport))
+            (void)select_transport(saved_transport, saved_index);
     }
     io_dev_unlock(held);
     if (ok)
