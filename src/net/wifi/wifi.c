@@ -319,6 +319,10 @@ bool wifi_get_status(struct wifi_status *out){
     return true;
 }
 
+static uint64_t elapsed_ms(uint64_t now, uint64_t start){
+    return now > start ? now - start : 0;
+}
+
 void wifi_poll(uint64_t now_ms){
     if(!initialized) return;
     if(mgr.active && mgr.active->ops && mgr.active->ops->poll){
@@ -326,12 +330,12 @@ void wifi_poll(uint64_t now_ms){
     }
 
     if(mgr.scanning){
-        if(now_ms - mgr.scan_start_ms >= WIFI_SCAN_TIMEOUT_MS){
+        if(elapsed_ms(now_ms, mgr.scan_start_ms) >= WIFI_SCAN_TIMEOUT_MS){
             klog(KLOG_WARN, "wifi: scan timeout, reporting partial results");
             wifi_notify_scan_done();
         }
     } else {
-        if(!mgr.connecting && mgr.state != WIFI_STATE_CONNECTED && (now_ms - mgr.last_scan_ms >= WIFI_SCAN_INTERVAL_MS)){
+        if(!mgr.connecting && mgr.state != WIFI_STATE_CONNECTED && (elapsed_ms(now_ms, mgr.last_scan_ms) >= WIFI_SCAN_INTERVAL_MS)){
             if(!mgr.active) mgr.last_scan_ms = now_ms;
             else (void)wifi_trigger_scan();
         }
@@ -344,20 +348,20 @@ void wifi_poll(uint64_t now_ms){
                 wifi_notify_connected(mgr.target_ssid, mgr.target_bssid, mgr.connected_rssi, mgr.target_channel, mgr.target_security);
             }
         } else if(mgr.state == WIFI_STATE_CONNECTING &&
-                  (now_ms - mgr.connect_start_ms >= WIFI_CONNECT_TIMEOUT_MS)){
+                  (elapsed_ms(now_ms, mgr.connect_start_ms) >= WIFI_CONNECT_TIMEOUT_MS)){
         klogf(KLOG_ERROR, "wifi: connect timeout 15s for '%s', reporting failure",
               mgr.target_ssid);
         wifi_notify_connect_failed(-12);
         }
     } else if(mgr.connecting && mgr.state == WIFI_STATE_CONNECTING &&
-              (now_ms - mgr.connect_start_ms >= WIFI_CONNECT_TIMEOUT_MS)){
+              (elapsed_ms(now_ms, mgr.connect_start_ms) >= WIFI_CONNECT_TIMEOUT_MS)){
         klogf(KLOG_ERROR, "wifi: connect timeout 15s for '%s' (no driver poll), reporting failure",
               mgr.target_ssid);
         wifi_notify_connect_failed(-12);
     }
 
     if(mgr.state == WIFI_STATE_FAILED && !mgr.connecting){
-        if(now_ms - mgr.connect_start_ms >= 5000ULL){
+        if(elapsed_ms(now_ms, mgr.connect_start_ms) >= 5000ULL){
             mgr.state = WIFI_STATE_DISCONNECTED;
             klog(KLOG_INFO, "wifi: FAILED -> DISCONNECTED, ready for retry");
         }

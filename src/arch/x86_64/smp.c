@@ -42,6 +42,87 @@ static uint64_t tlb_ack[CPU_MAX_COUNT];
 static spinlock_t tlb_lock = SPINLOCK_INIT;
 static uint64_t tlb_generation;
 
+
+#define MSR_TSC_ADJUST 0x3B
+#define MSR_TSC 0x10
+#define TSC_SYNC_ROUNDS 32U
+#define TSC_SYNC_DONE 0xFFFFFFFFU
+
+static bool tsc_adjust_supported;
+static uint64_t bsp_tsc_adjust;
+static volatile uint32_t tsc_sync_req;
+static volatile uint32_t tsc_sync_ack;
+static volatile uint64_t tsc_sync_bsp_value;
+static uint32_t tsc_sync_last;
+static int64_t tsc_sync_before[CPU_MAX_COUNT];
+static int64_t tsc_sync_after[CPU_MAX_COUNT];
+static bool tsc_sync_adjust_fixed[CPU_MAX_COUNT];
+
+static inline uint64_t ordered_tsc(void){
+    __asm__ volatile("lfence" ::: "memory");
+    uint64_t value = arch_read_timestamp();
+    __asm__ volatile("lfence" ::: "memory");
+    return value;
+}
+
+static void tsc_sync_init_bsp(void){
+    uint32_t ebx = 0;
+    arch_cpuid(7, 0, NULL, &ebx, NULL, NULL);
+    tsc_adjust_supported = (ebx & (1U << 1)) != 0;
+    if(tsc_adjust_supported) bsp_tsc_adjust = arch_rdmsr(MSR_TSC_ADJUST);
+    klogf(KLOG_INFO, "tsc: sync TSC_ADJUST %s, bsp adjust %lld",
+          tsc_adjust_supported ? "supported" : "absent", (long long)bsp_tsc_adjust);
+}
+
+static void tsc_sync_bsp_serve(void){
+    uint32_t round = __atomic_load_n(&tsc_sync_req, __ATOMIC_ACQUIRE);
+    if(!round || round == TSC_SYNC_DONE || round == tsc_sync_last) return;
+    tsc_sync_bsp_value = ordered_tsc();
+    tsc_sync_last = round;
+    __atomic_store_n(&tsc_sync_ack, round, __ATOMIC_RELEASE);
+}
+
+static int64_t tsc_sync_measure(uint32_t *round){
+    int64_t best_offset = 0;
+    uint64_t best_rtt = UINT64_MAX;
+    for(uint32_t i = 0; i < TSC_SYNC_ROUNDS; i++){
+        uint32_t r = ++(*round);
+        uint64_t t0 = ordered_tsc();
+        __atomic_store_n(&tsc_sync_req, r, __ATOMIC_RELEASE);
+        while(__atomic_load_n(&tsc_sync_ack, __ATOMIC_ACQUIRE) != r)
+            arch_cpu_relax();
+        uint64_t t1 = ordered_tsc();
+        uint64_t bsp = tsc_sync_bsp_value;
+        uint64_t rtt = t1 - t0;
+        if(rtt < best_rtt){
+            best_rtt = rtt;
+            best_offset = (int64_t)(bsp - (t0 + rtt / 2));
+        }
+    }
+    return best_offset;
+}
+
+static void tsc_sync_ap(uint32_t id){
+    if(tsc_adjust_supported){
+        uint64_t own = arch_rdmsr(MSR_TSC_ADJUST);
+        if(own != bsp_tsc_adjust){
+            arch_wrmsr(MSR_TSC_ADJUST, bsp_tsc_adjust);
+            tsc_sync_adjust_fixed[id] = true;
+        }
+    }
+    uint32_t round = 0;
+    int64_t offset = tsc_sync_measure(&round);
+    tsc_sync_before[id] = offset;
+    if(offset > 2000 || offset < -2000){
+        if(tsc_adjust_supported)
+            arch_wrmsr(MSR_TSC_ADJUST, arch_rdmsr(MSR_TSC_ADJUST) + (uint64_t)offset);
+        else
+            arch_wrmsr(MSR_TSC, ordered_tsc() + (uint64_t)offset);
+    }
+    tsc_sync_after[id] = tsc_sync_measure(&round);
+    __atomic_store_n(&tsc_sync_req, TSC_SYNC_DONE, __ATOMIC_RELEASE);
+}
+
 extern void smp_ap_entry(struct limine_smp_info *info);
 static struct limine_smp_info *find_limine_cpu(
     struct limine_smp_response *response, const struct cpu_info *cpu){
@@ -88,6 +169,7 @@ void smp_ap_main(struct ap_boot_context *context,
         cpu_fail(id);
         arch_cpu_stop();
     }
+    tsc_sync_ap(id);
     cpufreq_init_cpu();
     scheduler_init_cpu();
     if(!cpu_publish_idle(id)){
@@ -117,6 +199,9 @@ bool smp_start_cpu(struct limine_smp_response *response,
         &ap_stacks[logical_id][AP_STACK_SIZE];
     context->logical_id = logical_id;
     context->lapic_id = cpu->lapic_id;
+    tsc_sync_req = 0;
+    tsc_sync_ack = 0;
+    tsc_sync_last = 0;
 
     __atomic_store_n(&limine_info->extra_argument,
                      (uint64_t)(uintptr_t)context, __ATOMIC_RELEASE);
@@ -128,6 +213,7 @@ bool smp_start_cpu(struct limine_smp_response *response,
     uint64_t duration = (frequency / 1000) * (timeout_ms ? timeout_ms : 1);
     uint64_t start = arch_read_timestamp();
     while(arch_read_timestamp() - start < duration){
+        tsc_sync_bsp_serve();
         enum cpu_state state = cpu_get_state(logical_id);
         if(state == CPU_IDLE) return true;
         if(state == CPU_FAILED) return false;
@@ -145,11 +231,16 @@ void smp_start_all(struct limine_smp_response *response){
         klog(KLOG_WARN, "smp: LAPIC unavailable; BSP scheduling only");
         return;
     }
+    tsc_sync_init_bsp();
     for(uint32_t id=1;id<cpu_registered_count();id++){
         bool ok=smp_start_cpu(response,id,1000);
         klogf(ok ? KLOG_OK : KLOG_WARN,
               "smp: cpu%u lapic=%u %s state=%u",id,cpu_get_info(id)->lapic_id,
               ok ? "ready (HLT)" : "startup failed",(uint32_t)cpu_get_state(id));
+        if(ok)
+            klogf(KLOG_INFO, "tsc: cpu%u offset %lld -> %lld cycles%s", id,
+                  (long long)tsc_sync_before[id], (long long)tsc_sync_after[id],
+                  tsc_sync_adjust_fixed[id] ? " (TSC_ADJUST reset to bsp)" : "");
     }
 }
 void smp_release_scheduler(void){
