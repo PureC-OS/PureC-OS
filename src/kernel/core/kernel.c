@@ -65,16 +65,6 @@ void kernel_main(struct limine_framebuffer *fb)
     kernel_panic("physical memory manager initialization failed");
   oom_gate_init();
   vmm_init();
-  if (!vfs_mount_initramfs())
-    kernel_panic("cannot mount /boot/initramfs.cpio");
-  vfs_selftest();
-  fpu_init();
-  power_init();
-  process_init();
-  klog(KLOG_INFO, "Testing IDT: int3 breakpoint...");
-  arch_breakpoint();
-  klog(KLOG_OK, "int3 handled, IDT working");
-
   boot_diag_checkpoint(BOOT_STAGE_SYSCALLS, "initializing syscall layer");
   klog(KLOG_INFO, "Initializing PCI MMIO mapper...");
   mmio_init();
@@ -126,8 +116,18 @@ void kernel_main(struct limine_framebuffer *fb)
       klog(KLOG_INFO, "video: GOP forced by cmdline (video=gop)");
     }
   }
-  (void)vbox_mouse_init();
   vtcon_init();
+  if (!vfs_mount_initramfs())
+    kernel_panic("cannot mount /boot/initramfs.cpio");
+  vfs_selftest();
+  fpu_init();
+  power_init();
+  process_init();
+  klog(KLOG_INFO, "Testing IDT: int3 breakpoint...");
+  arch_breakpoint();
+  klog(KLOG_OK, "int3 handled, IDT working");
+
+  (void)vbox_mouse_init();
   smp_start_all(smp_response_ptr);
   syscall_init();
   klog(KLOG_OK, "Syscall int 0x80 ready");
