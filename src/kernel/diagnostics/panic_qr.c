@@ -212,23 +212,52 @@ static int pqr_build_url(const char *reason, const char *file, int line,
   return 0;
 }
 
+static uint32_t box_x, box_y, box_dim, box_frame;
+static bool box_set;
+
+void panic_qr_set_box(uint32_t x, uint32_t y, uint32_t dim, uint32_t frame)
+{
+  box_x = x;
+  box_y = y;
+  box_dim = dim;
+  box_frame = frame;
+  box_set = dim > 0;
+}
+
 static void pqr_draw(int size)
 {
   uint32_t w = gop_get_width();
   uint32_t h = gop_get_height();
   int need = size + 8;
   int scale = 1;
-  while ((need * (scale + 1) <= (int)w) && (need * (scale + 1) * 2 <= (int)h))
-    scale++;
-  if (need * scale > (int)w || need * scale > (int)h)
-    return;
+  int x0, y0;
+  if (box_set)
+  {
+    while (need * (scale + 1) <= (int)box_dim)
+      scale++;
+    if (need * scale > (int)box_dim)
+      return;
+    int dim = need * scale;
+    x0 = (int)box_x + ((int)box_dim - dim);
+    y0 = (int)box_y + ((int)box_dim - dim);
+    gop_draw_rect((uint32_t)(x0 - 3), (uint32_t)(y0 - 3), (uint32_t)(dim + 6),
+                  (uint32_t)(dim + 6), box_frame);
+  }
+  else
+  {
+    while ((need * (scale + 1) <= (int)w) && (need * (scale + 1) * 2 <= (int)h))
+      scale++;
+    if (need * scale > (int)w || need * scale > (int)h)
+      return;
+    int dim = need * scale;
+    x0 = ((int)w - dim) / 2;
+    if (x0 < 0)
+      x0 = 0;
+    y0 = (int)h - dim - 16;
+    if (y0 < 0)
+      y0 = 0;
+  }
   int dim = need * scale;
-  int x0 = ((int)w - dim) / 2;
-  if (x0 < 0)
-    x0 = 0;
-  int y0 = (int)h - dim - 16;
-  if (y0 < 0)
-    y0 = 0;
   gop_draw_rect((uint32_t)x0, (uint32_t)y0, (uint32_t)dim, (uint32_t)dim, 0xFFFFFF);
   for (int y = 0; y < size; y++)
   {
