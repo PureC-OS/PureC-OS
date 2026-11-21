@@ -10,6 +10,9 @@
 #include "panic_qr.h"
 #include "panic_screen.h"
 #include "../../lib/format.h"
+#include "../../mm/pmm.h"
+#include "../../mm/vmm.h"
+#include "../core/system_info.h"
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -62,24 +65,38 @@ static __attribute__((noreturn)) void panic_halt(void)
   arch_cpu_stop();
 }
 
-static void out(enum pscr_tone tone, const char *fmt, ...)
+static void hex_upper(char *s)
+{
+  for (; *s; s++)
+  {
+    if (s[0] != '0' || s[1] != 'x')
+      continue;
+    s += 2;
+    while ((*s >= '0' && *s <= '9') || (*s >= 'a' && *s <= 'f') || (*s >= 'A' && *s <= 'F'))
+    {
+      if (*s >= 'a' && *s <= 'f')
+        *s = (char)(*s - 'a' + 'A');
+      s++;
+    }
+    s--;
+  }
+}
+
+static void out(const char *fmt, ...)
 {
   char line[192];
   va_list ap;
   va_start(ap, fmt);
   kvformat(line, sizeof(line), fmt, ap);
   va_end(ap);
+  hex_upper(line);
   klog(KLOG_ERROR, line);
-  pscr_line(tone, line);
+  pscr_line(line);
 }
 
-static void section(const char *title)
-{
-  klogf(KLOG_ERROR, "-- %s --", title);
-  pscr_section(title);
-}
+#define SEP "  =================================================="
 
-static void panic_header(int64_t kind, const char *title, const char *file,
+static void panic_header(int64_t kind, const char *reason, const char *file,
                          int line, const char *func)
 {
   arch_irq_disable();
@@ -93,64 +110,106 @@ static void panic_header(int64_t kind, const char *title, const char *file,
   gop_cancel_compose();
 
   const struct panic_theme *theme = panic_theme_for(kind);
-  pscr_begin(theme, kind >= 0 ? theme->name : title);
-
-  klog(KLOG_ERROR, "");
-  klog(KLOG_ERROR, "========================Kernel Panic=======================");
-  klogf(KLOG_ERROR, "%s %s", theme->code, theme->name);
-
-  section("What happened");
-  out(PSCR_TEXT, "%s", title ? title : "unknown fatal error");
-  out(PSCR_DIM, "at %s:%d %s()", file ? file : "?", line, func ? func : "?");
-  out(PSCR_DIM, "build %s  %s", kernel_build_uuid, kernel_build_time);
-  out(PSCR_DIM, "boot stage %02u  %s", (unsigned int)boot_diag_current_stage(),
+  pscr_begin(theme);
+  const char *stop = theme->code[0] == '#' ? theme->code + 1 : theme->code;
+  out("  :(   PureC OS KERNEL PANIC");
+  out(SEP);
+  if (kind >= 0)
+    out("  Reason: %s %s", theme->name, theme->code);
+  else
+    out("  Reason: %s", reason ? reason : "unknown fatal error");
+  out("  Stop code: %s", stop);
+  out("  At: %s:%d %s()", file ? file : "?", line, func ? func : "?");
+  out("  Build: %s %s", kernel_build_uuid, kernel_build_time);
+  out("  Boot stage: %02u %s", (unsigned int)boot_diag_current_stage(),
       boot_diag_current_detail());
-  if (!ksym_ready())
-    out(PSCR_ACCENT, "ksyms missing: addresses are not resolved to names");
+  out(SEP);
 }
 
-static void panic_cpu_state(void)
+static void flags_text(uint64_t rflags, char *buf, uint32_t cap)
 {
-  section("CPU state");
+  static const struct
+  {
+    uint8_t bit;
+    const char *name;
+  } names[] = {{0, "CF"}, {2, "PF"}, {4, "AF"}, {6, "ZF"}, {7, "SF"}, {8, "TF"},
+               {9, "IF"}, {10, "DF"}, {11, "OF"}, {14, "NT"}, {16, "RF"},
+               {17, "VM"}, {18, "AC"}, {21, "ID"}};
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < sizeof(names) / sizeof(names[0]) && n + 4 < cap; i++)
+    if (rflags & (1ULL << names[i].bit))
+    {
+      buf[n++] = names[i].name[0];
+      buf[n++] = names[i].name[1];
+      buf[n++] = ' ';
+    }
+  buf[n] = '\0';
+}
+
+static void panic_regs(const struct panic_registers *r, uint64_t rip, uint64_t cs,
+                       uint64_t rsp, uint64_t ss, uint64_t rflags)
+{
+  out("REGS:");
+  if (r)
+  {
+    out("  RAX=0x%016llx  RBX=0x%016llx", (unsigned long long)r->rax, (unsigned long long)r->rbx);
+    out("  RCX=0x%016llx  RDX=0x%016llx", (unsigned long long)r->rcx, (unsigned long long)r->rdx);
+    out("  RSI=0x%016llx  RDI=0x%016llx", (unsigned long long)r->rsi, (unsigned long long)r->rdi);
+    out("  RBP=0x%016llx  R08=0x%016llx", (unsigned long long)r->rbp, (unsigned long long)r->r8);
+    out("  R09=0x%016llx  R10=0x%016llx", (unsigned long long)r->r9, (unsigned long long)r->r10);
+    out("  R11=0x%016llx  R12=0x%016llx", (unsigned long long)r->r11, (unsigned long long)r->r12);
+    out("  R13=0x%016llx  R14=0x%016llx", (unsigned long long)r->r13, (unsigned long long)r->r14);
+    out("  R15=0x%016llx", (unsigned long long)r->r15);
+  }
+  out("  RSP=0x%016llx  SS=0x%016llx", (unsigned long long)rsp, (unsigned long long)ss);
+  out("  RIP=0x%016llx  CS=0x%016llx", (unsigned long long)rip, (unsigned long long)cs);
+  char flags[64];
+  flags_text(rflags, flags, sizeof(flags));
+  out("  RFLAGS=0x%016llx [%s] IOPL=%u", (unsigned long long)rflags, flags,
+      (unsigned int)((rflags >> 12) & 3));
+}
+
+static void panic_fault(uint64_t vector, uint64_t err, uint64_t cr2)
+{
+  out("VEC=%u ERR=0x%016llx", (unsigned int)vector, (unsigned long long)err);
+  if (vector == 14)
+  {
+    out("#PF: %s %s %s%s%s", (err & 1) ? "protection" : "not-present",
+        (err & 16) ? "ifetch" : (err & 2) ? "write" : "read",
+        (err & 4) ? "user" : "super", (err & 8) ? " reserved-bit" : "",
+        (err & 32) ? " pkey" : "");
+    out("  CR2=0x%016llx", (unsigned long long)cr2);
+  }
+  else if (vector == 8 || (vector >= 10 && vector <= 13) || vector == 17 || vector == 21)
+  {
+    out("  EXT=%u IDT=%u TI=%u idx=0x%016llx", (unsigned int)(err & 1),
+        (unsigned int)((err >> 1) & 1), (unsigned int)((err >> 2) & 1),
+        (unsigned long long)((err >> 3) & 0x1FFF));
+  }
+}
+
+static void panic_cpu(void)
+{
+  uint32_t a = 0, b = 0, c = 0, d = 0;
+  arch_cpuid(0, 0, &a, &b, &c, &d);
+  char vendor[13];
+  for (int i = 0; i < 4; i++)
+  {
+    vendor[i] = (char)(b >> (8 * i));
+    vendor[4 + i] = (char)(d >> (8 * i));
+    vendor[8 + i] = (char)(c >> (8 * i));
+  }
+  vendor[12] = '\0';
+  arch_cpuid(1, 0, &a, &b, &c, &d);
   struct thread *t = scheduler_current_thread();
-  if (t)
-    out(PSCR_TEXT, "thread %u  state %u  rsp %016llx", (unsigned int)t->id,
-        (unsigned int)t->state, (unsigned long long)t->rsp);
-  else
-    out(PSCR_DIM, "no thread (scheduler not running)");
-  out(PSCR_TEXT, "CR0 %016llx  CR2 %016llx", (unsigned long long)arch_read_cr0(),
+  out("CPU: %s APIC=%u  TID=%d", vendor, (unsigned int)(b >> 24),
+      t ? (int)t->id : -1);
+  out("CR0=0x%016llx CR2=0x%016llx", (unsigned long long)arch_read_cr0(),
       (unsigned long long)arch_read_cr2());
-  out(PSCR_TEXT, "CR3 %016llx  CR4 %016llx", (unsigned long long)arch_read_cr3(),
+  out("CR3=0x%016llx CR4=0x%016llx", (unsigned long long)arch_read_cr3(),
       (unsigned long long)arch_read_cr4());
-}
-
-static void panic_rip_sym(uint64_t rip)
-{
-  const char *name = 0;
-  uint64_t off = 0;
-  if (ksym_resolve(rip, &name, &off))
-    out(PSCR_ACCENT, "RIP %016llx  %s+0x%llx", (unsigned long long)rip, name,
-        (unsigned long long)off);
-  else
-    out(PSCR_ACCENT, "RIP %016llx  ??", (unsigned long long)rip);
-}
-
-static void panic_gp_regs(const struct panic_registers *r, uint64_t rsp,
-                          uint64_t rflags)
-{
-  section("Registers");
-  out(PSCR_TEXT, "RAX %016llx  RBX %016llx  RCX %016llx", (unsigned long long)r->rax,
-      (unsigned long long)r->rbx, (unsigned long long)r->rcx);
-  out(PSCR_TEXT, "RDX %016llx  RSI %016llx  RDI %016llx", (unsigned long long)r->rdx,
-      (unsigned long long)r->rsi, (unsigned long long)r->rdi);
-  out(PSCR_TEXT, "RBP %016llx  RSP %016llx  R8  %016llx", (unsigned long long)r->rbp,
-      (unsigned long long)rsp, (unsigned long long)r->r8);
-  out(PSCR_TEXT, "R9  %016llx  R10 %016llx  R11 %016llx", (unsigned long long)r->r9,
-      (unsigned long long)r->r10, (unsigned long long)r->r11);
-  out(PSCR_TEXT, "R12 %016llx  R13 %016llx  R14 %016llx", (unsigned long long)r->r12,
-      (unsigned long long)r->r13, (unsigned long long)r->r14);
-  out(PSCR_TEXT, "R15 %016llx  RFLAGS %016llx", (unsigned long long)r->r15,
-      (unsigned long long)rflags);
+  out("EFER=0x%016llx", (unsigned long long)arch_rdmsr(0xC0000080));
+  out("BRAND: %s", system_info_cpu_name());
 }
 
 static bool panic_is_kernel_addr(uint64_t a)
@@ -158,90 +217,83 @@ static bool panic_is_kernel_addr(uint64_t a)
   return a >= 0xffff800000000000ULL;
 }
 
-static void panic_stack_dump(uint64_t rsp)
+static void panic_trace(uint64_t rbp)
 {
-  section("Stack");
-  if (!panic_is_kernel_addr(rsp))
-  {
-    out(PSCR_DIM, "RSP is not in the kernel half, skipped");
-    return;
-  }
-  volatile uint64_t *sp = (volatile uint64_t *)(uintptr_t)rsp;
-  for (int i = 0; i < 24; i += 3)
-    out(PSCR_DIM, "+%03x  %016llx %016llx %016llx", (unsigned int)(i * 8),
-        (unsigned long long)sp[i], (unsigned long long)sp[i + 1],
-        (unsigned long long)sp[i + 2]);
-}
-
-static void panic_call_trace(uint64_t rbp, uint64_t rsp)
-{
-  section("Call trace");
+  out("");
+  out("KERNEL STACK TRACE:");
   int printed = 0;
-  for (int depth = 0; depth < 24 && panic_is_kernel_addr(rbp); depth++)
+  for (int depth = 0; depth < 20 && panic_is_kernel_addr(rbp); depth++)
   {
     volatile uint64_t *frame = (volatile uint64_t *)(uintptr_t)rbp;
-    uint64_t next_rbp = frame[0];
-    uint64_t ret_addr = frame[1];
-    if (ret_addr >= 0xffffffff80000000ULL)
+    uint64_t next = frame[0];
+    uint64_t ret = frame[1];
+    if (ret >= 0xffffffff80000000ULL)
     {
       const char *name = 0;
       uint64_t off = 0;
-      if (ksym_resolve(ret_addr, &name, &off))
-        out(PSCR_TEXT, "#%-2u %s+0x%llx", (unsigned int)printed, name,
+      if (ksym_resolve(ret, &name, &off))
+        out("  [%d] 0x%016llx  %s+0x%llx", printed, (unsigned long long)ret, name,
             (unsigned long long)off);
       else
-        out(PSCR_TEXT, "#%-2u %016llx ??", (unsigned int)printed,
-            (unsigned long long)ret_addr);
+        out("  [%d] 0x%016llx  ??", printed, (unsigned long long)ret);
       printed++;
     }
-    if (next_rbp == 0 || next_rbp <= rbp || !panic_is_kernel_addr(next_rbp))
+    if (next == 0 || next <= rbp || !panic_is_kernel_addr(next))
       break;
-    rbp = next_rbp;
+    rbp = next;
   }
-  if (printed == 0)
-    out(PSCR_DIM, "no kernel return addresses found");
-  panic_stack_dump(rsp);
+  if (!printed)
+    out("  (no kernel frames)");
+}
+
+static void translate(const char *label, uint64_t va)
+{
+  uint64_t pa = vmm_translate(arch_read_cr3(), va);
+  if (pa)
+    out("%s 0x%016llx -> 0x%016llx", label, (unsigned long long)va, (unsigned long long)pa);
+  else
+    out("%s 0x%016llx -> unmapped or unavailable", label, (unsigned long long)va);
+}
+
+static void panic_memory(uint64_t rip, bool have_cr2, uint64_t cr2, uint64_t rsp)
+{
+  out("");
+  out("KERNEL MEMORY: free pages=%llu", (unsigned long long)(pmm_free_bytes() / 4096));
+  translate("RIP", rip);
+  if (have_cr2)
+    translate("CR2", cr2);
+  if (!panic_is_kernel_addr(rsp))
+  {
+    out("STACK @0x%016llx: not in the kernel half", (unsigned long long)rsp);
+    return;
+  }
+  out("STACK @0x%016llx:", (unsigned long long)rsp);
+  volatile uint64_t *sp = (volatile uint64_t *)(uintptr_t)rsp;
+  for (int i = 0; i < 8; i++)
+    out("  0x%016llx: 0x%016llx", (unsigned long long)(rsp + (uint64_t)i * 8),
+        (unsigned long long)sp[i]);
 }
 
 static void panic_footer(void)
 {
-  klog(KLOG_ERROR, "========================CPU HALTED=======================");
-  klog(KLOG_ERROR, "https://github.com/PureC-OS/PureC-OS/issues/new");
-  char line[192];
-  kformat(line, sizeof(line),
-          "CPU halted  |  build %s  |  scan the QR code or report at github.com/PureC-OS/PureC-OS/issues",
-          kernel_build_uuid);
-  pscr_footer(line);
+  out("");
+  out("System halted. Please reboot.");
+  if (pscr_active())
+    klog(KLOG_ERROR, "Scan the QR code to open a prefilled GitHub issue");
 }
 
-static void fault_details(uint64_t vector, uint64_t error_code, uint64_t cs,
-                          uint64_t cr2)
+static uint64_t read_ss(void)
 {
-  section("Fault");
-  out(PSCR_TEXT, "vector %u  error code %016llx  CS %04llx", (unsigned int)vector,
-      (unsigned long long)error_code, (unsigned long long)cs);
-  if (vector == 14)
-  {
-    out(PSCR_ACCENT, "address %016llx", (unsigned long long)cr2);
-    out(PSCR_TEXT, "%s %s of a %s page%s%s",
-        (error_code & 4) ? "user" : "kernel",
-        (error_code & 16) ? "instruction fetch" : (error_code & 2) ? "write" : "read",
-        (error_code & 1) ? "present (protection)" : "not-present",
-        (error_code & 8) ? ", reserved bit set" : "",
-        (error_code & 32) ? ", protection key" : "");
-  }
-  else if ((vector >= 10 && vector <= 13) && error_code)
-  {
-    out(PSCR_TEXT, "selector index %u in %s%s", (unsigned int)((error_code >> 3) & 0x1FFF),
-        (error_code & 2) ? "IDT" : (error_code & 4) ? "LDT" : "GDT",
-        (error_code & 1) ? ", external event" : "");
-  }
-  else if (vector == 21)
-  {
-    static const char *const cp[] = {"?", "near ret", "far ret/iret", "endbranch",
-                                     "rstorssp", "setssbsy"};
-    out(PSCR_TEXT, "reason: %s", cp[(error_code & 0x7FFF) <= 5 ? (error_code & 0x7FFF) : 0]);
-  }
+  uint64_t ss;
+  __asm__ volatile("mov %%ss, %0" : "=r"(ss));
+  return ss;
+}
+
+static uint64_t read_cs(void)
+{
+  uint64_t cs;
+  __asm__ volatile("mov %%cs, %0" : "=r"(cs));
+  return cs;
 }
 
 void kernel_panic_at(const char *file, int line, const char *func,
@@ -250,10 +302,15 @@ void kernel_panic_at(const char *file, int line, const char *func,
   panic_header(PANIC_KIND_SOFTWARE, reason, file, line, func);
   uint64_t rbp = arch_get_fp();
   uint64_t rsp = arch_get_sp();
-  panic_cpu_state();
-  panic_call_trace(rbp, rsp);
-  panic_qr_show(reason, file, line, func,
-                (uint64_t)__builtin_return_address(0), rbp);
+  uint64_t rip = (uint64_t)__builtin_return_address(0);
+  struct panic_registers regs;
+  ARCH_CAPTURE_PANIC_REGS(regs);
+  regs.rbp = rbp;
+  panic_regs(&regs, rip, read_cs(), rsp, read_ss(), arch_irq_save());
+  panic_cpu();
+  panic_trace(rbp);
+  panic_memory(rip, false, 0, rsp);
+  panic_qr_show(reason, file, line, func, rip, rbp);
   panic_footer();
   panic_halt();
 }
@@ -267,19 +324,22 @@ void kernel_panic_exception_at(const char *file, int line, const char *func,
   char title[64];
   kformat(title, sizeof(title), "exception: #%u %s", (unsigned int)vector,
           exception_name(vector));
-  panic_header(vector < 256 ? (int64_t)vector : 255, title, file, line, func);
-  fault_details(vector, error_code, cs, cr2);
-  panic_rip_sym(rip);
-  panic_cpu_state();
-  uint64_t rsp = 0;
-  uint64_t rbp = 0;
+  panic_header(vector < 32 ? (int64_t)vector : 255, title, file, line, func);
+  uint64_t rsp = 0, ss = 0, rbp = 0;
   if (regs)
   {
-    rsp = (uint64_t)(uintptr_t)regs;
+    const uint64_t *frame = (const uint64_t *)regs;
+    rsp = frame[20];
+    ss = frame[21];
     rbp = regs->rbp;
-    panic_gp_regs(regs, rsp, rflags);
   }
-  panic_call_trace(rbp, rsp);
+  panic_regs(regs, rip, cs, rsp, ss, rflags);
+  panic_fault(vector, error_code, cr2);
+  panic_cpu();
+  if ((cs & 3) == 3)
+    out("User RIP above; kernel trace starts in panic handler.");
+  panic_trace((cs & 3) == 3 ? arch_get_fp() : rbp);
+  panic_memory(rip, vector == 14, cr2, (cs & 3) == 3 ? (uint64_t)(uintptr_t)regs : rsp);
   panic_qr_show(title, file, line, func, rip, rbp);
   panic_footer();
   panic_halt();
@@ -290,11 +350,10 @@ void kernel_panic_manual_at(const char *file, int line, const char *func,
                             uint64_t rbp, const struct panic_registers *regs)
 {
   panic_header(PANIC_KIND_MANUAL, reason, file, line, func);
-  panic_rip_sym(rip);
-  panic_cpu_state();
-  if (regs)
-    panic_gp_regs(regs, rsp, 0);
-  panic_call_trace(rbp, rsp);
+  panic_regs(regs, rip, read_cs(), rsp, read_ss(), arch_irq_save());
+  panic_cpu();
+  panic_trace(rbp);
+  panic_memory(rip, false, 0, rsp);
   panic_qr_show(reason, file, line, func, rip, rbp);
   panic_footer();
   panic_halt();
