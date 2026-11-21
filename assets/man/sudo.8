@@ -5,35 +5,213 @@ SYNOPSIS
        **sudo** __command__ [__arg__...]
        **sudo -i**
        **sudo -s**
+       **sudo -h** | **--help**
 
 DESCRIPTION
-       Ask for the password of the current user and run __command__ with
-       root privileges. Only members of the **wheel** group in /etc/group
-       may use sudo; the installer adds users to it when they are given
-       administrator rights.
+       **sudo** lets an administrator run a single command, or a whole
+       shell, with root privileges. It asks for the password of the user
+       who runs it, not the password of root, so root does not need a
+       password of its own for administrators to work.
 
-       The password is checked by the kernel against /etc/shadow. After
-       three wrong passwords sudo gives up. Every attempt is written to the
-       kernel log, see journalctl(1).
+       Only members of the **wheel** group may use sudo. The installer puts
+       a user into wheel when the question "Should NAME be a superuser
+       (sudo, group wheel)?" is answered with yes. Other users are refused
+       right away, before their password is checked.
+
+       When sudo is run by root it does not ask for a password and runs
+       __command__ directly.
+
+HOW IT WORKS
+       sudo itself has no special rights: it is an ordinary program, not a
+       setuid binary. The check is done by the kernel:
+
+       1.  sudo reads the password from the terminal with echo turned off.
+
+       2.  It passes the password to the kernel with the **SYS_SUDO**
+           system call (number 397, **pc_sudo()** in libc).
+
+       3.  The kernel looks up the calling user in /etc/passwd, checks
+           that the user is in the wheel group of /etc/group and verifies
+           the password against the hash in /etc/shadow.
+
+       4.  On success the kernel changes the user and group of the calling
+           process to 0 (root). The password buffer is wiped both in sudo
+           and in the kernel.
+
+       5.  sudo then sets a few environment variables and replaces itself
+           with __command__ (execvp) or with /bin/sh.
+
+       Because the process itself becomes root, everything it starts
+       afterwards runs as root too, until it exits. The rights are never
+       given to the parent shell.
 
 OPTIONS
        **-i**
-           Start a root login shell in /root.
+           Start an interactive root shell (/bin/sh) in /root, with
+           **HOME** set to /root. Leave it with **exit**.
 
        **-s**
-           Start a root shell in the current directory.
+           Start an interactive root shell in the current directory.
+           **HOME** is set to /root as well.
+
+       **-h**, **--help**
+           Print a short usage line and exit.
+
+       The first argument that is not one of these options starts
+       __command__; every argument after it is passed to the command
+       unchanged, so options of the command itself need no **--**.
+
+THE WHEEL GROUP
+       A user is a member of wheel when either is true in /etc/group:
+
+       -   the user's primary group (the fourth field of /etc/passwd) is
+           the group id of wheel, or
+
+       -   the user name is listed in the member field of the wheel line.
+
+       The wheel line has the usual format __name__:__password__:__gid__:__members__,
+       with members separated by commas:
+
+           wheel:x:10:alice,bob
+
+       To make a user an administrator, add the name to that list as
+       root, for example with **sudo vim /etc/group**. To take the rights
+       away, remove the name again. The change takes effect for the next
+       sudo call; no restart or new login is needed.
+
+PASSWORDS
+       sudo asks for the password every time it runs. There is no grace
+       period during which a second sudo call goes through without a
+       password, and no ticket or timestamp file is kept.
+
+       While typing, Backspace deletes the last character. Enter ends the
+       input. Typing is not shown on the screen. After three wrong
+       passwords sudo gives up.
+
+       The password hashes in /etc/shadow are written by the installer
+       and checked by the kernel's own password hashing (purecrypt).
+
+NETWORK WITHOUT SUDO
+       Members of wheel do not need sudo to manage Wi-Fi: scanning,
+       connecting and disconnecting are also allowed for them, for the
+       user of the current graphical session and for root. This is what
+       lets the network menu of the desktop work for an administrator.
 
 ENVIRONMENT
-       **SUDO_USER** is set to the name of the user who ran sudo. **USER** and
-       **LOGNAME** are set to root.
+       sudo keeps the environment of the user and only changes these
+       variables:
+
+       **SUDO_USER**
+           The name of the user who ran sudo.
+
+       **USER**, **LOGNAME**
+           Set to root.
+
+       **HOME**
+           Set to /root, but only with **-i** and **-s**. A plain
+           **sudo** __command__ keeps the user's HOME, so files a program
+           writes to ~ may end up in the user's home directory, owned by
+           root.
+
+       **PATH** is not changed: __command__ is looked up in the PATH of the
+       user who runs sudo.
+
+FILES
+       /etc/passwd
+           User names, user ids and primary groups.
+
+       /etc/group
+           The wheel group and its members.
+
+       /etc/shadow
+           Password hashes. Only root can read it.
+
+       /bin/sh
+           The shell started by **-i** and **-s**.
+
+DIAGNOSTICS
+       **Sorry, try again.**
+           The password was wrong. sudo asks again.
+
+       **sudo: 3 incorrect password attempts**
+           Three wrong passwords; the command is not run.
+
+       **NAME is not in the wheel group. This incident has been logged.**
+           The user is not an administrator. The password is not checked.
+
+       **sudo: COMMAND: No such file or directory**
+           __command__ was not found in PATH.
+
+       The kernel writes every attempt to the kernel log. A successful one
+       looks like
+
+           sudo: alice (uid=1000) became root, pid=42
+
+       and a refused one like
+
+           sudo: denied for bob (uid=1001 pid=43), not in wheel
+
+       Read them with **journalctl**.
 
 EXIT STATUS
-       The exit status of __command__, 1 when authentication fails, 126 when
-       the command cannot run and 127 when it is not found.
+       The exit status of __command__ or of the root shell. Otherwise:
+
+       **0**    **-h** was given.
+       **1**    Wrong password, not in wheel, input ended (Ctrl-D) before
+              Enter, or no command was given.
+       **126**  __command__ was found but cannot be run.
+       **127**  __command__ was not found, or /bin/sh could not be started.
+
+DIFFERENCES FROM OTHER SUDO
+       This sudo is much smaller than the sudo of other systems:
+
+       -   There is no /etc/sudoers. The only rule is membership in wheel,
+           and a member may run any command.
+
+       -   A command always runs as root. There is no **-u** to run it as
+           another user and no **-g** for another group.
+
+       -   There is no **-l**, **-v**, **-k** or **-e** (sudoedit). Edit
+           protected files with **sudo vim** __file__.
+
+       -   The password is asked every time; see PASSWORDS.
+
+       -   The environment is kept as it is; see ENVIRONMENT.
+
+SECURITY
+       A root shell started with **-i** or **-s** stays root until it is
+       closed. Close it when the work is done.
+
+       Because PATH is kept, a program with the same name earlier in the
+       user's PATH is run instead of the system one. Use a full path,
+       such as **sudo /bin/rm**, when in doubt.
 
 EXAMPLES
-       sudo rm /etc/motd
-       sudo -i
+       Remove a file that belongs to root:
+
+           sudo rm /etc/motd
+
+       Edit a system file:
+
+           sudo vim /etc/hostname
+
+       Make the user alice an administrator:
+
+           sudo vim /etc/group
+           # change the wheel line to: wheel:x:10:alice
+
+       Install and update packages:
+
+           sudo pkg -Syu
+
+       Open a root shell in /root and leave it again:
+
+           sudo -i
+           exit
+
+       Check which user a command runs as:
+
+           sudo id
 
 SEE ALSO
-       id(1), sh(1)
+       id(1), whoami(1), sh(1), installer(8), pkg(8)
