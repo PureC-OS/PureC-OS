@@ -1,0 +1,49 @@
+NAME
+       ldconfig - configure dynamic linker run-time bindings
+
+SYNOPSIS
+       ldconfig [-nNXvp] [DIR]...
+
+DESCRIPTION
+       Scan the directories given on the command line, the directories listed
+       in /etc/ld.so.conf (including "include PATTERN" lines, for example
+       include /etc/ld.so.conf.d/*.conf), then /lib and /usr/lib. For every
+       ELF shared object found, read its DT_SONAME, create or update the
+       symbolic link SONAME -> real file in the same directory (for example
+       libfoo.so.1 -> libfoo.so.1.2.3) and write the cache /etc/ld.so.cache.
+       The cache is written to a temporary file and renamed, so the loader
+       never sees a partial file. If several files share one SONAME the one
+       with the longest, then greatest, name wins. Writing needs root.
+
+OPTIONS
+       -n  process only the directories given on the command line; implies -N
+       -N  do not rebuild the cache
+       -X  do not update the symbolic links
+       -v  verbose: show directories scanned and links created
+       -p  print the contents of the cache (works for any user)
+
+CONFIG FILE
+       /etc/ld.so.conf has one directory per line; text after # is a comment.
+
+CACHE FORMAT
+       /etc/ld.so.cache is a text file. The first line is exactly
+
+           PCLDCACHE1
+
+       and every following line is
+
+           SONAME<TAB>/absolute/path/to/library
+
+       The dynamic loader reads it only when a library was not found through
+       DT_RPATH, LD_LIBRARY_PATH or DT_RUNPATH. A missing, corrupt or stale
+       file is ignored. The first entry for a SONAME wins.
+
+ENVIRONMENT
+       The loader honours LD_LIBRARY_PATH, LD_TRACE_LOADED_OBJECTS and
+       LD_DEBUG=libs; see ldd(1).
+
+FILES
+       /etc/ld.so.conf, /etc/ld.so.conf.d/*.conf, /etc/ld.so.cache
+
+SEE ALSO
+       ldd(1)

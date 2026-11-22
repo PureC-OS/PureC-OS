@@ -1,0 +1,52 @@
+NAME
+       ldd - print shared object dependencies
+
+SYNOPSIS
+       ldd FILE...
+
+DESCRIPTION
+       Print the shared objects (shared libraries) that each FILE needs at run
+       time, in load order, as
+
+           NAME => PATH (0xBASE)
+
+       or "NAME => not found" when a dependency cannot be located. The exit
+       status is 1 if any dependency is missing or a FILE cannot be examined.
+
+       For a dynamically linked executable ldd starts it with the environment
+       variable LD_TRACE_LOADED_OBJECTS=1. The dynamic loader
+       (/lib/ld-purec.so.1) then maps the dependencies, prints them and exits
+       without running the program. The load addresses are shown.
+
+       For a shared library (no interpreter) ldd reads the ELF dynamic section
+       itself and resolves each DT_NEEDED entry with the same search rules as
+       the loader; no addresses are shown.
+
+       A statically linked file produces "statically linked", a file that is
+       not an ELF object produces "not a dynamic executable".
+
+SEARCH ORDER
+       1. DT_RPATH of the requesting object (only when it has no DT_RUNPATH)
+       2. the directories in LD_LIBRARY_PATH
+       3. DT_RUNPATH of the requesting object
+       4. the cache /etc/ld.so.cache (see ldconfig(8))
+       5. /lib, /usr/lib and /lib64
+
+ENVIRONMENT
+       LD_LIBRARY_PATH
+           colon separated list of directories searched first.
+
+       LD_TRACE_LOADED_OBJECTS
+           when set to anything but 0 in the environment of a dynamic program,
+           the loader lists the libraries and exits (this is what ldd sets).
+
+       LD_DEBUG
+           LD_DEBUG=libs makes the loader print every search attempt to
+           standard error.
+
+WARNING
+       Because ldd starts the program under the loader, only use it on
+       executables you trust.
+
+SEE ALSO
+       ldconfig(8)
