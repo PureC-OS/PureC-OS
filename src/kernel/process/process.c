@@ -293,6 +293,10 @@ bool process_proc_info_get(uint32_t pid, struct process_proc_info *out)
   out->uid = p->uid;
   out->gid = p->gid;
   out->exit_code = p->exit_code;
+  {
+    int32_t extra = __atomic_load_n(&p->extra_threads, __ATOMIC_ACQUIRE);
+    out->threads = extra > 0 ? 1u + (uint32_t)extra : 1u;
+  }
   out->heap_bytes =
       p->heap_break > p->heap_base ? p->heap_break - p->heap_base : 0;
   out->stack_bytes = p->stack_low && p->stack_limit && p->user_stack_top > p->stack_low

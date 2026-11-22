@@ -202,6 +202,7 @@ static void generate_pid_status(struct pbuf *out, uint32_t pid) {
   if (process_proc_info_get(pid, &extra)) {
     emit(out, "Uid:\t%u\n", extra.uid);
     emit(out, "Gid:\t%u\n", extra.gid);
+    emit(out, "Threads:\t%u\n", extra.threads);
     emit(out, "VmHeap:\t%llu kB\n", (unsigned long long)(extra.heap_bytes / 1024));
     emit(out, "VmStack:\t%llu kB\n", (unsigned long long)(extra.stack_bytes / 1024));
     if (process->state == PROCESS_MONITOR_STATE_EXITED)

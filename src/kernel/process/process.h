@@ -163,6 +163,7 @@ struct process_proc_info {
   uint32_t uid;
   uint32_t gid;
   int32_t exit_code;
+  uint32_t threads;
   uint64_t heap_bytes;
   uint64_t stack_bytes;
   char command_line[PROCESS_COMMAND_LINE_CAPACITY];
