@@ -1,6 +1,6 @@
 #include "include/pureaudio.h"
 #include "libc/include/purec.h"
-#include "../kernel/syscall/syscall.h"
+#include "libc/include/purec/abi/syscall.h"
 #include <stddef.h>
 
 const char *pa_version(void) {

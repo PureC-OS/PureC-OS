@@ -28,6 +28,11 @@ HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-malloc test-fenv
 	@echo "All host tests passed"
 
+check-abi:
+	@sh mk/check-abi.sh
+
+.PHONY: check-abi
+
 test-malloc:
 	@mkdir -p $(BIN_DIR)/tests
 	cc -std=gnu11 -O1 -Wall -Wextra -g -ffreestanding -fno-builtin \

@@ -1,6 +1,6 @@
 #include "include/pureaudio.h"
 #include "libc/include/purec.h"
-#include "../kernel/syscall/syscall.h"
+#include "libc/include/purec/abi/syscall.h"
 #include <stddef.h>
 
 #define STREAM_CHUNK_FRAMES 1024U

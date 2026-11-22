@@ -1,6 +1,6 @@
 #include "include/purefs.h"
 #include "libc/include/purec.h"
-#include "../fs/types/fs_types.h"
+#include "libc/include/purec/abi/fs_types.h"
 #include <stddef.h>
 
 // гарантируем ABI-совместимость pf_entry <-> fs_directory_entry
