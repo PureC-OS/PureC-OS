@@ -38,6 +38,8 @@
 #include "drivers/interrupts/timer.h"
 #include "kernel/process/scheduler.h"
 #include "kernel/diagnostics/klog.h"
+#include "kernel/random/krandom.h"
+#include "net/wifi/wpa.h"
 #include "lib/string.h"
 #include "net/802.11/include/802.h"
 #include "net/core/net_device.h"
@@ -304,6 +306,12 @@ struct iwx_sc {
     struct dot11_mlme mlme;
     struct iwx_bss *ap;
     volatile int eapol_seen;
+    struct wpa_sm wpa;
+    int wpa_on;
+    int ptk_installed;
+    uint8_t eapol_buf[512];
+    volatile uint32_t eapol_len;
+    uint64_t rx_pn[17];
     uint16_t eapol_keyinfo;
     uint8_t eapol_nonce_head[4];
     uint32_t n_scan_channels;
@@ -1548,6 +1556,42 @@ static void iwx_rx_bss(struct iwx_sc *sc, const uint8_t *frame, uint32_t len, in
     }
 }
 
+static bool iwx_ccmp_decap(struct iwx_sc *sc, const uint8_t *frame, uint32_t len, uint32_t status,
+                           uint8_t *out, uint32_t *out_len)
+{
+    uint8_t fc0 = frame[0], fc1 = frame[1];
+    uint32_t hdrlen = 24;
+    if (fc0 & 0x80)
+        hdrlen += 2;
+    if ((fc1 & 0x03) == 0x03)
+        hdrlen += 6;
+    if (!sc->ptk_installed || len < hdrlen + 8)
+        return false;
+    if ((status & IWX_RX_MPDU_RES_STATUS_SEC_ENC_MSK) != IWX_RX_MPDU_RES_STATUS_SEC_CCM_ENC ||
+        (status & (IWX_RX_MPDU_RES_STATUS_DEC_DONE | IWX_RX_MPDU_RES_STATUS_MIC_OK)) !=
+            (IWX_RX_MPDU_RES_STATUS_DEC_DONE | IWX_RX_MPDU_RES_STATUS_MIC_OK)) {
+        sc->net.stats.rx_errors++;
+        return false;
+    }
+    const uint8_t *iv = frame + hdrlen;
+    if (!(iv[3] & 0x20))
+        return false;
+    uint64_t pn = (uint64_t)iv[0] | (uint64_t)iv[1] << 8 | (uint64_t)iv[4] << 16 | (uint64_t)iv[5] << 24 |
+                  (uint64_t)iv[6] << 32 | (uint64_t)iv[7] << 40;
+    bool group = frame[4] & 1;
+    uint32_t slot = group ? 16 : ((fc0 & 0x80) ? (frame[hdrlen - 2] & 0x0f) : 0);
+    if (pn <= sc->rx_pn[slot]) {
+        sc->net.stats.rx_dropped++;
+        return false;
+    }
+    sc->rx_pn[slot] = pn;
+    memcpy(out, frame, hdrlen);
+    out[1] = (uint8_t)(fc1 & ~0x40);
+    memcpy(out + hdrlen, frame + hdrlen + 8, len - hdrlen - 8);
+    *out_len = len - 8;
+    return true;
+}
+
 static void iwx_rx_data(struct iwx_sc *sc, const uint8_t *frame, uint32_t len)
 {
     const struct ieee80211_frame *wh = (const void *)frame;
@@ -1579,6 +1623,10 @@ static void iwx_rx_data(struct iwx_sc *sc, const uint8_t *frame, uint32_t len)
     if (elen < 4 + 95) {
         klogf(KLOG_WARN, "iwx: short EAPOL frame %u bytes", elen);
         return;
+    }
+    if (sc->wpa_on && elen <= sizeof(sc->eapol_buf) && !sc->eapol_len) {
+        memcpy(sc->eapol_buf, ep, elen);
+        sc->eapol_len = elen;
     }
     uint16_t body_len = (uint16_t)(ep[2] << 8 | ep[3]);
     uint16_t keyinfo = (uint16_t)(ep[5] << 8 | ep[6]);
@@ -1621,10 +1669,13 @@ static void iwx_rx_mpdu(struct iwx_sc *sc, const struct iwx_rx_packet *pkt, uint
     }
     const uint8_t *frame = raw;
     if (desc->mac_flags2 & IWX_RX_MPDU_MFLG2_PAD) {
-        if (len < hdrlen + 2)
+        uint32_t padpos = hdrlen;
+        if ((status & IWX_RX_MPDU_RES_STATUS_SEC_ENC_MSK) == IWX_RX_MPDU_RES_STATUS_SEC_CCM_ENC)
+            padpos += 8;
+        if (len < padpos + 2)
             return;
-        memcpy(iwx_rxframe, raw, hdrlen);
-        memcpy(iwx_rxframe + hdrlen, raw + hdrlen + 2, len - hdrlen - 2);
+        memcpy(iwx_rxframe, raw, padpos);
+        memcpy(iwx_rxframe + padpos, raw + padpos + 2, len - padpos - 2);
         len -= 2;
         frame = iwx_rxframe;
     }
@@ -1634,6 +1685,21 @@ static void iwx_rx_mpdu(struct iwx_sc *sc, const struct iwx_rx_packet *pkt, uint
     int rssi = sig_a > sig_b ? sig_a : sig_b;
 
     if (type == 0x08) {
+        if (fc1 & 0x40) {
+            static uint8_t plain[IWX_RBUF_SIZE];
+            uint32_t plen = 0;
+            if (len > sizeof(plain) || !iwx_ccmp_decap(sc, frame, len, status, plain, &plen))
+                return;
+            iwx_rx_data(sc, plain, plen);
+            return;
+        }
+        if (sc->ptk_installed && !(frame[4] & 1)) {
+            const uint8_t *l = frame + hdrlen;
+            if (len < hdrlen + 8 || l[6] != 0x88 || l[7] != 0x8e) {
+                sc->net.stats.rx_dropped++;
+                return;
+            }
+        }
         iwx_rx_data(sc, frame, len);
         return;
     }
@@ -2913,7 +2979,8 @@ static bool iwx_tx_frame(struct iwx_sc *sc, const uint8_t *frame, uint16_t len, 
     uint64_t buf_pa = sc->mq_buf.pa + (uint64_t)idx * IWX_MQ_BUF;
     struct iwx_tfh_tfd *desc = (struct iwx_tfh_tfd *)sc->mq_desc.va + idx;
     uint16_t body = (uint16_t)(len - hdrlen);
-    uint16_t flags = IWX_TX_FLAGS_CMD_RATE | IWX_TX_FLAGS_ENCRYPT_DIS;
+    bool protect = is_data && sc->ptk_installed;
+    uint16_t flags = IWX_TX_FLAGS_CMD_RATE | (protect ? 0 : IWX_TX_FLAGS_ENCRYPT_DIS);
     if (eapol)
         flags |= IWX_TX_FLAGS_HIGH_PRI;
 
@@ -2928,6 +2995,8 @@ static bool iwx_tx_frame(struct iwx_sc *sc, const uint8_t *frame, uint16_t len, 
     tx->offload_assist = htole32(IWX_TX_CMD_OFFLD_MH_SIZE((hdrlen / 2) & IWX_TX_CMD_OFFLD_MH_MASK));
     tx->rate_n_flags = htole32(rate);
     memcpy(tx->hdr, frame, hdrlen);
+    if (protect)
+        tx->hdr->i_fc[1] |= 0x40;
     if (body)
         memcpy(buf, frame + hdrlen, body);
 
@@ -3069,6 +3138,10 @@ static int iwx_cond_eapol(struct iwx_sc *sc) { return sc->eapol_seen > 0; }
 
 static void iwx_teardown(struct iwx_sc *sc)
 {
+    sc->wpa_on = 0;
+    sc->ptk_installed = 0;
+    sc->eapol_len = 0;
+    wpa_sm_clear(&sc->wpa);
     if (sc->mq_enabled && !sc->fatal && dot11_mlme_state(&sc->mlme) == DOT11_MLME_ASSOCIATED) {
         uint32_t before = sc->mq_txresp;
         dot11_mlme_stop(&sc->mlme);
@@ -3099,6 +3172,107 @@ static void iwx_teardown(struct iwx_sc *sc)
     sc->mq_enabled = 0;
     sc->ap = NULL;
 }
+
+
+static int iwx_install_key(struct iwx_sc *sc, const uint8_t *key, uint32_t key_len, uint8_t key_id, bool group,
+                           const uint8_t *rsc)
+{
+    uint8_t ver = iwx_lookup_cmd_ver(sc, IWX_DATA_PATH_GROUP, IWX_SEC_KEY_CMD);
+    int err;
+    if (ver != 0 && ver != IWX_FW_CMD_VER_UNKNOWN) {
+        struct iwx_sec_key_cmd cmd;
+        memset(&cmd, 0, sizeof(cmd));
+        cmd.action = htole32(IWX_FW_CTXT_ACTION_ADD);
+        cmd.u.add.sta_mask = htole32(1u << IWX_STATION_ID);
+        cmd.u.add.key_id = htole32(key_id);
+        cmd.u.add.key_flags = htole32(IWX_SEC_KEY_FLAG_CIPHER_CCMP | (group ? IWX_SEC_KEY_FLAG_MCAST_KEY : 0));
+        memcpy(cmd.u.add.key, key, key_len);
+        err = iwx_cmd_pdu(sc, "SEC_KEY", IWX_WIDE_ID(IWX_DATA_PATH_GROUP, IWX_SEC_KEY_CMD), &cmd, sizeof(cmd));
+    } else {
+        struct iwx_add_sta_key_cmd cmd;
+        uint32_t status = 0;
+        memset(&cmd, 0, sizeof(cmd));
+        uint16_t kf = IWX_STA_KEY_FLG_CCM | IWX_STA_KEY_FLG_WEP_KEY_MAP |
+                      ((key_id << IWX_STA_KEY_FLG_KEYID_POS) & IWX_STA_KEY_FLG_KEYID_MSK);
+        if (group) {
+            cmd.common.key_offset = 1;
+            kf |= IWX_STA_KEY_MULTICAST;
+        }
+        cmd.common.key_flags = htole16(kf);
+        cmd.common.sta_id = IWX_STATION_ID;
+        memcpy(cmd.common.key, key, key_len < sizeof(cmd.common.key) ? key_len : sizeof(cmd.common.key));
+        if (group && rsc)
+            memcpy(cmd.common.rx_secur_seq_cnt, rsc, 6);
+        err = iwx_send_cmd_status(sc, "ADD_STA_KEY", IWX_ADD_STA_KEY, &cmd, sizeof(cmd), &status);
+        if (!err && (status & IWX_ADD_STA_STATUS_MASK) != IWX_ADD_STA_SUCCESS) {
+            klogf(KLOG_ERROR, "iwx: ADD_STA_KEY status 0x%x", status);
+            err = IWX_EIO;
+        }
+    }
+    if (!err)
+        klogf(KLOG_OK, "iwx: %s key %u installed (%s)", group ? "group" : "pairwise", key_id,
+              ver != 0 && ver != IWX_FW_CMD_VER_UNKNOWN ? "SEC_KEY_CMD" : "ADD_STA_KEY");
+    return err;
+}
+
+static bool iwx_send_eapol(struct iwx_sc *sc, const uint8_t *eapol, uint32_t len)
+{
+    static uint8_t eth[14 + WPA_FRAME_MAX];
+    static uint8_t frame[64 + WPA_FRAME_MAX];
+    if (len > WPA_FRAME_MAX || !sc->ap)
+        return false;
+    memcpy(eth, sc->ap->bssid, 6);
+    memcpy(eth + 6, sc->mac, 6);
+    eth[12] = 0x88;
+    eth[13] = 0x8e;
+    memcpy(eth + 14, eapol, len);
+    uint16_t seq = (uint16_t)(sc->tx_seq++ << 4);
+    uint16_t flen = dot11_ethernet_to_data(eth, (uint16_t)(14 + len), sc->ap->bssid, seq, frame, sizeof(frame));
+    return flen && iwx_tx_frame(sc, frame, flen, 1);
+}
+
+static int iwx_wpa_process(struct iwx_sc *sc)
+{
+    static uint8_t buf[512];
+    uint8_t reply[WPA_FRAME_MAX];
+    uint32_t len = sc->eapol_len, rlen = 0;
+    if (!len || !sc->wpa_on)
+        return 0;
+    memcpy(buf, sc->eapol_buf, len);
+    sc->eapol_len = 0;
+    struct wpa_keys keys;
+    memset(&keys, 0, sizeof(keys));
+    int r = wpa_sm_rx(&sc->wpa, buf, len, reply, &rlen, &keys);
+    if (r < 0) {
+        klogf(KLOG_WARN, "iwx: WPA2: %s", sc->wpa.error);
+        return -1;
+    }
+    if ((r & WPA_RX_REPLY) && !iwx_send_eapol(sc, reply, rlen))
+        klogf(KLOG_WARN, "iwx: WPA2: cannot queue EAPOL reply");
+    if (r & WPA_RX_INSTALL_PTK) {
+        for (int i = 0; i < 64 && ((uint32_t)(sc->mq_cur_hw - sc->mq_tail_hw) & 0xffff); i++) {
+            iwx_service(sc);
+            scheduler_sleep(1);
+        }
+        memset(sc->rx_pn, 0, sizeof(sc->rx_pn));
+        if (iwx_install_key(sc, keys.tk, WPA_TK_LEN, 0, false, NULL))
+            return -1;
+        sc->ptk_installed = 1;
+    }
+    if ((r & WPA_RX_INSTALL_GTK) && iwx_install_key(sc, keys.gtk, keys.gtk_len, keys.gtk_index, true, keys.gtk_rsc))
+        return -1;
+    if (r & WPA_RX_INSTALL_GTK)
+        sc->rx_pn[16] = (uint64_t)keys.gtk_rsc[0] | (uint64_t)keys.gtk_rsc[1] << 8 |
+                        (uint64_t)keys.gtk_rsc[2] << 16 | (uint64_t)keys.gtk_rsc[3] << 24 |
+                        (uint64_t)keys.gtk_rsc[4] << 32 | (uint64_t)keys.gtk_rsc[5] << 40;
+    if (r & WPA_RX_COMPLETE)
+        klogf(KLOG_OK, "iwx: WPA2 4-way handshake complete, keys installed");
+    else if (r & WPA_RX_INSTALL_GTK)
+        klogf(KLOG_OK, "iwx: WPA2 group key %u updated", keys.gtk_index);
+    return r;
+}
+
+static int iwx_cond_eapol_pending(struct iwx_sc *sc) { return sc->eapol_len > 0; }
 
 static int iwx_associate(struct iwx_sc *sc, const char *ssid, bool hold)
 {
@@ -3162,8 +3336,19 @@ static int iwx_associate(struct iwx_sc *sc, const char *ssid, bool hold)
         klogf(KLOG_WARN, "iwx: no session protection start within 500 ms, sending anyway");
 
     dot11_mlme_init(&sc->mlme, sc->mac, iwx_mlme_tx, sc, NULL, NULL, sc);
-    if (rsn_len > 0)
+    sc->wpa_on = 0;
+    sc->ptk_installed = 0;
+    sc->eapol_len = 0;
+    if (rsn_len > 0) {
         dot11_mlme_set_rsn_ie(&sc->mlme, rsn, (uint8_t)rsn_len);
+        if (!wpa_sm_start(&sc->wpa, ap->ssid, sc->req_pass, ap->bssid, sc->mac, rsn, (uint8_t)rsn_len,
+                          krandom_fill)) {
+            klogf(KLOG_ERROR, "iwx: WPA2: %s", sc->wpa.error);
+            err = IWX_EHANDSHAKE;
+            goto out;
+        }
+        sc->wpa_on = 1;
+    }
     sc->eapol_seen = 0;
     sc->mlme_on = 1;
     if (!dot11_mlme_start_open(&sc->mlme, ap->ssid, ap->bssid, ap->channel, timer_ticks())) {
@@ -3191,14 +3376,21 @@ static int iwx_associate(struct iwx_sc *sc, const char *ssid, bool hold)
     sc->assoc_aid = sc->mlme.aid;
 
     if (rsn_len > 0) {
-        if (iwx_wait(sc, iwx_cond_eapol, 3000, &elapsed) == 0)
-            klogf(KLOG_OK, "iwx: EAPOL message 1 from AP received %llu ms after association",
-                  (unsigned long long)elapsed);
-        else
-            klogf(KLOG_WARN, "iwx: no EAPOL frame from AP within 3 s");
-        klogf(KLOG_WARN, "iwx: WPA2 4-way handshake is not implemented yet, disconnecting");
-        err = IWX_EHANDSHAKE;
-        goto out;
+        uint64_t start = timer_ticks();
+        while (sc->wpa.state != WPA_DONE && timer_ticks() - start < 8000) {
+            uint64_t waited = 0;
+            iwx_wait(sc, iwx_cond_eapol_pending, 8000 - (uint32_t)(timer_ticks() - start), &waited);
+            if (iwx_wpa_process(sc) < 0 && sc->wpa.error && sc->wpa.error[0] == 'M')
+                break;
+        }
+        if (sc->wpa.state != WPA_DONE) {
+            klogf(KLOG_ERROR, "iwx: WPA2 handshake failed: %s",
+                  sc->wpa.error ? sc->wpa.error : (sc->eapol_seen ? "AP stopped answering" : "no EAPOL from AP"));
+            err = IWX_EHANDSHAKE;
+            goto out;
+        }
+        klogf(KLOG_OK, "iwx: WPA2 connected to \"%s\" in %llu ms", ap->ssid,
+              (unsigned long long)(timer_ticks() - start));
     }
     err = 0;
 
@@ -3616,8 +3808,10 @@ static void iwx_service_loop(struct iwx_sc *sc)
             sc->lost_report = 1;
             sc->busy = 0;
         }
-        if (sc->link_up)
+        if (sc->link_up) {
+            iwx_wpa_process(sc);
             iwx_drain_tx(sc);
+        }
         if (sc->req_disconnect) {
             sc->req_disconnect = 0;
             if (sc->ap || sc->link_up) {
