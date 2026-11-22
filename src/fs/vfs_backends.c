@@ -286,7 +286,7 @@ struct kernelfs_file {
 };
 
 static const struct kernelfs_file kernelfs_files[] = {
-    {"/version", "version", "PureC OS kernel 2.0.0\n"},
+    {"/version", "version", "PureC OS kernel 2.1.0\n"},
     {"/panic", "panic.cfg", "panic-screan=classic\n #panic-screan=qr\n"},
     {"/init", "init",
      "pid1=/bin/init shell=/bin/program/terminal editor=/bin/program/nano\n"},
