@@ -99,6 +99,14 @@ int32_t signal_send(uint32_t pid, int32_t sig) {
     process_table_unlock();
     return -KERR_PERM;
   }
+  if (sig && target->pid == 1) {
+    uint64_t handler = target->signals ? target->signals->actions[sig].handler : SIGNAL_ACTION_DEFAULT;
+    if (sig == SIGKILL || sig == SIGSTOP || handler == SIGNAL_ACTION_DEFAULT ||
+        handler == SIGNAL_ACTION_IGNORE) {
+      process_table_unlock();
+      return -KERR_PERM;
+    }
+  }
   int32_t tid = target->thread_id;
   if (sig && (sig == SIGKILL || !action_ignored(target, sig))) {
     __atomic_fetch_or(&target->sig_pending, SIG_BIT(sig), __ATOMIC_SEQ_CST);
