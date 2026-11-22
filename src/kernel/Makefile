@@ -28,7 +28,7 @@ ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include -I$(ACPI_DIR)/AML/uACPI/include
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 CPPFLAGS += -I$(CRYPT_DIR)/include
-CRYPT_OBJECTS := $(OBJ_DIR)/xcrypt/sha512.o $(OBJ_DIR)/xcrypt/crypt_sha512.o
+CRYPT_OBJECTS := $(OBJ_DIR)/xcrypt/sha512.o $(OBJ_DIR)/xcrypt/crypt_sha512.o $(OBJ_DIR)/xcrypt/sha1.o $(OBJ_DIR)/xcrypt/aes.o
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
 E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
@@ -114,6 +114,7 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	drivers/net/82543gc/e1000_82543gc.c \
 	drivers/net/pcnet/pcnet_am79c970a.c \
 	net/wifi/wifi.c \
+	net/wifi/wpa.c \
 	net/802.11/assoc.c \
 	net/802.11/data.c \
 	net/802.11/b/b_rates.c \
