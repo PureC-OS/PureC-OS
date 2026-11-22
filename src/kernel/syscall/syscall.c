@@ -1359,7 +1359,7 @@ int64_t syscall_handler(struct syscall_regs *r)
       return -KERR_NODEV;
     uint64_t base = front.physical & ~0xFFFULL;
     uint64_t skew = front.physical - base;
-    int64_t mapped = process_map_device(base, front.bytes + skew);
+    int64_t mapped = process_map_device(base, front.bytes + skew, true);
     if (mapped < 0)
       return mapped;
     struct fb_map_info info;

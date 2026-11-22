@@ -1214,7 +1214,7 @@ int64_t process_mmap_shared(uint64_t address, uint64_t length, uint64_t prot,
   return (int64_t)base;
 }
 
-int64_t process_map_device(uint64_t physical, uint64_t length)
+int64_t process_map_device(uint64_t physical, uint64_t length, bool write_combine)
 {
   MUTEX_SCOPE(&process_mutex);
   struct process *process = process_current();
@@ -1237,7 +1237,8 @@ int64_t process_map_device(uint64_t physical, uint64_t length)
   if (status < 0)
     return status;
   if (!vmm_map_device_range(process->address_space, base, physical, pages,
-                            VMM_PAGE_WRITABLE | VMM_PAGE_NX))
+                            VMM_PAGE_WRITABLE | VMM_PAGE_NX |
+                                (write_combine ? arch_pat_wc_bits() : 0)))
   {
     (void)vma_unmap(process->vmas, base, base + bytes);
     return -KERR_NOMEM;

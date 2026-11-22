@@ -90,6 +90,8 @@ static inline void arch_compiler_barrier(void)
     __asm__ volatile("" ::: "memory");
 }
 
+uint64_t arch_pat_wc_bits(void);
+
 static inline uint64_t arch_read_timestamp(void)
 {
     uint32_t lo, hi;

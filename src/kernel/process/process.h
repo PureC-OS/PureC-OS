@@ -121,7 +121,7 @@ uint64_t process_heap_grow(uint64_t size);
 int64_t process_mmap_shared(uint64_t address, uint64_t length, uint64_t prot,
                             uint64_t flags, int32_t shm, uint64_t offset_pages);
 int64_t process_madvise(uint64_t address, uint64_t length, uint64_t advice);
-int64_t process_map_device(uint64_t physical, uint64_t length);
+int64_t process_map_device(uint64_t physical, uint64_t length, bool write_combine);
 int64_t process_mmap(uint64_t address, uint64_t length, uint64_t prot,
                      uint64_t flags);
 int64_t process_munmap(uint64_t address, uint64_t length);

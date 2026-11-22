@@ -13,6 +13,7 @@
 #define VMM_PAGE_SHARED ARCH_PTE_SHARED
 #define VMM_PAGE_DEVICE ARCH_PTE_DEVICE
 #define VMM_PAGE_NX ARCH_PTE_NX
+#define VMM_PAGE_CACHE_BITS (ARCH_PTE_PWT | ARCH_PTE_PCD | ARCH_PTE_PAT)
 
 void vmm_init(void);
 bool vmm_init_cpu(void);

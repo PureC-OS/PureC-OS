@@ -15,6 +15,7 @@ ARCH_C_SOURCES := \
 	arch/x86_64/mmio.c \
 	arch/x86_64/lapic.c \
 	arch/x86_64/cpufreq.c \
+	arch/x86_64/pat.c \
 	arch/x86_64/smp.c \
 	arch/x86_64/pic.c \
 	arch/x86_64/timer.c

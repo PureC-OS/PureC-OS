@@ -14,6 +14,7 @@
 #include <arch/x86_64/idt/include/idt.h>
 #include <arch/x86_64/fpu/include/fpu.h>
 #include <mm/vmm.h>
+#include <arch/x86_64/pat.h>
 
 #include <stddef.h>
 
@@ -169,6 +170,7 @@ void smp_ap_main(struct ap_boot_context *context,
         cpu_fail(id);
         arch_cpu_stop();
     }
+    arch_pat_init_ap();
     tsc_sync_ap(id);
     cpufreq_init_cpu();
     scheduler_init_cpu();
@@ -226,6 +228,7 @@ bool smp_start_cpu(struct limine_smp_response *response,
 
 
 void smp_start_all(struct limine_smp_response *response){
+    arch_pat_init_bsp();
     cpufreq_init_bsp();
     if(!lapic_init()){
         klog(KLOG_WARN, "smp: LAPIC unavailable; BSP scheduling only");

@@ -207,6 +207,7 @@ static bool vmm_map_page_locked(uint64_t address_space,
   *slot = (physical_address & PAGE_ADDRESS_MASK) | VMM_PAGE_PRESENT |
           (flags & (VMM_PAGE_WRITABLE | VMM_PAGE_USER | VMM_PAGE_ANON |
                     VMM_PAGE_SHARED | VMM_PAGE_DEVICE)) |
+          ((flags & VMM_PAGE_DEVICE) ? (flags & VMM_PAGE_CACHE_BITS) : 0) |
           arch_mmu_nx_bits(flags);
   return true;
 }
