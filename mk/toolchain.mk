@@ -26,6 +26,17 @@ DYN_LD_STUB := $(BIN_DIR)/lib/pc-ld.o
 INTERP_PATH := /lib/ld-purec.so.1
 INTERP_LINK_FLAGS := -shared -Bsymbolic --hash-style=sysv -z noexecstack -z now -z noseparate-code -z max-page-size=4096 -z common-page-size=4096 -e _pc_interp_entry -soname ld-purec.so.1
 INTERP_EXE_LINK_FLAGS := $(PIE_LINK_FLAGS) --export-dynamic -dynamic-linker $(INTERP_PATH) -T $(ROOT_DIR)/linker-userspace-pie-interp.ld
+DYN_LIB_DIR := $(BIN_DIR)/lib
+DYN_CFLAGS := $(USER_SO_CFLAGS)
+DYN_CRT0 := $(DYN_LIB_DIR)/crt0-pic.o
+DYN_EXE_LDFLAGS := $(INTERP_EXE_LINK_FLAGS) -L$(DYN_LIB_DIR)
+DYN_LIBPUREC := -lpurec
+SHLIB_LDFLAGS := $(SO_LINK_FLAGS)
+SHLIB_SONAME = -soname $(1)
+LIBPUREC_SOMAJOR := 2
+LIBPUREC_SOVER := 2.1.0
+LIBPURECRYPT_SOMAJOR := 1
+LIBPURECRYPT_SOVER := 1.0.0
 KMOD_SO_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fPIC \
 	-m64 -mno-red-zone -mcmodel=small -mgeneral-regs-only -fno-plt
 KMOD_SO_LDSCRIPT := $(ROOT_DIR)/mk/kmod-so.ld
