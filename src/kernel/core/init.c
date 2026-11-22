@@ -40,10 +40,6 @@ void init_process_start(void)
                               : "init started with an invalid PID");
   }
   klog(KLOG_OK, "process: /bin/init started as PID 1");
-  (void)process_spawn_module("/sbin/ldconfig", "-v");
-  (void)process_spawn_module("/bin/dltest-dyn", "");
-  (void)process_spawn_module("/bin/ldd", "/usr/bin/monitor /usr/bin/strace /usr/lib/libpg.so.2");
-  (void)process_spawn_module("/usr/bin/monitor", "");
 
   if (!vtcon_ready())
     klog(KLOG_WARN, "vtcon: no framebuffer text console");
