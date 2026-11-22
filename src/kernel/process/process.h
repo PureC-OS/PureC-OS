@@ -79,6 +79,8 @@ struct process
   int32_t exit_group;
   int32_t exit_tid;
   int32_t extra_threads;
+  uint8_t trace_slot;
+  uint32_t trace_gen;
   struct vma_table *vmas;
 };
 

@@ -26,6 +26,7 @@
 #include "../../drivers/display/display_owner.h"
 #include "../ipc/inputdev.h"
 #include "sudo.h"
+#include "../trace/trace.h"
 #include "../../lib/string.h"
 #include "../../mm/pmm.h"
 #include "../../mm/shm.h"
@@ -932,7 +933,22 @@ static int64_t socket_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3,
   }
 }
 
+static int64_t syscall_dispatch(struct syscall_regs *r);
+
 int64_t syscall_handler(struct syscall_regs *r)
+{
+  struct process *p = process_current();
+  if (!p || !p->trace_slot)
+    return syscall_dispatch(r);
+  uint64_t nr = r->rax;
+  uint64_t args[6] = {r->rbx, r->rcx, r->rdx, r->rsi, r->rdi, r->r8};
+  uint64_t start = trace_syscall_enter(p, nr, args);
+  int64_t ret = syscall_dispatch(r);
+  trace_syscall_exit(process_current(), nr, args, ret, start);
+  return ret;
+}
+
+static int64_t syscall_dispatch(struct syscall_regs *r)
 {
   uint64_t n = r->rax;
   uint64_t a1 = r->rbx;
@@ -1783,6 +1799,12 @@ int64_t syscall_handler(struct syscall_regs *r)
   }
   case SYS_SYNC:
     return vfs_sync() < 0 ? -KERR_IO : 0;
+  case SYS_TRACE_ATTACH:
+    return trace_attach((uint32_t)a1, (uint32_t)a2);
+  case SYS_TRACE_READ:
+    return trace_read((int32_t)a1, (struct trace_record *)(uintptr_t)a2, (uint32_t)a3, (uint32_t)r->rsi);
+  case SYS_TRACE_CONTROL:
+    return trace_control((int32_t)a1, (uint32_t)a2, a3);
   case SYS_DISK_IO:
   {
     if (!privileged(PROCESS_CAP_STORAGE_ADMIN))

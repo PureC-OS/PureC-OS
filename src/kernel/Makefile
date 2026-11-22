@@ -83,6 +83,7 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	mm/oom/oom_info.c \
 	kernel/syscall/syscall.c \
 	kernel/syscall/sudo.c \
+	kernel/trace/trace.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \
 	drivers/display/fb.c \

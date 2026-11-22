@@ -1,3 +1,4 @@
+#include "../trace/trace.h"
 #include "../ipc/pty.h"
 #include "../sync/mutex.h"
 static mutex_t process_mutex;
@@ -394,6 +395,8 @@ static struct process *allocate_process(void)
   if (!process)
     return 0;
   process->state = PROCESS_LOADING;
+  process->trace_slot = 0;
+  process->trace_gen = 0;
   process->waiter_thread_id = -1;
   process->child_waiter_tid = -1;
   process->cwd[0] = '/';
@@ -769,6 +772,7 @@ int32_t process_fork(const struct syscall_regs *regs)
   child->capabilities = parent->capabilities;
   child->uid = parent->uid;
   child->gid = parent->gid;
+  trace_fork(parent, child);
   memcpy(child->environment, parent->environment, sizeof(child->environment));
   memcpy(child->command_line, parent->command_line,
          sizeof(child->command_line));
@@ -1687,6 +1691,7 @@ static void process_release_memory(struct process *process,
 static void process_terminate(int32_t status, int32_t signal)
 {
   struct process *exiting = process_current();
+  trace_process_exit(exiting, status, signal);
   struct thread *exiting_thread = scheduler_current_thread();
   if (exiting && exiting_thread && exiting_thread->user_mode)
     process_stop_siblings_begin(exiting, exiting_thread);
