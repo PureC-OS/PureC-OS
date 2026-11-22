@@ -14,10 +14,10 @@ SECTIONS
     . = SIZEOF_HEADERS;
     .interp : { *(.interp) } :interp :text
     .text : { *(.text.start) *(.text .text.*) } :text
+    .plt : ALIGN(16) { *(.plt .plt.*) } :text
     .rodata : ALIGN(0x1000) { *(.rodata .rodata.*) } :text
     .got : ALIGN(0x1000) { *(.got .got.*) } :data
     .got.plt : ALIGN(0x1000) { *(.got.plt .got.plt.*) } :data
-    .plt : ALIGN(0x1000) { *(.plt .plt.*) } :text
     .dynamic : ALIGN(0x1000) { *(.dynamic) } :data :dynamic
     .dynsym : ALIGN(0x1000) { *(.dynsym) } :data
     .dynstr : ALIGN(0x1000) { *(.dynstr) } :data
