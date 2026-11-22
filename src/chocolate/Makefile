@@ -9,6 +9,8 @@ PROGRAM_DIR := $(BIN_DIR)/programs
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 VB_DIR ?= $(ROOT_DIR)/video-backend
 LIBVB := $(BIN_DIR)/video-backend/libvb.a
+LIBGUI_DIR ?= $(ROOT_DIR)/PureC-OS-LibGui
+LIBPG := $(BIN_DIR)/libgui/libpg.a
 TARGET := $(PROGRAM_DIR)/chocolate-doom
 
 CHOC_SOURCES := \
@@ -150,7 +152,7 @@ CHOC_CFLAGS := -D__PUREC__ -DDISABLE_SDL2NET=1 -w \
 	-I$(LIBC_DIR)/include/hosted -I$(abspath $(LIBC_DIR)/..)
 
 LIBS := $(LIB_DIR)/libSDL2_mixer.a $(LIB_DIR)/libSDL2.a $(LIB_DIR)/libpureaudio.a \
-	$(LIBVB) $(LIB_DIR)/libpurec.a
+	$(LIBPG) $(LIBVB) $(LIB_DIR)/libpurec.a
 
 .PHONY: all
 all:
@@ -161,6 +163,12 @@ all:
 	else $(MAKE) -C $(ROOT_DIR)/src/libsdl2_mixer && $(MAKE) -f $(firstword $(MAKEFILE_LIST)) $(TARGET); fi
 
 -include $(OBJECTS:.o=.d)
+
+$(LIBPG): FORCE
+	$(MAKE) -C $(LIBGUI_DIR) ROOT_DIR=$(ROOT_DIR)
+
+$(LIBVB):
+	$(MAKE) -C $(VB_DIR) ROOT_DIR=$(ROOT_DIR)
 
 $(TARGET): $(OBJECTS) $(LIB_DIR)/crt0.o $(LIBS) $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
@@ -173,3 +181,6 @@ $(OBJ_DIR)/%.o: $(CHOC_DIR)/%.c
 .PHONY: clean
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET)
+
+.PHONY: FORCE
+FORCE:

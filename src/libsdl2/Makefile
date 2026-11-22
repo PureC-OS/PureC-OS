@@ -9,6 +9,8 @@ TARGET := $(LIB_DIR)/libSDL2.a
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
 VB_DIR ?= $(ROOT_DIR)/video-backend
 LIBVB := $(BIN_DIR)/video-backend/libvb.a
+LIBGUI_DIR ?= $(ROOT_DIR)/PureC-OS-LibGui
+LIBPG := $(BIN_DIR)/libgui/libpg.a
 
 SDL_SOURCES := \
 	$(wildcard $(SDL_DIR)/src/*.c) \
@@ -47,7 +49,7 @@ SDL_SOURCES := \
 SDL_OBJECTS := $(SDL_SOURCES:$(SDL_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 SDL_CFLAGS := -D__PUREC__ -fno-strict-aliasing \
-	-I$(SDL_DIR)/include -I$(ROOT_DIR)/src -I$(ROOT_DIR) \
+	-I$(SDL_DIR)/include -I$(ROOT_DIR)/src -I$(ROOT_DIR) -I$(LIBGUI_DIR)/include \
 	-I$(LIBC_DIR)/include/hosted -I$(abspath $(LIBC_DIR)/..)
 
 SDLTEST_OBJECT := $(OBJ_DIR)/sdltest/main.o
@@ -58,6 +60,9 @@ all: $(TARGET) $(SDLTEST)
 
 $(LIBVB):
 	$(MAKE) -C $(VB_DIR) ROOT_DIR=$(ROOT_DIR)
+
+$(LIBPG): FORCE
+	$(MAKE) -C $(LIBGUI_DIR) ROOT_DIR=$(ROOT_DIR)
 
 -include $(SDL_OBJECTS:.o=.d) $(SDLTEST_OBJECT:.o=.d)
 
@@ -74,10 +79,13 @@ $(SDLTEST_OBJECT): $(ROOT_DIR)/src/libsdl2/sdltest/main.c
 	@mkdir -p $(@D)
 	$(CC) $(DEPFLAGS) $(USER_CFLAGS) $(SDL_CFLAGS) -c $< -o $@
 
-$(SDLTEST): $(SDLTEST_OBJECT) $(LIB_DIR)/crt0.o $(TARGET) $(LIBVB) $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a $(LINKER_SCRIPT)
+$(SDLTEST): $(SDLTEST_OBJECT) $(LIB_DIR)/crt0.o $(TARGET) $(LIBPG) $(LIBVB) $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(SDLTEST_OBJECT) $(TARGET) $(LIBVB) $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(SDLTEST_OBJECT) $(TARGET) $(LIBPG) $(LIBVB) $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a
 
 .PHONY: clean
 clean:
 	rm -rf $(OBJ_DIR) $(TARGET) $(SDLTEST)
+
+.PHONY: FORCE
+FORCE:
