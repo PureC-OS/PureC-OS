@@ -87,6 +87,8 @@ static bool action_ignored(const struct process *process, int32_t sig) {
 int32_t signal_send(uint32_t pid, int32_t sig) {
   if (sig < 0 || sig > SIGNAL_COUNT)
     return -KERR_INVAL;
+  if (pid >= PROCESS_KTHREAD_PID_BASE)
+    return -KERR_PERM;
   process_table_lock();
   struct process *target = process_lookup_by_pid(pid);
   if (!target || target->state == PROCESS_EXITED ||

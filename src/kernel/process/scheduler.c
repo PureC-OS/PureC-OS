@@ -875,6 +875,27 @@ uint32_t scheduler_thread_count(void)
   spin_unlock_irqrestore(&runqueue_lock, flags);
   return count;
 }
+uint32_t scheduler_kthread_list(struct kthread_info *out, uint32_t capacity)
+{
+  uint32_t count = 0;
+  uint64_t flags = spin_lock_irqsave(&runqueue_lock);
+  for (struct thread *t = thread_list; t && count < capacity; t = t->next)
+  {
+    if (t->state == THREAD_FREE || t->state == THREAD_TERMINATED || t->process || t->user_mode)
+      continue;
+    struct kthread_info *k = &out[count++];
+    k->tid = t->id;
+    memcpy(k->name, t->name, sizeof(k->name));
+    k->name[sizeof(k->name) - 1] = 0;
+    k->state = (uint8_t)t->state;
+    k->idle = t->idle;
+    k->cpu = t->running_cpu >= 0 ? t->running_cpu : t->last_cpu;
+    k->runtime_ms = t->runtime_ticks;
+  }
+  spin_unlock_irqrestore(&runqueue_lock, flags);
+  return count;
+}
+
 uint64_t scheduler_thread_runtime_ticks(int tid)
 {
   uint64_t flags = spin_lock_irqsave(&runqueue_lock);

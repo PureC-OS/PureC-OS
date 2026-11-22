@@ -177,6 +177,50 @@ static const struct process_monitor_info *find_process(uint32_t pid) {
   return 0;
 }
 
+#define PROCFS_MAX_KTHREADS 128
+static struct kthread_info kthread_list[PROCFS_MAX_KTHREADS];
+
+static const struct kthread_info *find_kthread(uint32_t pid) {
+  if (pid < PROCESS_KTHREAD_PID_BASE)
+    return 0;
+  uint32_t count = scheduler_kthread_list(kthread_list, PROCFS_MAX_KTHREADS);
+  for (uint32_t i = 0; i < count; i++)
+    if (kthread_list[i].tid == pid - PROCESS_KTHREAD_PID_BASE)
+      return &kthread_list[i];
+  return 0;
+}
+
+static const char *kthread_state(uint8_t state) {
+  if (state == THREAD_RUNNING)
+    return "running";
+  if (state == THREAD_READY)
+    return "ready";
+  return "sleeping";
+}
+
+static void kthread_name(const struct kthread_info *k, char *out, uint32_t cap) {
+  if (k->name[0])
+    kformat(out, cap, "[%s]", k->name);
+  else
+    kformat(out, cap, "[%s%u]", k->idle ? "idle/" : "kthread/", k->idle ? (uint32_t)k->cpu : k->tid);
+}
+
+static void generate_kthread_status(struct pbuf *out, const struct kthread_info *k, uint32_t pid) {
+  char name[48];
+  kthread_name(k, name, sizeof(name));
+  emit(out, "Name:\t%s\n", name);
+  emit(out, "State:\t%s\n", kthread_state(k->state));
+  emit(out, "Pid:\t%u\n", pid);
+  emit(out, "PPid:\t0\n");
+  emit(out, "VmRSS:\t0 kB\n");
+  emit(out, "CpuTime:\t%llu ms\n", (unsigned long long)k->runtime_ms);
+  emit(out, "Uid:\t0\n");
+  emit(out, "Gid:\t0\n");
+  emit(out, "Threads:\t1\n");
+  emit(out, "Kernel:\t1\n");
+  emit(out, "Cpu:\t%d\n", (int)k->cpu);
+}
+
 static const char *state_name(uint32_t state) {
   if (state == PROCESS_MONITOR_STATE_READY)
     return "ready";
@@ -188,6 +232,11 @@ static const char *state_name(uint32_t state) {
 }
 
 static void generate_pid_status(struct pbuf *out, uint32_t pid) {
+  const struct kthread_info *k = find_kthread(pid);
+  if (k) {
+    generate_kthread_status(out, k, pid);
+    return;
+  }
   const struct process_monitor_info *process = find_process(pid);
   if (!process)
     return;
@@ -211,12 +260,23 @@ static void generate_pid_status(struct pbuf *out, uint32_t pid) {
 }
 
 static void generate_pid_name(struct pbuf *out, uint32_t pid) {
+  const struct kthread_info *k = find_kthread(pid);
+  if (k) {
+    char name[48];
+    kthread_name(k, name, sizeof(name));
+    emit(out, "%s\n", name);
+    return;
+  }
   const struct process_monitor_info *process = find_process(pid);
   if (process)
     emit(out, "%s\n", process->name);
 }
 
 static void generate_pid_cmdline(struct pbuf *out, uint32_t pid) {
+  if (find_kthread(pid)) {
+    generate_pid_name(out, pid);
+    return;
+  }
   const struct process_monitor_info *process = find_process(pid);
   if (!process)
     return;
@@ -228,6 +288,10 @@ static void generate_pid_cmdline(struct pbuf *out, uint32_t pid) {
 }
 
 static void generate_pid_cwd(struct pbuf *out, uint32_t pid) {
+  if (find_kthread(pid)) {
+    emit(out, "/\n");
+    return;
+  }
   struct process_proc_info extra;
   if (process_proc_info_get(pid, &extra))
     emit(out, "%s\n", extra.cwd[0] ? extra.cwd : "/");
@@ -282,7 +346,7 @@ static struct node lookup(const char *path) {
   const char *name = path + 1;
   uint32_t pid, digits;
   if (parse_pid(name, &pid, &digits)) {
-    if (!find_process(pid))
+    if (!find_process(pid) && !find_kthread(pid))
       return node;
     if (!name[digits]) {
       node.kind = NODE_PID_DIR;
@@ -433,6 +497,11 @@ static int32_t list_node(const char *path, void *entries, uint32_t capacity,
     int32_t processes = process_monitor_list(process_list, PROCFS_MAX_PROCESSES);
     for (int32_t i = 0; i < processes; i++) {
       kformat(name, sizeof(name), "%u", process_list[i].pid);
+      ADD(name, FS_ATTRIBUTE_DIRECTORY);
+    }
+    uint32_t kthreads = scheduler_kthread_list(kthread_list, PROCFS_MAX_KTHREADS);
+    for (uint32_t i = 0; i < kthreads; i++) {
+      kformat(name, sizeof(name), "%u", PROCESS_KTHREAD_PID_BASE + kthread_list[i].tid);
       ADD(name, FS_ATTRIBUTE_DIRECTORY);
     }
   } else {

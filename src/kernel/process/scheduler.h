@@ -129,3 +129,14 @@ void scheduler_leave_kernel(void);
 void scheduler_on_reschedule_interrupt(void);
 bool scheduler_thread_stopped(int tid);
 uint32_t scheduler_active_mask(void);
+
+struct kthread_info {
+  uint32_t tid;
+  char name[32];
+  uint8_t state;
+  bool idle;
+  int16_t cpu;
+  uint64_t runtime_ms;
+};
+
+uint32_t scheduler_kthread_list(struct kthread_info *out, uint32_t capacity);
