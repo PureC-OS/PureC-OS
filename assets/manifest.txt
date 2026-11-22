@@ -34,6 +34,7 @@
 # --- system libraries ---
 /lib/libpurec.a /lib/libpurec.a - 1 bin/lib/libpurec.a
 /lib/libpurec.so /lib/libpurec.so - 0 bin/lib/libpurec.so
+/lib/ld-purec.so.1 /lib/ld-purec.so.1 - 0 bin/lib/ld-purec.so.1
 /lib/libdltest.so /lib/libdltest.so - 0 bin/lib/libdltest.so
 /lib/libdltest2.so /lib/libdltest2.so - 0 bin/lib/libdltest2.so
 /lib/pc-ld.o /lib/pc-ld.o - 0 bin/lib/pc-ld.o

@@ -1,0 +1,37 @@
+ENTRY(_start)
+PHDRS
+{
+    headers PT_PHDR PHDRS;
+    interp PT_INTERP;
+    text PT_LOAD FILEHDR PHDRS;
+    data PT_LOAD;
+    dynamic PT_DYNAMIC;
+    tls PT_TLS;
+    stack PT_GNU_STACK FLAGS(6);
+}
+SECTIONS
+{
+    . = SIZEOF_HEADERS;
+    .interp : { *(.interp) } :interp :text
+    .text : { *(.text.start) *(.text .text.*) } :text
+    .rodata : ALIGN(0x1000) { *(.rodata .rodata.*) } :text
+    .got : ALIGN(0x1000) { *(.got .got.*) } :data
+    .got.plt : ALIGN(0x1000) { *(.got.plt .got.plt.*) } :data
+    .plt : ALIGN(0x1000) { *(.plt .plt.*) } :text
+    .dynamic : ALIGN(0x1000) { *(.dynamic) } :data :dynamic
+    .dynsym : ALIGN(0x1000) { *(.dynsym) } :data
+    .dynstr : ALIGN(0x1000) { *(.dynstr) } :data
+    .hash : ALIGN(0x1000) { *(.hash) } :data
+    .rel.dyn : ALIGN(0x1000) { *(.rel.dyn .rel.dyn.*) } :data
+    .rela.dyn : ALIGN(0x1000) { *(.rela.dyn .rela.dyn.*) } :data
+    .rel.plt : ALIGN(0x1000) { *(.rel.plt .rel.plt.*) } :data
+    .rela.plt : ALIGN(0x1000) { *(.rela.plt .rela.plt.*) } :data
+    .data.rel.ro : ALIGN(0x1000) { *(.data.rel.ro .data.rel.ro.*) }
+    .init_array : ALIGN(16) { *(.init_array .init_array.*) }
+    .fini_array : ALIGN(16) { *(.fini_array .fini_array.*) }
+    .data : ALIGN(0x1000) { *(.data .data.*) } :data
+    .tdata : ALIGN(64) { *(.tdata .tdata.*) } :data :tls
+    .tbss : ALIGN(64) { *(.tbss .tbss.*) *(.tcommon) } :tls
+    .bss : ALIGN(0x1000) { *(COMMON) *(.bss .bss.*) } :data
+    /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
+}

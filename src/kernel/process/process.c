@@ -23,6 +23,7 @@ static mutex_t process_mutex;
 #include "../syscall/syscall.h"
 #include "../tty/tty.h"
 #include "../ipc/ipc.h"
+#include "../random/krandom.h"
 #include "elf.h"
 #include "process.h"
 #include "program_alias.h"
@@ -426,7 +427,79 @@ struct built_image
   uint64_t heap_limit;
   uint64_t stack_limit;
   uint64_t stack_low;
+  bool interp;
+  uint64_t exe_entry;
+  uint64_t phdr_addr;
+  uint64_t phdr_num;
+  uint64_t phdr_ent;
+  uint64_t interp_base;
 };
+
+#define AT_NULL_ 0
+#define AT_PHDR_ 3
+#define AT_PHENT_ 4
+#define AT_PHNUM_ 5
+#define AT_PAGESZ_ 6
+#define AT_BASE_ 7
+#define AT_ENTRY_ 9
+#define AT_UID_ 11
+#define AT_EUID_ 12
+#define AT_GID_ 13
+#define AT_EGID_ 14
+#define AT_SECURE_ 23
+#define AT_RANDOM_ 25
+#define AT_EXECFN_ 31
+#define AUXV_PAIRS 14
+#define AUXV_BYTES (AUXV_PAIRS * 16ULL)
+
+static bool write_user_bytes(uint64_t address_space, uint64_t address,
+                             const void *data, uint64_t size);
+
+static bool image_has_interp(const void *image, uint64_t image_size)
+{
+  char path[128];
+  uint64_t phdr, entry;
+  uint16_t phnum, phent;
+  return elf_query_interp(image, image_size, path, sizeof(path), &phdr, &phnum,
+                          &phent, &entry);
+}
+
+static uint64_t interp_data_bytes(const char *execfn)
+{
+  return 16 + ((strlen(execfn) + 1 + 15) & ~15ULL);
+}
+
+static bool write_interp_stack(uint64_t space, const struct built_image *built,
+                               uint64_t table_addr, uint64_t table_words_before,
+                               uint64_t data_addr, const char *execfn,
+                               uint32_t uid, uint32_t gid)
+{
+  uint8_t random_bytes[16];
+  krandom_fill(random_bytes, sizeof(random_bytes));
+  uint64_t execfn_addr = data_addr + 16;
+  uint64_t aux[AUXV_PAIRS * 2];
+  uint32_t n = 0;
+#define AUXV_PUT(k, v) do { aux[n++] = (k); aux[n++] = (v); } while (0)
+  AUXV_PUT(AT_PHDR_, built->phdr_addr);
+  AUXV_PUT(AT_PHENT_, built->phdr_ent);
+  AUXV_PUT(AT_PHNUM_, built->phdr_num);
+  AUXV_PUT(AT_PAGESZ_, PMM_PAGE_SIZE);
+  AUXV_PUT(AT_BASE_, built->interp_base);
+  AUXV_PUT(AT_ENTRY_, built->exe_entry);
+  AUXV_PUT(AT_UID_, uid);
+  AUXV_PUT(AT_EUID_, uid);
+  AUXV_PUT(AT_GID_, gid);
+  AUXV_PUT(AT_EGID_, gid);
+  AUXV_PUT(AT_SECURE_, 0);
+  AUXV_PUT(AT_RANDOM_, data_addr);
+  AUXV_PUT(AT_EXECFN_, execfn_addr);
+  AUXV_PUT(AT_NULL_, 0);
+#undef AUXV_PUT
+  return write_user_bytes(space, data_addr, random_bytes, 16) &&
+         write_user_bytes(space, execfn_addr, execfn, strlen(execfn) + 1) &&
+         write_user_bytes(space, table_addr + table_words_before * 8, aux,
+                          sizeof(aux));
+}
 
 static bool build_user_image(const void *image, uint64_t image_size,
                              uint64_t address_space, uint64_t stack_pages,
@@ -440,7 +513,43 @@ static bool build_user_image(const void *image, uint64_t image_size,
     last_spawn_error = "ELF image validation or mapping failed";
     return false;
   }
-  if (image_type == 2)
+  char interp_path[128];
+  uint64_t phdr_vaddr = 0, exe_entry_raw = 0;
+  uint16_t phnum = 0, phent = 0;
+  out->interp = false;
+  if (elf_query_interp(image, image_size, interp_path, sizeof(interp_path),
+                       &phdr_vaddr, &phnum, &phent, &exe_entry_raw))
+  {
+    struct spawn_image interp_image;
+    if (!spawn_load_image(interp_path, &interp_image))
+    {
+      last_spawn_error = "program interpreter not found";
+      return false;
+    }
+    uint64_t exe_bias = image_type == 3 ? ELF_PIE_DEFAULT_BASE : 0;
+    struct elf_load_result interp_loaded;
+    bool ok = elf_load_interp_image(interp_image.data, interp_image.size,
+                                    address_space, ELF_INTERP_BASE,
+                                    &interp_loaded);
+    if (interp_image.owned && interp_image.phys)
+      pmm_free_contiguous(interp_image.phys, interp_image.pages);
+    if (!ok ||
+        !elf_load_exec_deferred(image, image_size, address_space, exe_bias,
+                                &loaded))
+    {
+      last_spawn_error = "ELF image validation or mapping failed";
+      return false;
+    }
+    heap_base = loaded.highest_address + USER_HEAP_GUARD_PAGES * PMM_PAGE_SIZE;
+    out->interp = true;
+    out->exe_entry = loaded.entry;
+    out->phdr_addr = phdr_vaddr + exe_bias;
+    out->phdr_num = phnum;
+    out->phdr_ent = phent;
+    out->interp_base = ELF_INTERP_BASE;
+    loaded.entry = interp_loaded.entry;
+  }
+  else if (image_type == 2)
   {
     if (!elf_load_user_image(image, image_size, address_space, &loaded))
     {
@@ -713,6 +822,25 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   strncpy(process->name, name ? name : "process", sizeof(process->name) - 1);
   process->capabilities |= spawn_capabilities;
   spawn_capabilities = 0;
+  if (built.interp)
+  {
+    const char *execfn = name ? name : "process";
+    uint64_t data_start =
+        (USER_STACK_TOP - interp_data_bytes(execfn)) & ~15ULL;
+    uint64_t sp = (data_start - 24 - AUXV_BYTES) & ~15ULL;
+    uint64_t head[3] = {0, 0, 0};
+    if (!write_user_bytes(process->address_space, sp, head, sizeof(head)) ||
+        !write_interp_stack(process->address_space, &built, sp, 3, data_start,
+                            execfn, process->uid, process->gid))
+    {
+      last_spawn_error = "cannot build interpreter stack";
+      vmm_destroy_address_space(process->address_space);
+      process->address_space = 0;
+      process_node_free(process);
+      return -1;
+    }
+    process->user_stack_top = sp - 8;
+  }
   process->thread_id = scheduler_create_user_thread(
       user_process_entry, process, process->name, USER_PROCESS_PRIORITY, -1,
       process->address_space, process);
@@ -2115,7 +2243,12 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
 
   uint64_t pointer_bytes = 8ULL * (1ULL + args.argc + 1ULL + args.envc + 1ULL);
   uint64_t strings_start = USER_STACK_TOP - args.size;
-  uint64_t sp = (strings_start - pointer_bytes) & ~15ULL;
+  bool interp = image_has_interp(image.data, image.size);
+  uint64_t data_start =
+      interp ? ((strings_start - interp_data_bytes(resolved)) & ~15ULL)
+             : strings_start;
+  uint64_t aux_bytes = interp ? AUXV_BYTES : 0;
+  uint64_t sp = (data_start - pointer_bytes - aux_bytes) & ~15ULL;
   uint64_t stack_pages =
       (USER_STACK_TOP - (sp - 8) + PMM_PAGE_SIZE - 1) / PMM_PAGE_SIZE +
       USER_STACK_PAGES;
@@ -2168,6 +2301,10 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
                 write_user_bytes(new_space, sp, table, table_size);
     pmm_free_contiguous(table_phys, table_pages);
   }
+  if (layout_ok && built.interp)
+    layout_ok = write_interp_stack(new_space, &built, sp, pointer_bytes / 8,
+                                   data_start, resolved, process->uid,
+                                   process->gid);
   uint64_t new_pages = vmm_user_page_count(new_space);
   if (!layout_ok || !oom_gate_try_charge_user(process->pid, new_pages))
   {

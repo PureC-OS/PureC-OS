@@ -7,7 +7,7 @@ W=${TMPDIR:-/tmp}/purec-abi-check.$$
 mkdir -p "$W"
 trap 'rm -rf "$W"' EXIT
 
-pairs="syscall.h:kernel/syscall/syscall.h fs_types.h:fs/types/fs_types.h key_event.h:drivers/input/key_event.h keyboard.h:drivers/input/keyboard.h storage_types.h:io/storage/storage_types.h mouse.h:drivers/mouse/ps2_mouse.h"
+pairs="trace.h:kernel/trace/trace.h syscall.h:kernel/syscall/syscall.h fs_types.h:fs/types/fs_types.h key_event.h:drivers/input/key_event.h keyboard.h:drivers/input/keyboard.h storage_types.h:io/storage/storage_types.h mouse.h:drivers/mouse/ps2_mouse.h"
 
 probe() {
     inc=$1; hdr=$2; out=$3

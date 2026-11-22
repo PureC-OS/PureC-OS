@@ -5,6 +5,7 @@ PHDRS
     text PT_LOAD FILEHDR PHDRS;
     data PT_LOAD;
     dynamic PT_DYNAMIC;
+    tls PT_TLS;
     stack PT_GNU_STACK FLAGS(6);
 }
 SECTIONS
@@ -27,6 +28,8 @@ SECTIONS
     .init_array : ALIGN(16) { *(.init_array .init_array.*) }
     .fini_array : ALIGN(16) { *(.fini_array .fini_array.*) }
     .data : ALIGN(0x1000) { *(.data .data.*) } :data
+    .tdata : ALIGN(64) { *(.tdata .tdata.*) } :data :tls
+    .tbss : ALIGN(64) { *(.tbss .tbss.*) *(.tcommon) } :tls
     .bss : ALIGN(0x1000) { *(COMMON) *(.bss .bss.*) } :data
     /DISCARD/ : { *(.comment) *(.note*) *(.eh_frame*) }
 }

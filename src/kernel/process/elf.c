@@ -384,3 +384,93 @@ uint16_t elf_image_type(const void *image, uint64_t image_size)
 {
   return peek_type(image, image_size);
 }
+
+bool elf_query_interp(const void *image, uint64_t image_size, char *path,
+                      uint32_t capacity, uint64_t *phdr_vaddr,
+                      uint16_t *phnum, uint16_t *phent, uint64_t *entry)
+{
+  uint16_t type = peek_type(image, image_size);
+  if (type != ELF_TYPE_EXECUTABLE && type != ELF_TYPE_SHARED)
+    return false;
+  const struct elf64_header *header = (const struct elf64_header *)image;
+  uint64_t table_size =
+      (uint64_t)header->program_count * header->program_entry_size;
+  if (image_size < sizeof(*header) ||
+      add_overflows(header->program_offset, table_size) ||
+      header->program_offset + table_size > image_size)
+    return false;
+  const uint8_t *bytes = (const uint8_t *)image;
+  bool found = false;
+  bool have_phdr = false;
+  uint64_t phdr = 0;
+  for (uint16_t index = 0; index < header->program_count; index++)
+  {
+    const struct elf64_program_header *program =
+        (const struct elf64_program_header *)(bytes + header->program_offset +
+                                              (uint64_t)index *
+                                                  header->program_entry_size);
+    if (program->type == ELF_PROGRAM_INTERP)
+    {
+      if (add_overflows(program->offset, program->file_size) ||
+          program->offset + program->file_size > image_size ||
+          program->file_size < 2 || program->file_size > capacity)
+        return false;
+      memcpy(path, bytes + program->offset, (size_t)program->file_size);
+      path[program->file_size - 1] = '\0';
+      found = true;
+    }
+    else if (program->type == ELF_PROGRAM_PHDR)
+    {
+      phdr = program->virtual_address;
+      have_phdr = true;
+    }
+  }
+  if (!found)
+    return false;
+  if (!have_phdr)
+  {
+    for (uint16_t index = 0; index < header->program_count; index++)
+    {
+      const struct elf64_program_header *program =
+          (const struct elf64_program_header *)(bytes + header->program_offset +
+                                                (uint64_t)index *
+                                                    header->program_entry_size);
+      if (program->type == ELF_PROGRAM_LOAD &&
+          header->program_offset >= program->offset &&
+          header->program_offset < program->offset + program->file_size)
+      {
+        phdr = program->virtual_address + (header->program_offset -
+                                           program->offset);
+        have_phdr = true;
+        break;
+      }
+    }
+  }
+  if (!have_phdr)
+    return false;
+  *phdr_vaddr = phdr;
+  *phnum = header->program_count;
+  *phent = header->program_entry_size;
+  *entry = header->entry;
+  return true;
+}
+
+bool elf_load_interp_image(const void *image, uint64_t image_size,
+                           uint64_t address_space, uint64_t bias,
+                           struct elf_load_result *result)
+{
+  if (peek_type(image, image_size) != ELF_TYPE_SHARED)
+    return false;
+  struct elf_dynamic_info dynamic;
+  return elf_load_user_image_biased(image, image_size, address_space, bias,
+                                    result, &dynamic);
+}
+
+bool elf_load_exec_deferred(const void *image, uint64_t image_size,
+                            uint64_t address_space, uint64_t bias,
+                            struct elf_load_result *result)
+{
+  struct elf_dynamic_info dynamic;
+  return elf_load_user_image_biased(image, image_size, address_space, bias,
+                                    result, &dynamic);
+}

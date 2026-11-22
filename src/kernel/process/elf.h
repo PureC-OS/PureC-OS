@@ -12,6 +12,9 @@
 
 #define ELF_TYPE_SHARED 3
 #define ELF_PROGRAM_DYNAMIC 2
+#define ELF_PROGRAM_INTERP 3
+#define ELF_PROGRAM_PHDR 6
+#define ELF_INTERP_BASE 0x0000600000000000ULL
 
 #define ELF_DT_NULL 0
 #define ELF_DT_NEEDED 1
@@ -77,3 +80,13 @@ bool elf_load_user_image_biased(const void *image, uint64_t image_size,
                                 struct elf_dynamic_info *dynamic);
 bool elf_apply_relative_relocs(uint64_t address_space,
                                const struct elf_dynamic_info *dynamic);
+
+bool elf_query_interp(const void *image, uint64_t image_size, char *path,
+                      uint32_t capacity, uint64_t *phdr_vaddr,
+                      uint16_t *phnum, uint16_t *phent, uint64_t *entry);
+bool elf_load_interp_image(const void *image, uint64_t image_size,
+                           uint64_t address_space, uint64_t bias,
+                           struct elf_load_result *result);
+bool elf_load_exec_deferred(const void *image, uint64_t image_size,
+                            uint64_t address_space, uint64_t bias,
+                            struct elf_load_result *result);

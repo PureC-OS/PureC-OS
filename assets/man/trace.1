@@ -1,0 +1,79 @@
+NAME
+       trace - trace system calls of a process tree
+
+SYNOPSIS
+       trace [-cnrtTdfF] [-e LIST] [-b LIST] [-o FILE] COMMAND [ARGS...]
+       trace [options] -p PID
+
+DESCRIPTION
+       Runs COMMAND (found through PATH) or attaches to the running process
+       PID and prints every system call it makes, using the kernel tracing
+       facility. Child processes are followed by default and shown as a tree:
+       each forked process is nested under its parent with box-drawing
+       characters. Every line has the form
+
+           name(args) = result  [duration]
+
+       Strings are quoted, flags are decoded, and failed calls are shown in
+       red with the error name. A result of -1 is reported as EPERM but can
+       also be a generic failure of an older system call. When a call is
+       still blocked while the same process makes another call, it is shown as
+       name(...) <unfinished ...> and finished later as <... name resumed>.
+       A final line +++ [pid name] exited with N +++ or killed by SIGNAL
+       is printed for each process.
+
+       Only the owner of a process, or root, may trace it. PID 1, kernel
+       threads and the tracer itself cannot be traced.
+
+OPTIONS
+       -p PID
+           attach to PID instead of running a command. Ctrl-C detaches.
+
+       -e LIST
+           only show the listed system calls (comma separated names)
+
+       -b LIST
+           breakpoints: stop the process at the entry of these system calls
+           and ask what to do. Enter continues, q detaches and c continues
+           without any further stops.
+
+       -c
+           print only a summary table: calls, errors and time per system call
+
+       -t
+           print the kernel timestamp of each call in seconds
+
+       -T
+           show call duration (default)
+
+       -d
+           do not show call duration
+
+       -f
+           follow forked children (default)
+
+       -F
+           do not follow children
+
+       -r
+           print raw argument values instead of decoded ones
+
+       -n
+           no color
+
+       -o FILE
+           write the trace to FILE (no color)
+
+       When the kernel ring buffer overflows, a line with the number of
+       dropped records is printed. When COMMAND is run, trace exits with its
+       exit status. With a command, one Ctrl-C is passed to the command
+       and a second one detaches.
+
+EXAMPLES
+       trace ls /etc
+       trace -e openat,fd_open cat /etc/passwd
+       trace -c ps
+       trace -b fd_open -p 42
+
+SEE ALSO
+       strace(1), ps(1), kill(1)
