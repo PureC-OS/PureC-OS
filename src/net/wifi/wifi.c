@@ -78,6 +78,9 @@ struct net_device *wifi_get_net_device(struct wifi_device *wdev){
 }
 bool wifi_has_device(void){ return mgr.active != NULL; }
 
+static bool scan_seen[WIFI_SCAN_MAX];
+static uint32_t scan_reported;
+
 bool wifi_trigger_scan(void){
     if(!initialized) return false;
     if(!mgr.active){
@@ -85,10 +88,10 @@ bool wifi_trigger_scan(void){
         return false;
     }
     if(mgr.scanning){
-        return false;
+        return true;
     }
     if(mgr.state == WIFI_STATE_CONNECTED){
-        return false;
+        return true;
     }
     if(mgr.connecting){
         klog(KLOG_INFO, "wifi: scan deferred while connecting");
@@ -97,7 +100,8 @@ bool wifi_trigger_scan(void){
     mgr.scanning = true;
     mgr.scan_start_ms = timer_ticks();
     mgr.state = WIFI_STATE_SCANNING;
-    mgr.cache_count = 0;
+    for(uint32_t i=0;i<WIFI_SCAN_MAX;i++) scan_seen[i] = false;
+    scan_reported = 0;
     klog(KLOG_INFO, "wifi: scanning started (driver will report beacons)");
     if(mgr.active->ops && mgr.active->ops->scan){
         bool ok = mgr.active->ops->scan(mgr.active->context);
@@ -128,19 +132,32 @@ static struct wifi_network *find_network(const char *ssid){
 bool wifi_report_scan_result(const struct wifi_network *net){
     if(!net || !net->ssid[0]) return false;
 
+    scan_reported++;
     for(uint32_t i=0;i<mgr.cache_count;i++){
         if(memcmp(mgr.cache[i].bssid, net->bssid, 6)==0){
             mgr.cache[i]=*net;
+            scan_seen[i] = true;
             return true;
         }
     }
     if(mgr.cache_count >= WIFI_SCAN_MAX) return false;
+    scan_seen[mgr.cache_count] = true;
     mgr.cache[mgr.cache_count++] = *net;
     return true;
 }
 
 void wifi_notify_scan_done(void){
     mgr.last_scan_ms = timer_ticks();
+    if(mgr.scanning && scan_reported){
+        uint32_t kept = 0;
+        for(uint32_t i=0;i<mgr.cache_count;i++){
+            if(!scan_seen[i]) continue;
+            mgr.cache[kept] = mgr.cache[i];
+            scan_seen[kept] = true;
+            kept++;
+        }
+        mgr.cache_count = kept;
+    }
     mgr.scanning = false;
     if(mgr.state == WIFI_STATE_SCANNING && !mgr.connecting){
         mgr.state = WIFI_STATE_DISCONNECTED;

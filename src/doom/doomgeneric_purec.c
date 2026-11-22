@@ -1,17 +1,17 @@
+#include <string.h>
 #include "doomkeys.h"
 #include "m_argv.h"
 #include "doomgeneric.h"
 
 #include "libc/include/purec.h"
-#include "libgui/include/puregui.h"
+#include "video-backend/include/vb.h"
 #include "libaudio/include/pureaudio.h"
 
 #define KEYQUEUE_SIZE 64
 #define DEFAULT_IWAD "/usr/share/doom/doom1.wad"
 
-static struct pg_window window;
+static struct vb_window *window;
 static bool window_ready;
-static bool chrome_dirty;
 static unsigned short key_queue[KEYQUEUE_SIZE];
 static unsigned int key_write;
 static unsigned int key_read;
@@ -55,56 +55,55 @@ static void queue_key(int pressed, unsigned char key)
     key_write = next;
 }
 
-static void redraw_chrome(void)
-{
-    pg_window_begin(&window);
-    pg_window_end(&window);
-    chrome_dirty = false;
-}
-
 static void pump_input(void)
 {
-    struct key_event key;
-    struct pg_event event;
+    struct vb_event event;
     int budget;
 
-    for (budget = 64; budget > 0 && pg_window_poll_key_event(&window, &key); --budget) {
-        unsigned char doom_key = to_doom_key(key.scancode);
-        if (doom_key) queue_key(key.pressed, doom_key);
-    }
-    for (budget = 64; budget > 0 && pg_window_poll_event(&window, &event); --budget) {
-        if (event.type == PG_EVENT_CLOSE) {
-            pg_window_close(&window);
+    for (budget = 64; budget > 0; --budget) {
+        int r = vb_next_event(&event, 0);
+        if (r < 0) pc_exit(0);
+        if (r == 0) break;
+        if (event.type == VB_EVENT_KEY) {
+            unsigned char doom_key = to_doom_key((unsigned int)event.key);
+            if (doom_key && !event.repeat) queue_key(event.pressed, doom_key);
+        } else if (event.type == VB_EVENT_CLOSE) {
+            vb_window_destroy(window);
             pc_exit(0);
-        }
-        if (event.type == PG_EVENT_REPAINT || event.type == PG_EVENT_MOVE
-            || event.type == PG_EVENT_MINIMIZE) {
-            chrome_dirty = true;
         }
     }
 }
 
 void DG_Init(void)
 {
-    uint32_t frame_w = DOOMGENERIC_RESX + PG_WINDOW_BORDER * 2;
-    uint32_t frame_h = DOOMGENERIC_RESY + PG_TITLEBAR_HEIGHT + PG_WINDOW_BORDER * 2;
-
-    if (!pg_window_center(&window, "DOOM", frame_w, frame_h)) {
-        pc_write("doom: cannot create a window, the screen is too small\n");
+    if (vb_connect() != 0) {
+        pc_write("doom: cannot connect to the display server\n");
         pc_exit(1);
     }
-    pg_window_set_esc_closes(&window, false);
+    window = vb_window_create(DOOMGENERIC_RESX, DOOMGENERIC_RESY, "DOOM");
+    if (!window) {
+        pc_write("doom: cannot create a window\n");
+        pc_exit(1);
+    }
     window_ready = true;
-    redraw_chrome();
 }
 
 void DG_DrawFrame(void)
 {
+    uint32_t *dst;
+    int w, h, y;
+
     if (!window_ready) return;
     pump_input();
-    if (chrome_dirty) redraw_chrome();
-    pg_window_blit(&window, 0, 0, DOOMGENERIC_RESX, DOOMGENERIC_RESY,
-                   (const uint32_t *)DG_ScreenBuffer, DOOMGENERIC_RESX);
+    dst = vb_window_pixels(window);
+    if (!dst) return;
+    w = vb_window_width(window);
+    h = vb_window_height(window);
+    for (y = 0; y < h && y < DOOMGENERIC_RESY; ++y) {
+        int n = w < DOOMGENERIC_RESX ? w : DOOMGENERIC_RESX;
+        memcpy(dst + (size_t)y * w, (const uint32_t *)DG_ScreenBuffer + (size_t)y * DOOMGENERIC_RESX, (size_t)n * 4);
+    }
+    vb_window_damage_all(window);
 }
 
 void DG_SleepMs(uint32_t ms)
@@ -139,8 +138,7 @@ int DG_GetKey(int *pressed, unsigned char *key)
 void DG_SetWindowTitle(const char *title)
 {
     if (!window_ready) return;
-    pc_copy(window.title, title, sizeof(window.title));
-    chrome_dirty = true;
+    vb_window_title(window, title);
 }
 
 int main(int argc, char **argv)

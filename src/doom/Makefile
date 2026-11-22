@@ -9,6 +9,7 @@ OBJ_DIR := $(BIN_DIR)/obj/doom
 LIB_DIR := $(BIN_DIR)/lib
 PROGRAM_DIR := $(BIN_DIR)/programs
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
+LIBVB := $(BIN_DIR)/video-backend/libvb.a
 TARGET := $(PROGRAM_DIR)/doomgeneric
 
 DOOM_OBJECTS := dummy am_map doomdef doomstat dstrings d_event d_items d_iwad \
@@ -23,7 +24,7 @@ DOOM_OBJECTS := dummy am_map doomdef doomstat dstrings d_event d_items d_iwad \
 OBJECTS := $(DOOM_OBJECTS:%=$(OBJ_DIR)/%.o) $(OBJ_DIR)/doomgeneric_purec.o $(OBJ_DIR)/i_purecsound.o
 
 DOOM_CFLAGS := -DNORMALUNIX -DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 \
-	-w -I$(ROOT_DIR)/src/doom/include -I$(ROOT_DIR)/src -I$(LIBC_DIR)/include/hosted
+	-w -I$(ROOT_DIR)/src/doom/include -I$(ROOT_DIR)/src -I$(ROOT_DIR) -I$(LIBC_DIR)/include/hosted -I$(abspath $(LIBC_DIR)/..)
 
 .PHONY: all
 all:
@@ -33,9 +34,9 @@ all:
 
 -include $(OBJECTS:.o=.d)
 
-$(TARGET): $(OBJECTS) $(LIB_DIR)/crt0.o $(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a $(LINKER_SCRIPT)
+$(TARGET): $(OBJECTS) $(LIB_DIR)/crt0.o $(LIBVB) $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a $(LINKER_SCRIPT)
 	@mkdir -p $(@D)
-	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJECTS) $(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a
+	$(LD) -T $(LINKER_SCRIPT) -o $@ $(LIB_DIR)/crt0.o $(OBJECTS) $(LIBVB) $(LIB_DIR)/libpureaudio.a $(LIB_DIR)/libpurec.a
 
 $(OBJ_DIR)/%.o: $(DOOM_DIR)/%.c
 	@mkdir -p $(@D)

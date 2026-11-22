@@ -7,6 +7,8 @@ OBJ_DIR := $(BIN_DIR)/obj/chocolate
 LIB_DIR := $(BIN_DIR)/lib
 PROGRAM_DIR := $(BIN_DIR)/programs
 LINKER_SCRIPT := $(ROOT_DIR)/linker-userspace.ld
+VB_DIR ?= $(ROOT_DIR)/video-backend
+LIBVB := $(BIN_DIR)/video-backend/libvb.a
 TARGET := $(PROGRAM_DIR)/chocolate-doom
 
 CHOC_SOURCES := \
@@ -145,10 +147,10 @@ CHOC_CFLAGS := -D__PUREC__ -DDISABLE_SDL2NET=1 -w \
 	-I$(ROOT_DIR)/src/chocolate -I$(CHOC_DIR)/src -I$(CHOC_DIR)/src/doom \
 	-I$(CHOC_DIR)/opl -I$(CHOC_DIR)/pcsound -I$(CHOC_DIR)/textscreen \
 	-I$(SDL_DIR)/include -I$(ROOT_DIR)/src/libsdl2_mixer -I$(ROOT_DIR)/src \
-	-I$(LIBC_DIR)/include/hosted
+	-I$(LIBC_DIR)/include/hosted -I$(abspath $(LIBC_DIR)/..)
 
 LIBS := $(LIB_DIR)/libSDL2_mixer.a $(LIB_DIR)/libSDL2.a $(LIB_DIR)/libpureaudio.a \
-	$(LIB_DIR)/libpuregui.a $(LIB_DIR)/libpurec.a
+	$(LIBVB) $(LIB_DIR)/libpurec.a
 
 .PHONY: all
 all:
