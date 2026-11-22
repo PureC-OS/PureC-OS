@@ -1693,7 +1693,7 @@ static void iwx_rx_mpdu(struct iwx_sc *sc, const struct iwx_rx_packet *pkt, uint
             iwx_rx_data(sc, plain, plen);
             return;
         }
-        if (sc->ptk_installed && !(frame[4] & 1)) {
+        if (sc->ptk_installed) {
             const uint8_t *l = frame + hdrlen;
             if (len < hdrlen + 8 || l[6] != 0x88 || l[7] != 0x8e) {
                 sc->net.stats.rx_dropped++;
