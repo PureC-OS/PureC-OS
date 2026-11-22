@@ -8,6 +8,7 @@ ISO_ROOT            := $(BIN_DIR)/iso_root
 ISO_IMAGE           := $(BIN_DIR)/purec_limine.iso
 LIMINE_CONFIG       := $(BIN_DIR)/staged/limine.conf
 
+LIBC_DIR            := $(ROOT_DIR)/programs/PureC-OS-Core-Programs/libc
 CRYPT_DIR           := $(ROOT_DIR)/libxcrypt
 WOLFSSL_DIR         := $(ROOT_DIR)/wolfssl
 TCC_DIR             := $(ROOT_DIR)/tcc
@@ -33,7 +34,7 @@ test-malloc:
 		-Dmalloc=pc_malloc -Dfree=pc_free -Dcalloc=pc_calloc -Drealloc=pc_realloc \
 		-Daligned_alloc=pc_aligned_alloc -Dposix_memalign=pc_posix_memalign \
 		-Dmemalign=pc_memalign -Dmalloc_usable_size=pc_malloc_usable_size -Derrno=pc_errno \
-		-c src/libc/malloc.c -o $(BIN_DIR)/tests/malloc_impl.o
+		-c $(LIBC_DIR)/malloc.c -o $(BIN_DIR)/tests/malloc_impl.o
 	cc -std=gnu11 -O1 -Wall -Wextra -g -fsanitize=address,undefined tests/malloc_test.c \
 		$(BIN_DIR)/tests/malloc_impl.o -o $(BIN_DIR)/tests/malloc_test
 	$(BIN_DIR)/tests/malloc_test
@@ -58,7 +59,7 @@ test-fenv:
 		-Dfegetround=pc_fegetround -Dfesetround=pc_fesetround -Dfegetenv=pc_fegetenv \
 		-Dfesetenv=pc_fesetenv -Dfeholdexcept=pc_feholdexcept -Dfeupdateenv=pc_feupdateenv \
 		-Dfegetexceptflag=pc_fegetexceptflag -Dfesetexceptflag=pc_fesetexceptflag \
-		-c src/libc/fenv.c -o $(BIN_DIR)/tests/fenv_impl.o
+		-c $(LIBC_DIR)/fenv.c -o $(BIN_DIR)/tests/fenv_impl.o
 	cc -std=gnu11 -O0 -Wall -Wextra -g tests/fenv_test.c $(BIN_DIR)/tests/fenv_impl.o -o $(BIN_DIR)/tests/fenv_test
 	$(BIN_DIR)/tests/fenv_test
 
@@ -246,14 +247,14 @@ test-tty:
 
 test-scanf:
 	@mkdir -p $(BIN_DIR)/tests
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -Dsscanf=pc_sscanf -Dvsscanf=pc_vsscanf -Dfscanf=pc_fscanf -Dvfscanf=pc_vfscanf -c src/libc/scanf.c -o $(BIN_DIR)/tests/scanf_pc.o
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -g -Dsscanf=pc_sscanf -Dvsscanf=pc_vsscanf -Dfscanf=pc_fscanf -Dvfscanf=pc_vfscanf -c $(LIBC_DIR)/scanf.c -o $(BIN_DIR)/tests/scanf_pc.o
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -g tests/scanf_test.c $(BIN_DIR)/tests/scanf_pc.o -o $(BIN_DIR)/tests/scanf_test
 	$(BIN_DIR)/tests/scanf_test
 
 test-libm:
 	@mkdir -p $(BIN_DIR)/tests
-	cc -std=gnu11 -O1 -Wall -Wextra -ffreestanding -fno-builtin -include tests/libm_rename.h -c src/libc/math.c -o $(BIN_DIR)/tests/libm_math.o
-	cc -std=gnu11 -O1 -Wall -Wextra -ffreestanding -fno-builtin -include tests/libm_rename.h -c src/libc/libm.c -o $(BIN_DIR)/tests/libm_libm.o
+	cc -std=gnu11 -O1 -Wall -Wextra -ffreestanding -fno-builtin -include tests/libm_rename.h -c $(LIBC_DIR)/math.c -o $(BIN_DIR)/tests/libm_math.o
+	cc -std=gnu11 -O1 -Wall -Wextra -ffreestanding -fno-builtin -include tests/libm_rename.h -c $(LIBC_DIR)/libm.c -o $(BIN_DIR)/tests/libm_libm.o
 	cc -std=gnu11 -O1 -Wall -Wextra -c tests/libm_test.c -o $(BIN_DIR)/tests/libm_test.o
 	cc $(BIN_DIR)/tests/libm_test.o $(BIN_DIR)/tests/libm_math.o $(BIN_DIR)/tests/libm_libm.o -lm -o $(BIN_DIR)/tests/libm_test
 	$(BIN_DIR)/tests/libm_test
@@ -362,7 +363,7 @@ test-qemu-toolchain:
 all: iso
 
 libraries:
-	$(MAKE) -C src/libc
+	$(MAKE) -C $(LIBC_DIR)
 	$(MAKE) -C src/libfs
 	$(MAKE) -C src/libaudio
 
@@ -476,7 +477,7 @@ iso: kernel programs core-stage
 
 clean:
 	$(MAKE) -C src/kernel      clean 2>/dev/null || true
-	$(MAKE) -C src/libc        clean 2>/dev/null || true
+	$(MAKE) -C $(LIBC_DIR)        clean 2>/dev/null || true
 	$(MAKE) -C src/libfs       clean 2>/dev/null || true
 	$(MAKE) -C src/libaudio    clean 2>/dev/null || true
 	$(MAKE) -C src/libsdl2     clean 2>/dev/null || true

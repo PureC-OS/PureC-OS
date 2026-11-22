@@ -17,7 +17,7 @@ for source in "$@"; do
   name="$(basename "$source" .cpp)"
   clang++ --target=x86_64-unknown-elf -D__purec__=1 $CXX_FLAGS -m64 -mno-red-zone \
     -fno-stack-protector -fno-pic -mcmodel=small -nostdinc -nostdinc++ \
-    -isystem "$STAGE/include/c++/v1" -isystem "$RESOURCE_INCLUDE" -isystem "$ROOT/src/libc/include/hosted" \
+    -isystem "$STAGE/include/c++/v1" -isystem "$RESOURCE_INCLUDE" -isystem "$ROOT/programs/PureC-OS-Core-Programs/libc/include/hosted" \
     -c "$source" -o "$OUT/$name.o"
   x86_64-elf-ld --eh-frame-hdr -T "$ROOT/linker-userspace-cxx.ld" -o "$OUT/$name" "$BIN_DIR/lib/crt0.o" "$OUT/$name.o" \
     "$STAGE/lib/libc++.a" "$STAGE/lib/libc++abi.a" $UNWIND "$BIN_DIR/lib/libpurefs.a" "$BIN_DIR/lib/libpurec.a" $LIBGCC \

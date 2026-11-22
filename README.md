@@ -266,7 +266,7 @@ python purec.py
 
 ## Project layout
 
-- `src/`: kernel (`src/kernel`), drivers (`src/drivers`), storage and file systems (`src/io`, `src/fs`), network stack (`src/net`), C library (`src/libc`), and Ring-3 programs (`src/programs`: `init`, `getty`, `sh`, `installer`, `netd`, `dhcpc`, `resolved`, `ntpd`, the `utils` set, and others)
+- `src/`: kernel (`src/kernel`), drivers (`src/drivers`), storage and file systems (`src/io`, `src/fs`), network stack (`src/net`), C library (`programs/PureC-OS-Core-Programs/libc`), and Ring-3 programs (`src/programs`: `init`, `getty`, `sh`, `installer`, `netd`, `dhcpc`, `resolved`, `ntpd`, the `utils` set, and others)
 - `mk/`: build fragments for ports (`git`, `curl`, `vim`, `qt`, `netsurf`, `cxx`, `tcc`, `sysroot`), asset generation (`gen_assets.py`) and the package tools (`pkg`)
 - `rootfs/`: `/etc` seed files installed by the installer
 - `assets/`: install manifest (`manifest.txt`), man pages and fonts

@@ -23,7 +23,7 @@ DOOM_OBJECTS := dummy am_map doomdef doomstat dstrings d_event d_items d_iwad \
 OBJECTS := $(DOOM_OBJECTS:%=$(OBJ_DIR)/%.o) $(OBJ_DIR)/doomgeneric_purec.o $(OBJ_DIR)/i_purecsound.o
 
 DOOM_CFLAGS := -DNORMALUNIX -DDOOMGENERIC_RESX=640 -DDOOMGENERIC_RESY=400 \
-	-w -I$(ROOT_DIR)/src/doom/include -I$(ROOT_DIR)/src -I$(ROOT_DIR)/src/libc/include/hosted
+	-w -I$(ROOT_DIR)/src/doom/include -I$(ROOT_DIR)/src -I$(LIBC_DIR)/include/hosted
 
 .PHONY: all
 all:

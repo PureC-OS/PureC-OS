@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build libc++ and libc++abi for PureC OS against src/libc (static, no host libc involved).
+# Build libc++ and libc++abi for PureC OS against programs/PureC-OS-Core-Programs/libc (static, no host libc involved).
 # Features are toggled with the CXX_* variables below and are meant to be switched on
 # one at a time as the PureC libc grows (threads, wide chars, locale, exceptions).
 set -e
@@ -21,7 +21,7 @@ CXX_UNWIND="${CXX_UNWIND:-$CXX_EXCEPTIONS}"
 sh "$ROOT/mk/cxx/patch.sh"
 
 RESOURCE_INCLUDE="$(clang --print-resource-dir)/include"
-LIBC_INCLUDE="$ROOT/src/libc/include/hosted"
+LIBC_INCLUDE="$ROOT/programs/PureC-OS-Core-Programs/libc/include/hosted"
 TARGET="x86_64-unknown-elf"
 COMMON="--target=$TARGET -D__purec__=1 -m64 -mno-red-zone -fno-stack-protector -fno-pic -mcmodel=small -nostdinc -isystem $RESOURCE_INCLUDE -isystem $LIBC_INCLUDE"
 

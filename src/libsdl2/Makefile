@@ -46,7 +46,7 @@ SDL_OBJECTS := $(SDL_SOURCES:$(SDL_DIR)/%.c=$(OBJ_DIR)/%.o)
 
 SDL_CFLAGS := -D__PUREC__ -fno-strict-aliasing \
 	-I$(SDL_DIR)/include -I$(ROOT_DIR)/src \
-	-I$(ROOT_DIR)/src/libc/include/hosted
+	-I$(LIBC_DIR)/include/hosted
 
 SDLTEST_OBJECT := $(OBJ_DIR)/sdltest/main.o
 SDLTEST := $(PROGRAM_DIR)/sdltest

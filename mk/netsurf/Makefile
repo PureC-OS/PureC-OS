@@ -4,7 +4,7 @@ include $(ROOT_DIR)/mk/toolchain.mk
 NSLIBS := $(ROOT_DIR)/netsurf-libs
 OBJ_DIR := $(BIN_DIR)/obj/netsurf
 LIB_DIR := $(BIN_DIR)/lib
-HOSTED := $(ROOT_DIR)/src/libc/include/hosted
+HOSTED := $(LIBC_DIR)/include/hosted
 NS_CFLAGS := $(USER_CFLAGS) -w -I$(HOSTED)
 
 ZLIB_SOURCES := adler32 compress crc32 deflate gzclose gzlib gzread gzwrite \

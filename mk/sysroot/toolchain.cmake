@@ -11,7 +11,7 @@ endif()
 set(PUREC_SYSROOT "${PUREC_BIN}/sysroot" CACHE PATH "PureC dependency prefix")
 set(PUREC_CXX_STAGE "${PUREC_BIN}/cxx-stage" CACHE PATH "libc++ stage")
 set(PUREC_NS_STAGE "${PUREC_BIN}/ns-stage" CACHE PATH "zlib, libpng, libjpeg, expat stage")
-set(PUREC_LIBC_INCLUDE "${PUREC_ROOT}/src/libc/include/hosted")
+set(PUREC_LIBC_INCLUDE "${PUREC_ROOT}/programs/PureC-OS-Core-Programs/libc/include/hosted")
 set(PUREC_LINKER_SCRIPT "${PUREC_ROOT}/linker-userspace-cxx.ld")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")

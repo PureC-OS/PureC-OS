@@ -3,7 +3,7 @@ include $(ROOT_DIR)/mk/toolchain.mk
 
 GIT_SRC := $(ROOT_DIR)/git
 STAGE := $(BIN_DIR)/ns-stage
-HOSTED := $(ROOT_DIR)/src/libc/include/hosted
+HOSTED := $(LIBC_DIR)/include/hosted
 LIBGCC := $(shell $(CC) -print-libgcc-file-name)
 PROGRAM_DIR := $(BIN_DIR)/programs
 

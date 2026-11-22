@@ -17,7 +17,7 @@ GM_OBJECTS := $(GM_SOURCES:%=$(OBJ_DIR)/%.o) $(GM_LIB_SOURCES:%=$(OBJ_DIR)/lib_%
 
 GM_CFLAGS := -w -std=gnu11 -DHAVE_CONFIG_H -DLOCALEDIR=\"/usr/share/locale\" \
 	-I$(ROOT_DIR)/src/make -I$(OBJ_DIR)/inc -I$(GM_DIR)/src -I$(GM_DIR)/lib \
-	-I$(ROOT_DIR)/src -I$(ROOT_DIR)/src/libc/include/hosted
+	-I$(ROOT_DIR)/src -I$(LIBC_DIR)/include/hosted
 
 LIBS := $(LIB_DIR)/libpurefs.a $(LIB_DIR)/libpurec.a
 

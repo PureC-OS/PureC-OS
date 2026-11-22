@@ -1,7 +1,7 @@
 #!/bin/sh
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 STAGE="$ROOT/bin/ns-stage"
-H="$ROOT/src/libc/include/hosted"
+H="$ROOT/programs/PureC-OS-Core-Programs/libc/include/hosted"
 LOG="$STAGE/netsurf-core.log"
 export PKG_CONFIG_LIBDIR="$STAGE/lib/pkgconfig"
 export PKG_CONFIG_PATH=

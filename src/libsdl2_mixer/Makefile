@@ -19,7 +19,7 @@ $(TARGET): $(OBJ_DIR)/mixer.o
 $(OBJ_DIR)/mixer.o: $(ROOT_DIR)/src/libsdl2_mixer/mixer.c
 	@mkdir -p $(@D)
 	$(CC) $(DEPFLAGS) $(USER_CFLAGS) -D__PUREC__ -I$(SDL_DIR)/include -I$(ROOT_DIR)/src \
-		-I$(ROOT_DIR)/src/libc/include/hosted -I$(ROOT_DIR)/src/libsdl2_mixer -c $< -o $@
+		-I$(LIBC_DIR)/include/hosted -I$(ROOT_DIR)/src/libsdl2_mixer -c $< -o $@
 
 .PHONY: clean
 clean:
