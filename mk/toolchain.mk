@@ -11,7 +11,8 @@ AR := $(CROSS)ar
 LD := $(CROSS)ld
 NASM ?= nasm
 
-CPPFLAGS := -I$(ROOT_DIR)/src
+LIBC_DIR := $(ROOT_DIR)/programs/PureC-OS-Core-Programs/libc
+CPPFLAGS := -I$(ROOT_DIR)/src -I$(ROOT_DIR)/programs/PureC-OS-Core-Programs
 DEPFLAGS := -MMD -MP
 COMMON_CFLAGS := -g -O1 -ffreestanding -fno-stack-protector -fno-pic \
 	$(ARCH_COMMON_CFLAGS)

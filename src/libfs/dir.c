@@ -1,5 +1,5 @@
 #include "include/purefs.h"
-#include "../libc/include/purec.h"
+#include "libc/include/purec.h"
 #include "../fs/types/fs_types.h"
 #include <stddef.h>
 

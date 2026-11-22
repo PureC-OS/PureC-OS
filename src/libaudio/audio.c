@@ -1,5 +1,5 @@
 #include "include/pureaudio.h"
-#include "../libc/include/purec.h"
+#include "libc/include/purec.h"
 #include "../kernel/syscall/syscall.h"
 #include <stddef.h>
 

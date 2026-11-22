@@ -1,5 +1,5 @@
 #include "include/purefs.h"
-#include "../libc/include/purec.h"
+#include "libc/include/purec.h"
 #include <stddef.h>
 
 const char *pf_version(void){
