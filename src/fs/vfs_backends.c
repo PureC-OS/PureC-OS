@@ -4,6 +4,7 @@
 #include "./ext2/include/ext2.h"
 #include "./ext2/include/ext2_block.h"
 #include "./ext2/include/ext2_dir.h"
+#include "./ext2/include/ext2_file.h"
 #include "./ext2/include/ext2_inode.h"
 #include "./ext2/include/ext2_meta.h"
 #include "./ext2/include/ext2_types.h"
@@ -148,6 +149,25 @@ static int32_t ext2_op_symlink(void *context, const char *path,
   return ext2_symlink_path(path, target);
 }
 
+static int32_t ext2_op_pwrite(void *context, int32_t descriptor,
+                              uint64_t offset, const void *buffer,
+                              uint32_t count) {
+  (void)context;
+  return ext2_file_pwrite(descriptor, offset, buffer, count);
+}
+
+static int32_t ext2_op_ftruncate(void *context, int32_t descriptor,
+                                 uint64_t length) {
+  (void)context;
+  return ext2_file_truncate(descriptor, length);
+}
+
+static int32_t ext2_op_fsize(void *context, int32_t descriptor,
+                             uint64_t *size) {
+  (void)context;
+  return ext2_file_size(descriptor, size);
+}
+
 static int32_t ext2_op_get_meta(void *context, const char *path,
                                 struct vfs_perm_meta *out) {
   (void)context;
@@ -196,6 +216,9 @@ const struct vfs_fs_ops vfs_ext2_ops = {
     .link_walk = ext2_op_link_walk,
     .readlink = ext2_op_readlink,
     .symlink = ext2_op_symlink,
+    .pwrite = ext2_op_pwrite,
+    .ftruncate = ext2_op_ftruncate,
+    .fsize = ext2_op_fsize,
     .is_ready = ext2_ready,
 };
 

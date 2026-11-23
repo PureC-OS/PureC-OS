@@ -14,6 +14,7 @@ uint32_t wallclock_unix_seconds(void);
 struct node {
   bool used;
   bool directory;
+  bool orphan;
   int16_t parent;
   char name[TMPFS_NAME_MAX + 1];
   uint8_t *data;
@@ -242,7 +243,67 @@ static int32_t tmpfs_close(void *context, int32_t descriptor) {
   struct handle *handle = get_handle(fs, descriptor);
   if (!handle)
     return FS_ERROR_INVALID;
+  int32_t node = handle->node;
   handle->used = false;
+  if (fs->nodes[node].orphan && !is_open(fs, node)) {
+    release_data(fs, &fs->nodes[node]);
+    memset(&fs->nodes[node], 0, sizeof(fs->nodes[node]));
+  }
+  return 0;
+}
+
+static int32_t tmpfs_pwrite(void *context, int32_t descriptor, uint64_t offset,
+                            const void *buffer, uint32_t count) {
+  struct tmpfs *fs = context;
+  struct handle *handle = get_handle(fs, descriptor);
+  if (!handle || (!buffer && count))
+    return FS_ERROR_INVALID;
+  if (!count)
+    return 0;
+  if (offset + count > TMPFS_MAX_FILE)
+    return FS_ERROR_NO_SPACE;
+  struct node *node = &fs->nodes[handle->node];
+  uint32_t end = (uint32_t)offset + count;
+  int32_t status = reserve(fs, node, end > node->size ? end : node->size);
+  if (status < 0)
+    return status;
+  if (offset > node->size)
+    memset(node->data + node->size, 0, (size_t)(offset - node->size));
+  memcpy(node->data + offset, buffer, count);
+  if (end > node->size)
+    node->size = end;
+  node->mtime = node->ctime = wallclock_unix_seconds();
+  return (int32_t)count;
+}
+
+static int32_t tmpfs_ftruncate(void *context, int32_t descriptor,
+                               uint64_t length) {
+  struct tmpfs *fs = context;
+  struct handle *handle = get_handle(fs, descriptor);
+  if (!handle)
+    return FS_ERROR_INVALID;
+  if (length > TMPFS_MAX_FILE)
+    return FS_ERROR_NO_SPACE;
+  struct node *node = &fs->nodes[handle->node];
+  if (length > node->size) {
+    int32_t status = reserve(fs, node, (uint32_t)length);
+    if (status < 0)
+      return status;
+    memset(node->data + node->size, 0, (size_t)(length - node->size));
+  } else if (node->data && length < node->size) {
+    memset(node->data + length, 0, (size_t)(node->size - length));
+  }
+  node->size = (uint32_t)length;
+  node->mtime = node->ctime = wallclock_unix_seconds();
+  return 0;
+}
+
+static int32_t tmpfs_fsize(void *context, int32_t descriptor, uint64_t *size) {
+  struct tmpfs *fs = context;
+  struct handle *handle = get_handle(fs, descriptor);
+  if (!handle || !size)
+    return FS_ERROR_INVALID;
+  *size = fs->nodes[handle->node].size;
   return 0;
 }
 
@@ -368,8 +429,12 @@ static int32_t tmpfs_unlink(void *context, const char *path) {
     return FS_ERROR_BUSY;
   if (fs->nodes[node].directory && has_children(fs, node))
     return FS_ERROR_NOT_BLANK;
-  if (is_open(fs, node))
-    return FS_ERROR_BUSY;
+  if (!fs->nodes[node].directory && is_open(fs, node)) {
+    fs->nodes[node].orphan = true;
+    fs->nodes[node].parent = -1;
+    fs->nodes[node].name[0] = '\0';
+    return 0;
+  }
   release_data(fs, &fs->nodes[node]);
   memset(&fs->nodes[node], 0, sizeof(fs->nodes[node]));
   return 0;
@@ -454,8 +519,6 @@ static int32_t tmpfs_write_file(void *context, const char *path, const void *buf
   int32_t status = obtain_file(fs, path, &node);
   if (status < 0)
     return status;
-  if (is_open(fs, node))
-    return FS_ERROR_BUSY;
   status = reserve(fs, &fs->nodes[node], count);
   if (status < 0)
     return status;
@@ -503,4 +566,7 @@ const struct vfs_fs_ops vfs_tmpfs_ops = {
     .move = tmpfs_move,
     .write_file = tmpfs_write_file,
     .append_file = tmpfs_append_file,
+    .pwrite = tmpfs_pwrite,
+    .ftruncate = tmpfs_ftruncate,
+    .fsize = tmpfs_fsize,
 };

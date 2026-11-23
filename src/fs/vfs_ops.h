@@ -47,5 +47,9 @@ struct vfs_fs_ops {
   int32_t (*readlink)(void *context, const char *path, char *out,
                       uint32_t capacity);
   int32_t (*symlink)(void *context, const char *path, const char *target);
+  int32_t (*pwrite)(void *context, int32_t descriptor, uint64_t offset,
+                    const void *buffer, uint32_t count);
+  int32_t (*ftruncate)(void *context, int32_t descriptor, uint64_t length);
+  int32_t (*fsize)(void *context, int32_t descriptor, uint64_t *size);
   bool (*is_ready)(void *context);
 };
