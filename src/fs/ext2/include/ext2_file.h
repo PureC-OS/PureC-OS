@@ -11,3 +11,7 @@ int32_t ext2_file_write(const char *path, const void *buffer, uint32_t count);
 int32_t ext2_file_append(const char *path, const void *buffer, uint32_t count);
 int32_t ext2_file_create_dir(const char *path);
 void ext2_file_handles_reset(void);
+bool ext2_file_inode_open(uint32_t ino);
+int32_t ext2_file_pwrite(int32_t descriptor, uint64_t offset, const void *buffer, uint32_t count);
+int32_t ext2_file_truncate(int32_t descriptor, uint64_t length);
+int32_t ext2_file_size(int32_t descriptor, uint64_t *size);

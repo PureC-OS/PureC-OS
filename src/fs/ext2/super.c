@@ -3,6 +3,7 @@
 #include "include/ext2_block.h"
 #include "include/ext2_super.h"
 #include "include/ext2_file.h"
+#include "include/ext2_meta.h"
 #include "../../io/storage/block_device.h"
 #include "../../lib/string.h"
 
@@ -91,5 +92,37 @@ bool ext2_super_mount_at(uint32_t lba)
     ext2_bcache_bind(block_device_name());
     vol->mounted = true;
     ext2_file_handles_reset();
+    ext2_orphans_cleanup();
     return true;
+}
+
+static bool super_sector(uint32_t offset, uint32_t *lba, uint32_t *in_sector)
+{
+    struct ext2_volume *vol = ext2_volume();
+    if (offset + 4 > 1024)
+        return false;
+    uint32_t byte = 1024 + offset;
+    *lba = vol->partition_lba + byte / BLOCK_SECTOR_SIZE;
+    *in_sector = byte % BLOCK_SECTOR_SIZE;
+    return *in_sector + 4 <= BLOCK_SECTOR_SIZE;
+}
+
+bool ext2_super_get_u32(uint32_t offset, uint32_t *value)
+{
+    uint32_t lba, at;
+    uint8_t sector[BLOCK_SECTOR_SIZE];
+    if (!super_sector(offset, &lba, &at) || !block_device_read(lba, sector))
+        return false;
+    *value = ext2_read_u32(sector + at);
+    return true;
+}
+
+bool ext2_super_set_u32(uint32_t offset, uint32_t value)
+{
+    uint32_t lba, at;
+    uint8_t sector[BLOCK_SECTOR_SIZE];
+    if (!super_sector(offset, &lba, &at) || !block_device_read(lba, sector))
+        return false;
+    ext2_write_u32(sector + at, value);
+    return block_device_write(lba, sector);
 }

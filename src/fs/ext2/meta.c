@@ -4,6 +4,8 @@
 #include "include/ext2_dir.h"
 #include "include/ext2_meta.h"
 #include "include/ext2_time.h"
+#include "include/ext2_file.h"
+#include "include/ext2_super.h"
 #include "../../lib/string.h"
 
 #define INODE_MODE 0
@@ -244,6 +246,104 @@ static int32_t dir_is_empty(uint32_t dir_ino)
     return 1;
 }
 
+#define SUPER_LAST_ORPHAN 232
+
+static int32_t orphan_add(uint32_t ino)
+{
+    uint32_t head = 0;
+    if (!ext2_super_get_u32(SUPER_LAST_ORPHAN, &head))
+        head = 0;
+    uint8_t ib[256];
+    if (!ext2_inode_read(ino, ib))
+        return -1;
+    ext2_write_u32(ib + EXT2_INODE_DTIME, head);
+    ext2_stamp_changed(ib);
+    if (!ext2_write_inode(ino, ib))
+        return -1;
+    ext2_super_set_u32(SUPER_LAST_ORPHAN, ino);
+    return 0;
+}
+
+static void orphan_remove(uint32_t ino)
+{
+    struct ext2_volume *vol = ext2_volume();
+    uint32_t head = 0;
+    if (!ext2_super_get_u32(SUPER_LAST_ORPHAN, &head) || !head)
+        return;
+    uint8_t ib[256];
+    if (head == ino)
+    {
+        uint32_t next = ext2_inode_read(ino, ib) ? ext2_read_u32(ib + EXT2_INODE_DTIME) : 0;
+        ext2_super_set_u32(SUPER_LAST_ORPHAN, next <= vol->total_inodes ? next : 0);
+        return;
+    }
+    uint32_t prev = head;
+    for (uint32_t guard = 0; prev && guard < vol->total_inodes; guard++)
+    {
+        if (!ext2_inode_read(prev, ib))
+            return;
+        uint32_t cur = ext2_read_u32(ib + EXT2_INODE_DTIME);
+        if (!cur || cur > vol->total_inodes)
+            return;
+        if (cur == ino)
+        {
+            uint8_t victim[256];
+            uint32_t next = ext2_inode_read(ino, victim) ? ext2_read_u32(victim + EXT2_INODE_DTIME) : 0;
+            ext2_write_u32(ib + EXT2_INODE_DTIME, next <= vol->total_inodes ? next : 0);
+            ext2_write_inode(prev, ib);
+            return;
+        }
+        prev = cur;
+    }
+}
+
+static int32_t free_unlinked(uint32_t ino)
+{
+    uint8_t ib[256];
+    if (!ext2_inode_read(ino, ib))
+        return -1;
+    ext2_inode_free_blocks(ib);
+    memset(ib, 0, sizeof(ib));
+    ext2_write_u32(ib + EXT2_INODE_DTIME, ext2_now());
+    if (!ext2_write_inode(ino, ib))
+        return -1;
+    return ext2_free_inode(ino) ? 0 : -1;
+}
+
+int32_t ext2_inode_release_if_orphan(uint32_t ino)
+{
+    if (ino <= 11 || ext2_file_inode_open(ino))
+        return 0;
+    uint8_t ib[256];
+    if (!ext2_inode_read(ino, ib))
+        return -1;
+    if (ext2_read_u16(ib + INODE_MODE) == 0 || ext2_read_u16(ib + INODE_LINKS) != 0)
+        return 0;
+    orphan_remove(ino);
+    return free_unlinked(ino);
+}
+
+void ext2_orphans_cleanup(void)
+{
+    struct ext2_volume *vol = ext2_volume();
+    uint32_t ino = 0;
+    if (!ext2_super_get_u32(SUPER_LAST_ORPHAN, &ino) || !ino)
+        return;
+    ext2_super_set_u32(SUPER_LAST_ORPHAN, 0);
+    for (uint32_t guard = 0; ino && guard < vol->total_inodes; guard++)
+    {
+        if (ino <= 11 || ino > vol->total_inodes)
+            break;
+        uint8_t ib[256];
+        if (!ext2_inode_read(ino, ib))
+            break;
+        uint32_t next = ext2_read_u32(ib + EXT2_INODE_DTIME);
+        if (ext2_read_u16(ib + INODE_MODE) != 0 && ext2_read_u16(ib + INODE_LINKS) == 0)
+            free_unlinked(ino);
+        ino = next;
+    }
+}
+
 static int32_t adjust_links(uint32_t ino, int32_t delta)
 {
     uint8_t ib[256];
@@ -294,6 +394,8 @@ int32_t ext2_unlink_path(const char *path)
     int32_t links = adjust_links(ino, directory ? -2 : -1);
     if (links < 0)
         return -1;
+    if (links == 0 && !directory && ext2_file_inode_open(ino))
+        return orphan_add(ino);
     if (links == 0)
     {
         if (!ext2_inode_read(ino, ib))

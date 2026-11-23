@@ -27,5 +27,7 @@ int32_t ext2_readlink_path(const char *path, char *out, uint32_t capacity);
 int32_t ext2_link_walk(const char *path, bool follow_last, char *target,
                        uint32_t capacity, uint32_t *consumed);
 bool ext2_inode_is_fast_symlink(const uint8_t *inode);
+void ext2_orphans_cleanup(void);
+int32_t ext2_inode_release_if_orphan(uint32_t ino);
 int32_t ext2_rename_path(const char *path, const char *new_name);
 int32_t ext2_move_path(const char *path, const char *destination_directory);
