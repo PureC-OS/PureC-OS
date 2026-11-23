@@ -174,23 +174,94 @@ static void set_root_ops(uint8_t fs_type) {
   sync_tmpfs_mounts();
 }
 
-static int32_t resolve(const char *input, struct vfs_resolved *resolved) {
+static bool mount_ready(const struct vfs_mount *mount);
+
+static int32_t splice_link(const struct vfs_resolved *resolved,
+                           uint32_t consumed, const char *target, char *out,
+                           uint32_t capacity) {
+  char joined[VFS_PATH_MAX * 2];
+  uint32_t prefix = (uint32_t)(resolved->relative - resolved->path);
+  const char *rest = resolved->relative + consumed;
+  uint32_t length = 0;
+  if (target[0] != '/') {
+    uint32_t base = prefix + consumed;
+    while (base > 0 && resolved->path[base - 1] == '/')
+      base--;
+    while (base > 0 && resolved->path[base - 1] != '/')
+      base--;
+    if (base + 1 > sizeof(joined))
+      return FS_ERROR_INVALID;
+    memcpy(joined, resolved->path, base);
+    length = base;
+    if (!length)
+      joined[length++] = '/';
+  }
+  uint32_t target_length = (uint32_t)strlen(target);
+  uint32_t rest_length = (uint32_t)strlen(rest);
+  if (length + target_length + rest_length + 2 > sizeof(joined))
+    return FS_ERROR_INVALID;
+  memcpy(joined + length, target, target_length);
+  length += target_length;
+  if (rest_length && rest[0] != '/')
+    joined[length++] = '/';
+  memcpy(joined + length, rest, rest_length);
+  length += rest_length;
+  joined[length] = '\0';
+  return vfs_path_normalize(joined, out, capacity) < 0 ? FS_ERROR_INVALID : 0;
+}
+
+static int32_t resolve_mode(const char *input, struct vfs_resolved *resolved,
+                            bool follow_last) {
   ensure_mounts();
   if (!input || !input[0])
     return FS_ERROR_INVALID;
-  char absolute[VFS_PATH_MAX];
+  char current[VFS_PATH_MAX];
   if (input[0] != '/') {
-    if (strlen(input) + 2 > sizeof(absolute))
+    if (strlen(input) + 2 > sizeof(current))
       return FS_ERROR_INVALID;
-    absolute[0] = '/';
-    strcpy(absolute + 1, input);
-    input = absolute;
+    current[0] = '/';
+    strcpy(current + 1, input);
+  } else {
+    if (strlen(input) + 1 > sizeof(current))
+      return FS_ERROR_INVALID;
+    strcpy(current, input);
   }
-  if (vfs_alias_resolve(input, resolved->path, sizeof(resolved->path)) < 0)
-    return FS_ERROR_INVALID;
-  resolved->mount = vfs_mount_find(resolved->path, &resolved->relative,
-                                   resolved->root, sizeof(resolved->root));
-  return resolved->mount ? 0 : FS_ERROR_NOT_FOUND;
+  for (uint32_t hops = 0;; hops++) {
+    if (vfs_alias_resolve(current, resolved->path, sizeof(resolved->path)) < 0)
+      return FS_ERROR_INVALID;
+    resolved->mount = vfs_mount_find(resolved->path, &resolved->relative,
+                                     resolved->root, sizeof(resolved->root));
+    if (!resolved->mount)
+      return FS_ERROR_NOT_FOUND;
+    const struct vfs_fs_ops *ops = resolved->mount->ops;
+    if (!ops->link_walk || resolved->relative == resolved->root ||
+        !mount_ready(resolved->mount))
+      return 0;
+    char target[VFS_PATH_MAX];
+    uint32_t consumed = 0;
+    int32_t found = ops->link_walk(resolved->mount->context,
+                                   resolved->relative, follow_last, target,
+                                   sizeof(target), &consumed);
+    if (found < 0)
+      return found;
+    if (!found)
+      return 0;
+    if (hops + 1 > FS_SYMLINK_HOPS_MAX)
+      return FS_ERROR_LOOP;
+    int32_t status = splice_link(resolved, consumed, target, current,
+                                 sizeof(current));
+    if (status < 0)
+      return status;
+  }
+}
+
+static int32_t resolve(const char *input, struct vfs_resolved *resolved) {
+  return resolve_mode(input, resolved, true);
+}
+
+static int32_t resolve_nofollow(const char *input,
+                                struct vfs_resolved *resolved) {
+  return resolve_mode(input, resolved, false);
 }
 
 static const char *const virtual_dirs[] = {"/mnt", "/opt", "/srv", "/usr/local",
@@ -990,7 +1061,7 @@ int32_t vfs_stat(const char *path, struct file_stat_info *out) {
 int32_t vfs_delete(const char *path) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved resolved;
-  int32_t status = resolve(path, &resolved);
+  int32_t status = resolve_nofollow(path, &resolved);
   if (status < 0)
     return status;
   if (vfs_mount_at(resolved.path))
@@ -1011,7 +1082,7 @@ int32_t vfs_delete(const char *path) {
 int32_t vfs_rename(const char *path, const char *new_name) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved resolved;
-  int32_t status = resolve(path, &resolved);
+  int32_t status = resolve_nofollow(path, &resolved);
   if (status < 0)
     return status;
   if (vfs_mount_at(resolved.path))
@@ -1069,10 +1140,10 @@ int32_t vfs_rename_path(const char *from, const char *to) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved src;
   struct vfs_resolved dst;
-  int32_t status = resolve(from, &src);
+  int32_t status = resolve_nofollow(from, &src);
   if (status < 0)
     return status;
-  status = resolve(to, &dst);
+  status = resolve_nofollow(to, &dst);
   if (status < 0)
     return status;
   if (src.mount != dst.mount)
@@ -1176,7 +1247,7 @@ int32_t vfs_move(const char *path, const char *dest) {
   MUTEX_SCOPE(&vfs_mutex);
   struct vfs_resolved source;
   struct vfs_resolved target;
-  int32_t status = resolve(path, &source);
+  int32_t status = resolve_nofollow(path, &source);
   if (status < 0)
     return status;
   status = resolve(dest, &target);
@@ -1477,12 +1548,13 @@ static int32_t resolve_existing(const char *path, struct vfs_resolved *resolved,
   return 0;
 }
 
-int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
+static int32_t stat_ex_mode(const char *path, struct file_stat_ex *out,
+                            bool follow) {
   MUTEX_SCOPE(&vfs_mutex);
   if (!out)
     return FS_ERROR_INVALID;
   struct vfs_resolved resolved;
-  int32_t status = resolve(path, &resolved);
+  int32_t status = resolve_mode(path, &resolved, follow);
   if (status < 0)
     return status;
   status = check_traverse(resolved.path);
