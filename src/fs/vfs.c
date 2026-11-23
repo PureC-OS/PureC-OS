@@ -1674,7 +1674,7 @@ static int32_t stat_ex_mode(const char *path, struct file_stat_ex *out,
   }
   struct vfs_perm_meta meta;
   effective_meta(resolved.path, out->is_directory != 0, &meta);
-  out->mode = meta.mode;
+  out->mode = (out->flags & FILE_STAT_FLAG_SYMLINK) ? 0777 : meta.mode;
   out->uid = meta.uid;
   out->gid = meta.gid;
   return 0;

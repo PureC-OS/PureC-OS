@@ -1,0 +1,1 @@
+/src/arch/x86_64/entry/syscalls/syscall_64.tbl

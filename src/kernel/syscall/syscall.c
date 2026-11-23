@@ -973,7 +973,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
 {
   uint64_t n = r->rax;
   uint64_t a1 = r->rdi;
-  uint64_t a2 = r->r10;
+  uint64_t a2 = r->rsi;
   uint64_t a3 = r->rdx;
   switch (n)
   {
@@ -1339,8 +1339,10 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
   }
   case SYS_READLINK:
   {
+    if (a3 > VFS_PATH_MAX)
+      a3 = VFS_PATH_MAX;
     if (!readable_string((const char *)(uintptr_t)a1) || !a3 ||
-        a3 > VFS_PATH_MAX || !writable((void *)(uintptr_t)a2, (uint32_t)a3))
+        !writable((void *)(uintptr_t)a2, (uint32_t)a3))
       return FS_ERROR_INVALID;
     if (!filesystem_syscall_acquire())
       return -1;
