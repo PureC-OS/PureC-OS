@@ -22,6 +22,8 @@
 /bin/df /bin/df - 1 bin/programs/df
 /bin/install /bin/install - 1 bin/programs/install
 /bin/realpath /bin/realpath - 1 bin/programs/realpath
+/bin/ln /bin/ln - 1 bin/programs/ln
+/bin/readlink /bin/readlink - 1 bin/programs/readlink
 /bin/basename /bin/basename - 1 bin/programs/basename
 /bin/dirname /bin/dirname - 1 bin/programs/dirname
 /bin/grep /bin/grep - 1 bin/programs/grep
@@ -98,6 +100,8 @@
 /usr/share/man/df.1 /usr/share/man/df.1 - 0 assets/man/df.1
 /usr/share/man/install.1 /usr/share/man/install.1 - 0 assets/man/install.1
 /usr/share/man/realpath.1 /usr/share/man/realpath.1 - 0 assets/man/realpath.1
+/usr/share/man/ln.1 /usr/share/man/ln.1 - 0 assets/man/ln.1
+/usr/share/man/readlink.1 /usr/share/man/readlink.1 - 0 assets/man/readlink.1
 /usr/share/man/basename.1 /usr/share/man/basename.1 - 0 assets/man/basename.1
 /usr/share/man/dirname.1 /usr/share/man/dirname.1 - 0 assets/man/dirname.1
 /usr/share/man/grep.1 /usr/share/man/grep.1 - 0 assets/man/grep.1

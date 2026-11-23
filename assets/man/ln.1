@@ -1,0 +1,41 @@
+NAME
+       ln - make links between files
+
+SYNOPSIS
+       ln -s [-fvnT] TARGET [LINK_NAME]
+       ln -s [-fvn] TARGET... DIRECTORY
+
+DESCRIPTION
+       Create a symbolic link LINK_NAME that points to TARGET. With one
+       operand the link is created in the current directory under the
+       target's base name. When the last operand is a directory, a link
+       for each TARGET is created inside it.
+
+       TARGET is stored as written. A relative TARGET is resolved from the
+       directory that holds the link, not from the current directory.
+       Following a chain of links stops after 40 steps with ELOOP.
+
+       Hard links are not supported yet: ln without -s reports an error.
+
+OPTIONS
+       -s, --symbolic
+           make a symbolic link
+
+       -f, --force
+           remove an existing LINK_NAME first (never a directory)
+
+       -n, --no-dereference
+           treat a LINK_NAME that is a link to a directory as a file
+
+       -T
+           always treat LINK_NAME as a file name, never as a directory
+
+       -v, --verbose
+           print each link that is created
+
+EXAMPLES
+       ln -s libpg.so.2.2.3 /usr/lib/libpg.so.2
+       ln -sf /usr/bin/vim /usr/local/bin/vi
+
+SEE ALSO
+       readlink(1), realpath(1), ls(1), stat(1)

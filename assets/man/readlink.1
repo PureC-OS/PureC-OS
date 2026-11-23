@@ -1,0 +1,27 @@
+NAME
+       readlink - print the target of a symbolic link
+
+SYNOPSIS
+       readlink [-fnq] FILE...
+
+DESCRIPTION
+       Print the value stored in each symbolic link FILE, exactly as it was
+       written by ln -s. A FILE that is not a symbolic link is an error.
+
+OPTIONS
+       -f, -e, -m
+           print the canonical absolute path instead, following every link
+           in every component (same as realpath)
+
+       -n
+           do not print the trailing newline
+
+       -q, -s
+           suppress error messages
+
+EXAMPLES
+       readlink /usr/lib/libpg.so.2
+       readlink -f /lib/libpg.so
+
+SEE ALSO
+       ln(1), realpath(1), stat(1)
