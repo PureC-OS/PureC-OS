@@ -125,7 +125,27 @@ static int32_t ext2_op_stat_ex(void *context, const char *path,
   out->atime = meta.atime;
   out->mtime = meta.mtime;
   out->ctime = meta.ctime;
+  out->flags = meta.symlink ? FILE_STAT_FLAG_SYMLINK : 0;
   return 0;
+}
+
+static int32_t ext2_op_link_walk(void *context, const char *path,
+                                 bool follow_last, char *target,
+                                 uint32_t capacity, uint32_t *consumed) {
+  (void)context;
+  return ext2_link_walk(path, follow_last, target, capacity, consumed);
+}
+
+static int32_t ext2_op_readlink(void *context, const char *path, char *out,
+                                uint32_t capacity) {
+  (void)context;
+  return ext2_readlink_path(path, out, capacity);
+}
+
+static int32_t ext2_op_symlink(void *context, const char *path,
+                               const char *target) {
+  (void)context;
+  return ext2_symlink_path(path, target);
 }
 
 static int32_t ext2_op_get_meta(void *context, const char *path,
@@ -173,6 +193,9 @@ const struct vfs_fs_ops vfs_ext2_ops = {
     .get_meta = ext2_op_get_meta,
     .set_meta = ext2_op_set_meta,
     .set_times = ext2_op_set_times,
+    .link_walk = ext2_op_link_walk,
+    .readlink = ext2_op_readlink,
+    .symlink = ext2_op_symlink,
     .is_ready = ext2_ready,
 };
 

@@ -42,5 +42,10 @@ struct vfs_fs_ops {
                       const struct vfs_perm_meta *meta);
   int32_t (*set_times)(void *context, const char *path, uint32_t atime,
                        uint32_t mtime);
+  int32_t (*link_walk)(void *context, const char *path, bool follow_last,
+                       char *target, uint32_t capacity, uint32_t *consumed);
+  int32_t (*readlink)(void *context, const char *path, char *out,
+                      uint32_t capacity);
+  int32_t (*symlink)(void *context, const char *path, const char *target);
   bool (*is_ready)(void *context);
 };

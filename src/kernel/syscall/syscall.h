@@ -214,6 +214,9 @@
 #define SYS_TRACE_ATTACH 415
 #define SYS_TRACE_READ 416
 #define SYS_TRACE_CONTROL 417
+#define SYS_SYMLINK 418
+#define SYS_READLINK 419
+#define SYS_LSTAT_EX 420
 #define SYS_RENAME_PATH 409
 #define SYS_SUDO 397
 #define SYS_OPENPTY 396
@@ -364,6 +367,7 @@ struct kernel_mmap_args {
 #define KERR_SPIPE 29
 #define KERR_PIPE 32
 #define KERR_NAMETOOLONG 36
+#define KERR_LOOP 40
 #define KERR_NOTSOCK 88
 #define KERR_DESTADDRREQ 89
 #define KERR_MSGSIZE 90
@@ -921,8 +925,10 @@ struct file_stat_ex {
   uint32_t atime;
   uint32_t mtime;
   uint32_t ctime;
-  uint32_t reserved;
+  uint32_t flags;
 };
+
+#define FILE_STAT_FLAG_SYMLINK 1U
 
 struct file_perm_info {
   uint32_t mode;

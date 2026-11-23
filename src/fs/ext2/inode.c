@@ -120,6 +120,8 @@ uint32_t ext2_inode_block_ptr(const uint8_t *inode, uint32_t logical)
 
 void ext2_inode_free_blocks(const uint8_t *inode)
 {
+    if ((ext2_read_u16(inode) & 0xF000) == EXT2_S_IFLNK && ext2_read_u32(inode + 28) == 0)
+        return;
     struct ext2_volume *vol = ext2_volume();
     uint32_t per = vol->block_size / 4;
     if (per == 0)

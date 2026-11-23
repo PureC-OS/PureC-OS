@@ -8,6 +8,7 @@
 struct ext2_meta {
   uint16_t mode;
   bool directory;
+  bool symlink;
   uint32_t uid;
   uint32_t gid;
   uint32_t size;
@@ -21,5 +22,10 @@ int32_t ext2_meta_set_times(const char *path, uint32_t atime, uint32_t mtime);
 int32_t ext2_meta_set(const char *path, int32_t mode, uint32_t uid,
                       uint32_t gid);
 int32_t ext2_unlink_path(const char *path);
+int32_t ext2_symlink_path(const char *path, const char *target);
+int32_t ext2_readlink_path(const char *path, char *out, uint32_t capacity);
+int32_t ext2_link_walk(const char *path, bool follow_last, char *target,
+                       uint32_t capacity, uint32_t *consumed);
+bool ext2_inode_is_fast_symlink(const uint8_t *inode);
 int32_t ext2_rename_path(const char *path, const char *new_name);
 int32_t ext2_move_path(const char *path, const char *destination_directory);

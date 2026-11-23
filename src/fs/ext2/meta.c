@@ -93,6 +93,7 @@ int32_t ext2_meta_get(const char *path, struct ext2_meta *out)
     uint16_t mode = ext2_read_u16(ib + INODE_MODE);
     out->mode = mode & EXT2_PERM_MASK;
     out->directory = (mode & EXT2_TYPE_MASK) == EXT2_S_IFDIR;
+    out->symlink = (mode & EXT2_TYPE_MASK) == EXT2_S_IFLNK;
     out->uid = ext2_read_u16(ib + INODE_UID) |
                ((uint32_t)ext2_read_u16(ib + INODE_UID_HIGH) << 16);
     out->gid = ext2_read_u16(ib + INODE_GID) |
@@ -421,6 +422,163 @@ int32_t ext2_move_path(const char *path, const char *destination_directory)
         if (adjust_links(source_parent, -1) < 0 ||
             adjust_links(target_dir, 1) < 0)
             return -1;
+    }
+    return 0;
+}
+
+bool ext2_inode_is_fast_symlink(const uint8_t *inode)
+{
+    if ((ext2_read_u16(inode + INODE_MODE) & EXT2_TYPE_MASK) != EXT2_S_IFLNK)
+        return false;
+    return ext2_read_u32(inode + 28) == 0 &&
+           ext2_read_u32(inode + 4) < EXT2_FAST_LINK_MAX;
+}
+
+static int32_t link_target_of(const uint8_t *ib, char *out, uint32_t capacity)
+{
+    uint32_t size = ext2_read_u32(ib + 4);
+    if (size == 0 || size > EXT2_SYMLINK_MAX || size >= capacity)
+        return -3;
+    if (ext2_inode_is_fast_symlink(ib))
+        memcpy(out, ib + 40, size);
+    else if (ext2_inode_read_data(ib, 0, out, size) != (int32_t)size)
+        return -1;
+    out[size] = '\0';
+    return (int32_t)size;
+}
+
+int32_t ext2_readlink_path(const char *path, char *out, uint32_t capacity)
+{
+    uint32_t ino;
+    int32_t status = ext2_dir_resolve(path, &ino);
+    if (status < 0)
+        return status;
+    uint8_t ib[256];
+    if (!ext2_inode_read(ino, ib))
+        return -1;
+    if ((ext2_read_u16(ib + INODE_MODE) & EXT2_TYPE_MASK) != EXT2_S_IFLNK)
+        return -3;
+    return link_target_of(ib, out, capacity);
+}
+
+int32_t ext2_symlink_path(const char *path, const char *target)
+{
+    char parent[512];
+    char base[EXT2_NAME_MAX + 1];
+    if (!target || !target[0])
+        return -3;
+    uint32_t length = (uint32_t)strlen(target);
+    if (length > EXT2_SYMLINK_MAX)
+        return -3;
+    if (!split_path(path, parent, sizeof(parent), base, sizeof(base)) ||
+        !name_valid(base))
+        return -3;
+    uint32_t parent_ino;
+    int32_t status = ext2_dir_resolve(parent, &parent_ino);
+    if (status < 0)
+        return status;
+    uint32_t existing;
+    if (ext2_dir_find(parent_ino, base, &existing, 0) == 0)
+        return -5;
+    struct ext2_volume *vol = ext2_volume();
+    if (length >= EXT2_FAST_LINK_MAX && length > vol->block_size)
+        return -3;
+    uint32_t ino = ext2_alloc_inode();
+    if (!ino)
+        return -4;
+    uint8_t ib[256];
+    memset(ib, 0, sizeof(ib));
+    ext2_write_u16(ib + INODE_MODE, (uint16_t)(EXT2_S_IFLNK | 0777));
+    ext2_write_u32(ib + 4, length);
+    ext2_write_u16(ib + INODE_LINKS, 1);
+    if (length < EXT2_FAST_LINK_MAX)
+    {
+        memcpy(ib + 40, target, length);
+    }
+    else
+    {
+        uint32_t block = ext2_alloc_block();
+        if (!block)
+        {
+            ext2_free_inode(ino);
+            return -4;
+        }
+        uint8_t *data = ext2_scratch_block();
+        memset(data, 0, vol->block_size);
+        memcpy(data, target, length);
+        if (!ext2_write_block(block, data))
+        {
+            ext2_free_block(block);
+            ext2_free_inode(ino);
+            return -1;
+        }
+        ext2_write_u32(ib + 40, block);
+        ext2_write_u32(ib + 28, vol->block_size / 512);
+    }
+    ext2_stamp_new(ib);
+    if (!ext2_write_inode(ino, ib))
+        return -1;
+    status = ext2_dir_add_entry(parent_ino, base, ino, EXT2_FT_SYMLINK);
+    if (status < 0)
+    {
+        ext2_inode_free_blocks(ib);
+        ext2_free_inode(ino);
+        return status;
+    }
+    return 0;
+}
+
+int32_t ext2_link_walk(const char *path, bool follow_last, char *target,
+                       uint32_t capacity, uint32_t *consumed)
+{
+    struct ext2_volume *vol = ext2_volume();
+    if (!vol->mounted || !path)
+        return 0;
+    const char *p = path;
+    uint32_t cur = EXT2_ROOT_INO;
+    char comp[EXT2_NAME_MAX + 1];
+    while (*p)
+    {
+        while (*p == '/')
+            p++;
+        if (!*p)
+            return 0;
+        uint32_t len = 0;
+        while (*p && *p != '/')
+        {
+            if (len >= EXT2_NAME_MAX)
+                return 0;
+            comp[len++] = *p++;
+        }
+        comp[len] = '\0';
+        bool last = true;
+        for (const char *q = p; *q; q++)
+            if (*q != '/')
+            {
+                last = false;
+                break;
+            }
+        uint32_t next;
+        uint8_t type = 0;
+        if (ext2_dir_find(cur, comp, &next, &type) < 0)
+            return 0;
+        uint8_t ib[256];
+        if (!ext2_inode_read(next, ib))
+            return 0;
+        uint16_t kind = ext2_read_u16(ib + INODE_MODE) & EXT2_TYPE_MASK;
+        if (kind == EXT2_S_IFLNK && (!last || follow_last))
+        {
+            int32_t got = link_target_of(ib, target, capacity);
+            if (got < 0)
+                return got;
+            *consumed = (uint32_t)(p - path);
+            return 1;
+        }
+        if (last)
+            return 0;
+        if (kind != EXT2_S_IFDIR)
+            return 0;
+        cur = next;
     }
     return 0;
 }
