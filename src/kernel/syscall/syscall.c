@@ -936,13 +936,33 @@ static int64_t socket_syscall(uint64_t n, uint64_t a1, uint64_t a2, uint64_t a3,
 
 static int64_t syscall_dispatch(struct syscall_regs *r);
 
+int64_t syscall_kernel_invoke(uint64_t n, uint64_t a1, uint64_t a2,
+                              uint64_t a3, uint64_t a4, uint64_t a5)
+{
+  struct syscall_regs r;
+  memset(&r, 0, sizeof(r));
+  r.rax = n;
+  r.rdi = a1;
+  r.rsi = a2;
+  r.rdx = a3;
+  r.r10 = a4;
+  r.r8 = a5;
+  r.vector = 0x80;
+  r.cs = ARCH_KERNEL_CS;
+  r.ss = ARCH_KERNEL_DS;
+  uint64_t flags = arch_irq_save();
+  int64_t ret = syscall_handler(&r);
+  arch_irq_restore(flags);
+  return ret;
+}
+
 int64_t syscall_handler(struct syscall_regs *r)
 {
   struct process *p = process_current();
   if (!p || !p->trace_slot)
     return syscall_dispatch(r);
   uint64_t nr = r->rax;
-  uint64_t args[6] = {r->rbx, r->rcx, r->rdx, r->rsi, r->rdi, r->r8};
+  uint64_t args[6] = {r->rdi, r->rsi, r->rdx, r->r10, r->r8, r->r9};
   uint64_t start = trace_syscall_enter(p, nr, args);
   int64_t ret = syscall_dispatch(r);
   trace_syscall_exit(process_current(), nr, args, ret, start);
@@ -952,8 +972,8 @@ int64_t syscall_handler(struct syscall_regs *r)
 static int64_t syscall_dispatch(struct syscall_regs *r)
 {
   uint64_t n = r->rax;
-  uint64_t a1 = r->rbx;
-  uint64_t a2 = r->rcx;
+  uint64_t a1 = r->rdi;
+  uint64_t a2 = r->r10;
   uint64_t a3 = r->rdx;
   switch (n)
   {
@@ -1138,7 +1158,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
   case SYS_MPROTECT:
     return process_mprotect(a1, a2, a3);
   case SYS_MREMAP:
-    return process_mremap(a1, a2, a3, r->rsi);
+    return process_mremap(a1, a2, a3, r->r10);
   case SYS_POLL:
     return poll_descriptors((struct kernel_pollfd *)(uintptr_t)a1, a2,
                             (int64_t)(int32_t)a3);
@@ -1156,7 +1176,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
   {
     struct kernel_itimerspec value;
     struct kernel_itimerspec old;
-    struct kernel_itimerspec *old_user = (struct kernel_itimerspec *)(uintptr_t)r->rsi;
+    struct kernel_itimerspec *old_user = (struct kernel_itimerspec *)(uintptr_t)r->r10;
     if (!readable((const void *)(uintptr_t)a3, sizeof(value)) ||
         (old_user && !writable(old_user, sizeof(old))))
       return -KERR_FAULT;
@@ -1194,9 +1214,9 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
     memset(&event, 0, sizeof(event));
     if (a2 != EPOLL_OP_DEL)
     {
-      if (!readable((const void *)(uintptr_t)r->rsi, sizeof(event)))
+      if (!readable((const void *)(uintptr_t)r->r10, sizeof(event)))
         return -KERR_FAULT;
-      memcpy(&event, (const void *)(uintptr_t)r->rsi, sizeof(event));
+      memcpy(&event, (const void *)(uintptr_t)r->r10, sizeof(event));
     }
     int32_t object = fd_object((int32_t)a1);
     if (object < 0)
@@ -1221,7 +1241,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
     if (ofd_kind_of(object) != FD_KIND_EVENT)
       return -KERR_INVAL;
     int32_t count = evfd_epoll_wait(ofd_event_id(object), ready, (int32_t)bounded,
-                                    (int64_t)(int32_t)r->rsi);
+                                    (int64_t)(int32_t)r->r10);
     if (count > 0)
       memcpy((void *)(uintptr_t)a2, ready, (uint32_t)count * sizeof(ready[0]));
     return count;
@@ -1450,7 +1470,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
   case SYS_FB_DAMAGE:
     if (display_owner_pid() != (uint32_t)process_current_pid())
       return -KERR_PERM;
-    gop_user_damage((uint32_t)a1, (uint32_t)a2, (uint32_t)a3, (uint32_t)r->rsi);
+    gop_user_damage((uint32_t)a1, (uint32_t)a2, (uint32_t)a3, (uint32_t)r->r10);
     return 0;
   case SYS_SUDO:
   {
@@ -1844,7 +1864,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
   case SYS_TRACE_ATTACH:
     return trace_attach((uint32_t)a1, (uint32_t)a2);
   case SYS_TRACE_READ:
-    return trace_read((int32_t)a1, (struct trace_record *)(uintptr_t)a2, (uint32_t)a3, (uint32_t)r->rsi);
+    return trace_read((int32_t)a1, (struct trace_record *)(uintptr_t)a2, (uint32_t)a3, (uint32_t)r->r10);
   case SYS_TRACE_CONTROL:
     return trace_control((int32_t)a1, (uint32_t)a2, a3);
   case SYS_DISK_IO:
@@ -2238,7 +2258,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
       return -KERR_PERM;
     if (a1 == FUTEX_WAIT)
       return futex_wait(owner->address_space, a2, (uint32_t)a3,
-                        (uint32_t)r->rsi);
+                        (uint32_t)r->r10);
     if (a1 == FUTEX_WAKE)
       return futex_wake(owner->address_space, a2,
                         a3 > INT32_MAX ? INT32_MAX : (int32_t)a3);
@@ -2781,7 +2801,7 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
   case SYS_RECVMSG:
   case SYS_SENDTO:
   case SYS_RECVFROM:
-    return socket_syscall(n, a1, a2, a3, r->rsi, r->rdi);
+    return socket_syscall(n, a1, a2, a3, r->r10, r->r8);
   case SYS_DNS_RESOLVE:
     return -KERR_NOSYS;
   case SYS_CLOCK_ADJUST:
@@ -2997,7 +3017,7 @@ void syscall_init(void)
 {
   static bool filesystem_checked;
   static bool audio_checked;
-  klog(KLOG_DEBUG, "syscall: int 0x80 handler ready (DPL3)");
+  klog(KLOG_DEBUG, "syscall: LSTAR entry ready, int 0x80 removed");
   if (!audio_checked)
   {
     audio_checked = true;

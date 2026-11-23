@@ -7,17 +7,17 @@ global arch_enter_user_frame
 arch_enter_user:
     cli
     swapgs
-    mov ax,0x23
+    mov ax,0x1B
     mov ds,ax
     mov es,ax
     mov gs,ax
-    push 0x23
+    push 0x1B
     push rsi
     pushfq
     pop rax
     or rax,0x200
     push rax
-    push 0x1B
+    push 0x23
     push rdi
     iretq
 
@@ -25,7 +25,7 @@ arch_enter_user:
 arch_enter_user_frame:
     cli
     swapgs
-    mov ax,0x23
+    mov ax,0x1B
     mov ds,ax
     mov es,ax
     mov gs,ax

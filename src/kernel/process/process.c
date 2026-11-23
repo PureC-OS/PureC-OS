@@ -1725,8 +1725,8 @@ int32_t process_thread_create(uint64_t entry, uint64_t stack, uint64_t argument,
   struct syscall_regs frame;
   memset(&frame, 0, sizeof(frame));
   frame.rip = entry;
-  frame.cs = 0x1B;
-  frame.ss = 0x23;
+  frame.cs = ARCH_USER_CS;
+  frame.ss = ARCH_USER_DS;
   frame.rflags = 0x202;
   frame.rsp = stack;
   frame.rdi = argument;

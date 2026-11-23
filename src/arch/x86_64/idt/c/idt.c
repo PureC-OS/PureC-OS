@@ -177,6 +177,18 @@ void idt_check_interrupt_rates(void){
     last_ms=now;
 }
 
+int syscall_entry_c(struct syscall_regs *regs) {
+    scheduler_enter_kernel();
+    int64_t ret = syscall_handler(regs);
+    regs->rax = (uint64_t)ret;
+    process_thread_checkpoint();
+    signal_deliver(regs);
+    scheduler_leave_kernel();
+    return regs->rcx == regs->rip && regs->r11 == regs->rflags &&
+           regs->cs == ARCH_USER_CS && regs->ss == ARCH_USER_DS &&
+           regs->rip < 0x00007FFFFFFFF000ULL;
+}
+
 void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint64_t rflags, struct isr_regs *regs) {
     __atomic_fetch_add(&vector_counts[vector&0xFF],1,__ATOMIC_RELAXED);
     if(vector==2 && smp_handle_nmi()) return;
@@ -186,15 +198,6 @@ void isr_handler(uint64_t vector, uint64_t err, uint64_t rip, uint64_t cs, uint6
         if(vector==SMP_TIMER_VECTOR) scheduler_on_timer_interrupt();
         else scheduler_on_reschedule_interrupt();
         deliver_timer_signals(regs, cs);
-        return;
-    }
-    if (vector == 0x80) {
-        scheduler_enter_kernel();
-        int64_t ret = syscall_handler((struct syscall_regs*)regs);
-        regs->rax = (uint64_t)ret;
-        if((regs->cs&3)==3) process_thread_checkpoint();
-        if((regs->cs&3)==3) signal_deliver((struct syscall_regs*)regs);
-        scheduler_leave_kernel();
         return;
     }
     if (vector == 44) {
@@ -259,7 +262,6 @@ void idt_init(void) {
     idt_set_ist(2,2);
     idt_set_ist(8,1);
     idt_set_ist(18,3);
-    idt_set_gate(0x80, (uint64_t)isr_stub_table[0x80], 0xEE);
     idtp.limit = sizeof(idt)-1;
     idtp.base  = (uint64_t)&idt;
     idt_load((uint64_t)&idtp);

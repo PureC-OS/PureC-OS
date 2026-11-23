@@ -64,6 +64,7 @@ struct cpu_gdt {
 static struct cpu_gdt cpu_tables[CPU_MAX_COUNT] __attribute__((aligned(64)));
 
 extern void gdt_flush(uint64_t);
+extern void arch_syscall_entry(void);
 
 bool gdt_init_cpu(uint32_t cpu_id, uint64_t stack_top) {
     if(cpu_id >= CPU_MAX_COUNT) return false;
@@ -73,8 +74,8 @@ bool gdt_init_cpu(uint32_t cpu_id, uint64_t stack_top) {
     gdt->entries[0] = (struct gdt_entry){0,0,0,0,0,0};
     gdt->entries[1] = (struct gdt_entry){0,0,0,0x9A,0xA0,0};
     gdt->entries[2] = (struct gdt_entry){0,0,0,0x92,0x00,0};
-    gdt->entries[3] = (struct gdt_entry){0,0,0,0xFA,0xA0,0};
-    gdt->entries[4] = (struct gdt_entry){0,0,0,0xF2,0x00,0};
+    gdt->entries[3] = (struct gdt_entry){0,0,0,0xF2,0x00,0};
+    gdt->entries[4] = (struct gdt_entry){0,0,0,0xFA,0xA0,0};
     *tss = (struct tss_entry){0};
     tss->rsp0=stack_top;
     tss->ist1=(uint64_t)(uintptr_t)&cpu->double_fault_stack[EMERGENCY_STACK_SIZE];
@@ -95,7 +96,13 @@ bool gdt_init_cpu(uint32_t cpu_id, uint64_t stack_top) {
     cpu->gp.base  = (uint64_t)gdt;
     gdt_flush((uint64_t)&cpu->gp);
     __asm__ volatile("mov $0x28, %%ax; ltr %%ax" ::: "rax", "memory");
-    return percpu_install(cpu_id);
+    if(!percpu_install(cpu_id)) return false;
+    ARCH_PERCPU_STORE64(PERCPU_OFF_KSTACK_TOP, stack_top);
+    arch_wrmsr(ARCH_MSR_EFER, arch_rdmsr(ARCH_MSR_EFER) | 1ULL);
+    arch_wrmsr(ARCH_MSR_STAR, ((uint64_t)ARCH_KERNEL_DS << 48) | ((uint64_t)ARCH_KERNEL_CS << 32));
+    arch_wrmsr(ARCH_MSR_LSTAR, (uint64_t)(uintptr_t)arch_syscall_entry);
+    arch_wrmsr(ARCH_MSR_SFMASK, 0x47700ULL);
+    return true;
 }
 void gdt_init(void) {
     (void)gdt_init_cpu(0, 0);
@@ -115,4 +122,5 @@ uint32_t gdt_current_cpu_id(void){
 void gdt_set_kernel_stack(uint64_t stack_top){
     uint32_t id = gdt_current_cpu_id();
     if(id < CPU_MAX_COUNT) cpu_tables[id].tss.rsp0=stack_top;
+    ARCH_PERCPU_STORE64(PERCPU_OFF_KSTACK_TOP, stack_top);
 }

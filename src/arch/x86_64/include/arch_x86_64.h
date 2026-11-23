@@ -10,6 +10,13 @@
 #define ARCH_MSR_FS_BASE 0xC0000100U
 #define ARCH_MSR_GS_BASE 0xC0000101U
 #define ARCH_MSR_KERNEL_GS_BASE 0xC0000102U
+#define ARCH_MSR_STAR 0xC0000081U
+#define ARCH_MSR_LSTAR 0xC0000082U
+#define ARCH_MSR_SFMASK 0xC0000084U
+#define ARCH_KERNEL_CS 0x08
+#define ARCH_KERNEL_DS 0x10
+#define ARCH_USER_DS 0x1B
+#define ARCH_USER_CS 0x23
 
 static inline void arch_cpu_relax(void)
 {
@@ -216,6 +223,10 @@ static inline void arch_percpu_set_base(uint64_t base)
         __v;                                                                 \
     })
 
+#define ARCH_PERCPU_STORE64(off, value)                                      \
+    __asm__ volatile("movq %0, %%gs:%c1" ::"r"((uint64_t)(value)), "i"(off) \
+                     : "memory")
+
 #define ARCH_PERCPU_LOAD64(off)                                              \
     ({                                                                       \
         uint64_t __v;                                                        \
@@ -279,16 +290,6 @@ static inline void arch_breakpoint(void)
     __asm__ volatile("int3");
 }
 
-static inline int64_t arch_kernel_syscall(uint64_t n, uint64_t a1, uint64_t a2,
-                                          uint64_t a3, uint64_t a4, uint64_t a5)
-{
-    int64_t ret;
-    __asm__ volatile("int $0x80"
-                     : "=a"(ret)
-                     : "a"(n), "b"(a1), "c"(a2), "d"(a3), "S"(a4), "D"(a5)
-                     : "r10", "r8", "memory");
-    return ret;
-}
 
 static inline bool arch_hw_random_available(void)
 {

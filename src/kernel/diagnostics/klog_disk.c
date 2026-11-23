@@ -15,7 +15,7 @@ static char buffer[KLOG_DISK_CHUNK];
 
 static inline int64_t kernel_syscall(uint64_t number, uint64_t a1, uint64_t a2, uint64_t a3)
 {
-    return arch_kernel_syscall(number, a1, a2, a3, 0, 0);
+    return syscall_kernel_invoke(number, a1, a2, a3, 0, 0);
 }
 
 void klog_disk_thread(void *arg)

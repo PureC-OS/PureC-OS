@@ -1019,6 +1019,9 @@ struct syscall_regs {
 
 void syscall_init(void);
 int64_t syscall_handler(struct syscall_regs *regs);
+int64_t syscall_kernel_invoke(uint64_t n, uint64_t a1, uint64_t a2,
+                              uint64_t a3, uint64_t a4, uint64_t a5);
+int syscall_entry_c(struct syscall_regs *regs);
 void install_report_ui_crash(int32_t status);
 void filesystem_syscall_lock(void);
 bool filesystem_syscall_acquire(void);

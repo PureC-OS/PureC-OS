@@ -24,4 +24,5 @@ ARCH_ASM_SOURCES := \
 	arch/x86_64/idt/asm/idt.asm \
 	arch/x86_64/smp.asm \
 	arch/x86_64/scheduler.asm \
-	arch/x86_64/user.asm
+	arch/x86_64/user.asm \
+	arch/x86_64/syscall_entry.asm

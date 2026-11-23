@@ -40,7 +40,7 @@ static uint16_t g_vbe_probe_id = 0xFFFFu;
 static inline int64_t do_syscall(uint64_t n, uint64_t a1, uint64_t a2,
                                  uint64_t a3, uint64_t a4, uint64_t a5)
 {
-  return arch_kernel_syscall(n, a1, a2, a3, a4, a5);
+  return syscall_kernel_invoke(n, a1, a2, a3, a4, a5);
 }
 
 void kernel_main(struct limine_framebuffer *fb)
@@ -130,7 +130,7 @@ void kernel_main(struct limine_framebuffer *fb)
   (void)vbox_mouse_init();
   smp_start_all(smp_response_ptr);
   syscall_init();
-  klog(KLOG_OK, "Syscall int 0x80 ready");
+  klog(KLOG_OK, "Syscall entry ready (syscall/sysret)");
   (void)net_service_init();
   const char *msg = "Hello from syscall (Limine)!\n";
   klog(KLOG_INFO, "Testing syscall WRITE...");
