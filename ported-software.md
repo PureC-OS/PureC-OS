@@ -23,16 +23,16 @@ the build system.
 | Software | Upstream version | Upstream license | In-tree location | Kernel / Userspace | Ships in rootfs | Status |
 |---|---|---|---|---|---|---|
 | Lua | 5.4.8 | MIT | `src/programs/lua/` | Userspace | pkg `lua` (Trusted registry) | Working (REPL); `math` lib planned |
-| Vim | 9.2 (patch 1252) | Vim license | `vim/` (external checkout), `mk/vim/` | Userspace | pkg `vim` (Trusted registry) | Builds and links (tiny features); **not run on PureC OS yet** |
+| Vim | 9.2 (patch 1252) | Vim license | `vim/` (external checkout), `mk/vim/` | Userspace | pkg `vim` (Trusted registry) | Working in VirtualBox and on real hardware (tiny features); input echo lags behind fast typing |
 | MicroPython | ~1.30-preview | MIT | `src/programs/micropython/` | Userspace | pkg `micropython` (Trusted registry) | Working (REPL); no floats |
 | TinyCC (PureC-TCC) | 0.9.28rc | LGPL-2.1 | `tcc/` | Userspace | pkg `tcc` (Trusted registry) | Working (compile & run); self-hosting: rebuilds itself inside the OS from sources fetched with curl |
 | Git | 2.56.1 (`mk/git/versions.txt`, `v2.56.1-493-g9354c5f040`) | GPL-2.0 | `git/` (fetched checkout, see `mk/git/fetch.sh`), `mk/git/` | Userspace | pkg `git` (Trusted registry) | Builds; HTTPS clone reported working in the VM |
 | Qt 6 (qtbase) | 6.12.0 (`mk/qt/versions.txt`) | LGPL-3.0 / commercial | `mk/qt/`, `programs/PureC-OS-QT-Terminal`, `programs/PureC-OS-QT-Login` | Userspace (static) | inside pkg `terminal` and `login` | Static build for the Terminal and Login packages; guest run not verified |
 | SDL2 | 2.33.0 | zlib | `SDL/` | Userspace (lib) | Not shipped | Working; software rendering only |
 | SDL2_mixer | n/a — in-house shim | n/a | `src/libsdl2_mixer/` | Userspace (lib) | via consumers | Working (channels + OPL hook) |
-| Chocolate Doom | 3.1.1 | GPL-2.0 | `chocolate-doom/`, `src/chocolate/` | Userspace | Not shipped | Working; Doom only, no netplay |
-| GNU Make | 4.4.1 | GPL-3.0-or-later | `gnumake/`, `src/make/` | Userspace | pkg `make` (Trusted registry) | Ported and starts (`make --version`); Makefile runs not yet verified; `-j1` only |
-| Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | Not shipped | Working (Phase 1) |
+| Chocolate Doom | 3.1.1 | GPL-2.0 | `chocolate-doom/`, `src/chocolate/` | Userspace | pkg `doom` (Trusted registry) | Working in VirtualBox and on real hardware; Doom only, no netplay |
+| GNU Make | 4.4.1 | GPL-3.0-or-later | `gnumake/`, `src/make/` | Userspace | pkg `make` (Trusted registry) | Working in VirtualBox: real Makefiles with `tcc`, rebuild by mtime; `-j1` only |
+| Freedoom | 0.13.0 | BSD-3-Clause (assets) | `freedoom/`, `assets/doom/` | Data only | inside pkg `doom` | Working (Phase 1) |
 | doomgeneric | unspecified | GPL-2.0 | `src/doom/` (+ external clone) | Userspace | Not shipped | Fallback driver; build skipped without sources |
 | wolfSSL | 5.9.4 | GPLv2/3 or commercial | `wolfssl/` | Kernel module + lib | `/lib/modules/wolf.*` | Userspace TLS in use by `httpsget`, curl and NetSurf (verified in the VM); kernel module buildable, no kernel consumer |
 | curl | 8.23.1-DEV | curl (MIT-style) | `curl/`, `mk/curl/` | Userspace | `/usr/bin/curl` (base manifest) | Working: HTTP and HTTPS (wolfSSL), gzip; IPv4 only |
@@ -93,8 +93,11 @@ the build system.
 - **Verification**: the same sources and `config.h` build and run on a Linux
   host; the output Vim produces in a pty was fed through `console_vt` and
   matched against the `pyte` terminal emulator on 8 editing scenarios
-  (scrolling, paging, line insert/delete, search, visual mode, undo). The binary
-  has **not** been run on PureC OS yet.
+  (scrolling, paging, line insert/delete, search, visual mode, undo). On PureC
+  OS it runs in VirtualBox and on real hardware: full edit → `make` → `tcc`
+  cycle in `/root/work`.
+- **Known issue**: the screen lags behind input — keystrokes are applied, but
+  the redraw catches up with a visible delay when typing fast.
 - **Known gaps**: no alternate screen (`?1049`), no `SIGWINCH`, no Ctrl-C
   signal in raw mode, no `:!` / shell integration verified, no syntax
   highlighting or `:help` (tiny build, no runtime files).
@@ -150,7 +153,7 @@ the build system.
   `tcc -DTCC_TARGET_X86_64 -DTCC_TARGET_PUREC -I/work/tcc -o /work/tcc2 /work/tcc/tcc.c`
   with `mk/tcc/config.h` next to the sources. Not yet done inside the OS:
   building `libtcc1.a` and `/lib/tcc/include` from the downloaded sources
-  (they still come from the host build), and driving the build with `make`.
+  (they still come from the host build).
   Requirements this exposed in the hosted libc headers: `stdint.h` must exist,
   and headers included through `../` need classic include guards (TinyCC
   compares `#pragma once` files by path string).
@@ -199,17 +202,17 @@ the build system.
   selects `src/doom/*.c` plus the system/textscreen/opl/pcsound layers
   (textscreen minus `txt_fileselect.c`); the Heretic/Hexen/Strife ports are
   not built.
-- **Code changes**: none, except a single default — `fullscreen = false`
-  (800×600 window) per `src/chocolate/config.h`. Networking is disabled via
+- **Code changes**: windowed by default (`fullscreen = false`, 960×720 window
+  in the fork's `src/i_video.c`). Networking is disabled via
   `-DDISABLE_SDL2NET=1`.
 - **Build**: `mk/main.mk` `programs` → `make -C src/chocolate` (depends on
-  `sdl2`); links `libSDL2_mixer.a libSDL2.a libpureaudio.a libpuregui.a
+  `sdl2`); links `libSDL2_mixer.a libSDL2.a libpureaudio.a libpg.a libvb.a
   libpurec.a` → `bin/programs/chocolate-doom`. Skipped if the fork checkout or
   `libSDL2.a` is missing.
-- **Ships as**: not shipped (no entry in `assets/manifest.txt` or the Trusted registry). Game data would come from Freedoom
-  (below).
-- **Verification**: tested on VirtualBox; the game starts and is playable
-  (CHANGELOG V1.2.28).
+- **Ships as**: pkg `doom` (1.1.0) in the Trusted registry, together with the
+  Freedoom Phase 1 IWAD; included in the Test-DIST package profile.
+- **Verification**: playable in VirtualBox and on real hardware (three
+  machines, V2.1.0).
 
 ## Freedoom
 
@@ -219,7 +222,7 @@ the build system.
 - **Upstream**: Freedoom **0.13.0** (recorded in `freedoom/NEWS.adoc`),
   BSD-3-Clause. Freedoom is **game data, not a program** — levels, artwork,
   sounds, and music usable as a libre IWAD for Doom-compatible engines.
-- **Ships as**: not shipped (Phase 1 data, ~28.8 MB; see the Freedoom section above).
+- **Ships as**: inside pkg `doom` (Phase 1 data, ~28.8 MB).
 - **Provenance note**: the WAD under `assets/doom/` is not regenerated by any
   tracked build script; it is assumed to be built from the `freedoom/` tree
   out-of-band. Contributors updating the WAD should state the source revision
@@ -417,9 +420,9 @@ the build system.
   libpurec.a` → `bin/programs/make`. Skipped if `gnumake/src/main.c` is
   missing. Standalone target: `make gnumake`.
 - **Ships as**: package `make` from the Trusted registry (not in the base manifest).
-- **Verification**: tested on VirtualBox; `make --version` works and make
-  parses Makefiles (it reports `missing separator` on a recipe indented with
-  spaces). Running a full recipe is not yet confirmed. Recipe lines must start
+- **Verification**: tested on VirtualBox; full cycle in `/root/work`: edit in
+  Vim, `make` rebuilds by mtime with `tcc`, `make run` starts the result.
+  Recipe lines must start
   with a Tab (the bundled `nano` does not insert one; use `printf` or
   `.RECIPEPREFIX`).
 - **Limits**: no jobserver or `-j` greater than 1; recipe utilities
@@ -476,10 +479,10 @@ Two channels deliver software to a PureC OS system:
 2. **Packages** `pkg` from the registry in `Trusted/` (`registry.conf` lists
    the repositories, `repository.conf` lists the packages). Packages of
    third-party ports listed there: `git`, `lua`, `make`, `micropython`, `tcc`,
-   `vim`, `wolfssl` (development files). `terminal` and `login` contain Qt 6.
+   `vim`, `wolfssl` (development files), `doom` (Chocolate Doom + Freedoom).
 
-Not shipped by either channel at the moment: SDL2 (`sdltest`), Chocolate Doom,
-Freedoom data, NetSurf, doomgeneric.
+Not shipped by either channel at the moment: SDL2 (`sdltest`; it is linked
+statically into `doom`), NetSurf, doomgeneric.
 
 ## In-House Projects Often Collated with the Ports
 
