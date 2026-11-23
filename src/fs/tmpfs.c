@@ -15,6 +15,7 @@ struct node {
   bool used;
   bool directory;
   bool orphan;
+  bool symlink;
   int16_t parent;
   char name[TMPFS_NAME_MAX + 1];
   uint8_t *data;
@@ -359,6 +360,7 @@ static int32_t tmpfs_stat_ex(void *context, const char *path,
   memset(out, 0, sizeof(*out));
   out->size = fs->nodes[node].size;
   out->is_directory = fs->nodes[node].directory ? 1 : 0;
+  out->flags = fs->nodes[node].symlink ? FILE_STAT_FLAG_SYMLINK : 0;
   out->atime = fs->nodes[node].atime;
   out->mtime = fs->nodes[node].mtime;
   out->ctime = fs->nodes[node].ctime;
@@ -401,6 +403,88 @@ static int32_t create_entry(struct tmpfs *fs, const char *path, bool directory) 
     return FS_ERROR_EXISTS;
   status = allocate_node(fs, parent, leaf, length, directory);
   return status < 0 ? status : 0;
+}
+
+static int32_t tmpfs_symlink(void *context, const char *path,
+                             const char *target) {
+  struct tmpfs *fs = context;
+  uint32_t length = target ? (uint32_t)strlen(target) : 0;
+  if (!length || length > 4095)
+    return FS_ERROR_INVALID;
+  int32_t parent;
+  const char *leaf;
+  uint32_t leaf_length;
+  int32_t status = split_parent(fs, path, &parent, &leaf, &leaf_length);
+  if (status < 0)
+    return status;
+  if (find_child(fs, parent, leaf, leaf_length) >= 0)
+    return FS_ERROR_EXISTS;
+  int32_t node = allocate_node(fs, parent, leaf, leaf_length, false);
+  if (node < 0)
+    return node;
+  status = reserve(fs, &fs->nodes[node], length);
+  if (status < 0) {
+    memset(&fs->nodes[node], 0, sizeof(fs->nodes[node]));
+    return status;
+  }
+  memcpy(fs->nodes[node].data, target, length);
+  fs->nodes[node].size = length;
+  fs->nodes[node].symlink = true;
+  return 0;
+}
+
+static int32_t tmpfs_readlink(void *context, const char *path, char *out,
+                              uint32_t capacity) {
+  struct tmpfs *fs = context;
+  int32_t node = lookup(fs, path);
+  if (node < 0)
+    return node;
+  if (!fs->nodes[node].symlink)
+    return FS_ERROR_INVALID;
+  uint32_t length = fs->nodes[node].size;
+  if (length + 1 > capacity)
+    return FS_ERROR_INVALID;
+  memcpy(out, fs->nodes[node].data, length);
+  out[length] = '\0';
+  return (int32_t)length;
+}
+
+static int32_t tmpfs_link_walk(void *context, const char *path,
+                               bool follow_last, char *target,
+                               uint32_t capacity, uint32_t *consumed) {
+  struct tmpfs *fs = context;
+  if (!path || path[0] != '/')
+    return 0;
+  int32_t current = TMPFS_ROOT;
+  const char *cursor = path;
+  while (*cursor) {
+    while (*cursor == '/')
+      cursor++;
+    if (!*cursor)
+      return 0;
+    const char *start = cursor;
+    while (*cursor && *cursor != '/')
+      cursor++;
+    if (!fs->nodes[current].directory)
+      return 0;
+    current = find_child(fs, current, start, (uint32_t)(cursor - start));
+    if (current < 0)
+      return 0;
+    const char *rest = cursor;
+    while (*rest == '/')
+      rest++;
+    bool last = !*rest;
+    struct node *node = &fs->nodes[current];
+    if (node->symlink && (!last || follow_last)) {
+      if (node->size + 1 > capacity)
+        return FS_ERROR_INVALID;
+      memcpy(target, node->data, node->size);
+      target[node->size] = '\0';
+      *consumed = (uint32_t)(cursor - path);
+      return 1;
+    }
+  }
+  return 0;
 }
 
 static int32_t tmpfs_create_file(void *context, const char *path) {
@@ -567,6 +651,9 @@ const struct vfs_fs_ops vfs_tmpfs_ops = {
     .write_file = tmpfs_write_file,
     .append_file = tmpfs_append_file,
     .pwrite = tmpfs_pwrite,
+    .symlink = tmpfs_symlink,
+    .readlink = tmpfs_readlink,
+    .link_walk = tmpfs_link_walk,
     .ftruncate = tmpfs_ftruncate,
     .fsize = tmpfs_fsize,
 };
