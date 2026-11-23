@@ -668,6 +668,19 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
   struct vfs_handle *h = get_handle(descriptor);
   if (!h)
     return FS_ERROR_INVALID;
+  if (h->type == VFS_HANDLE_WRITABLE && h->backend_descriptor >= 0) {
+    if (!(h->wflags & 2U))
+      return FS_ERROR_UNSUPPORTED;
+    const struct vfs_fs_ops *ops = h->mount->ops;
+    if (ops->seek(h->mount->context, h->backend_descriptor,
+                  (int64_t)h->position, SEEK_SET) < 0)
+      return 0;
+    int32_t got = ops->read(h->mount->context, h->backend_descriptor, buffer,
+                            count);
+    if (got > 0)
+      h->position += (uint32_t)got;
+    return got;
+  }
   if (h->type == VFS_HANDLE_WRITABLE) {
     if (!(h->wflags & 2U))
       return FS_ERROR_UNSUPPORTED;
@@ -759,7 +772,22 @@ int32_t vfs_open_flags(const char *path, uint32_t flags) {
   h->type = VFS_HANDLE_WRITABLE;
   h->wflags = ((flags & 02000U) ? 1U : 0U) | (access == 2 ? 2U : 0U);
   strncpy(h->path, resolved.path, sizeof(h->path) - 1);
-  if (h->wflags & 1U) {
+  const struct vfs_fs_ops *wops = resolved.mount->ops;
+  if (wops->pwrite && wops->open && wops->fsize &&
+      mount_ready(resolved.mount) && !is_klog_path(resolved.path) &&
+      !overlay_find(resolved.path, &(const void *){0}, &(uint32_t){0})) {
+    int32_t backend = wops->open(resolved.mount->context, resolved.relative);
+    if (backend >= 0) {
+      h->backend_descriptor = backend;
+      h->mount = resolved.mount;
+    }
+  }
+  if (h->backend_descriptor >= 0) {
+    uint64_t end = 0;
+    if ((h->wflags & 1U) &&
+        h->mount->ops->fsize(h->mount->context, h->backend_descriptor, &end) >= 0)
+      h->position = (uint32_t)end;
+  } else if (h->wflags & 1U) {
     struct file_stat_info end_info;
     if (vfs_stat(h->path, &end_info) >= 0)
       h->position = (uint32_t)end_info.size;
@@ -834,6 +862,24 @@ int32_t vfs_write(int32_t descriptor, const void *buffer, uint32_t count) {
       return FS_ERROR_INVALID;
     if (h->type != VFS_HANDLE_WRITABLE)
       return FS_ERROR_UNSUPPORTED;
+    if (h->backend_descriptor >= 0) {
+      const struct vfs_fs_ops *ops = h->mount->ops;
+      uint64_t at = h->position;
+      if (h->wflags & 1U) {
+        uint64_t end = 0;
+        if (ops->fsize(h->mount->context, h->backend_descriptor, &end) >= 0)
+          at = end;
+      }
+      if (!count) {
+        h->position = (uint32_t)at;
+        return 0;
+      }
+      int32_t written = ops->pwrite(h->mount->context, h->backend_descriptor,
+                                    at, buffer, count);
+      if (written > 0)
+        h->position = (uint32_t)(at + (uint32_t)written);
+      return written;
+    }
     strncpy(path, h->path, sizeof(path) - 1);
     path[sizeof(path) - 1] = '\0';
     position = h->position;
@@ -870,6 +916,11 @@ int32_t vfs_handle_truncate(int32_t descriptor, uint64_t length) {
     struct vfs_handle *h = get_handle(descriptor);
     if (!h || h->type != VFS_HANDLE_WRITABLE)
       return FS_ERROR_INVALID;
+    if (h->backend_descriptor >= 0)
+      return h->mount->ops->ftruncate(h->mount->context, h->backend_descriptor,
+                                      length) < 0
+                 ? FS_ERROR_NO_SPACE
+                 : 0;
     strncpy(path, h->path, sizeof(path) - 1);
     path[sizeof(path) - 1] = '\0';
   }
@@ -889,6 +940,18 @@ int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out) {
     struct vfs_handle *h = get_handle(descriptor);
     if (!h || !h->path[0])
       return FS_ERROR_INVALID;
+    if ((h->type == VFS_HANDLE_WRITABLE || h->type == VFS_HANDLE_BACKEND) &&
+        h->backend_descriptor >= 0 && h->mount && h->mount->ops->fsize) {
+      uint64_t size = 0;
+      if (h->mount->ops->fsize(h->mount->context, h->backend_descriptor,
+                               &size) >= 0) {
+        memset(out, 0, sizeof(*out));
+        out->size = size;
+        out->is_directory = 0;
+        out->reserved = FS_NODE_FILE;
+        return 0;
+      }
+    }
     strncpy(path, h->path, sizeof(path) - 1);
     path[sizeof(path) - 1] = '\0';
   }
@@ -927,7 +990,9 @@ int32_t vfs_close(int32_t descriptor) {
   }
   int32_t r = 0;
   bool writable = h->type == VFS_HANDLE_WRITABLE;
-  if (h->type == VFS_HANDLE_BACKEND && h->mount->ops->close)
+  if ((h->type == VFS_HANDLE_BACKEND ||
+       (writable && h->backend_descriptor >= 0)) &&
+      h->mount && h->mount->ops->close)
     r = h->mount->ops->close(h->mount->context, h->backend_descriptor);
   memset(h, 0, sizeof(*h));
   (void)writable;
@@ -945,6 +1010,11 @@ int64_t vfs_seek(int32_t descriptor, int64_t offset, uint32_t whence) {
     int64_t base = 0;
     if (whence == SEEK_CUR) {
       base = (int64_t)h->position;
+    } else if (whence == SEEK_END && h->backend_descriptor >= 0) {
+      uint64_t end = 0;
+      if (h->mount->ops->fsize(h->mount->context, h->backend_descriptor,
+                               &end) >= 0)
+        base = (int64_t)end;
     } else if (whence == SEEK_END) {
       char path[VFS_PATH_MAX];
       strncpy(path, h->path, sizeof(path) - 1);
