@@ -5,6 +5,7 @@
 #include "include/ext2_inode.h"
 #include "include/ext2_dir.h"
 #include "include/ext2_file.h"
+#include "include/ext2_meta.h"
 #include "../../lib/string.h"
 #include "../../kernel/diagnostics/klog.h"
 #include "../../mm/pmm.h"
@@ -92,6 +93,12 @@ int32_t ext2_file_read(int32_t descriptor, void *buffer, uint32_t count)
         return -3;
     }
     struct ext2_handle *h = &g_handles[idx];
+    uint8_t ib[256];
+    if (!ext2_inode_read(h->inode, ib))
+    {
+        return -1;
+    }
+    h->size = ext2_read_u32(ib + 4);
     if (h->position >= h->size)
     {
         return 0;
@@ -99,11 +106,6 @@ int32_t ext2_file_read(int32_t descriptor, void *buffer, uint32_t count)
     if (h->position + count > h->size)
     {
         count = h->size - h->position;
-    }
-    uint8_t ib[256];
-    if (!ext2_inode_read(h->inode, ib))
-    {
-        return -1;
     }
     int32_t got = ext2_inode_read_data(ib, h->position, buffer, count);
     if (got > 0)
@@ -125,6 +127,9 @@ int64_t ext2_file_seek(int32_t descriptor, int64_t offset, uint32_t whence)
         return -3;
     }
     struct ext2_handle *h = &g_handles[idx];
+    uint8_t seek_ib[256];
+    if (whence == SEEK_END && ext2_inode_read(h->inode, seek_ib))
+        h->size = ext2_read_u32(seek_ib + 4);
     int64_t base = 0;
     if (whence == SEEK_CUR)
         base = (int64_t)h->position;
@@ -437,7 +442,7 @@ static int32_t ext2_write_data(uint32_t ino, const uint8_t *data, uint32_t size)
     }
     ext2_write_u32(ib + 4, size);
     ext2_write_u32(ib + 28, bcnt * (bsz / 512));
-    if (ext2_read_u16(ib + EXT2_INODE_LINKS) == 0)
+    if (ext2_read_u16(ib + EXT2_INODE_LINKS) == 0 && !ext2_file_inode_open(ino))
         ext2_write_u16(ib + EXT2_INODE_LINKS, 1);
     ext2_stamp_modified(ib);
     ext2_inode_free_blocks(old_ib);
@@ -532,7 +537,9 @@ int32_t ext2_file_close(int32_t d)
     {
         return -3;
     }
+    uint32_t ino = g_handles[idx].inode;
     g_handles[idx].used = false;
+    ext2_inode_release_if_orphan(ino);
     return 0;
 }
 
@@ -763,4 +770,159 @@ int32_t ext2_file_create_dir(const char *path)
     if (ext2_dir_find(par, base, &exist, 0) == 0)
         return -5;
     return ext2_dir_create(par, base);
+}
+
+bool ext2_file_inode_open(uint32_t ino)
+{
+    if (!g_handles)
+        return false;
+    for (uint32_t i = 0; i < g_handles_capacity; i++)
+        if (g_handles[i].used && g_handles[i].inode == ino)
+            return true;
+    return false;
+}
+
+static struct ext2_handle *handle_of(int32_t descriptor)
+{
+    int idx = descriptor - EXT2_DESCRIPTOR_BASE;
+    if (idx < 0 || (uint32_t)idx >= g_handles_capacity || !g_handles || !g_handles[idx].used)
+        return 0;
+    return &g_handles[idx];
+}
+
+int32_t ext2_file_size(int32_t descriptor, uint64_t *size)
+{
+    struct ext2_handle *h = handle_of(descriptor);
+    uint8_t ib[256];
+    if (!h || !size)
+        return -3;
+    if (!ext2_inode_read(h->inode, ib))
+        return -1;
+    h->size = ext2_read_u32(ib + 4);
+    *size = h->size;
+    return 0;
+}
+
+int32_t ext2_file_pwrite(int32_t descriptor, uint64_t offset, const void *buffer, uint32_t count)
+{
+    struct ext2_handle *h = handle_of(descriptor);
+    if (!h || (!buffer && count))
+        return -3;
+    if (!count)
+        return 0;
+    if (offset + count > 0xFFFFFFFFULL)
+        return -4;
+    uint32_t bsz = ext2_volume()->block_size;
+    uint8_t ib[256];
+    if (!ext2_inode_read(h->inode, ib))
+        return -1;
+    if ((ext2_read_u16(ib) & 0xF000) != EXT2_S_IFREG)
+        return -6;
+    uint32_t old = ext2_read_u32(ib + 4);
+    if (old == 0 && offset == 0 && ext2_read_u32(ib + 28) == 0)
+    {
+        int32_t written = ext2_write_data(h->inode, (const uint8_t *)buffer, count);
+        if (written >= 0)
+            h->size = count;
+        return written < 0 ? written : (int32_t)count;
+    }
+    static uint8_t block_data[4096];
+    const uint8_t *data = (const uint8_t *)buffer;
+    uint32_t done = 0, position = (uint32_t)offset, data_blocks = 0, metadata_blocks = 0;
+    int32_t status = 0;
+    while (done < count)
+    {
+        uint32_t logical = position / bsz;
+        uint32_t at = position % bsz;
+        uint32_t chunk = bsz - at;
+        if (chunk > count - done)
+            chunk = count - done;
+        uint32_t block = ext2_inode_block_ptr(ib, logical);
+        if (block)
+        {
+            if ((at || chunk < bsz) && !ext2_read_block(block, block_data))
+            {
+                status = -1;
+                break;
+            }
+        }
+        else
+        {
+            memset(block_data, 0, bsz);
+            block = ext2_alloc_block();
+            if (!block)
+            {
+                status = -4;
+                break;
+            }
+            if (!ext2_set_block_ptr(ib, logical, block, &metadata_blocks))
+            {
+                ext2_free_block(block);
+                status = -4;
+                break;
+            }
+            data_blocks++;
+        }
+        memcpy(block_data + at, data + done, chunk);
+        if (!ext2_write_block(block, block_data))
+        {
+            status = -1;
+            break;
+        }
+        done += chunk;
+        position += chunk;
+    }
+    if (done || data_blocks || metadata_blocks)
+    {
+        if (position > old)
+            ext2_write_u32(ib + 4, position);
+        ext2_write_u32(ib + 28, ext2_read_u32(ib + 28) +
+                                    (data_blocks + metadata_blocks) * (bsz / 512));
+        ext2_stamp_modified(ib);
+        if (!ext2_write_inode(h->inode, ib))
+            return -1;
+        h->size = ext2_read_u32(ib + 4);
+    }
+    return status < 0 && !done ? status : (int32_t)done;
+}
+
+int32_t ext2_file_truncate(int32_t descriptor, uint64_t length)
+{
+    struct ext2_handle *h = handle_of(descriptor);
+    if (!h)
+        return -3;
+    if (length > 0xFFFFFFFFULL)
+        return -4;
+    uint8_t ib[256];
+    if (!ext2_inode_read(h->inode, ib))
+        return -1;
+    if ((ext2_read_u16(ib) & 0xF000) != EXT2_S_IFREG)
+        return -6;
+    uint32_t old = ext2_read_u32(ib + 4);
+    if (length == old)
+        return 0;
+    if (length > old)
+    {
+        ext2_write_u32(ib + 4, (uint32_t)length);
+        ext2_stamp_modified(ib);
+        if (!ext2_write_inode(h->inode, ib))
+            return -1;
+        h->size = (uint32_t)length;
+        return 0;
+    }
+    uint64_t pages = (length + 4095) / 4096;
+    uint64_t phys = pages ? pmm_allocate_contiguous(pages) : 0;
+    if (pages && !phys)
+        return -4;
+    uint8_t *keep = phys ? (uint8_t *)pmm_physical_to_virtual(phys) : 0;
+    int32_t status = 0;
+    if (length && ext2_inode_read_data(ib, 0, keep, (uint32_t)length) != (int32_t)length)
+        status = -1;
+    if (status == 0 && ext2_write_data(h->inode, keep ? keep : (const uint8_t *)"", (uint32_t)length) < 0)
+        status = -1;
+    if (phys)
+        pmm_free_contiguous(phys, pages);
+    if (status == 0)
+        h->size = (uint32_t)length;
+    return status;
 }
