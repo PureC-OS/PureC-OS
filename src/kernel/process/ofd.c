@@ -56,6 +56,8 @@ int32_t kerr_from_vfs(int32_t code)
     return -KERR_ACCES;
   case FS_ERROR_UNSUPPORTED:
     return -KERR_BADF;
+  case FS_ERROR_LOOP:
+    return -KERR_LOOP;
   default:
     return -KERR_IO;
   }

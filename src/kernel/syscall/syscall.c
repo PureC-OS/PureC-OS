@@ -23,6 +23,7 @@
 #include "../../fs/install_accounts.h"
 #include "../../fs/vfs.h"
 #include "../../fs/vfs_fat32.h"
+#include "../../fs/vfs_path.h"
 #include "../../drivers/display/display_owner.h"
 #include "../ipc/inputdev.h"
 #include "sudo.h"
@@ -1301,6 +1302,47 @@ static int64_t syscall_dispatch(struct syscall_regs *r)
       return -1;
     int32_t result = vfs_stat_ex((const char *)(uintptr_t)a1,
                                  (struct file_stat_ex *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_LSTAT_EX:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !writable((void *)(uintptr_t)a2, sizeof(struct file_stat_ex)))
+      return -1;
+    if (!filesystem_syscall_acquire())
+      return -1;
+    int32_t result = vfs_lstat_ex((const char *)(uintptr_t)a1,
+                                  (struct file_stat_ex *)(uintptr_t)a2);
+    filesystem_syscall_unlock();
+    return result;
+  }
+  case SYS_READLINK:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1) || !a3 ||
+        a3 > VFS_PATH_MAX || !writable((void *)(uintptr_t)a2, (uint32_t)a3))
+      return FS_ERROR_INVALID;
+    if (!filesystem_syscall_acquire())
+      return -1;
+    char link[VFS_PATH_MAX];
+    int32_t result = vfs_readlink((const char *)(uintptr_t)a1, link,
+                                  sizeof(link));
+    filesystem_syscall_unlock();
+    if (result < 0)
+      return result;
+    uint32_t copy = (uint32_t)result < (uint32_t)a3 ? (uint32_t)result : (uint32_t)a3;
+    memcpy((void *)(uintptr_t)a2, link, copy);
+    return (int64_t)copy;
+  }
+  case SYS_SYMLINK:
+  {
+    if (!readable_string((const char *)(uintptr_t)a1) ||
+        !readable_string((const char *)(uintptr_t)a2))
+      return FS_ERROR_INVALID;
+    if (!filesystem_syscall_acquire())
+      return -1;
+    int32_t result = vfs_symlink((const char *)(uintptr_t)a1,
+                                 (const char *)(uintptr_t)a2);
     filesystem_syscall_unlock();
     return result;
   }

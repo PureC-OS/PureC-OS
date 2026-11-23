@@ -710,6 +710,12 @@ int32_t vfs_read(int32_t descriptor, void *buffer, uint32_t count) {
 }
 
 int32_t vfs_open_flags(const char *path, uint32_t flags) {
+  if (flags & 0400000U) {
+    struct file_stat_ex link_info;
+    if (vfs_lstat_ex(path, &link_info) >= 0 &&
+        (link_info.flags & FILE_STAT_FLAG_SYMLINK))
+      return FS_ERROR_LOOP;
+  }
   uint32_t access = flags & 3U;
   bool create = (flags & 0100U) != 0;
   bool exclusive = (flags & 0200U) != 0;
@@ -1601,6 +1607,64 @@ static int32_t stat_ex_mode(const char *path, struct file_stat_ex *out,
   out->mode = meta.mode;
   out->uid = meta.uid;
   out->gid = meta.gid;
+  return 0;
+}
+
+int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out) {
+  return stat_ex_mode(path, out, true);
+}
+
+int32_t vfs_lstat_ex(const char *path, struct file_stat_ex *out) {
+  return stat_ex_mode(path, out, false);
+}
+
+int32_t vfs_readlink(const char *path, char *out, uint32_t capacity) {
+  MUTEX_SCOPE(&vfs_mutex);
+  if (!out || capacity < 2)
+    return FS_ERROR_INVALID;
+  struct vfs_resolved resolved;
+  int32_t status = resolve_nofollow(path, &resolved);
+  if (status < 0)
+    return status;
+  status = check_traverse(resolved.path);
+  if (status < 0)
+    return status;
+  const struct vfs_fs_ops *ops = resolved.mount->ops;
+  if (!ops->readlink || !mount_ready(resolved.mount))
+    return FS_ERROR_INVALID;
+  return ops->readlink(resolved.mount->context, resolved.relative, out,
+                       capacity);
+}
+
+int32_t vfs_symlink(const char *target, const char *path) {
+  MUTEX_SCOPE(&vfs_mutex);
+  if (!target || !target[0] || strlen(target) >= VFS_PATH_MAX)
+    return FS_ERROR_INVALID;
+  struct vfs_resolved resolved;
+  int32_t status = resolve_nofollow(path, &resolved);
+  if (status < 0)
+    return status;
+  if (vfs_mount_at(resolved.path))
+    return FS_ERROR_EXISTS;
+  status = check_mutation(resolved.mount, resolved.mount->ops->symlink);
+  if (status < 0)
+    return status;
+  status = check_parent_write(resolved.path);
+  if (status < 0)
+    return status;
+  status = resolved.mount->ops->symlink(resolved.mount->context,
+                                        resolved.relative, target);
+  if (status < 0)
+    return status;
+  uint32_t uid = process_current_uid();
+  if (uid != 0) {
+    struct vfs_perm_meta meta;
+    vfs_perm_default(&meta, false);
+    meta.mode = 0777;
+    meta.uid = uid;
+    meta.gid = process_current_gid();
+    (void)store_meta(resolved.path, &meta);
+  }
   return 0;
 }
 
