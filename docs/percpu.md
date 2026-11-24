@@ -23,8 +23,12 @@ because the thread can migrate in between.
 
 ## Entry and exit
 
-All interrupts, exceptions and `int 0x80` enter through `isr_common`
-(`src/arch/x86_64/idt/asm/idt.asm`).
+All interrupts and exceptions enter through `isr_common`
+(`src/arch/x86_64/idt/asm/idt.asm`). System calls enter through
+`arch_syscall_entry` (`src/arch/x86_64/syscall_entry.asm`): it always comes
+from ring 3, so it always does `swapgs`, saves the user `rsp` in
+`percpu.user_rsp` (offset 32) and switches to `percpu.kstack_top` (offset 24),
+which the scheduler keeps equal to `TSS.rsp0`.
 
 - Vectors other than 2 (NMI), 8 (`#DF`) and 18 (`#MC`): `swapgs` on entry when
   the saved `CS` has RPL 3, and again before `iretq` when it was done on entry.

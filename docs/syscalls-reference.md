@@ -30,16 +30,19 @@
 
 ## 1. Архитектура и Соглашение о Вызовах (ABI)
 
-Системные вызовы ядра выполняются через программное прерывание `int $0x80`. Все программы пользовательского пространства (ring 3) передают параметры через регистры общего назначения x86-64:
+Системные вызовы ядра выполняются инструкцией `syscall` (вход через MSR `LSTAR`, точка `arch_syscall_entry` в `src/arch/x86_64/syscall_entry.asm`), возврат — `sysret` или, если ядро изменило кадр (`execve`, сигналы), `iretq`. Программное прерывание `int $0x80` больше не поддерживается: вызов приводит к `#GP` и `SIGSEGV`. Соглашение о регистрах такое же, как в x86_64 Linux:
 
 | Регистр | Назначение | Описание |
 |---|---|---|
 | `rax` | Номер системного вызова | Константа `SYS_*` |
-| `rbx` | Аргумент 1 (`a1`) | Первый аргумент / указатель / дескриптор |
-| `rcx` | Аргумент 2 (`a2`) | Второй аргумент / размер / флаги |
+| `rdi` | Аргумент 1 (`a1`) | Первый аргумент / указатель / дескриптор |
+| `rsi` | Аргумент 2 (`a2`) | Второй аргумент / размер / флаги |
 | `rdx` | Аргумент 3 (`a3`) | Третий аргумент / буфер / флаги |
-| `rsi` | Аргумент 4 (`a4`) | Четвертый аргумент (например, флаги в `SYS_SENDTO` / `SYS_RECVFROM`) |
-| `rdi` | Аргумент 5 (`a5`) | Пятый аргумент (например, адрес `sockaddr` в `SYS_SENDTO` / `SYS_RECVFROM`) |
+| `r10` | Аргумент 4 (`a4`) | Четвертый аргумент (например, флаги в `SYS_SENDTO` / `SYS_RECVFROM`) |
+| `r8` | Аргумент 5 (`a5`) | Пятый аргумент (например, адрес `sockaddr` в `SYS_SENDTO` / `SYS_RECVFROM`) |
+| `r9` | Аргумент 6 (`a6`) | Шестой аргумент (сейчас не используется) |
+
+Инструкция `syscall` сама портит `rcx` (адрес возврата) и `r11` (флаги), остальные регистры ядро сохраняет.
 
 ### Возвращаемые значения
 - **Результат возвращается в регистре `rax`**:
@@ -51,11 +54,11 @@
 
 ## 2. Взаимодействие со Стандартной Библиотекой (Stdlib Architecture)
 
-В PureC OS приложения обычно **не вызывают** `int $0x80` напрямую вручную. Вместо этого они используют функции стандартной библиотеки:
+В PureC OS приложения обычно **не вызывают** `syscall` напрямую вручную. Вместо этого они используют функции стандартной библиотеки:
 
 1. **Библиотека ядра PureC (`<purec.h>`)**:
    Определяет прямые платформенные обертки вида `pc_*`:
-   - Выполняют inline ассемблерную вставку `int $0x80`.
+   - Выполняют инструкцию `syscall` через общий inline-хелпер `__pc_syscall6` из `<purec/sysasm.h>`.
    - Занимаются приведением типов, упаковкой структур и проверкой результатов.
    - Пример: `pc_file_open()`, `pc_write()`, `pc_sleep()`, `pc_heap_grow()`, `pc_draw_rect()`.
 
@@ -322,7 +325,7 @@ void print_pid_example(void) {
 ---
 
 #### `SYS_EXEC` (59)
-- **Регистры**: `rax = 59`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)args` (или 0)
+- **Регистры**: `rax = 59`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)args` (или 0)
 - **Обертки stdlib**:
   - `int32_t pc_exec(const char *path)`
   - `int32_t pc_exec_with_args(const char *path, const char *arguments)`
@@ -346,7 +349,7 @@ void spawn_child_example(void) {
 ---
 
 #### `SYS_EXIT` (60)
-- **Регистры**: `rax = 60`, `rbx = (int64_t)status`
+- **Регистры**: `rax = 60`, `rdi = (int64_t)status`
 - **Обертки stdlib**:
   - `void pc_exit(int32_t status) __attribute__((noreturn))`
   - `void exit(int status)` (также сбрасывает буферы потоков через `fflush`)
@@ -367,7 +370,7 @@ void terminate_example(void) {
 ---
 
 #### `SYS_WAIT` (61)
-- **Регистры**: `rax = 61`, `rbx = (uint32_t)pid`, `rcx = (uintptr_t)status_ptr`, `rdx = nohang` (1 — без блокировки, 0 — с блокировкой)
+- **Регистры**: `rax = 61`, `rdi = (uint32_t)pid`, `rsi = (uintptr_t)status_ptr`, `rdx = nohang` (1 — без блокировки, 0 — с блокировкой)
 - **Обертка stdlib**: `int32_t pc_wait(int32_t pid, int32_t *status, bool nohang)`
 - **Описание**: Ожидает завершения процесса с указанным `pid`. Записывает статус завершения в `status`.
 - **Пример**:
@@ -409,7 +412,7 @@ void cooperative_task(void) {
 ---
 
 #### `SYS_SLEEP` (3)
-- **Регистры**: `rax = 3`, `rbx = milliseconds`
+- **Регистры**: `rax = 3`, `rdi = milliseconds`
 - **Обертки stdlib**:
   - `void pc_sleep(uint32_t milliseconds)`
   - `unsigned int sleep(unsigned int seconds)` (POSIX unistd)
@@ -431,7 +434,7 @@ void sleep_example(void) {
 ---
 
 #### `SYS_GET_COMMAND_LINE` (239)
-- **Регистры**: `rax = 239`, `rbx = (uintptr_t)buffer`, `rcx = capacity`
+- **Регистры**: `rax = 239`, `rdi = (uintptr_t)buffer`, `rsi = capacity`
 - **Обертка stdlib**: `int32_t pc_get_command_line(char *buffer, uint32_t capacity)`
 - **Описание**: Копирует всю строку аргументов командной строки текущего процесса в буфер.
 - **Пример**:
@@ -451,7 +454,7 @@ void show_cmdline(void) {
 ---
 
 #### `SYS_GET_PROCESS_NAME` (244)
-- **Регистры**: `rax = 244`, `rbx = (uintptr_t)buffer`, `rcx = capacity`
+- **Регистры**: `rax = 244`, `rdi = (uintptr_t)buffer`, `rsi = capacity`
 - **Обертка stdlib**: `int32_t pc_get_process_name(char *buffer, uint32_t capacity)`
 - **Описание**: Возвращает алиас или имя исполняемого файла, под которым был вызван процесс (используется для multicall бинарников вроде `/bin/program/system`).
 - **Пример**:
@@ -471,7 +474,7 @@ void show_my_name(void) {
 ---
 
 #### `SYS_PROCESS_LIST` (257)
-- **Регистры**: `rax = 257`, `rbx = (uintptr_t)processes`, `rcx = capacity`, `rdx = offset` (0 — с начала)
+- **Регистры**: `rax = 257`, `rdi = (uintptr_t)processes`, `rsi = capacity`, `rdx = offset` (0 — с начала)
 - **Обертки stdlib**: `int32_t pc_process_list(struct process_monitor_info *processes, uint32_t capacity)` и `int32_t pc_process_list_page(struct process_monitor_info *processes, uint32_t capacity, uint32_t offset)`
 - **Структура**:
 ```c
@@ -514,7 +517,7 @@ void ps_command(void) {
 ### 4.2. Управление Памятью (Куча)
 
 #### `SYS_HEAP_GROW` (256)
-- **Регистры**: `rax = 256`, `rbx = increment_bytes`
+- **Регистры**: `rax = 256`, `rdi = increment_bytes`
 - **Обертка stdlib**:
   - `void *pc_heap_grow(uint64_t size)`
   - Стандартные функции аллокатора libc: `malloc()`, `calloc()`, `realloc()`, `free()`
@@ -550,7 +553,7 @@ void memory_example(void) {
 ### 4.3. Переменные Окружения
 
 #### `SYS_ENV_GET` (240)
-- **Регистры**: `rax = 240`, `rbx = (uintptr_t)name`, `rcx = (uintptr_t)buffer`, `rdx = capacity`
+- **Регистры**: `rax = 240`, `rdi = (uintptr_t)name`, `rsi = (uintptr_t)buffer`, `rdx = capacity`
 - **Обертки stdlib**:
   - `int32_t pc_getenv(const char *name, char *buffer, uint32_t capacity)`
   - `char *getenv(const char *name)`
@@ -581,7 +584,7 @@ void env_get_example(void) {
 ---
 
 #### `SYS_ENV_SET` (241)
-- **Регистры**: `rax = 241`, `rbx = (uintptr_t)name`, `rcx = (uintptr_t)value`
+- **Регистры**: `rax = 241`, `rdi = (uintptr_t)name`, `rsi = (uintptr_t)value`
 - **Обертка stdlib**: `int32_t pc_setenv(const char *name, const char *value)`
 - **Описание**: Устанавливает значение переменной окружения.
 - **Пример**:
@@ -597,7 +600,7 @@ void env_set_example(void) {
 ---
 
 #### `SYS_ENV_UNSET` (242)
-- **Регистры**: `rax = 242`, `rbx = (uintptr_t)name`
+- **Регистры**: `rax = 242`, `rdi = (uintptr_t)name`
 - **Обертка stdlib**: `int32_t pc_unsetenv(const char *name)`
 - **Описание**: Удаляет переменную окружения.
 - **Пример**:
@@ -612,7 +615,7 @@ void env_unset_example(void) {
 ---
 
 #### `SYS_ENV_LIST` (243)
-- **Регистры**: `rax = 243`, `rbx = (uintptr_t)variables`, `rcx = capacity`
+- **Регистры**: `rax = 243`, `rdi = (uintptr_t)variables`, `rsi = capacity`
 - **Обертка stdlib**: `int32_t pc_listenv(struct process_environment_variable *variables, uint32_t capacity)`
 - **Структура**:
 ```c
@@ -645,7 +648,7 @@ void print_all_env(void) {
 ### 4.4. Файловая Система и VFS
 
 #### `SYS_FILE_OPEN` / `SYS_OPEN` (200)
-- **Регистры**: `rax = 200`, `rbx = (uintptr_t)path`
+- **Регистры**: `rax = 200`, `rdi = (uintptr_t)path`
 - **Обертки stdlib**:
   - `int32_t pc_file_open(const char *path)`
   - `int open(const char *path, int flags, ...)`
@@ -678,7 +681,7 @@ void open_example(void) {
 ---
 
 #### `SYS_FILE_READ` / `SYS_READ` (201)
-- **Регистры**: `rax = 201`, `rbx = (uint32_t)descriptor`, `rcx = (uintptr_t)buffer`, `rdx = capacity`
+- **Регистры**: `rax = 201`, `rdi = (uint32_t)descriptor`, `rsi = (uintptr_t)buffer`, `rdx = capacity`
 - **Обертки stdlib**:
   - `int32_t pc_file_read(int32_t descriptor, void *buffer, uint32_t capacity)`
   - `ssize_t read(int fd, void *buffer, size_t count)`
@@ -706,7 +709,7 @@ void read_example(void) {
 ---
 
 #### `SYS_FILE_WRITE` (211)
-- **Регистры**: `rax = 211`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)buffer`, `rdx = size`
+- **Регистры**: `rax = 211`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)buffer`, `rdx = size`
 - **Обертки stdlib**:
   - `int32_t pc_file_write(const char *path, const void *buffer, uint32_t size)`
   - `ssize_t write(int fd, const void *buf, size_t count)`
@@ -728,7 +731,7 @@ void write_example(void) {
 ---
 
 #### `SYS_FILE_APPEND` (223)
-- **Регистры**: `rax = 223`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)buffer`, `rdx = size`
+- **Регистры**: `rax = 223`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)buffer`, `rdx = size`
 - **Обертка stdlib**: `pc_syscall(SYS_FILE_APPEND, (uint64_t)path, (uint64_t)buffer, size)`
 - **Описание**: Дописывает данные в конец файла.
 - **Пример**:
@@ -744,7 +747,7 @@ void append_example(void) {
 ---
 
 #### `SYS_FILE_SEEK` (275)
-- **Регистры**: `rax = 275`, `rbx = (uint32_t)descriptor`, `rcx = (uint64_t)offset`, `rdx = (uint32_t)whence` (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)
+- **Регистры**: `rax = 275`, `rdi = (uint32_t)descriptor`, `rsi = (uint64_t)offset`, `rdx = (uint32_t)whence` (0=SEEK_SET, 1=SEEK_CUR, 2=SEEK_END)
 - **Обертки stdlib**:
   - `int64_t pc_file_seek(int32_t descriptor, int64_t offset, uint32_t whence)`
   - `off_t lseek(int fd, off_t offset, int origin)`
@@ -774,7 +777,7 @@ void seek_example(void) {
 ---
 
 #### `SYS_FILE_STAT` (276)
-- **Регистры**: `rax = 276`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)out`
+- **Регистры**: `rax = 276`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)out`
 - **Обертки stdlib**:
   - `int32_t pc_file_stat(const char *path, struct file_stat_info *out)`
   - `int stat(const char *path, struct stat *info)`
@@ -804,7 +807,7 @@ void stat_example(void) {
 ---
 
 #### `SYS_FILE_CLOSE` / `SYS_CLOSE` (222)
-- **Регистры**: `rax = 222`, `rbx = (uint32_t)descriptor`
+- **Регистры**: `rax = 222`, `rdi = (uint32_t)descriptor`
 - **Обертки stdlib**:
   - `int32_t pc_file_close(int32_t descriptor)`
   - `int close(int fd)`
@@ -822,7 +825,7 @@ void close_example(int32_t fd) {
 ---
 
 #### `SYS_FILE_CREATE` (206)
-- **Регистры**: `rax = 206`, `rbx = (uintptr_t)path`
+- **Регистры**: `rax = 206`, `rdi = (uintptr_t)path`
 - **Обертки stdlib**:
   - `int32_t pc_file_create(const char *path)`
   - `int creat(const char *path, int mode)`
@@ -841,7 +844,7 @@ void touch_example(void) {
 ---
 
 #### `SYS_FILE_DELETE` / `SYS_UNLINK` (202)
-- **Регистры**: `rax = 202`, `rbx = (uintptr_t)path`
+- **Регистры**: `rax = 202`, `rdi = (uintptr_t)path`
 - **Обертки stdlib**:
   - `int32_t pc_file_delete(const char *path)`
   - `int unlink(const char *path)`
@@ -858,7 +861,7 @@ void delete_example(void) {
 ---
 
 #### `SYS_FILE_RENAME` / `SYS_RENAME` (203)
-- **Регистры**: `rax = 203`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)new_name`
+- **Регистры**: `rax = 203`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)new_name`
 - **Обертка stdlib**: `int32_t pc_file_rename(const char *path, const char *new_name)`
 - **Описание**: Переименовывает файл в пределах текущего каталога.
 - **Пример**:
@@ -873,7 +876,7 @@ void rename_example(void) {
 ---
 
 #### `SYS_FILE_MOVE` (204)
-- **Регистры**: `rax = 204`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)destination_dir`
+- **Регистры**: `rax = 204`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)destination_dir`
 - **Обертка stdlib**: `int32_t pc_file_move(const char *path, const char *destination_directory)`
 - **Описание**: Перемещает файл в указанный каталог.
 - **Пример**:
@@ -888,7 +891,7 @@ void move_example(void) {
 ---
 
 #### `SYS_DIR_CREATE` / `SYS_MKDIR` (207)
-- **Регистры**: `rax = 207`, `rbx = (uintptr_t)path`
+- **Регистры**: `rax = 207`, `rdi = (uintptr_t)path`
 - **Обертка stdlib**: `int32_t pc_directory_create(const char *path)`
 - **Описание**: Создает новый каталог в файловой системе.
 - **Пример**:
@@ -903,7 +906,7 @@ void mkdir_example(void) {
 ---
 
 #### `SYS_DIR_LIST` (205)
-- **Регистры**: `rax = 205`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)entries`, `rdx = capacity`
+- **Регистры**: `rax = 205`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)entries`, `rdx = capacity`
 - **Обертка stdlib**: `int32_t pc_directory_list(const char *path, struct fs_directory_entry *entries, uint32_t capacity)`
 - **Структура**:
 ```c
@@ -931,7 +934,7 @@ void ls_short_example(void) {
 ---
 
 #### `SYS_DIR_LIST_LONG` (288)
-- **Регистры**: `rax = 288`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)entries`, `rdx = capacity`
+- **Регистры**: `rax = 288`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)entries`, `rdx = capacity`
 - **Обертка stdlib**: `int32_t pc_directory_list_long(const char *path, struct fs_directory_entry_long *entries, uint32_t capacity)`
 - **Структура**:
 ```c
@@ -961,7 +964,7 @@ void ls_long_example(void) {
 ---
 
 #### `SYS_GET_ROOT_DEVICE` (266)
-- **Регистры**: `rax = 266`, `rbx = (uintptr_t)buffer`, `rcx = capacity`
+- **Регистры**: `rax = 266`, `rdi = (uintptr_t)buffer`, `rsi = capacity`
 - **Обертка stdlib**: `int32_t pc_get_root_device(char *buffer, uint32_t capacity)`
 - **Описание**: Возвращает имя дискового раздела, с которого смонтирован корень `/` (например, `ahci0p2`).
 - **Пример**:
@@ -981,7 +984,7 @@ void show_root_dev(void) {
 ---
 
 #### `SYS_GET_FS_TYPE` (270)
-- **Регистры**: `rax = 270`, `rbx = (uintptr_t)buffer`, `rcx = capacity`
+- **Регистры**: `rax = 270`, `rdi = (uintptr_t)buffer`, `rsi = capacity`
 - **Обертка stdlib**: `int32_t pc_get_fs_type(char *buffer, uint32_t capacity)`
 - **Описание**: Возвращает строку типа корневой ФС (`FAT32` или `ext2`).
 - **Пример**:
@@ -1001,7 +1004,7 @@ void show_fs_type(void) {
 ---
 
 #### `SYS_RENAME_PATH` (409)
-- **Регистры**: `rax = 409`, `rbx = old_path`, `rcx = new_path`
+- **Регистры**: `rax = 409`, `rdi = old_path`, `rsi = new_path`
 - **Обертка stdlib**: `int rename(const char *old_path, const char *new_path)`
 - **Описание**: Переименовывает или перемещает путь. Пути разрешаются относительно текущего каталога процесса.
 - **Возврат**: `0` или код `FS_ERROR_*`.
@@ -1017,7 +1020,7 @@ void show_fs_type(void) {
 ### 4.5. Диагностика и Метаданные ext2
 
 #### `SYS_EXT2_STAT` (271)
-- **Регистры**: `rax = 271`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)out`
+- **Регистры**: `rax = 271`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)out`
 - **Обертка stdlib**: `int32_t pc_ext2_stat(const char *path, struct ext2_stat_info *out)`
 - **Структура**:
 ```c
@@ -1055,7 +1058,7 @@ void ext2_stat_example(void) {
 ---
 
 #### `SYS_EXT2_INODE` (272)
-- **Регистры**: `rax = 272`, `rbx = ino`, `rcx = (uintptr_t)out`
+- **Регистры**: `rax = 272`, `rdi = ino`, `rsi = (uintptr_t)out`
 - **Обертка stdlib**: `int32_t pc_ext2_inode(uint32_t ino, struct ext2_stat_info *out)`
 - **Описание**: Получает метаданные inode ext2 напрямую по номеру.
 - **Пример**:
@@ -1075,7 +1078,7 @@ void ext2_inode_example(uint32_t ino) {
 ---
 
 #### `SYS_EXT2_SUPER` (273)
-- **Регистры**: `rax = 273`, `rbx = (uintptr_t)out`
+- **Регистры**: `rax = 273`, `rdi = (uintptr_t)out`
 - **Обертка stdlib**: `int32_t pc_ext2_super(struct ext2_super_info *out)`
 - **Структура**:
 ```c
@@ -1116,7 +1119,7 @@ void ext2_super_example(void) {
 ---
 
 #### `SYS_EXT2_BLOCKS` (274)
-- **Регистры**: `rax = 274`, `rbx = (uintptr_t)path`, `rcx = (uintptr_t)out`
+- **Регистры**: `rax = 274`, `rdi = (uintptr_t)path`, `rsi = (uintptr_t)out`
 - **Обертка stdlib**: `int32_t pc_ext2_blocks(const char *path, struct ext2_blocks_info *out)`
 - **Структура**:
 ```c
@@ -1145,7 +1148,7 @@ void ext2_blocks_example(void) {
 ### 4.6. Консоль и Терминальный Ввод/Вывод
 
 #### `SYS_WRITE` (1)
-- **Регистры**: `rax = 1`, `rbx = (uintptr_t)buffer`, `rcx = length`, `rdx = 1`
+- **Регистры**: `rax = 1`, `rdi = (uintptr_t)buffer`, `rsi = length`, `rdx = 1`
 - **Обертки stdlib**:
   - `void pc_write(const char *text)`
   - `void pc_write_u64(uint64_t value)`
@@ -1225,7 +1228,7 @@ void special_key_example(void) {
 ---
 
 #### `SYS_VT_ACTIVATE` (412)
-- **Регистры**: `rax = 412`, `rbx = индекс консоли`
+- **Регистры**: `rax = 412`, `rdi = индекс консоли`
 - **Описание**: Переключает активную виртуальную консоль (`vtcon`, tty1–tty6). Root может переключать любую консоль; остальные процессы — только если их stdin принадлежит pty этой консоли.
 - **Возврат**: `0` или `-KERR_BUSY`, если переключение не удалось.
 
@@ -1238,7 +1241,7 @@ void special_key_example(void) {
 ### 4.7. Framebuffer (GOP)
 
 #### `SYS_FB_INFO` (103)
-- **Регистры**: `rax = 103`, `rbx = (uintptr_t)info`
+- **Регистры**: `rax = 103`, `rdi = (uintptr_t)info`
 - **Обертка stdlib**: `bool pc_display_get_info(struct pc_display_info *info)`
 - **Структура**:
 ```c
@@ -1285,7 +1288,7 @@ void print_resolution(void) {
 ### 4.9. Манипулятор Мышь
 
 #### `SYS_GET_MOUSE` (102)
-- **Регистры**: `rax = 102`, `rbx = (uintptr_t)state`
+- **Регистры**: `rax = 102`, `rdi = (uintptr_t)state`
 - **Обертка stdlib**: `bool pc_mouse_get(struct mouse_state *state)`
 - **Структура**:
 ```c
@@ -1319,7 +1322,7 @@ void poll_mouse_example(void) {
 #### `SYS_MOUSE_DEBUG_GET` (245) и `SYS_MOUSE_DEBUG_SET` (246)
 - **Регистры**:
   - `SYS_MOUSE_DEBUG_GET`: `rax = 245`
-  - `SYS_MOUSE_DEBUG_SET`: `rax = 246`, `rbx = enabled` (1 / 0)
+  - `SYS_MOUSE_DEBUG_SET`: `rax = 246`, `rdi = enabled` (1 / 0)
 - **Обертки stdlib**: Вызываются через `pc_syscall`
 - **Описание**: Включает или отключает экранный оверлей с координатами и счетчиками пакетов мыши.
 - **Пример**:
@@ -1339,7 +1342,7 @@ void toggle_mouse_overlay(bool on) {
 
 #### `SYS_AUDIO_PLAY_TONE` (229) и `SYS_AUDIO_STOP_TONE` (277)
 - **Регистры**:
-  - `SYS_AUDIO_PLAY_TONE`: `rax = 229`, `rbx = freq_hz` (30..8000), `rcx = duration_ms` (1..5000)
+  - `SYS_AUDIO_PLAY_TONE`: `rax = 229`, `rdi = freq_hz` (30..8000), `rsi = duration_ms` (1..5000)
   - `SYS_AUDIO_STOP_TONE`: `rax = 277`
 - **Обертки stdlib**:
   - `int32_t pc_audio_play_tone(uint32_t frequency_hz, uint32_t duration_ms)`
@@ -1357,7 +1360,7 @@ void beep_sound(void) {
 ---
 
 #### `SYS_AUDIO_GET_STATUS` (230)
-- **Регистры**: `rax = 230`, `rbx = (uintptr_t)status`
+- **Регистры**: `rax = 230`, `rdi = (uintptr_t)status`
 - **Обертка stdlib**: `bool pc_audio_get_status(struct audio_status *status)`
 - **Структура**:
 ```c
@@ -1396,8 +1399,8 @@ void show_audio_info(void) {
 #### `SYS_AUDIO_GET_VOLUME` (231), `SYS_AUDIO_SET_VOLUME` (232), `SYS_AUDIO_ADJUST_VOLUME` (235)
 - **Регистры**:
   - `SYS_AUDIO_GET_VOLUME`: `rax = 231`
-  - `SYS_AUDIO_SET_VOLUME`: `rax = 232`, `rbx = volume` (0..100)
-  - `SYS_AUDIO_ADJUST_VOLUME`: `rax = 235`, `rbx = delta` (signed)
+  - `SYS_AUDIO_SET_VOLUME`: `rax = 232`, `rdi = volume` (0..100)
+  - `SYS_AUDIO_ADJUST_VOLUME`: `rax = 235`, `rdi = delta` (signed)
 - **Обертки stdlib**:
   - `int32_t pc_audio_get_volume(void)`
   - `void pc_audio_set_volume(uint32_t volume)`
@@ -1421,7 +1424,7 @@ void volume_control_example(void) {
 #### `SYS_AUDIO_IS_MUTED` (233) и `SYS_AUDIO_SET_MUTED` (234)
 - **Регистры**:
   - `SYS_AUDIO_IS_MUTED`: `rax = 233`
-  - `SYS_AUDIO_SET_MUTED`: `rax = 234`, `rbx = muted` (1 / 0)
+  - `SYS_AUDIO_SET_MUTED`: `rax = 234`, `rdi = muted` (1 / 0)
 - **Обертки stdlib**:
   - `bool pc_audio_is_muted(void)`
   - `void pc_audio_set_muted(bool muted)`
@@ -1453,7 +1456,7 @@ void test_audio(void) {
 ---
 
 #### `SYS_AUDIO_SELECT_OUTPUT_DEVICE` (238)
-- **Регистры**: `rax = 238`, `rbx = index`
+- **Регистры**: `rax = 238`, `rdi = index`
 - **Обертка stdlib**: `bool pc_audio_select_output(uint32_t index)`
 - **Описание**: Переключает вывод звука на другое устройство (например, выход на наушники).
 - **Пример**:
@@ -1469,7 +1472,7 @@ void switch_to_headphones(void) {
 
 #### `SYS_AUDIO_PCM_PUSH` (278), `SYS_AUDIO_PCM_START` (279), `SYS_AUDIO_PCM_STOP` (280)
 - **Регистры**:
-  - `SYS_AUDIO_PCM_PUSH`: `rax = 278`, `rbx = (uintptr_t)samples`, `rcx = frame_count` (0 = EOS)
+  - `SYS_AUDIO_PCM_PUSH`: `rax = 278`, `rdi = (uintptr_t)samples`, `rsi = frame_count` (0 = EOS)
   - `SYS_AUDIO_PCM_START`: `rax = 279`
   - `SYS_AUDIO_PCM_STOP`: `rax = 280`
 - **Обертки stdlib**:
@@ -1497,7 +1500,7 @@ void stream_pcm_wave(const int16_t *buffer, uint32_t total_samples) {
 ### 4.11. Сеть и Wi-Fi
 
 #### `SYS_NET_PING` (259)
-- **Регистры**: `rax = 259`, `rbx = (uintptr_t)req`, `rcx = (uintptr_t)res`
+- **Регистры**: `rax = 259`, `rdi = (uintptr_t)req`, `rsi = (uintptr_t)res`
 - **Обертка stdlib**: `int32_t pc_ping(const char *target, uint16_t sequence, uint32_t timeout_ms, struct network_ping_result *result)`
 - **Структуры**:
 ```c
@@ -1540,8 +1543,8 @@ void ping_test(void) {
 #### `SYS_WIFI_SCAN` (260), `SYS_WIFI_LIST` (261), `SYS_WIFI_STATUS` (264)
 - **Регистры**:
   - `SYS_WIFI_SCAN`: `rax = 260`
-  - `SYS_WIFI_LIST`: `rax = 261`, `rbx = (uintptr_t)networks`, `rcx = capacity`
-  - `SYS_WIFI_STATUS`: `rax = 264`, `rbx = (uintptr_t)status`
+  - `SYS_WIFI_LIST`: `rax = 261`, `rdi = (uintptr_t)networks`, `rsi = capacity`
+  - `SYS_WIFI_STATUS`: `rax = 264`, `rdi = (uintptr_t)status`
 - **Обертки stdlib**:
   - `int32_t pc_wifi_scan(void)`
   - `int32_t pc_wifi_list(struct wifi_network_info *networks, uint32_t capacity)`
@@ -1585,7 +1588,7 @@ void scan_wifi_networks(void) {
 
 #### `SYS_WIFI_CONNECT` (262) и `SYS_WIFI_DISCONNECT` (263)
 - **Регистры**:
-  - `SYS_WIFI_CONNECT`: `rax = 262`, `rbx = (uintptr_t)req`
+  - `SYS_WIFI_CONNECT`: `rax = 262`, `rdi = (uintptr_t)req`
   - `SYS_WIFI_DISCONNECT`: `rax = 263`
 - **Обертки stdlib**:
   - `int32_t pc_wifi_connect(const char *ssid, const char *password)`
@@ -1604,19 +1607,19 @@ void connect_home_wifi(void) {
 ---
 
 #### `SYS_SENDTO` (403) и `SYS_RECVFROM` (404)
-- **Регистры**: `rax = 403/404`, `rbx = fd`, `rcx = buffer`, `rdx = length`, `rsi = flags`, `rdi = struct sockaddr_in *` (необязательно)
+- **Регистры**: `rax = 403/404`, `rdi = fd`, `rsi = buffer`, `rdx = length`, `r10 = flags`, `r8 = struct sockaddr_in *` (необязательно)
 - **Обертки stdlib**: `sendto()`, `recvfrom()` (POSIX, `<sys/socket.h>`)
 - **Описание**: Отправка и приём данных сокета с адресом. Адрес можно не передавать (`rdi = 0`), тогда работает как `send()` / `recv()`.
 - **Возврат**: число переданных байт или `-errno`.
 
 #### `SYS_NET_CONFIGURE` (405)
-- **Регистры**: `rax = 405`, `rbx = struct net_if_config *`
+- **Регистры**: `rax = 405`, `rdi = struct net_if_config *`
 - **Обертка stdlib**: `int32_t pc_net_configure(const struct net_if_config *config)`
 - **Описание**: Меняет параметры сетевого интерфейса (`name`, `address`, `netmask`, `gateway`, `dns`, код операции `op`). Требует root или право `NET_ADMIN`.
 - **Возврат**: `0` или код ошибки.
 
 #### `SYS_NET_SOCKETS` (408)
-- **Регистры**: `rax = 408`, `rbx = struct net_socket_entry *`, `rcx = capacity` (до 512), `rdx = offset`
+- **Регистры**: `rax = 408`, `rdi = struct net_socket_entry *`, `rsi = capacity` (до 512), `rdx = offset`
 - **Обертка stdlib**: `int32_t pc_net_sockets(struct net_socket_entry *out, uint32_t capacity, uint32_t offset)`
 - **Описание**: Список сокетов системы. Для процессов не из root записи чужих пользователей обнуляются (pid, fd, имя процесса).
 - **Возврат**: число записей.
@@ -1626,7 +1629,7 @@ void connect_home_wifi(void) {
 ### 4.12. Накопители, Форматирование и Установка
 
 #### `SYS_DISK_LIST` (208)
-- **Регистры**: `rax = 208`, `rbx = (uintptr_t)devices`, `rcx = capacity`
+- **Регистры**: `rax = 208`, `rdi = (uintptr_t)devices`, `rsi = capacity`
 - **Обертка stdlib**: `int32_t pc_list_disks(struct storage_device_info *devices, uint32_t capacity)`
 - **Структура**:
 ```c
@@ -1664,7 +1667,7 @@ void list_all_disks(void) {
 ---
 
 #### `SYS_STORAGE_CONTROLLERS` (209)
-- **Регистры**: `rax = 209`, `rbx = (uintptr_t)info`, `rcx = capacity`
+- **Регистры**: `rax = 209`, `rdi = (uintptr_t)info`, `rsi = capacity`
 - **Обертка stdlib**: `pc_syscall(SYS_STORAGE_CONTROLLERS, (uint64_t)info, capacity, 0)`
 - **Описание**: Перечисляет обнаруженные PCI контроллеры дисков (AHCI, NVMe, USB XHCI).
 - **Пример**:
@@ -1683,7 +1686,7 @@ void check_controllers(void) {
 ---
 
 #### `SYS_DISK_STATS` (217)
-- **Регистры**: `rax = 217`, `rbx = (uintptr_t)info`
+- **Регистры**: `rax = 217`, `rdi = (uintptr_t)info`
 - **Структура**:
 ```c
 struct disk_monitor_info {
@@ -1711,7 +1714,7 @@ void show_disk_stats(void) {
 ---
 
 #### `SYS_USB_RESCAN` (212)
-- **Регистры**: `rax = 212`, `rbx = (uintptr_t)status` (или 0)
+- **Регистры**: `rax = 212`, `rdi = (uintptr_t)status` (или 0)
 - **Обертка stdlib**: `pc_syscall(SYS_USB_RESCAN, (uint64_t)status, 0, 0)`
 - **Описание**: Производит принудительное сканирование портов XHCI и EHCI, переинициализирует новые флеш-накопители и мыши, а также монтирует корень при нахождении загрузочного диска.
 - **Пример**:
@@ -1730,8 +1733,8 @@ void rescan_usb(void) {
 
 #### `SYS_FORMAT_DEVICE_EX` (268) и `SYS_FS_FORMAT_CUSTOM` (267)
 - **Регистры**:
-  - `SYS_FORMAT_DEVICE_EX`: `rax = 268`, `rbx = (uintptr_t)req`
-  - `SYS_FS_FORMAT_CUSTOM`: `rax = 267`, `rbx = (uintptr_t)req`
+  - `SYS_FORMAT_DEVICE_EX`: `rax = 268`, `rdi = (uintptr_t)req`
+  - `SYS_FS_FORMAT_CUSTOM`: `rax = 267`, `rdi = (uintptr_t)req`
 - **Обертки stdlib**:
   - `int32_t pc_format_device_ex(const char *device, const char *serial, uint8_t fs_type)`
   - `int32_t pc_format_custom(const char *device, uint32_t partition_count, const uint64_t *sizes_gb)`
@@ -1753,10 +1756,10 @@ void format_ext2_example(void) {
 
 #### `SYS_INSTALL_START` (225), `SYS_INSTALL_START_EX` (269), `SYS_INSTALL_STATUS` (226), `SYS_INSTALL_LOG` (228)
 - **Регистры**:
-  - `SYS_INSTALL_START`: `rax = 225`, `rbx = (uintptr_t)device`, `rcx = (uintptr_t)serial`
-  - `SYS_INSTALL_START_EX`: `rax = 269`, `rbx = (uintptr_t)req`
-  - `SYS_INSTALL_STATUS`: `rax = 226`, `rbx = (uintptr_t)status`
-  - `SYS_INSTALL_LOG`: `rax = 228`, `rbx = (uintptr_t)log`
+  - `SYS_INSTALL_START`: `rax = 225`, `rdi = (uintptr_t)device`, `rsi = (uintptr_t)serial`
+  - `SYS_INSTALL_START_EX`: `rax = 269`, `rdi = (uintptr_t)req`
+  - `SYS_INSTALL_STATUS`: `rax = 226`, `rdi = (uintptr_t)status`
+  - `SYS_INSTALL_LOG`: `rax = 228`, `rdi = (uintptr_t)log`
 - **Обертки stdlib**:
   - `int32_t pc_install_start(const char *device, const char *serial)`
   - `int32_t pc_install_start_ex(const char *device, const char *serial, uint8_t fs_type)`
@@ -1804,7 +1807,7 @@ void monitor_installation(void) {
 ---
 
 #### `SYS_DISK_IO` (414)
-- **Регистры**: `rax = 414`, `rbx = struct disk_io_request *`
+- **Регистры**: `rax = 414`, `rdi = struct disk_io_request *`
 - **Обертка stdlib**: `int32_t pc_disk_io(const char *device, uint64_t lba, void *buffer, uint32_t count, bool write)`
 - **Структура**: `char device[16]`, `uint64_t lba`, `uint64_t buffer`, `uint32_t count` (не более 128 секторов), `uint32_t write`.
 - **Описание**: Прямое чтение или запись секторов блочного устройства, минуя VFS. Требует право `STORAGE_ADMIN`.
@@ -1815,7 +1818,7 @@ void monitor_installation(void) {
 ### 4.13. Управление Питанием и Системная Информация
 
 #### `SYS_CPU_INFO` (215)
-- **Регистры**: `rax = 215`, `rbx = (uintptr_t)info`
+- **Регистры**: `rax = 215`, `rdi = (uintptr_t)info`
 - **Обертка stdlib**: `bool pc_cpu_info(struct cpu_monitor_info *info)`
 - **Структура**:
 ```c
@@ -1850,7 +1853,7 @@ void show_cpu_stats(void) {
 ---
 
 #### `SYS_MEMORY_INFO` (216)
-- **Регистры**: `rax = 216`, `rbx = (uintptr_t)info`
+- **Регистры**: `rax = 216`, `rdi = (uintptr_t)info`
 - **Обертка stdlib**: `bool pc_memory_info(struct memory_monitor_info *info)`
 - **Структура**:
 ```c
@@ -1880,7 +1883,7 @@ void show_ram_stats(void) {
 ---
 
 #### `SYS_CPU_CORE_INFO` (283)
-- **Регистры**: `rax = 283`, `rbx = (uintptr_t)info`
+- **Регистры**: `rax = 283`, `rdi = (uintptr_t)info`
 - **Обертка stdlib**: `int32_t pc_cpu_core_info(struct cpu_core_info *info)`
 - **Структура**:
 ```c
@@ -1928,7 +1931,7 @@ void show_cores(void){
 ---
 
 #### `SYS_BATTERY_INFO` (220)
-- **Регистры**: `rax = 220`, `rbx = (uintptr_t)out`
+- **Регистры**: `rax = 220`, `rdi = (uintptr_t)out`
 - **Структура**:
 ```c
 struct battery_info {
@@ -1966,8 +1969,8 @@ void show_battery(void) {
 
 #### `SYS_DISPLAY_SET_MODE` (281) и `SYS_THERMAL_INFO` (282)
 - **Регистры**:
-  - `SYS_DISPLAY_SET_MODE`: `rax = 281`, `rbx = width`, `rcx = height`, `rdx = bpp`, `rsi = scale_percent` (0 — без масштаба)
-  - `SYS_THERMAL_INFO`: `rax = 282`, `rbx = (uintptr_t)out`
+  - `SYS_DISPLAY_SET_MODE`: `rax = 281`, `rdi = width`, `rsi = height`, `rdx = bpp`, `r10 = scale_percent` (0 — без масштаба)
+  - `SYS_THERMAL_INFO`: `rax = 282`, `rdi = (uintptr_t)out`
 - **Структуры**:
 ```c
 struct thermal_info {
@@ -2013,7 +2016,7 @@ void shutdown_system_example(void) {
 ---
 
 #### `SYS_SAVE_KLOG` (265)
-- **Регистры**: `rax = 265`, `rbx = (uintptr_t)req`
+- **Регистры**: `rax = 265`, `rdi = (uintptr_t)req`
 - **Обертка stdlib**: `int32_t pc_save_klog(const char *device, const char *path)`
 - **Структура**:
 ```c
@@ -2037,13 +2040,13 @@ void dump_kernel_log(void) {
 
 
 #### `SYS_KLOG_WRITE` (406)
-- **Регистры**: `rax = 406`, `rbx = уровень` (0 — INFO, 1 — OK, 2 — WARN, 3 — ERROR), `rcx = строка`
+- **Регистры**: `rax = 406`, `rdi = уровень` (0 — INFO, 1 — OK, 2 — WARN, 3 — ERROR), `rsi = строка`
 - **Обертка stdlib**: `syslog()`
 - **Описание**: Пишет строку в klog в виде `имя[pid]: текст`. Переводы строк заменяются пробелами, строка обрезается до 239 символов.
 - **Возврат**: `0`.
 
 #### `SYS_CLOCK_ADJUST` (407)
-- **Регистры**: `rax = 407`, `rbx = операция`, `rcx = delta_ms`, `rdx = int64_t *previous` (необязательно)
+- **Регистры**: `rax = 407`, `rdi = операция`, `rsi = delta_ms`, `rdx = int64_t *previous` (необязательно)
 - **Обертка stdlib**: `int32_t pc_clock_adjust(uint32_t op, int64_t delta_ms, int64_t *previous_ms)`
 - **Операции**: `CLOCK_ADJ_STEP` (0) — ступенчатая установка, `CLOCK_ADJ_SLEW` (1) — плавная коррекция, `CLOCK_ADJ_QUERY` (2) — только чтение, `CLOCK_ADJ_SAVE_RTC` (3) — сохранить время в RTC.
 - **Права**: root или право `SYS_TIME`.
@@ -2054,7 +2057,7 @@ void dump_kernel_log(void) {
 ### 4.14. Права Доступа и sudo
 
 #### `SYS_SUDO` (397)
-- **Регистры**: `rax = 397`, `rbx = (uintptr_t)password` (строка C с нулевым байтом в конце)
+- **Регистры**: `rax = 397`, `rdi = (uintptr_t)password` (строка C с нулевым байтом в конце)
 - **Обертка stdlib**: `int32_t pc_sudo(const char *password)`
 - **Возврат**: `0` — пароль верный, процесс стал root (uid 0, gid 0); `-1` — неверный пароль; `-2` — пользователь не входит в группу `wheel`.
 - **Описание**: Ядро по uid находит имя пользователя, проверяет членство в группе `wheel` (по списку членов в `/etc/group` или по gid записи пользователя) и сверяет пароль с `/etc/shadow` через purecrypt (SHA-512). При отказе процесс засыпает на 1,5 с, а каждая попытка записывается в журнал ядра. Исходники: `src/kernel/syscall/sudo.c`. Утилита `/bin/sudo` построена поверх этого вызова.
@@ -2096,7 +2099,7 @@ int32_t take_screen(void) {
 ```
 
 #### `SYS_FB_MAP` (399)
-- **Регистры**: `rax = 399`, `rbx = (uintptr_t)out`
+- **Регистры**: `rax = 399`, `rdi = (uintptr_t)out`
 - **Обертка stdlib**: `int32_t pc_fb_map(struct fb_map_info *out)`
 - **Структура**:
 ```c
@@ -2171,7 +2174,7 @@ void read_one_event(void) {
 ```
 
 #### `SYS_FB_DAMAGE` (401)
-- **Регистры**: `rax = 401`, `rbx = x`, `rcx = y`, `rdx = w`, `rsi = h`
+- **Регистры**: `rax = 401`, `rdi = x`, `rsi = y`, `rdx = w`, `r10 = h`
 - **Обертка stdlib**: `int32_t pc_fb_damage(uint32_t x, uint32_t y, uint32_t w, uint32_t h)`
 - **Возврат**: `0` при успехе.
 - **Описание**: Сообщает ядру, какая прямоугольная область фронтового буфера изменилась, и отправляет её на устройство. Нужен для VMSVGA, где без такого сообщения изменения на экране не появляются.
