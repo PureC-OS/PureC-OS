@@ -1,1 +1,18 @@
-/src/arch/x86_64/entry/syscalls/syscall_64.tbl
+/src/arch/x86_64/entry/syscalls/syscall_64.tbl // Таблицы системных вызовов (самый важный файл)
+
+```
+0    common  read     sys_read
+1    common  write    sys_write
+2    common  open     sys_open
+...
+```
+
+/src/arch/x86_64/entry/syscall_64.c // Диспетчер (куда попадает управление после syscall)
+
+
+Тут сейчас do_syscall_64() + x64_sys_call() (switch по номеру)
+
+
+/src/arch/x86_64/entry/entry_64.S // Точка входа (ассемблер)
+
+/src/kernel/syscall/syscall.h // номера и ABI между userspace и kernel space он будет генерироваться
