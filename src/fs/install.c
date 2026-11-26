@@ -421,8 +421,7 @@ static int32_t install_header_module(const struct header_module *entry)
     }
     {
         uint32_t cpio_mode, cpio_uid, cpio_gid;
-        if (initramfs_find_meta(entry->module, &cpio_mode, &cpio_uid, &cpio_gid) &&
-            ((cpio_mode & 07000u) || cpio_uid || cpio_gid || !(cpio_mode & 04u)))
+        if (initramfs_find_meta(entry->module, &cpio_mode, &cpio_uid, &cpio_gid))
             (void)ext2_meta_set(dest_path, (int32_t)cpio_mode, cpio_uid, cpio_gid);
     }
     status = payload_verify_file(dest_path, (uint32_t)size);
