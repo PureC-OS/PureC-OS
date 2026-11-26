@@ -1,0 +1,3 @@
+/etc/sudoers 0440
+/usr/bin/sudo 4755
+/usr/bin/visudo 0755

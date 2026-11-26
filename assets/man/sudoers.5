@@ -1,0 +1,33 @@
+NAME
+       sudoers - rules for sudo
+
+DESCRIPTION
+       /etc/sudoers is read by sudo(8). Supported subset of the usual
+       grammar:
+
+       Comments start with # (but #include, #includedir and #uid are not
+       comments). A trailing backslash continues the line.
+
+       @include FILE, @includedir DIR (also #include, #includedir). In a
+       directory, names containing a dot or ending in ~ are skipped.
+
+       Aliases: User_Alias, Runas_Alias, Host_Alias, Cmnd_Alias, written
+       NAME = item, item : NAME2 = item.
+
+       User specification:
+              who host = (runas_user[:runas_group]) [NOPASSWD:|PASSWD:] cmd, cmd
+       who is a user, %group, #uid, an alias, ALL, with ! for negation. host
+       is ALL, a host name or an alias. cmd is an absolute path, a path with
+       arguments, a directory ending in /, ALL or an alias. The last
+       matching rule wins.
+
+       Defaults [!cmd | >runas | :user | @host]: secure_path, env_keep (=,
+       +=, -=), env_reset, timestamp_timeout, passwd_tries, targetpw,
+       rootpw. insults and lecture are accepted and ignored; other unknown
+       options are reported by visudo and ignored by sudo.
+
+FILES
+       /etc/sudoers, /etc/sudoers.d/
+
+SEE ALSO
+       sudo(8), visudo(8)

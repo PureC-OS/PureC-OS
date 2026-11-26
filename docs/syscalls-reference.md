@@ -206,7 +206,7 @@
 | **124** | `SYS_GETGID` | `pc_getgid()` | GID текущего процесса |
 | **125** | `SYS_SETUID` | `pc_setuid()` | Смена UID процесса |
 | **126** | `SYS_SETGID` | `pc_setgid()` | Смена GID процесса |
-| **127** | `SYS_SUDO` | `pc_sudo()` | Повышение до root по паролю (группа `wheel`) |
+| **127** | `SYS_SUDO_REMOVED` | - | Удалён: sudo теперь setuid-программа, слот занят sys_ni_syscall |
 | **128** | `SYS_USER_LOOKUP` | `pc_user_lookup()` | Поиск пользователя по имени или UID |
 | **129** | `SYS_SESSION_BEGIN` | `pc_session_begin()` | Начало сессии пользователя (только root) |
 | **130** | `SYS_FILE_PERM` | `pc_file_perm()` | Владелец и режим файла |

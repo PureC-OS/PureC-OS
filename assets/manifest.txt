@@ -98,6 +98,7 @@
 /etc/os-release /etc/os-release - 0 rootfs/etc/os-release
 /etc/passwd /etc/passwd - 0 rootfs/etc/passwd
 /etc/group /etc/group - 0 rootfs/etc/group
+/etc/sudoers /etc/sudoers - 0 rootfs/etc/sudoers
 /etc/shells /etc/shells - 0 rootfs/etc/shells
 /etc/services /etc/services - 0 rootfs/etc/services
 /etc/resolv.conf /etc/resolv.conf - 0 rootfs/etc/resolv.conf

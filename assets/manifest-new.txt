@@ -50,7 +50,8 @@
 /bin/env /bin/env - 1 bin/programs/env
 /bin/uname /bin/uname - 1 bin/programs/uname
 /bin/whoami /bin/whoami - 1 bin/programs/whoami
-/bin/sudo /bin/sudo - 1 bin/programs/sudo
+/usr/bin/sudo /usr/bin/sudo - 1 bin/programs/sudo
+/usr/bin/visudo /usr/bin/visudo - 1 bin/programs/visudo
 /bin/ip /bin/ip - 1 bin/programs/ip
 /bin/netd /bin/netd - 1 bin/programs/netd
 /bin/dhcpc /bin/dhcpc - 1 bin/programs/dhcpc

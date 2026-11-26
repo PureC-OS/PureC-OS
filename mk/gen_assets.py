@@ -9,9 +9,9 @@ import sys
 MANIFEST_NAME = "manifest.txt"
 
 
-def cpio_newc_entry(name, data, ino=0, nlink=1):
+def cpio_newc_entry(name, data, ino=0, nlink=1, mode=0o100644):
     encoded_name = name.encode("utf-8") + b"\0"
-    header = ("070701" + "%08x" % ino + "%08x" % 0o100644 +
+    header = ("070701" + "%08x" % ino + "%08x" % mode +
               "%08x" % 0 + "%08x" % 0 + "%08x" % nlink + "%08x" % 0 +
               "%08x" % len(data) + "%08x" % 0 + "%08x" % 0 +
               "%08x" % 0 + "%08x" % 0 + "%08x" % len(encoded_name) +
@@ -56,12 +56,39 @@ def stripped(tool, source, data, cache_dir):
         return handle.read()
 
 
-def write_initramfs(path, files, cache_dir):
+def load_modes(path):
+    modes = {}
+    if not os.path.isfile(path):
+        return modes
+    with open(path, "r", encoding="utf-8") as handle:
+        for lineno, raw in enumerate(handle, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            cols = line.split()
+            if len(cols) != 2 or not cols[0].startswith("/"):
+                raise SystemExit("modes %s:%d: want '/path octal-mode'" % (path, lineno))
+            modes[cols[0]] = int(cols[1], 8) & 0o7777
+    return modes
+
+
+def entry_mode(name, source, data, overrides):
+    if name in overrides:
+        return 0o100000 | overrides[name]
+    mode = os.stat(source).st_mode & 0o7777
+    if data[:4] == b"\x7fELF" or data[:2] == b"#!":
+        mode |= 0o111
+    return 0o100000 | mode
+
+
+def write_initramfs(path, files, cache_dir, overrides):
     tool = find_strip()
     contents = {}
+    modes = {}
     for name, source in files.items():
         with open(source, "rb") as input_file:
             data = input_file.read()
+        modes[name] = entry_mode(name, source, data, overrides)
         if tool and strippable(name, data):
             data = stripped(tool, source, data, cache_dir)
         contents[name] = data
@@ -83,12 +110,12 @@ def write_initramfs(path, files, cache_dir):
         for name, data in contents.items():
             ino = inode.get(name, 0)
             if ino and ino in written:
-                handle.write(cpio_newc_entry(name.lstrip("/"), b"", ino, links[name]))
+                handle.write(cpio_newc_entry(name.lstrip("/"), b"", ino, links[name], modes[name]))
                 saved += len(data)
                 continue
             if ino:
                 written.add(ino)
-            handle.write(cpio_newc_entry(name.lstrip("/"), data, ino, links.get(name, 1)))
+            handle.write(cpio_newc_entry(name.lstrip("/"), data, ino, links.get(name, 1), modes[name]))
         handle.write(cpio_newc_entry("TRAILER!!!", b""))
     return saved
 
@@ -194,8 +221,9 @@ def main():
     initramfs_files["/" + MANIFEST_NAME] = staged_manifest
 
     initramfs_path = os.path.join(args.staged, "initramfs.cpio")
+    overrides = load_modes(os.path.join(args.root, "assets", "modes.txt"))
     linked = write_initramfs(initramfs_path, initramfs_files,
-                             os.path.join(args.staged, "strip-cache"))
+                             os.path.join(args.staged, "strip-cache"), overrides)
     iso_initramfs = os.path.join(args.iso, "boot", "initramfs.cpio")
     os.makedirs(os.path.dirname(iso_initramfs), exist_ok=True)
     shutil.copyfile(initramfs_path, iso_initramfs)

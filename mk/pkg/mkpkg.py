@@ -27,6 +27,7 @@ def main():
     p.add_argument("--backup", action="append", default=[])
     p.add_argument("--hook", action="append", default=[], help="NAME=FILE with NAME in post-install, post-upgrade, pre-remove, post-remove")
     p.add_argument("--file", action="append", default=[], help="DEST=SOURCE")
+    p.add_argument("--mode", action="append", default=[], help="DEST=OCTALMODE")
     p.add_argument("--link", action="append", default=[], help="DEST=TARGET")
     p.add_argument("--tree", action="append", default=[], help="DEST=SOURCEDIR")
     p.add_argument("-o", "--output", default=".")
@@ -45,6 +46,10 @@ def main():
                 full = os.path.join(root, name)
                 rel = os.path.relpath(full, src)
                 files.append(("%s/%s" % (dest, rel) if dest else rel, full))
+    modes = {}
+    for spec in args.mode:
+        dest, value = spec.split("=", 1)
+        modes[dest.lstrip("/")] = int(value, 8) & 0o7777
     entries = []
     seen = set()
     total = 0
@@ -52,7 +57,7 @@ def main():
     for dest, src in sorted(files):
         with open(src, "rb") as f:
             data = f.read()
-        mode = 0o755 if os.access(src, os.X_OK) else 0o644
+        mode = modes.get(dest, 0o755 if os.access(src, os.X_OK) else 0o644)
         add_dirs(payload, seen, dest)
         payload.append((dest, "file", mode, data))
         total += len(data)

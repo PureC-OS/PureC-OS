@@ -1,0 +1,26 @@
+NAME
+       visudo - edit the sudoers file safely
+
+SYNOPSIS
+       **visudo** [-chqsV] [[-f] __file__]
+
+DESCRIPTION
+       **visudo** must be run as root. It copies /etc/sudoers to
+       /etc/sudoers.tmp (created exclusively, so two editors cannot run at
+       once), starts $SUDO_EDITOR, $VISUAL, $EDITOR or vim, and parses the
+       result with the same parser sudo uses. On success the file gets
+       owner root, mode 0440 and replaces /etc/sudoers atomically. On a
+       syntax error visudo prints "file:line: syntax error" and asks
+       "What now?": (e) edit again, (x) exit without saving, (Q) quit and
+       save anyway.
+
+OPTIONS
+       -c   check only: parse the file and all included files and print
+            "parsed OK" for each.
+       -f __file__  use __file__ instead of /etc/sudoers.
+       -s   strict: unknown Defaults entries are errors.
+       -q   quiet check.
+       -h, -V  help, version.
+
+SEE ALSO
+       sudoers(5), sudo(8)
