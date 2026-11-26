@@ -1623,6 +1623,13 @@ static int32_t resolve_existing(const char *path, struct vfs_resolved *resolved,
   const struct vfs_fs_ops *ops = resolved->mount->ops;
   if (!ops->stat || !mount_ready(resolved->mount) ||
       ops->stat(resolved->mount->context, resolved->relative, &info) < 0) {
+    const void *data = 0;
+    uint32_t size = 0;
+    if (!live_mode && initramfs_is_mounted() &&
+        initramfs_find(resolved->path, &data, &size)) {
+      *directory = false;
+      return 0;
+    }
     if (!is_virtual_dir(resolved->path))
       return FS_ERROR_NOT_FOUND;
     *directory = true;
