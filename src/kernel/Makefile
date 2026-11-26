@@ -28,7 +28,7 @@ ACPI_OBJECTS := $(ACPI_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPPFLAGS += -I$(ACPI_DIR)/include -I$(ACPI_DIR)/AML/uACPI/include
 CRYPT_DIR := $(ROOT_DIR)/libxcrypt
 CPPFLAGS += -I$(CRYPT_DIR)/include
-CRYPT_OBJECTS := $(OBJ_DIR)/xcrypt/sha512.o $(OBJ_DIR)/xcrypt/crypt_sha512.o $(OBJ_DIR)/xcrypt/sha1.o $(OBJ_DIR)/xcrypt/aes.o
+CRYPT_OBJECTS := $(OBJ_DIR)/xcrypt/sha512.o $(OBJ_DIR)/xcrypt/sha1.o $(OBJ_DIR)/xcrypt/aes.o
 E1000_DIR := $(ROOT_DIR)/src/drivers/net/e1000
 CPPFLAGS += -I$(E1000_DIR)/include
 E1000_GC_DIR := $(ROOT_DIR)/src/drivers/net/82543gc
@@ -97,7 +97,6 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	kernel/syscall/sys/audio/audio.c \
 	kernel/syscall/sys/disk/disk.c \
 	kernel/syscall/sys/system/system.c \
-	kernel/syscall/sys/user/sudo.c \
 	kernel/trace/trace.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \

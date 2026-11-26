@@ -15,6 +15,9 @@ struct initramfs_entry {
   uint32_t size;
   uint32_t ino;
   uint32_t nlink;
+  uint32_t mode;
+  uint32_t uid;
+  uint32_t gid;
 };
 
 static const uint8_t *archive;
@@ -54,7 +57,8 @@ static bool hex8(const uint8_t *text, uint32_t *value) {
 
 static bool next_entry_links(uint32_t *offset, const char **name, uint32_t *name_size,
                              const void **data, uint32_t *data_size, uint32_t *ino,
-                             uint32_t *nlink) {
+                             uint32_t *nlink, uint32_t *mode, uint32_t *uid,
+                             uint32_t *gid) {
   if (!archive || !offset || *offset > archive_size ||
       archive_size - *offset < CPIO_HEADER_SIZE)
     return false;
@@ -80,12 +84,22 @@ static bool next_entry_links(uint32_t *offset, const char **name, uint32_t *name
     *ino = inode;
   if (nlink)
     *nlink = links;
+  uint32_t file_mode = 0, file_uid = 0, file_gid = 0;
+  hex8(header + 14, &file_mode);
+  hex8(header + 22, &file_uid);
+  hex8(header + 30, &file_gid);
+  if (mode)
+    *mode = file_mode;
+  if (uid)
+    *uid = file_uid;
+  if (gid)
+    *gid = file_gid;
   return true;
 }
 
 static bool next_entry(uint32_t *offset, const char **name, uint32_t *name_size,
                        const void **data, uint32_t *data_size) {
-  return next_entry_links(offset, name, name_size, data, data_size, 0, 0);
+  return next_entry_links(offset, name, name_size, data, data_size, 0, 0, 0, 0, 0);
 }
 
 static void resolve_links(void) {
@@ -136,9 +150,10 @@ bool initramfs_mount(void) {
   memset(file_index, 0, sizeof(file_index));
   uint32_t offset = 0;
   const char *name;
-  uint32_t namesize, filesize, ino, nlink;
+  uint32_t namesize, filesize, ino, nlink, fmode, fuid, fgid;
   const void *filedata;
-  while (next_entry_links(&offset, &name, &namesize, &filedata, &filesize, &ino, &nlink)) {
+  while (next_entry_links(&offset, &name, &namesize, &filedata, &filesize, &ino, &nlink,
+                          &fmode, &fuid, &fgid)) {
     if (namesize == 10 && memcmp(name, "TRAILER!!!", 10) == 0) {
       resolve_links();
       klogf(KLOG_OK, "initramfs: mounted %u files (%llu KiB)", file_count,
@@ -155,6 +170,9 @@ bool initramfs_mount(void) {
     file_index[file_count].size = filesize;
     file_index[file_count].ino = ino;
     file_index[file_count].nlink = nlink;
+    file_index[file_count].mode = fmode;
+    file_index[file_count].uid = fuid;
+    file_index[file_count].gid = fgid;
     file_count++;
   }
   archive = 0;
@@ -178,6 +196,26 @@ bool initramfs_find(const char *path, const void **data, uint32_t *size) {
         file_index[i].path_hash == hash) {
       *data = file_index[i].data;
       *size = file_index[i].size;
+      return true;
+    }
+  }
+  return false;
+}
+
+bool initramfs_find_meta(const char *path, uint32_t *mode, uint32_t *uid,
+                         uint32_t *gid) {
+  if (!archive || !path)
+    return false;
+  while (*path == '/')
+    path++;
+  uint32_t length = (uint32_t)strlen(path);
+  uint64_t hash = path_hash(path, length);
+  for (uint32_t i = 0; i < file_count; i++) {
+    if (file_index[i].path_length == length &&
+        file_index[i].path_hash == hash) {
+      *mode = file_index[i].mode & 07777u;
+      *uid = file_index[i].uid;
+      *gid = file_index[i].gid;
       return true;
     }
   }

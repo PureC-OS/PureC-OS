@@ -7,6 +7,7 @@
 #include "ext2/include/ext2_format.h"
 #include "ext2/include/ext2_inode.h"
 #include "ext2/include/ext2_meta.h"
+#include "initramfs.h"
 #include "install_accounts.h"
 #include "ext2/include/ext2_super.h"
 #include "ext2/include/ext2_types.h"
@@ -418,6 +419,12 @@ static int32_t install_header_module(const struct header_module *entry)
               dest_path, status, entry->required ? "aborting" : "non-fatal, skipped");
         return entry->required ? status : 0;
     }
+    {
+        uint32_t cpio_mode, cpio_uid, cpio_gid;
+        if (initramfs_find_meta(entry->module, &cpio_mode, &cpio_uid, &cpio_gid) &&
+            ((cpio_mode & 07000u) || cpio_uid || cpio_gid || !(cpio_mode & 04u)))
+            (void)ext2_meta_set(dest_path, (int32_t)cpio_mode, cpio_uid, cpio_gid);
+    }
     status = payload_verify_file(dest_path, (uint32_t)size);
     if (status < 0)
     {
@@ -729,9 +736,30 @@ static int32_t install_write_accounts(void)
     status = ext2_meta_set("/root", 0700, 0, 0);
     if (status < 0)
         return status;
+    status = payload_mkdir("/etc/sudoers.d");
+    if (status < 0)
+        return status;
+    status = ext2_meta_set("/etc/sudoers.d", 0750, 0, 0);
+    if (status < 0)
+        return status;
     for (uint32_t i = 0; i < pending_accounts.user_count; i++)
     {
         const struct install_user *user = &pending_accounts.users[i];
+        if (user->admin)
+        {
+            char rule_path[INSTALL_USER_MAX + 24] = "/etc/sudoers.d/00_";
+            char rule[INSTALL_USER_MAX + 16];
+            uint32_t name_length = (uint32_t)strlen(user->name);
+            strncpy(rule_path + 18, user->name, sizeof(rule_path) - 19);
+            memcpy(rule, user->name, name_length);
+            memcpy(rule + name_length, " ALL=(ALL) ALL\n", 16);
+            status = payload_write_file(rule_path, rule, name_length + 15);
+            if (status < 0)
+                return status;
+            status = ext2_meta_set(rule_path, 0440, 0, 0);
+            if (status < 0)
+                return status;
+        }
         char home[INSTALL_USER_MAX + 8] = "/home/";
         strncpy(home + 6, user->name, sizeof(home) - 7);
         status = payload_mkdir(home);

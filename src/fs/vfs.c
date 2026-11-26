@@ -336,6 +336,14 @@ static bool overlay_file_meta(const char *path, struct vfs_perm_meta *meta) {
     return true;
   if (vfs_perm_get(path, meta))
     return true;
+  uint32_t cpio_mode, cpio_uid, cpio_gid;
+  if (initramfs_find_meta(path, &cpio_mode, &cpio_uid, &cpio_gid) &&
+      cpio_mode != 0644u) {
+    meta->mode = (uint16_t)cpio_mode;
+    meta->uid = cpio_uid;
+    meta->gid = cpio_gid;
+    return true;
+  }
   const uint8_t *bytes = (const uint8_t *)data;
   bool elf = size >= 4 && bytes[0] == 0x7F && bytes[1] == 'E' &&
              bytes[2] == 'L' && bytes[3] == 'F';

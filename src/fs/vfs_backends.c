@@ -295,6 +295,14 @@ static int32_t initramfs_op_get_meta(void *context, const char *path,
   out->uid = 0;
   out->gid = 0;
   if (initramfs_find(path, &data, &size)) {
+    uint32_t cpio_mode, cpio_uid, cpio_gid;
+    if (initramfs_find_meta(path, &cpio_mode, &cpio_uid, &cpio_gid) &&
+        (cpio_mode & 07777u) != 0644u) {
+      out->mode = (uint16_t)cpio_mode;
+      out->uid = cpio_uid;
+      out->gid = cpio_gid;
+      return 0;
+    }
     const uint8_t *bytes = (const uint8_t *)data;
     bool elf = size >= 4 && bytes[0] == 0x7F && bytes[1] == 'E' &&
                bytes[2] == 'L' && bytes[3] == 'F';

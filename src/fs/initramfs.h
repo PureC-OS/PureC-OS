@@ -10,6 +10,8 @@
 bool initramfs_boot_image(const void **data, uint64_t *size);
 bool initramfs_mount(void);
 bool initramfs_is_mounted(void);
+bool initramfs_find_meta(const char *path, uint32_t *mode, uint32_t *uid,
+                         uint32_t *gid);
 bool initramfs_directory_exists(const char *path);
 bool initramfs_find(const char *path, const void **data, uint32_t *size);
 int32_t initramfs_list(const char *path, struct fs_directory_entry *entries,

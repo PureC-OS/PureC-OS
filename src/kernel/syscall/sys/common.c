@@ -1,4 +1,3 @@
-#include <kernel/syscall/sys/user/sudo.h>
 #include <kernel/process/process.h>
 #include <kernel/process/scheduler.h>
 #include "common.h"
@@ -12,7 +11,7 @@ bool privileged(uint32_t capability)
 
 bool wifi_allowed(void)
 {
-  return privileged(PROCESS_CAP_NET_ADMIN) || sudo_may_manage_network();
+  return privileged(PROCESS_CAP_NET_ADMIN);
 }
 
 bool readable(const void *buffer, uint64_t size)
