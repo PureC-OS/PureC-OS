@@ -17,6 +17,8 @@
 #define PROCESS_CAP_NET_BIND (1U << 3)
 #define PROCESS_CAP_SYS_TIME (1U << 4)
 
+struct syscall_regs;
+
 struct process_environment_entry
 {
   bool used;
@@ -82,6 +84,7 @@ struct process
   uint8_t trace_slot;
   uint32_t trace_gen;
   struct vma_table *vmas;
+  struct syscall_regs *syscall_regs;
 };
 
 void process_init(void);
