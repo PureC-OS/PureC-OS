@@ -1,4 +1,3 @@
-#include "sudo.h"
 
 #include <fs/vfs.h>
 #include <lib/string.h>

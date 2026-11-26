@@ -2,8 +2,6 @@
 #include <kernel/syscall/syscall.h>
 #include <kernel/syscall/syscall_table.h>
 #include <drivers/serial/serial.h>
-#include <stddef.h>
-#include <stdint.h>
 
 static void print_hex(uint64_t v)
 {
