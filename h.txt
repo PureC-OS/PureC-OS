@@ -13,6 +13,9 @@
 Тут сейчас do_syscall_64() + x64_sys_call() (switch по номеру)
 
 
-/src/arch/x86_64/entry/entry_64.S // Точка входа (ассемблер)
+/src/arch/x86_64/entry/entry_64.asm // Точка входа (ассемблер)
 
 /src/kernel/syscall/syscall.h // номера и ABI между userspace и kernel space он будет генерироваться
+
+
+/src/kernel/syscall/sys/* // тут будет реализация syscall по подсыстемам 
