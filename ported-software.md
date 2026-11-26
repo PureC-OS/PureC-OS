@@ -172,7 +172,7 @@ the build system.
 - **New PureC backends** (added in-tree):
   - `SDL/src/video/purec/SDL_purecvideo.[ch]` — an SDL window maps to a
     PureGUI window; surfaces are presented via `pg_window_blit` on syscall
-    `SYS_FB_BLIT` (322).
+    `SYS_FB_BLIT` (157).
   - `SDL/src/audio/purec/SDL_purecaudio.[ch]` — output over `pa_stream`,
     22050 Hz mono 16-bit.
   - `SDL/src/timer/purec/SDL_systimer.c` — purec timer backend.
