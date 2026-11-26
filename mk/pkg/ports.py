@@ -121,6 +121,7 @@ def main():
     p.add_argument("--name", default="ports")
     p.add_argument("--sign")
     p.add_argument("--only", action="append", default=[])
+    p.add_argument("--pkgrel", type=int)
     args = p.parse_args()
     os.makedirs(args.output, exist_ok=True)
     built = 0
@@ -140,7 +141,7 @@ def main():
             print("skip %s: not built (%s)" % (port["name"], missing[0]), file=sys.stderr)
             continue
         cmd = [sys.executable, os.path.join(HERE, "mkpkg.py"), "--name", port["name"],
-               "--version", "%s-%d" % (port["version"](), port["rel"]), "--desc", port["desc"], "-o", args.output] + files
+               "--version", "%s-%d" % (port["version"](), args.pkgrel or port["rel"]), "--desc", port["desc"], "-o", args.output] + files
         for dep in port.get("depend", []):
             cmd += ["--depend", dep]
         for b in port.get("backup", []):
