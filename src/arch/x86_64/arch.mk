@@ -18,11 +18,13 @@ ARCH_C_SOURCES := \
 	arch/x86_64/pat.c \
 	arch/x86_64/smp.c \
 	arch/x86_64/pic.c \
-	arch/x86_64/timer.c
+	arch/x86_64/timer.c \
+	arch/x86_64/entry/syscall_64.c \
+	arch/x86_64/entry/syscall_table.c
 ARCH_ASM_SOURCES := \
 	arch/x86_64/gdt/asm/gdt.asm \
 	arch/x86_64/idt/asm/idt.asm \
 	arch/x86_64/smp.asm \
 	arch/x86_64/scheduler.asm \
 	arch/x86_64/user.asm \
-	arch/x86_64/syscall_entry.asm
+	arch/x86_64/entry/entry_64.asm

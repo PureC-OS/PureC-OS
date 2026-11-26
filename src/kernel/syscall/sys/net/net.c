@@ -146,7 +146,7 @@ static int64_t unix_read_address(uint64_t pointer, uint64_t length,
   return 0;
 }
 
-static int64_t unix_listen(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
+static int64_t unix_sock_listen(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
 {
   bool nonblock = fd_nonblocking(fd);
   (void)nonblock;
@@ -156,7 +156,7 @@ static int64_t unix_listen(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uin
   return unix_listen(id, (int32_t)a2);
 }
 
-static int64_t unix_accept(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
+static int64_t unix_sock_accept(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
 {
   bool nonblock = fd_nonblocking(fd);
   (void)nonblock;
@@ -177,7 +177,7 @@ static int64_t unix_accept(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uin
   return opened;
 }
 
-static int64_t unix_shutdown(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
+static int64_t unix_sock_shutdown(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
 {
   bool nonblock = fd_nonblocking(fd);
   (void)nonblock;
@@ -187,7 +187,7 @@ static int64_t unix_shutdown(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, u
   return unix_shutdown(id, (int32_t)a2);
 }
 
-static int64_t unix_sockname(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
+static int64_t unix_sock_sockname(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
 {
   bool nonblock = fd_nonblocking(fd);
   (void)nonblock;
@@ -201,7 +201,7 @@ static int64_t unix_sockname(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, u
   return unix_copy_address(a2, a3, name, (uint32_t)length);
 }
 
-static int64_t unix_setsockopt(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
+static int64_t unix_sock_setsockopt(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
 {
   bool nonblock = fd_nonblocking(fd);
   (void)nonblock;
@@ -211,7 +211,7 @@ static int64_t unix_setsockopt(int32_t fd, int32_t id, uint64_t a2, uint64_t a3,
   return 0;
 }
 
-static int64_t unix_getsockopt(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
+static int64_t unix_sock_getsockopt(int32_t fd, int32_t id, uint64_t a2, uint64_t a3, uint64_t a4)
 {
   bool nonblock = fd_nonblocking(fd);
   (void)nonblock;
@@ -544,6 +544,11 @@ static int64_t socketpair_syscall(uint64_t domain, uint64_t type_flags,
   return 0;
 }
 
+static bool tcp_denied(int32_t handle)
+{
+  return !tcp_is_owner(handle, process_current()->pid);
+}
+
 long sys_socket(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
@@ -581,12 +586,12 @@ long sys_socketpair(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_bind(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_bind_socket(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
 {
     int32_t id = socket_of_fd(fd);
     if (id < 0)
@@ -602,12 +607,12 @@ long sys_bind(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_connect(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_connect_socket(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
 {
     int32_t id = socket_of_fd(fd);
     if (id < 0)
@@ -623,12 +628,12 @@ long sys_connect(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_listen(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
-    return unix_listen(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
+    return unix_sock_listen(fd, unix_id, a2, a3, a4);
   int32_t id = socket_of_fd(fd);
   return id < 0 ? id : sock_listen(id, (int32_t)a2);
 }
@@ -636,12 +641,12 @@ long sys_listen(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_accept(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
-    return unix_accept(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
+    return unix_sock_accept(fd, unix_id, a2, a3, a4);
   int32_t id = socket_of_fd(fd);
   if (id < 0)
     return id;
@@ -665,12 +670,12 @@ long sys_accept(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_sock_shutdown(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
-    return unix_shutdown(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
+    return unix_sock_shutdown(fd, unix_id, a2, a3, a4);
   int32_t id = socket_of_fd(fd);
   return id < 0 ? id : sock_shutdown(id, (int32_t)a2);
 }
@@ -678,12 +683,12 @@ long sys_sock_shutdown(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_sockname(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
-    return unix_sockname(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
+    return unix_sock_sockname(fd, unix_id, a2, a3, a4);
   int32_t id = socket_of_fd(fd);
   if (id < 0)
     return id;
@@ -697,12 +702,12 @@ long sys_sockname(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_setsockopt(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
-    return unix_setsockopt(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
+    return unix_sock_setsockopt(fd, unix_id, a2, a3, a4);
   int32_t id = socket_of_fd(fd);
   if (id < 0)
     return id;
@@ -718,12 +723,12 @@ long sys_setsockopt(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_getsockopt(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
-    return unix_getsockopt(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
+    return unix_sock_getsockopt(fd, unix_id, a2, a3, a4);
   int32_t id = socket_of_fd(fd);
   if (id < 0)
     return id;
@@ -745,11 +750,11 @@ long sys_getsockopt(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_sendto(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_send_socket(fd, unix_id, a2, a3, a4);
-  (void)a6;
 {
     int32_t id = socket_of_fd(fd);
     if (id < 0)
@@ -773,11 +778,11 @@ long sys_sendto(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_recvfrom(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_recv_socket(fd, unix_id, a2, a3, a4);
-  (void)a6;
 {
     int32_t id = socket_of_fd(fd);
     if (id < 0)
@@ -800,12 +805,12 @@ long sys_recvfrom(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_sock_send(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_send_socket(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
 {
     int32_t id = socket_of_fd(fd);
     if (id < 0)
@@ -822,12 +827,12 @@ long sys_sock_send(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_sock_recv(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a5;
+  (void)a6;
   int32_t fd = (int32_t)a1;
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_recv_socket(fd, unix_id, a2, a3, a4);
-  (void)a5;
-  (void)a6;
 {
     int32_t id = socket_of_fd(fd);
     if (id < 0)
@@ -874,53 +879,53 @@ long sys_tcp_socket(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_tcp_connect(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a4;
+  (void)a5;
+  (void)a6;
   int32_t handle = (int32_t)(uint32_t)a1;
   uint32_t timeout_ms = (uint32_t)(a1 >> 32);
   if (tcp_denied(handle))
     return TCP_ERR_INVALID;
-  (void)a4;
-  (void)a5;
-  (void)a6;
   return tcp_connect(handle, (uint32_t)a2, (uint16_t)a3, timeout_ms);
 }
 
 long sys_tcp_listen(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
-  int32_t handle = (int32_t)(uint32_t)a1;
-  if (tcp_denied(handle))
-    return TCP_ERR_INVALID;
   (void)a4;
   (void)a5;
   (void)a6;
+  int32_t handle = (int32_t)(uint32_t)a1;
+  if (tcp_denied(handle))
+    return TCP_ERR_INVALID;
   return tcp_listen(handle, (uint16_t)a2, (uint8_t)a3);
 }
 
 long sys_tcp_accept(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
-  int32_t handle = (int32_t)(uint32_t)a1;
-  uint32_t timeout_ms = (uint32_t)(a1 >> 32);
-  if (tcp_denied(handle))
-    return TCP_ERR_INVALID;
   (void)a2;
   (void)a3;
   (void)a4;
   (void)a5;
   (void)a6;
+  int32_t handle = (int32_t)(uint32_t)a1;
+  uint32_t timeout_ms = (uint32_t)(a1 >> 32);
+  if (tcp_denied(handle))
+    return TCP_ERR_INVALID;
   return tcp_accept(handle, timeout_ms);
 }
 
 long sys_tcp_send(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a4;
+  (void)a5;
+  (void)a6;
   int32_t handle = (int32_t)(uint32_t)a1;
   uint32_t timeout_ms = (uint32_t)(a1 >> 32);
   if (tcp_denied(handle))
     return TCP_ERR_INVALID;
-  (void)a4;
-  (void)a5;
-  (void)a6;
   uint32_t length = (uint32_t)a3;
   if (!length)
     return 0;
@@ -932,13 +937,13 @@ long sys_tcp_send(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_tcp_recv(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  (void)a4;
+  (void)a5;
+  (void)a6;
   int32_t handle = (int32_t)(uint32_t)a1;
   uint32_t timeout_ms = (uint32_t)(a1 >> 32);
   if (tcp_denied(handle))
     return TCP_ERR_INVALID;
-  (void)a4;
-  (void)a5;
-  (void)a6;
   uint32_t length = (uint32_t)a3;
   if (!length)
     return 0;
@@ -950,58 +955,57 @@ long sys_tcp_recv(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_tcp_close(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
-  int32_t handle = (int32_t)(uint32_t)a1;
-  if (tcp_denied(handle))
-    return TCP_ERR_INVALID;
   (void)a2;
   (void)a3;
   (void)a4;
   (void)a5;
   (void)a6;
+  int32_t handle = (int32_t)(uint32_t)a1;
+  if (tcp_denied(handle))
+    return TCP_ERR_INVALID;
   return tcp_close(handle);
 }
 
 long sys_tcp_abort(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
-  int32_t handle = (int32_t)(uint32_t)a1;
-  if (tcp_denied(handle))
-    return TCP_ERR_INVALID;
   (void)a2;
   (void)a3;
   (void)a4;
   (void)a5;
   (void)a6;
+  int32_t handle = (int32_t)(uint32_t)a1;
+  if (tcp_denied(handle))
+    return TCP_ERR_INVALID;
   return tcp_abort(handle);
 }
 
 long sys_tcp_info(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
-  int32_t handle = (int32_t)(uint32_t)a1;
-  if (tcp_denied(handle))
-    return TCP_ERR_INVALID;
   (void)a3;
   (void)a4;
   (void)a5;
   (void)a6;
-  {
-    struct net_tcp_info *out = (struct net_tcp_info *)(uintptr_t)a2;
-    struct tcp_socket_info info;
-    if (!writable(out, sizeof(*out)))
-      return TCP_ERR_INVALID;
-    if (!tcp_get_info(handle, &info))
-      return TCP_ERR_INVALID;
-    out->state = (uint32_t)info.state;
-    out->local_address = info.local_address;
-    out->remote_address = info.remote_address;
-    out->local_port = info.local_port;
-    out->remote_port = info.remote_port;
-    out->bytes_unread = info.bytes_unread;
-    out->bytes_unsent = info.bytes_unsent;
-    out->cwnd = info.cwnd;
-    out->rto_ms = info.rto_ms;
-    return 0;
+  int32_t handle = (int32_t)(uint32_t)a1;
+  if (tcp_denied(handle))
+    return TCP_ERR_INVALID;
+  struct net_tcp_info *out = (struct net_tcp_info *)(uintptr_t)a2;
+  struct tcp_socket_info info;
+  if (!writable(out, sizeof(*out)))
+    return TCP_ERR_INVALID;
+  if (!tcp_get_info(handle, &info))
+    return TCP_ERR_INVALID;
+  out->state = (uint32_t)info.state;
+  out->local_address = info.local_address;
+  out->remote_address = info.remote_address;
+  out->local_port = info.local_port;
+  out->remote_port = info.remote_port;
+  out->bytes_unread = info.bytes_unread;
+  out->bytes_unsent = info.bytes_unsent;
+  out->cwnd = info.cwnd;
+  out->rto_ms = info.rto_ms;
+  return 0;
 }
 
 long sys_dns_resolve(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,

@@ -86,11 +86,11 @@ int64_t syscall_handler(struct syscall_regs *r)
 {
   struct process *p = process_current();
   if (!p || !p->trace_slot)
-    return syscall_dispatch(r);
+    return do_syscall_64(r);
   uint64_t nr = r->rax;
   uint64_t args[6] = {r->rdi, r->rsi, r->rdx, r->r10, r->r8, r->r9};
   uint64_t start = trace_syscall_enter(p, nr, args);
-  int64_t ret = syscall_dispatch(r);
+  int64_t ret = do_syscall_64(r);
   trace_syscall_exit(process_current(), nr, args, ret, start);
   return ret;
 }

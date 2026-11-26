@@ -82,7 +82,22 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	mm/oom/oom_gate.c \
 	mm/oom/oom_info.c \
 	kernel/syscall/syscall.c \
-	kernel/syscall/sudo.c \
+	kernel/syscall/sys/common.c \
+	kernel/syscall/sys/fs/fs.c \
+	kernel/syscall/sys/process/process.c \
+	kernel/syscall/sys/signal/signal.c \
+	kernel/syscall/sys/thread/thread.c \
+	kernel/syscall/sys/mm/mm.c \
+	kernel/syscall/sys/event/event.c \
+	kernel/syscall/sys/net/net.c \
+	kernel/syscall/sys/wifi/wifi.c \
+	kernel/syscall/sys/user/user.c \
+	kernel/syscall/sys/tty/tty.c \
+	kernel/syscall/sys/display/display.c \
+	kernel/syscall/sys/audio/audio.c \
+	kernel/syscall/sys/disk/disk.c \
+	kernel/syscall/sys/system/system.c \
+	kernel/syscall/sys/user/sudo.c \
 	kernel/trace/trace.c \
 	drivers/serial/serial.c \
 	drivers/display/vga.c \
@@ -179,6 +194,7 @@ ASM_SOURCES := $(ARCH_ASM_SOURCES)
 C_OBJECTS := $(C_SOURCES:%.c=$(OBJ_DIR)/%.o)
 CPP_OBJECTS := $(CPP_SOURCES:%.cpp=$(OBJ_DIR)/%.o)
 ASM_OBJECTS := $(ASM_SOURCES:%.asm=$(OBJ_DIR)/%.asm.o)
+LIBC_DIR := $(ROOT_DIR)/programs/PureC-OS-Core-Programs/libc
 GEN_DIR := $(OBJ_DIR)/generated
 GEN_STAMP := $(GEN_DIR)/build_stamp.c
 GEN_STAMP_OBJ := $(GEN_DIR)/build_stamp.o
@@ -197,6 +213,21 @@ acpi-fetch:
 		echo "acpi module not found, cloning $(ACPI_REPO)..."; \
 		git clone $(ACPI_REPO) $(ACPI_DIR); \
 	fi
+
+SYSCALL_TBL := $(ROOT_DIR)/src/arch/$(ARCH)/entry/syscalls/syscall_64.tbl
+SYSCALL_GEN := $(ROOT_DIR)/mk/syscalltbl.py
+SYSCALL_STAMP := $(OBJ_DIR)/syscalls.stamp
+
+$(SYSCALL_STAMP): $(SYSCALL_TBL) $(SYSCALL_GEN)
+	@mkdir -p $(@D)
+	python3 $(SYSCALL_GEN) $(SYSCALL_TBL) \
+		--nr $(ROOT_DIR)/src/kernel/syscall/syscall_nr.h \
+		--nr $(LIBC_DIR)/include/purec/abi/syscall_nr.h \
+		--proto $(ROOT_DIR)/src/kernel/syscall/syscall_table.h \
+		--table $(ROOT_DIR)/src/arch/$(ARCH)/entry/syscall_table.c
+	@touch $@
+
+$(C_OBJECTS) $(ASM_OBJECTS): | $(SYSCALL_STAMP)
 
 -include $(C_OBJECTS:.o=.d) $(CPP_OBJECTS:.o=.d) $(ACPI_OBJECTS:.o=.d) $(GEN_STAMP_OBJ:.o=.d)
 

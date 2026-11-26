@@ -104,6 +104,7 @@ static int64_t tty_ioctl_request(uint32_t request, uint64_t argument)
   default:
     return -KERR_NOTTY;
   }
+}
 
 long sys_tty_read(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)

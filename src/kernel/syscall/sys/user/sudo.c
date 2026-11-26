@@ -1,9 +1,9 @@
 #include "sudo.h"
 
-#include "../../fs/vfs.h"
-#include "../../lib/string.h"
-#include "../diagnostics/klog.h"
-#include "../process/process.h"
+#include <fs/vfs.h>
+#include <lib/string.h>
+#include <kernel/diagnostics/klog.h>
+#include <kernel/process/process.h>
 #include "purecrypt.h"
 #include "sha512.h"
 

@@ -95,6 +95,7 @@ long sys_exec(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
 long sys_execve(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
          uint64_t a5, uint64_t a6)
 {
+  struct syscall_regs *r = syscall_current_regs();
   (void)a4;
   (void)a5;
   (void)a6;

@@ -1,229 +1,18 @@
 #pragma once
 #include <stdbool.h>
 #include <stdint.h>
+#include "syscall_nr.h"
 
-#define SYS_WRITE 1
-#define SYS_CLEAR 2
-#define SYS_SLEEP 3
-#define SYS_GETPID 39
-#define SYS_FORK 57
-#define SYS_EXEC 59
-#define SYS_EXIT 60
-#define SYS_WAIT 61
-#define SYS_DRAW_RECT 100
-#define SYS_DRAW_LINE 101
-#define SYS_GET_MOUSE 102
-#define SYS_FB_INFO 103
+#define SYS_OPEN SYS_FILE_OPEN
+#define SYS_READ SYS_FILE_READ
+#define SYS_CLOSE SYS_FILE_CLOSE
+#define SYS_UNLINK SYS_FILE_DELETE
+#define SYS_RENAME SYS_FILE_RENAME
+#define SYS_MKDIR SYS_DIR_CREATE
 
-#define SYS_SCROLL_RECT_UP 106
-#define SYS_FB_BEGIN_UPDATE 109
-#define SYS_FB_END_UPDATE 110
-#define SYS_DISPLAY_SET_MODE 281
-#define SYS_THERMAL_INFO 282
-#define SYS_CPU_CORE_INFO 283
-#define SYS_FILE_OPEN 200
-#define SYS_FILE_READ 201
-#define SYS_FILE_DELETE 202
-#define SYS_FILE_RENAME 203
-#define SYS_FILE_MOVE 204
-#define SYS_DIR_LIST 205
-#define SYS_FILE_CREATE 206
-#define SYS_DIR_CREATE 207
-#define SYS_DISK_LIST 208
-#define SYS_STORAGE_CONTROLLERS 209
-#define SYS_FS_FORMAT 210
-#define SYS_FILE_WRITE 211
-#define SYS_USB_RESCAN 212
-#define SYS_FS_FORMAT_FORCE 213
-#define SYS_INSTALL_DEVICE 214
-#define SYS_CPU_INFO 215
-#define SYS_MEMORY_INFO 216
-#define SYS_DISK_STATS 217
-#define SYS_REBOOT 218
-#define SYS_SHUTDOWN 219
-#define SYS_BATTERY_INFO 220
-#define SYS_SCHED_YIELD 221
-#define SYS_FILE_CLOSE 222
-#define SYS_FILE_APPEND 223
-#define SYS_GETCHAR 224
-#define SYS_INSTALL_START 225
-#define SYS_INSTALL_STATUS 226
-#define SYS_TRY_GETCHAR 227
-#define SYS_INSTALL_LOG 228
-#define SYS_AUDIO_PLAY_TONE 229
-#define SYS_AUDIO_GET_STATUS 230
-#define SYS_AUDIO_GET_VOLUME 231
-#define SYS_AUDIO_SET_VOLUME 232
-#define SYS_AUDIO_IS_MUTED 233
-#define SYS_AUDIO_SET_MUTED 234
-#define SYS_AUDIO_ADJUST_VOLUME 235
-#define SYS_AUDIO_PLAY_TEST_SOUND 236
-#define SYS_AUDIO_UPDATE 237
-#define SYS_AUDIO_SELECT_OUTPUT_DEVICE 238
-#define SYS_GET_COMMAND_LINE 239
-#define SYS_ENV_GET 240
-#define SYS_ENV_SET 241
-#define SYS_ENV_UNSET 242
-#define SYS_ENV_LIST 243
-#define SYS_GET_PROCESS_NAME 244
-#define SYS_MOUSE_DEBUG_GET 245
-#define SYS_MOUSE_DEBUG_SET 246
-#define SYS_CONSOLE_CONFIGURE 247
-#define SYS_CONSOLE_CLEAR 248
-#define SYS_CONSOLE_DISABLE 249
-#define SYS_DESKTOP_REDRAW 250
-#define SYS_GUI_WINDOW_REGISTER 251
-#define SYS_GUI_WINDOW_UPDATE 252
-#define SYS_GUI_WINDOW_UNREGISTER 253
-#define SYS_GUI_WINDOW_STATE 254
-#define SYS_GUI_WINDOW_REPAINT_DONE 255
-#define SYS_HEAP_GROW 256
-#define SYS_PROCESS_LIST 257
-#define SYS_TRY_GET_SPECIAL 258
-#define SYS_NET_PING 259
-#define SYS_NET_IF_LIST 290
-#define SYS_WIFI_SCAN 260
-#define SYS_WIFI_LIST 261
-#define SYS_WIFI_CONNECT 262
-#define SYS_WIFI_DISCONNECT 263
-#define SYS_WIFI_STATUS 264
-#define SYS_SAVE_KLOG 265
-#define SYS_GET_ROOT_DEVICE 266
-#define SYS_FS_FORMAT_CUSTOM 267
-#define SYS_FORMAT_DEVICE_EX 268
-#define SYS_INSTALL_START_EX 269
-#define SYS_FILE_SEEK 275
-#define SYS_FILE_STAT 276
-#define SYS_AUDIO_STOP_TONE 277
-#define SYS_AUDIO_PCM_PUSH 278
-#define SYS_AUDIO_PCM_START 279
-#define SYS_AUDIO_PCM_STOP 280
-#define SYS_DIR_LIST_LONG 288
-#define SYS_IPC_SEND 291
-#define SYS_IPC_RECV 292
-#define SYS_TCP_SOCKET 300
-#define SYS_TCP_CONNECT 301
-#define SYS_TCP_LISTEN 302
-#define SYS_TCP_ACCEPT 303
-#define SYS_TCP_SEND 304
-#define SYS_TCP_RECV 305
-#define SYS_TCP_CLOSE 306
-#define SYS_TCP_ABORT 307
-#define SYS_TCP_INFO 308
-#define SYS_GETUID 309
-#define SYS_GETGID 310
-#define SYS_SETUID 311
-#define SYS_SETGID 312
-#define SYS_CHMOD 313
-#define SYS_CHOWN 314
-#define SYS_FILE_PERM 315
-#define SYS_USER_LOOKUP 316
-#define SYS_GETRANDOM 317
-#define SYS_SESSION_BEGIN 318
-#define SYS_TIME_GET 319
-#define SYS_TIME_SET 320
-#define SYS_FILE_STAT_EX 321
-#define SYS_FB_BLIT 322
-#define SYS_KEY_EVENT_GET 323
-#define SYS_EXECVE 324
-#define SYS_WAITPID 325
-#define SYS_PIPE 326
-#define SYS_DUP 327
-#define SYS_DUP2 328
-#define SYS_FD_READ 329
-#define SYS_FD_WRITE 330
-#define SYS_FD_OPEN 331
-#define SYS_FD_CTL 332
-#define SYS_CHDIR 333
-#define SYS_GETCWD 334
-#define SYS_KILL 335
-#define SYS_SIGACTION 336
-#define SYS_SIGPROCMASK 337
-#define SYS_SIGRETURN 338
-#define SYS_GETPPID 339
-#define SYS_FD_STAT 340
-#define SYS_SIGPENDING 341
-#define SYS_PAUSE 342
-#define SYS_FD_PATH 343
-#define SYS_FD_SEEK 344
-#define SYS_FD_TRUNCATE 345
-#define SYS_DESKTOP_CLAIM 346
-#define SYS_DESKTOP_BLIT 347
-#define SYS_DESKTOP_WAIT 348
-#define SYS_DESKTOP_WM 349
-#define SYS_GUI_WINDOW_INFO 350
-#define SYS_GUI_WINDOW_FLAGS 351
-#define SYS_GUI_WINDOW_CMD 352
-#define SYS_GUI_WINDOW_TITLE 353
-#define SYS_TTY_READ 354
-#define SYS_TTY_IOCTL 355
-#define SYS_POLL 356
-#define SYS_MMAP 357
-#define SYS_MUNMAP 358
-#define SYS_MPROTECT 359
-#define SYS_MREMAP 360
-#define SYS_DISPLAY_SCALE_INFO 361
-#define SYS_SOCKET 362
-#define SYS_CONNECT 363
-#define SYS_BIND 364
-#define SYS_LISTEN 365
-#define SYS_ACCEPT 366
-#define SYS_SOCK_SHUTDOWN 367
-#define SYS_SOCKNAME 368
-#define SYS_SETSOCKOPT 369
-#define SYS_GETSOCKOPT 370
-#define SYS_DNS_RESOLVE 371
-#define SYS_SOCK_SEND 372
-#define SYS_SOCK_RECV 373
-#define SYS_UTIMES 374
-#define SYS_THREAD_CREATE 375
-#define SYS_THREAD_EXIT 376
-#define SYS_FUTEX 377
-#define SYS_SET_FS_BASE 378
-#define SYS_GETTID 379
-#define SYS_EVENTFD 380
-#define SYS_TIMERFD_CREATE 381
-#define SYS_TIMERFD_SETTIME 382
-#define SYS_TIMERFD_GETTIME 383
-#define SYS_EPOLL_CREATE 384
-#define SYS_EPOLL_CTL 385
-#define SYS_EPOLL_WAIT 386
-#define SYS_SOCKETPAIR 387
-#define SYS_SENDMSG 388
-#define SYS_RECVMSG 389
-#define SYS_MEMFD_CREATE 390
-#define SYS_SHM_OPEN 391
-#define SYS_SHM_UNLINK 392
-#define SYS_MADVISE 393
-#define SYS_DISPLAY_CLAIM 398
-#define SYS_FB_MAP 399
-#define SYS_INPUT_OPEN 400
-#define SYS_FB_DAMAGE 401
-#define SYS_DISPLAY_RELEASE 402
-#define SYS_SENDTO 403
-#define SYS_RECVFROM 404
-#define SYS_NET_CONFIGURE 405
-#define SYS_KLOG_WRITE 406
-#define SYS_CLOCK_ADJUST 407
-#define SYS_NET_SOCKETS 408
-#define SYS_SYNC 410
-#define SYS_GUI_START 411
-#define SYS_VT_ACTIVATE 412
-#define SYS_VT_ACTIVE 413
-#define SYS_DISK_IO 414
-#define SYS_TRACE_ATTACH 415
-#define SYS_TRACE_READ 416
-#define SYS_TRACE_CONTROL 417
-#define SYS_SYMLINK 418
-#define SYS_READLINK 419
-#define SYS_LSTAT_EX 420
-#define SYS_RENAME_PATH 409
-#define SYS_SUDO 397
-#define SYS_OPENPTY 396
-#define SYS_TIME_ZONE 395
+
 #define TIME_ZONE_GET 0
 #define TIME_ZONE_SET 1
-#define SYS_SIGALTSTACK 394
 
 #define FD_CTL_GETFD 1
 #define FD_CTL_SETFD 2
@@ -639,12 +428,6 @@ struct process_environment_variable {
   char value[PROCESS_ENVIRONMENT_VALUE_LIMIT];
 };
 
-#define SYS_OPEN SYS_FILE_OPEN
-#define SYS_READ SYS_FILE_READ
-#define SYS_CLOSE SYS_FILE_CLOSE
-#define SYS_UNLINK SYS_FILE_DELETE
-#define SYS_RENAME SYS_FILE_RENAME
-#define SYS_MKDIR SYS_DIR_CREATE
 
 #define CPU_MONITOR_NAME_CAPACITY 49
 
@@ -882,13 +665,6 @@ struct custom_format_request {
   uint32_t reserved;
 };
 
-#define SYS_GET_FS_TYPE 270
-#define SYS_EXT2_STAT 271
-#define SYS_EXT2_INODE 272
-#define SYS_EXT2_SUPER 273
-#define SYS_EXT2_BLOCKS 274
-#define SYS_FILE_SEEK 275
-#define SYS_FILE_STAT 276
 struct file_stat_info {
   uint64_t size;
   uint32_t is_directory;
@@ -1019,6 +795,9 @@ struct syscall_regs {
 
 void syscall_init(void);
 int64_t syscall_handler(struct syscall_regs *regs);
+int64_t do_syscall_64(struct syscall_regs *regs);
+long x64_sys_call(const struct syscall_regs *regs, uint64_t nr);
+struct syscall_regs *syscall_current_regs(void);
 int64_t syscall_kernel_invoke(uint64_t n, uint64_t a1, uint64_t a2,
                               uint64_t a3, uint64_t a4, uint64_t a5);
 int syscall_entry_c(struct syscall_regs *regs);
