@@ -28,10 +28,19 @@ HOST_TEST_FLAGS := -std=c11 -Wall -Wextra -Werror -g -I$(ROOT_DIR)/src
 test: test-cpu test-scheduler-cpu test-scheduler-balance test-scheduler-rq test-oom test-pmm-smp test-string test-program-alias test-path test-vfs-mount test-devfs test-format test-procfs test-sysfs test-ext2-append test-tmpfs test-vfs-alias test-tcp test-hid-keymap test-console-vt test-tty test-scanf test-dot11 test-initramfs test-devman test-ipc test-ksym test-qr-encode test-wolfcrypt test-box test-accounts test-blit test-civil test-ext2-meta test-hdrbg test-install-accounts test-libm test-pmm-refcount test-vfs-perm test-malloc test-fenv
 	@echo "All host tests passed"
 
-check-abi:
+SYSCALL_TBL := $(ROOT_DIR)/src/arch/$(ARCH)/entry/syscalls/syscall_64.tbl
+
+syscalls:
+	python3 mk/syscalltbl.py $(SYSCALL_TBL) \
+		--nr src/kernel/syscall/syscall_nr.h \
+		--nr $(LIBC_DIR)/include/purec/abi/syscall_nr.h \
+		--proto src/kernel/syscall/syscall_table.h \
+		--table src/arch/$(ARCH)/entry/syscall_table.c
+
+check-abi: syscalls
 	@sh mk/check-abi.sh
 
-.PHONY: check-abi
+.PHONY: check-abi syscalls
 
 test-malloc:
 	@mkdir -p $(BIN_DIR)/tests

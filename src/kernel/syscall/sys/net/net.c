@@ -592,16 +592,14 @@ long sys_bind(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_bind_socket(fd, unix_id, a2, a3, a4);
-{
-    int32_t id = socket_of_fd(fd);
-    if (id < 0)
-      return id;
-    struct sock_addr_in address;
-    int64_t copied = socket_read_address(a2, a3, &address);
-    if (copied < 0)
-      return copied;
-    return sock_bind(id, &address);
-  }
+  int32_t id = socket_of_fd(fd);
+  if (id < 0)
+    return id;
+  struct sock_addr_in address;
+  int64_t copied = socket_read_address(a2, a3, &address);
+  if (copied < 0)
+    return copied;
+  return sock_bind(id, &address);
 }
 
 long sys_connect(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
@@ -613,16 +611,14 @@ long sys_connect(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_connect_socket(fd, unix_id, a2, a3, a4);
-{
-    int32_t id = socket_of_fd(fd);
-    if (id < 0)
-      return id;
-    struct sock_addr_in address;
-    int64_t copied = socket_read_address(a2, a3, &address);
-    if (copied < 0)
-      return copied;
-    return sock_connect(id, &address, fd_nonblocking(fd));
-  }
+  int32_t id = socket_of_fd(fd);
+  if (id < 0)
+    return id;
+  struct sock_addr_in address;
+  int64_t copied = socket_read_address(a2, a3, &address);
+  if (copied < 0)
+    return copied;
+  return sock_connect(id, &address, fd_nonblocking(fd));
 }
 
 long sys_listen(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
@@ -755,24 +751,22 @@ long sys_sendto(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_send_socket(fd, unix_id, a2, a3, a4);
-{
-    int32_t id = socket_of_fd(fd);
-    if (id < 0)
-      return id;
-    if (a3 > 0x7FFFFFFFULL)
-      return -KERR_INVAL;
-    struct sock_addr_in address;
-    if (!readable((const void *)(uintptr_t)a2, a3))
+  int32_t id = socket_of_fd(fd);
+  if (id < 0)
+    return id;
+  if (a3 > 0x7FFFFFFFULL)
+    return -KERR_INVAL;
+  struct sock_addr_in address;
+  if (!readable((const void *)(uintptr_t)a2, a3))
+    return -KERR_FAULT;
+  if (a5)
+  {
+    if (!readable((const void *)(uintptr_t)a5, sizeof(address)))
       return -KERR_FAULT;
-    if (a5)
-    {
-      if (!readable((const void *)(uintptr_t)a5, sizeof(address)))
-        return -KERR_FAULT;
-      memcpy(&address, (const void *)(uintptr_t)a5, sizeof(address));
-    }
-    return sock_sendto(id, (const void *)(uintptr_t)a2, (uint32_t)a3,
-                       fd_nonblocking(fd), (uint32_t)a4, a5 ? &address : 0);
+    memcpy(&address, (const void *)(uintptr_t)a5, sizeof(address));
   }
+  return sock_sendto(id, (const void *)(uintptr_t)a2, (uint32_t)a3,
+                     fd_nonblocking(fd), (uint32_t)a4, a5 ? &address : 0);
 }
 
 long sys_recvfrom(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
@@ -783,23 +777,21 @@ long sys_recvfrom(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_recv_socket(fd, unix_id, a2, a3, a4);
-{
-    int32_t id = socket_of_fd(fd);
-    if (id < 0)
-      return id;
-    if (a3 > 0x7FFFFFFFULL)
-      return -KERR_INVAL;
-    struct sock_addr_in address;
-    if (!writable((void *)(uintptr_t)a2, a3))
-      return -KERR_FAULT;
-    if (a5 && !writable((void *)(uintptr_t)a5, sizeof(address)))
-      return -KERR_FAULT;
-    int32_t got = sock_recvfrom(id, (void *)(uintptr_t)a2, (uint32_t)a3,
-                                fd_nonblocking(fd), (uint32_t)a4, &address);
-    if (got >= 0 && a5)
-      memcpy((void *)(uintptr_t)a5, &address, sizeof(address));
-    return got;
-  }
+  int32_t id = socket_of_fd(fd);
+  if (id < 0)
+    return id;
+  if (a3 > 0x7FFFFFFFULL)
+    return -KERR_INVAL;
+  struct sock_addr_in address;
+  if (!writable((void *)(uintptr_t)a2, a3))
+    return -KERR_FAULT;
+  if (a5 && !writable((void *)(uintptr_t)a5, sizeof(address)))
+    return -KERR_FAULT;
+  int32_t got = sock_recvfrom(id, (void *)(uintptr_t)a2, (uint32_t)a3,
+                              fd_nonblocking(fd), (uint32_t)a4, &address);
+  if (got >= 0 && a5)
+    memcpy((void *)(uintptr_t)a5, &address, sizeof(address));
+  return got;
 }
 
 long sys_sock_send(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
@@ -811,17 +803,15 @@ long sys_sock_send(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_send_socket(fd, unix_id, a2, a3, a4);
-{
-    int32_t id = socket_of_fd(fd);
-    if (id < 0)
-      return id;
-    if (a3 > 0x7FFFFFFFULL)
-      return -KERR_INVAL;
-    if (!readable((const void *)(uintptr_t)a2, a3))
-      return -KERR_FAULT;
-    return sock_write(id, (const void *)(uintptr_t)a2, (uint32_t)a3,
-                      fd_nonblocking(fd), (uint32_t)a4);
-  }
+  int32_t id = socket_of_fd(fd);
+  if (id < 0)
+    return id;
+  if (a3 > 0x7FFFFFFFULL)
+    return -KERR_INVAL;
+  if (!readable((const void *)(uintptr_t)a2, a3))
+    return -KERR_FAULT;
+  return sock_write(id, (const void *)(uintptr_t)a2, (uint32_t)a3,
+                    fd_nonblocking(fd), (uint32_t)a4);
 }
 
 long sys_sock_recv(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
@@ -833,17 +823,15 @@ long sys_sock_recv(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   int32_t unix_id = unix_of_fd(fd);
   if (unix_id >= 0)
     return unix_recv_socket(fd, unix_id, a2, a3, a4);
-{
-    int32_t id = socket_of_fd(fd);
-    if (id < 0)
-      return id;
-    if (a3 > 0x7FFFFFFFULL)
-      return -KERR_INVAL;
-    if (!writable((void *)(uintptr_t)a2, a3))
-      return -KERR_FAULT;
-    return sock_read(id, (void *)(uintptr_t)a2, (uint32_t)a3,
-                     fd_nonblocking(fd), (uint32_t)a4);
-  }
+  int32_t id = socket_of_fd(fd);
+  if (id < 0)
+    return id;
+  if (a3 > 0x7FFFFFFFULL)
+    return -KERR_INVAL;
+  if (!writable((void *)(uintptr_t)a2, a3))
+    return -KERR_FAULT;
+  return sock_read(id, (void *)(uintptr_t)a2, (uint32_t)a3,
+                   fd_nonblocking(fd), (uint32_t)a4);
 }
 
 long sys_sendmsg(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
