@@ -331,7 +331,7 @@ static bool overlay_file_meta(const char *path, struct vfs_perm_meta *meta) {
   const char *relative;
   char buffer[2];
   struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
-  if (strncmp(path, "/etc/", 5) == 0 && mount &&
+  if ((vfs_root_on_disk() || strncmp(path, "/etc/", 5) == 0) && mount &&
       mount->ops->get_meta(mount->context, relative, meta) >= 0)
     return true;
   if (vfs_perm_get(path, meta))
