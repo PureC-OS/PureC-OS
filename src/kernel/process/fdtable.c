@@ -184,7 +184,7 @@ static bool open_tty(const char *path, uint32_t flags, int32_t *result)
     return true;
   }
   struct process *self = process_current();
-  if (self && self->uid != 0)
+  if (self && self->euid != 0)
   {
     int32_t own = object_get(0);
     int32_t own_id;

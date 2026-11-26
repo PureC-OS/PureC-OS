@@ -1802,6 +1802,8 @@ int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid) {
     meta.uid = uid;
   if (gid != USER_ID_NONE)
     meta.gid = gid;
+  if (!directory)
+    meta.mode &= (uint16_t)~06000u;
   return store_meta(resolved.path, &meta);
 }
 

@@ -121,7 +121,7 @@ long sys_vt_activate(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
   struct process *self = process_current();
   if (!self)
     return -KERR_PERM;
-  if (self->uid != 0)
+  if (self->euid != 0)
   {
     int32_t object = fd_object(0);
     int32_t pty_id;

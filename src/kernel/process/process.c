@@ -251,7 +251,7 @@ bool process_socket_owner(int32_t sock_id, uint32_t *pid, uint32_t *uid,
         if (p->descriptors[d] < 0 || ofd_socket_id(p->descriptors[d]) != sock_id)
           continue;
         *pid = p->pid;
-        *uid = p->uid;
+        *uid = p->euid;
         *fd = d;
         if (name && capacity)
         {
@@ -270,7 +270,7 @@ bool process_name_of(uint32_t pid, uint32_t *uid, char *name, uint32_t capacity)
   struct process *p = process_find_by_pid(pid);
   if (!p || p->state == PROCESS_FREE)
     return false;
-  *uid = p->uid;
+  *uid = p->euid;
   if (name && capacity)
   {
     strncpy(name, p->name, capacity - 1);
@@ -292,8 +292,8 @@ bool process_proc_info_get(uint32_t pid, struct process_proc_info *out)
   struct process *p = process_find_by_pid(pid);
   if (!p)
     return false;
-  out->uid = p->uid;
-  out->gid = p->gid;
+  out->uid = p->ruid;
+  out->gid = p->rgid;
   out->exit_code = p->exit_code;
   {
     int32_t extra = __atomic_load_n(&p->extra_threads, __ATOMIC_ACQUIRE);
@@ -472,7 +472,8 @@ static uint64_t interp_data_bytes(const char *execfn)
 static bool write_interp_stack(uint64_t space, const struct built_image *built,
                                uint64_t table_addr, uint64_t table_words_before,
                                uint64_t data_addr, const char *execfn,
-                               uint32_t uid, uint32_t gid)
+                               uint32_t uid, uint32_t euid, uint32_t gid,
+                               uint32_t egid)
 {
   uint8_t random_bytes[16];
   krandom_fill(random_bytes, sizeof(random_bytes));
@@ -487,10 +488,10 @@ static bool write_interp_stack(uint64_t space, const struct built_image *built,
   AUXV_PUT(AT_BASE_, built->interp_base);
   AUXV_PUT(AT_ENTRY_, built->exe_entry);
   AUXV_PUT(AT_UID_, uid);
-  AUXV_PUT(AT_EUID_, uid);
+  AUXV_PUT(AT_EUID_, euid);
   AUXV_PUT(AT_GID_, gid);
-  AUXV_PUT(AT_EGID_, gid);
-  AUXV_PUT(AT_SECURE_, 0);
+  AUXV_PUT(AT_EGID_, egid);
+  AUXV_PUT(AT_SECURE_, (uid != euid || gid != egid) ? 1 : 0);
   AUXV_PUT(AT_RANDOM_, data_addr);
   AUXV_PUT(AT_EXECFN_, execfn_addr);
   AUXV_PUT(AT_NULL_, 0);
@@ -713,6 +714,7 @@ static bool process_on_text_console(const struct process *process)
 }
 static uint32_t session_uid;
 static uint32_t session_gid;
+#define RESID_KEEP 0xFFFFFFFFu
 
 static const struct
 {
@@ -805,13 +807,13 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
   if (parent)
     memcpy(process->cwd, parent->cwd, sizeof(process->cwd));
   process->sig_blocked = 0;
-  process->uid = parent ? parent->uid : 0;
-  process->gid = parent ? parent->gid : 0;
-  if (session_active && parent && parent->uid == 0 && parent->pid != 1 &&
+  process->ruid = process->euid = process->suid = parent ? parent->euid : 0;
+  process->rgid = process->egid = process->sgid = parent ? parent->egid : 0;
+  if (session_active && parent && parent->euid == 0 && parent->pid != 1 &&
       !process_on_text_console(parent))
   {
-    process->uid = session_uid;
-    process->gid = session_gid;
+    process->ruid = process->euid = process->suid = session_uid;
+    process->rgid = process->egid = process->sgid = session_gid;
   }
   if (command_line)
   {
@@ -831,7 +833,8 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
     uint64_t head[3] = {0, 0, 0};
     if (!write_user_bytes(process->address_space, sp, head, sizeof(head)) ||
         !write_interp_stack(process->address_space, &built, sp, 3, data_start,
-                            execfn, process->uid, process->gid))
+                            execfn, process->ruid, process->euid, process->rgid,
+                            process->egid))
     {
       last_spawn_error = "cannot build interpreter stack";
       vmm_destroy_address_space(process->address_space);
@@ -898,8 +901,12 @@ int32_t process_fork(const struct syscall_regs *regs)
   child->heap_limit = parent->heap_limit;
   child->mmap_cursor = parent->mmap_cursor;
   child->capabilities = parent->capabilities;
-  child->uid = parent->uid;
-  child->gid = parent->gid;
+  child->ruid = parent->ruid;
+  child->euid = parent->euid;
+  child->suid = parent->suid;
+  child->rgid = parent->rgid;
+  child->egid = parent->egid;
+  child->sgid = parent->sgid;
   trace_fork(parent, child);
   memcpy(child->environment, parent->environment, sizeof(child->environment));
   memcpy(child->command_line, parent->command_line,
@@ -1098,8 +1105,8 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
   process->entry = (uint64_t)(uintptr_t)entry;
   process->address_space = vmm_kernel_address_space();
   process->capabilities = capabilities;
-  process->uid = 0;
-  process->gid = 0;
+  process->ruid = process->euid = process->suid = 0;
+  process->rgid = process->egid = process->sgid = 0;
   strncpy(process->name, name, sizeof(process->name) - 1);
   process->name[sizeof(process->name) - 1] = '\0';
   environment_initialize(process, init);
@@ -2204,6 +2211,19 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   if (status < 0)
     return status;
 
+  uint32_t new_euid = process->euid;
+  uint32_t new_egid = process->egid;
+  {
+    struct file_perm_info exec_perm;
+    if (vfs_get_perm(resolved, &exec_perm) >= 0 && !exec_perm.reserved)
+    {
+      if (exec_perm.mode & 04000)
+        new_euid = exec_perm.uid;
+      if (exec_perm.mode & 02000)
+        new_egid = exec_perm.gid;
+    }
+  }
+
   struct exec_args args = {0};
   args.phys = pmm_allocate_contiguous(EXEC_ARG_PAGES);
   if (!args.phys)
@@ -2303,8 +2323,8 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   }
   if (layout_ok && built.interp)
     layout_ok = write_interp_stack(new_space, &built, sp, pointer_bytes / 8,
-                                   data_start, resolved, process->uid,
-                                   process->gid);
+                                   data_start, resolved, process->ruid,
+                                   new_euid, process->rgid, new_egid);
   uint64_t new_pages = vmm_user_page_count(new_space);
   if (!layout_ok || !oom_gate_try_charge_user(process->pid, new_pages))
   {
@@ -2361,6 +2381,8 @@ int32_t process_execve(struct syscall_regs *regs, const char *path,
   process->stack_low = built.stack_low;
   process->capabilities = process_path_capabilities(resolved) |
                           (alias ? process_path_capabilities(alias) : 0);
+  process->euid = process->suid = new_euid;
+  process->egid = process->sgid = new_egid;
   pmm_free_contiguous(args.phys, EXEC_ARG_PAGES);
 
   uint8_t fpu_area[FPU_STATE_SIZE] __attribute__((aligned(16)));
@@ -2602,43 +2624,109 @@ bool process_set_affinity(uint32_t pid, int16_t core)
 uint32_t process_current_uid(void)
 {
   struct process *process = process_current();
-  return process ? process->uid : 0;
+  return process ? process->euid : 0;
 }
 
 uint32_t process_current_gid(void)
 {
   struct process *process = process_current();
-  return process ? process->gid : 0;
+  return process ? process->egid : 0;
+}
+
+uint32_t process_current_ruid(void)
+{
+  struct process *process = process_current();
+  return process ? process->ruid : 0;
+}
+
+uint32_t process_current_rgid(void)
+{
+  struct process *process = process_current();
+  return process ? process->rgid : 0;
+}
+
+uint32_t process_current_suid(void)
+{
+  struct process *process = process_current();
+  return process ? process->suid : 0;
+}
+
+uint32_t process_current_sgid(void)
+{
+  struct process *process = process_current();
+  return process ? process->sgid : 0;
+}
+
+static bool id_in_set(uint32_t id, uint32_t a, uint32_t b, uint32_t c)
+{
+  return id == a || id == b || id == c;
+}
+
+int32_t process_set_resuid(uint32_t ruid, uint32_t euid, uint32_t suid)
+{
+  struct process *process = process_current();
+  if (!process)
+    return -KERR_PERM;
+  if (process->euid != 0)
+  {
+    if ((ruid != RESID_KEEP && !id_in_set(ruid, process->ruid, process->euid, process->suid)) ||
+        (euid != RESID_KEEP && !id_in_set(euid, process->ruid, process->euid, process->suid)) ||
+        (suid != RESID_KEEP && !id_in_set(suid, process->ruid, process->euid, process->suid)))
+      return -KERR_PERM;
+  }
+  if (ruid != RESID_KEEP)
+    process->ruid = ruid;
+  if (euid != RESID_KEEP)
+    process->euid = euid;
+  if (suid != RESID_KEEP)
+    process->suid = suid;
+  return 0;
+}
+
+int32_t process_set_resgid(uint32_t rgid, uint32_t egid, uint32_t sgid)
+{
+  struct process *process = process_current();
+  if (!process)
+    return -KERR_PERM;
+  if (process->euid != 0)
+  {
+    if ((rgid != RESID_KEEP && !id_in_set(rgid, process->rgid, process->egid, process->sgid)) ||
+        (egid != RESID_KEEP && !id_in_set(egid, process->rgid, process->egid, process->sgid)) ||
+        (sgid != RESID_KEEP && !id_in_set(sgid, process->rgid, process->egid, process->sgid)))
+      return -KERR_PERM;
+  }
+  if (rgid != RESID_KEEP)
+    process->rgid = rgid;
+  if (egid != RESID_KEEP)
+    process->egid = egid;
+  if (sgid != RESID_KEEP)
+    process->sgid = sgid;
+  return 0;
 }
 
 int32_t process_set_uid(uint32_t uid)
 {
   struct process *process = process_current();
   if (!process)
-    return -1;
-  if (process->uid != 0 && process->uid != uid)
-    return -1;
-  process->uid = uid;
+    return -KERR_PERM;
+  if (process->euid == 0)
+    return process_set_resuid(uid, uid, uid);
+  if (uid != process->ruid && uid != process->suid)
+    return -KERR_PERM;
+  process->euid = uid;
   return 0;
-}
-
-void process_grant_root(void)
-{
-  struct process *process = process_current();
-  if (!process)
-    return;
-  process->uid = 0;
-  process->gid = 0;
 }
 
 int32_t process_set_gid(uint32_t gid)
 {
   struct process *process = process_current();
   if (!process)
-    return -1;
-  if (process->uid != 0 && process->gid != gid)
-    return -1;
-  process->gid = gid;
+    return -KERR_PERM;
+  if (process->euid == 0)
+    return process_set_resgid(gid, gid, gid);
+  if (gid != process->rgid && gid != process->sgid)
+    return -KERR_PERM;
+  process->egid = gid;
   return 0;
 }
 
@@ -2656,7 +2744,7 @@ bool process_session_user(uint32_t *uid, uint32_t *gid)
 int32_t process_session_begin(uint32_t uid, uint32_t gid)
 {
   struct process *process = process_current();
-  if (!process || process->uid != 0)
+  if (!process || process->euid != 0)
     return -1;
   session_uid = uid;
   session_gid = gid;

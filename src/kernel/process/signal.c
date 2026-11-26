@@ -97,7 +97,9 @@ int32_t signal_send(uint32_t pid, int32_t sig) {
     return -KERR_SRCH;
   }
   struct process *caller = process_current();
-  if (caller && caller->uid != 0 && caller->uid != target->uid) {
+  if (caller && caller->euid != 0 && caller->ruid != target->ruid &&
+      caller->euid != target->ruid && caller->ruid != target->suid &&
+      caller->euid != target->suid) {
     process_table_unlock();
     return -KERR_PERM;
   }

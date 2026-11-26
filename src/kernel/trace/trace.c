@@ -133,7 +133,7 @@ int32_t trace_attach(uint32_t pid, uint32_t flags)
   process_table_lock();
   struct process *target = process_lookup_by_pid(pid);
   int32_t id = -1;
-  if (target && (caller->uid == 0 || caller->uid == target->uid) && !session_of(target)) {
+  if (target && (caller->euid == 0 || caller->euid == target->euid) && !session_of(target)) {
     uint64_t f = spin_lock_irqsave(&sessions_lock);
     for (int32_t i = 0; i < TRACE_MAX_SESSIONS; i++) {
       if (sessions[i].used)
