@@ -1,11 +1,13 @@
 NAME
-       hostname - show the system host name
+       hostname - show or set the system host name
 
 SYNOPSIS
-       hostname [-s]
+       hostname [-s] [NAME]
 
 DESCRIPTION
-       Print the name of the host.
+       Without NAME, print the host name of the current UTS namespace.
+       With NAME, set it (root only). The change affects only the running
+       UTS namespace of the caller and is not written to /etc/hostname.
 
 OPTIONS
        -s
@@ -13,6 +15,7 @@ OPTIONS
 
 EXAMPLES
        hostname
+       sudo hostname box
 
 SEE ALSO
-       uname(1)
+       uname(1), unshare(1), nsenter(1)

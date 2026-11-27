@@ -1,0 +1,25 @@
+NAME
+       nsenter - run a program in the namespaces of another process
+
+SYNOPSIS
+       nsenter -t PID [-u] [-m] [-p] [-i] [-n] [-U] [-C] [-T] [--] [COMMAND [ARG]...]
+
+DESCRIPTION
+       Join the namespaces of process PID through /proc/PID/ns and run
+       COMMAND. Without COMMAND, run $SHELL (or /bin/sh). Requires root.
+
+OPTIONS
+       -t, --target PID
+           process whose namespaces to join
+
+       -u, --uts
+           join the UTS namespace
+
+       -m, -p, -i, -n, -U, -C, -T
+           accepted, but report that the namespace is not supported yet
+
+EXAMPLES
+       sudo nsenter -t 12 -u hostname
+
+SEE ALSO
+       unshare(1), hostname(1)

@@ -6,6 +6,7 @@ SYNOPSIS
 
 DESCRIPTION
        Print certain system information. With no option, same as -s.
+       The node name is taken from the UTS namespace of the caller.
 
 OPTIONS
        -a
@@ -33,4 +34,4 @@ EXAMPLES
        uname -a
 
 SEE ALSO
-       hostname(1)
+       hostname(1), unshare(1)

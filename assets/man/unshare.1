@@ -1,0 +1,29 @@
+NAME
+       unshare - run a program in new namespaces
+
+SYNOPSIS
+       unshare [-u] [-m] [-p] [-i] [-n] [-U] [-C] [-T] [--] [COMMAND [ARG]...]
+
+DESCRIPTION
+       Create new namespaces for the calling process and run COMMAND in
+       them. Without COMMAND, run $SHELL (or /bin/sh). Requires root.
+
+OPTIONS
+       -u, --uts
+           new UTS namespace (host name and domain name)
+
+       -m, --mount
+       -p, --pid
+       -i, --ipc
+       -n, --net
+       -U, --user
+       -C, --cgroup
+       -T, --time
+           accepted, but report that the namespace is not supported yet
+
+EXAMPLES
+       sudo unshare -u sh
+       hostname box
+
+SEE ALSO
+       nsenter(1), hostname(1)
