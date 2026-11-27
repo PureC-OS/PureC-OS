@@ -941,6 +941,15 @@ int32_t vfs_handle_truncate(int32_t descriptor, uint64_t length) {
   return rewrite_file(path, 0, 0, 0, length) < 0 ? FS_ERROR_NO_SPACE : 0;
 }
 
+struct ns_common *vfs_handle_ns(int32_t descriptor) {
+  MUTEX_SCOPE(&vfs_mutex);
+  struct vfs_handle *h = get_handle(descriptor);
+  if (!h || h->type != VFS_HANDLE_BACKEND || !h->mount ||
+      !h->mount->ops->ns_get)
+    return NULL;
+  return h->mount->ops->ns_get(h->mount->context, h->backend_descriptor);
+}
+
 int32_t vfs_handle_stat(int32_t descriptor, struct file_stat_info *out) {
   char path[VFS_PATH_MAX];
   {

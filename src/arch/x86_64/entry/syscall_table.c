@@ -206,4 +206,10 @@ const sys_call_ptr_t sys_call_table[SYS_NR] = {
     [SYS_SETRESGID] = sys_setresgid,
     [SYS_GETRESUID] = sys_getresuid,
     [SYS_GETRESGID] = sys_getresgid,
+    [SYS_UNSHARE] = sys_unshare,
+    [SYS_SETNS] = sys_setns,
+    [SYS_CLONE] = sys_clone,
+    [SYS_UNAME] = sys_uname,
+    [SYS_SETHOSTNAME] = sys_sethostname,
+    [SYS_SETDOMAINNAME] = sys_setdomainname,
 };

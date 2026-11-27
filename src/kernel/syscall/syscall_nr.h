@@ -230,6 +230,12 @@
 #define SYS_SETRESGID 227
 #define SYS_GETRESUID 228
 #define SYS_GETRESGID 229
+#define SYS_UNSHARE 230
+#define SYS_SETNS 231
+#define SYS_CLONE 232
+#define SYS_UNAME 233
+#define SYS_SETHOSTNAME 234
+#define SYS_SETDOMAINNAME 235
 
-#define SYS_NR 230
-#define SYS_MAX 229
+#define SYS_NR 236
+#define SYS_MAX 235

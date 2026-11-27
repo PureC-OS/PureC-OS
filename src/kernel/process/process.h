@@ -29,6 +29,8 @@ struct process_environment_entry
 struct ipc_mbox;
 struct process_signals;
 struct vma_table;
+struct nsproxy;
+struct ns_common;
 
 enum process_state
 {
@@ -89,6 +91,7 @@ struct process
   uint32_t trace_gen;
   struct vma_table *vmas;
   struct syscall_regs *syscall_regs;
+  struct nsproxy *nsproxy;
 };
 
 void process_init(void);
@@ -103,6 +106,11 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
 const char *process_last_spawn_error(void);
 struct syscall_regs;
 int32_t process_fork(const struct syscall_regs *regs);
+int32_t process_fork_ns(const struct syscall_regs *regs, uint32_t ns_flags);
+struct nsproxy *process_nsproxy_get_current(void);
+int32_t process_ns_unshare(uint32_t flags);
+int32_t process_ns_install(struct ns_common *ns);
+struct ns_common *process_ns_get(uint32_t pid, uint32_t type);
 int32_t process_waitpid(int32_t pid, int32_t *status, uint32_t options);
 int32_t process_execve(struct syscall_regs *regs, const char *path,
                        const char *const *argv, const char *const *envp);

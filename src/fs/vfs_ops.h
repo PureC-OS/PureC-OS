@@ -7,6 +7,8 @@
 
 struct vfs_perm_meta;
 
+struct ns_common;
+
 struct vfs_fs_ops {
   const char *name;
   int32_t (*map)(void *context, const char *path, const void **data,
@@ -52,4 +54,5 @@ struct vfs_fs_ops {
   int32_t (*ftruncate)(void *context, int32_t descriptor, uint64_t length);
   int32_t (*fsize)(void *context, int32_t descriptor, uint64_t *size);
   bool (*is_ready)(void *context);
+  struct ns_common *(*ns_get)(void *context, int32_t descriptor);
 };

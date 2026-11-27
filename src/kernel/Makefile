@@ -92,6 +92,9 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	kernel/syscall/sys/net/net.c \
 	kernel/syscall/sys/wifi/wifi.c \
 	kernel/syscall/sys/user/user.c \
+	kernel/syscall/sys/ns/ns.c \
+	kernel/ns/nsproxy.c \
+	kernel/ns/uts.c \
 	kernel/syscall/sys/tty/tty.c \
 	kernel/syscall/sys/display/display.c \
 	kernel/syscall/sys/audio/audio.c \

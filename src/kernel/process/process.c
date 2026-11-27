@@ -24,6 +24,7 @@ static mutex_t process_mutex;
 #include "../tty/tty.h"
 #include "../ipc/ipc.h"
 #include "../random/krandom.h"
+#include "../ns/nsproxy.h"
 #include "elf.h"
 #include "process.h"
 #include "program_alias.h"
@@ -111,6 +112,8 @@ static void process_node_free(struct process *process)
   if (!process)
     return;
   oom_gate_remove_process(process->pid);
+  nsproxy_put(process->nsproxy);
+  process->nsproxy = NULL;
   vma_table_destroy(process->vmas);
   process->vmas = NULL;
   ipc_cleanup(process);
@@ -396,6 +399,9 @@ static struct process *allocate_process(void)
   if (!process)
     return 0;
   process->state = PROCESS_LOADING;
+  struct process *creator = process_current();
+  process->nsproxy = nsproxy_get(creator && creator->nsproxy ? creator->nsproxy
+                                                            : &init_nsproxy);
   process->trace_slot = 0;
   process->trace_gen = 0;
   process->waiter_thread_id = -1;
@@ -644,6 +650,7 @@ static void user_process_entry(void *argument)
 static uint32_t oom_reap_zombie(uint32_t pid);
 void process_init(void)
 {
+  nsproxy_init();
   process_list = NULL;
   next_pid = 1;
   for (uint32_t i = 0; i < PHASH_SIZE; i++)
@@ -862,6 +869,11 @@ int32_t process_spawn_elf(const void *image, uint64_t image_size,
 
 int32_t process_fork(const struct syscall_regs *regs)
 {
+  return process_fork_ns(regs, 0);
+}
+
+int32_t process_fork_ns(const struct syscall_regs *regs, uint32_t ns_flags)
+{
   MUTEX_SCOPE(&process_mutex);
   struct process *parent = process_current();
   if (!parent || !process_current_is_user() || !regs)
@@ -874,6 +886,18 @@ int32_t process_fork(const struct syscall_regs *regs)
   struct process *child = allocate_process();
   if (!child)
     return -1;
+  if (ns_flags)
+  {
+    struct nsproxy *proxy;
+    int32_t status = nsproxy_unshare(parent->nsproxy, ns_flags, &proxy);
+    if (status < 0)
+    {
+      process_node_free(child);
+      return status;
+    }
+    nsproxy_put(child->nsproxy);
+    child->nsproxy = proxy;
+  }
   child->address_space = vmm_clone_address_space(parent->address_space);
   if (!child->address_space)
   {
@@ -1086,6 +1110,8 @@ int32_t process_spawn_service(void (*entry)(void *arg), void *arg,
     last_spawn_error = "cannot allocate process descriptor";
     return -1;
   }
+  nsproxy_put(process->nsproxy);
+  process->nsproxy = nsproxy_get(&init_nsproxy);
   process->pid = next_pid++;
   if (process->pid == 0)
     process->pid = next_pid++;
@@ -2750,4 +2776,62 @@ int32_t process_session_begin(uint32_t uid, uint32_t gid)
   session_gid = gid;
   session_active = true;
   return 0;
+}
+
+struct nsproxy *process_nsproxy_get_current(void)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process->nsproxy)
+    return nsproxy_get(&init_nsproxy);
+  return nsproxy_get(process->nsproxy);
+}
+
+int32_t process_ns_unshare(uint32_t flags)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process->nsproxy)
+    return -KERR_PERM;
+  struct nsproxy *proxy;
+  int32_t status = nsproxy_unshare(process->nsproxy, flags, &proxy);
+  if (status < 0)
+    return status;
+  struct nsproxy *old = process->nsproxy;
+  process->nsproxy = proxy;
+  nsproxy_put(old);
+  return 0;
+}
+
+int32_t process_ns_install(struct ns_common *ns)
+{
+  MUTEX_SCOPE(&process_mutex);
+  struct process *process = process_current();
+  if (!process || !process->nsproxy)
+    return -KERR_PERM;
+  struct nsproxy *proxy;
+  int32_t status = nsproxy_install(process->nsproxy, ns, &proxy);
+  if (status < 0)
+    return status;
+  struct nsproxy *old = process->nsproxy;
+  process->nsproxy = proxy;
+  nsproxy_put(old);
+  return 0;
+}
+
+struct ns_common *process_ns_get(uint32_t pid, uint32_t type)
+{
+  MUTEX_SCOPE(&process_mutex);
+  if (pid >= PROCESS_KTHREAD_PID_BASE)
+  {
+    struct ns_common *ns = nsproxy_ns(&init_nsproxy, type);
+    ns_get(ns);
+    return ns;
+  }
+  struct process *process = process_find_by_pid(pid);
+  if (!process || !process->nsproxy)
+    return NULL;
+  struct ns_common *ns = nsproxy_ns(process->nsproxy, type);
+  ns_get(ns);
+  return ns;
 }

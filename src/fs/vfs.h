@@ -62,6 +62,8 @@ int32_t vfs_create_directory(const char *path);
 int32_t vfs_stat_ex(const char *path, struct file_stat_ex *out);
 int32_t vfs_lstat_ex(const char *path, struct file_stat_ex *out);
 int32_t vfs_readlink(const char *path, char *out, uint32_t capacity);
+struct ns_common;
+struct ns_common *vfs_handle_ns(int32_t descriptor);
 int32_t vfs_symlink(const char *target, const char *path);
 int32_t vfs_chmod(const char *path, uint16_t mode);
 int32_t vfs_chown(const char *path, uint32_t uid, uint32_t gid);

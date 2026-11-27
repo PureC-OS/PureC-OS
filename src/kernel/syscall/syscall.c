@@ -12,6 +12,7 @@
 #include <kernel/time/wallclock.h>
 #include <kernel/diagnostics/boot_diag.h>
 #include <kernel/diagnostics/klog.h>
+#include <kernel/ns/uts.h>
 #include <kernel/process/process.h>
 #include "sys/common.h"
 
@@ -148,6 +149,7 @@ void syscall_init(void)
                 hn[i] = 0;
                 break;
               }
+            uts_set_nodename(&init_uts_ns, hn, (uint32_t)strlen(hn));
             klogf(KLOG_INFO, "config: hostname='%s'", hn);
           }
         }

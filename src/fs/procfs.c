@@ -7,6 +7,7 @@
 #include <io/storage/block_device.h>
 #include <io/storage/storage_types.h>
 #include <io/swap.h>
+#include <kernel/ns/nsproxy.h>
 #include <kernel/process/scheduler.h>
 #include <kernel/process/process.h>
 #include <kernel/smp/cpu.h>
@@ -36,6 +37,7 @@ struct procfs_file {
   bool used;
   uint32_t length;
   uint32_t position;
+  struct ns_common *ns;
   char data[PROCFS_BUFFER];
 };
 
@@ -313,12 +315,13 @@ static const struct proc_entry pid_entries[] = {
 #define ROOT_COUNT (sizeof(root_entries) / sizeof(root_entries[0]))
 #define PID_COUNT (sizeof(pid_entries) / sizeof(pid_entries[0]))
 
-enum node_kind { NODE_NONE, NODE_ROOT, NODE_FILE, NODE_PID_DIR };
+enum node_kind { NODE_NONE, NODE_ROOT, NODE_FILE, NODE_PID_DIR, NODE_NS_DIR, NODE_NS_FILE };
 
 struct node {
   enum node_kind kind;
   generator_fn generate;
   uint32_t pid;
+  uint32_t ns_type;
 };
 
 static bool parse_pid(const char *text, uint32_t *pid, uint32_t *length) {
@@ -336,7 +339,7 @@ static bool parse_pid(const char *text, uint32_t *pid, uint32_t *length) {
 }
 
 static struct node lookup(const char *path) {
-  struct node node = {NODE_NONE, 0, 0};
+  struct node node = {NODE_NONE, 0, 0, 0};
   if (!path || path[0] != '/')
     return node;
   if (!path[1]) {
@@ -345,7 +348,12 @@ static struct node lookup(const char *path) {
   }
   const char *name = path + 1;
   uint32_t pid, digits;
-  if (parse_pid(name, &pid, &digits)) {
+  bool is_self = strncmp(name, "self", 4) == 0 && (!name[4] || name[4] == '/');
+  if (is_self) {
+    pid = (uint32_t)process_current_pid();
+    digits = 4;
+  }
+  if (is_self || parse_pid(name, &pid, &digits)) {
     if (!find_process(pid) && !find_kthread(pid))
       return node;
     if (!name[digits]) {
@@ -355,8 +363,24 @@ static struct node lookup(const char *path) {
     }
     if (name[digits] != '/')
       return node;
+    const char *rest = name + digits + 1;
+    if (strcmp(rest, "ns") == 0) {
+      node.kind = NODE_NS_DIR;
+      node.pid = pid;
+      return node;
+    }
+    if (strncmp(rest, "ns/", 3) == 0) {
+      for (uint32_t type = 0; type < NS_TYPE_COUNT; type++)
+        if (strcmp(rest + 3, ns_type_name(type)) == 0) {
+          node.kind = NODE_NS_FILE;
+          node.pid = pid;
+          node.ns_type = type;
+          return node;
+        }
+      return node;
+    }
     for (uint32_t i = 0; i < PID_COUNT; i++)
-      if (strcmp(name + digits + 1, pid_entries[i].name) == 0) {
+      if (strcmp(rest, pid_entries[i].name) == 0) {
         node.kind = NODE_FILE;
         node.generate = pid_entries[i].generate;
         node.pid = pid;
@@ -378,19 +402,28 @@ static int32_t procfs_open(void *context, const char *path) {
   struct node node = lookup(path);
   if (node.kind == NODE_NONE)
     return FS_ERROR_NOT_FOUND;
-  if (node.kind != NODE_FILE)
+  if (node.kind != NODE_FILE && node.kind != NODE_NS_FILE)
     return FS_ERROR_NOT_FILE;
+  struct ns_common *ns = 0;
+  if (node.kind == NODE_NS_FILE) {
+    ns = process_ns_get(node.pid, node.ns_type);
+    if (!ns)
+      return FS_ERROR_NOT_FOUND;
+  }
   for (int32_t i = 0; i < PROCFS_MAX_OPEN; i++) {
     if (files[i].used)
       continue;
     struct pbuf out = {files[i].data, PROCFS_BUFFER, 0};
     files[i].data[0] = '\0';
-    node.generate(&out, node.pid);
+    files[i].ns = ns;
+    if (node.kind == NODE_FILE)
+      node.generate(&out, node.pid);
     files[i].used = true;
     files[i].length = out.length;
     files[i].position = 0;
     return i;
   }
+  ns_put(ns);
   return FS_ERROR_NO_SPACE;
 }
 
@@ -438,6 +471,8 @@ static int32_t procfs_close(void *context, int32_t descriptor) {
   struct procfs_file *file = get_file(descriptor);
   if (!file)
     return FS_ERROR_INVALID;
+  ns_put(file->ns);
+  file->ns = 0;
   file->used = false;
   return 0;
 }
@@ -449,7 +484,7 @@ static int32_t procfs_stat(void *context, const char *path,
   if (node.kind == NODE_NONE)
     return FS_ERROR_NOT_FOUND;
   out->size = 0;
-  out->is_directory = node.kind != NODE_FILE;
+  out->is_directory = node.kind != NODE_FILE && node.kind != NODE_NS_FILE;
   out->reserved = FS_NODE_FILE;
   return 0;
 }
@@ -475,7 +510,7 @@ static int32_t list_node(const char *path, void *entries, uint32_t capacity,
   struct node node = lookup(path);
   if (node.kind == NODE_NONE)
     return FS_ERROR_NOT_FOUND;
-  if (node.kind == NODE_FILE)
+  if (node.kind == NODE_FILE || node.kind == NODE_NS_FILE)
     return FS_ERROR_NOT_DIR;
   uint32_t count = 0;
   char name[16];
@@ -504,9 +539,13 @@ static int32_t list_node(const char *path, void *entries, uint32_t capacity,
       kformat(name, sizeof(name), "%u", PROCESS_KTHREAD_PID_BASE + kthread_list[i].tid);
       ADD(name, FS_ATTRIBUTE_DIRECTORY);
     }
+  } else if (node.kind == NODE_NS_DIR) {
+    for (uint32_t type = 0; type < NS_TYPE_COUNT; type++)
+      ADD(ns_type_name(type), 0);
   } else {
     for (uint32_t i = 0; i < PID_COUNT; i++)
       ADD(pid_entries[i].name, 0);
+    ADD("ns", FS_ATTRIBUTE_DIRECTORY);
   }
 #undef ADD
   return (int32_t)count;
@@ -526,6 +565,30 @@ static int32_t procfs_list_long(void *context, const char *path,
   return list_node(path, entries, capacity, true);
 }
 
+static int32_t procfs_readlink(void *context, const char *path, char *out,
+                               uint32_t capacity) {
+  (void)context;
+  struct node node = lookup(path);
+  if (node.kind != NODE_NS_FILE)
+    return node.kind == NODE_NONE ? FS_ERROR_NOT_FOUND : FS_ERROR_INVALID;
+  struct ns_common *ns = process_ns_get(node.pid, node.ns_type);
+  if (!ns)
+    return FS_ERROR_NOT_FOUND;
+  int32_t length = kformat(out, capacity, "%s:[%llu]", ns_type_name(node.ns_type),
+                           (unsigned long long)ns->id);
+  ns_put(ns);
+  return length;
+}
+
+static struct ns_common *procfs_ns_get(void *context, int32_t descriptor) {
+  (void)context;
+  struct procfs_file *file = get_file(descriptor);
+  if (!file || !file->ns)
+    return 0;
+  ns_get(file->ns);
+  return file->ns;
+}
+
 const struct vfs_fs_ops vfs_procfs_ops = {
     .name = "procfs",
     .open = procfs_open,
@@ -535,4 +598,6 @@ const struct vfs_fs_ops vfs_procfs_ops = {
     .stat = procfs_stat,
     .list = procfs_list,
     .list_long = procfs_list_long,
+    .readlink = procfs_readlink,
+    .ns_get = procfs_ns_get,
 };
