@@ -14,11 +14,12 @@
 #define NS_ALL_FLAGS                                                           \
   (CLONE_NEWTIME | CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS |              \
    CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET)
-#define NS_SUPPORTED_FLAGS (CLONE_NEWUTS)
+#define NS_SUPPORTED_FLAGS (CLONE_NEWUTS | CLONE_NEWNS)
 
 enum ns_type
 {
   NS_TYPE_UTS = 0,
+  NS_TYPE_MNT,
   NS_TYPE_COUNT
 };
 
@@ -30,11 +31,13 @@ struct ns_common
 };
 
 struct uts_namespace;
+struct mnt_namespace;
 
 struct nsproxy
 {
   uint32_t refcount;
   struct uts_namespace *uts;
+  struct mnt_namespace *mnt;
 };
 
 extern struct nsproxy init_nsproxy;

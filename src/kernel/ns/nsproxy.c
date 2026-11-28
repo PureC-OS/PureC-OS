@@ -1,4 +1,5 @@
 #include <kernel/ns/nsproxy.h>
+#include <kernel/ns/mnt.h>
 #include <kernel/ns/uts.h>
 #include <kernel/syscall/syscall.h>
 #include <lib/string.h>
@@ -6,7 +7,7 @@
 
 #define NS_DYNAMIC_ID_BASE 0xF0000000ULL
 
-struct nsproxy init_nsproxy = {1, &init_uts_ns};
+struct nsproxy init_nsproxy = {1, &init_uts_ns, &init_mnt_ns};
 
 static uint64_t next_ns_id = NS_DYNAMIC_ID_BASE;
 
@@ -26,6 +27,8 @@ uint32_t ns_flag_for_type(uint32_t type)
   {
   case NS_TYPE_UTS:
     return CLONE_NEWUTS;
+  case NS_TYPE_MNT:
+    return CLONE_NEWNS;
   default:
     return 0;
   }
@@ -37,6 +40,8 @@ const char *ns_type_name(uint32_t type)
   {
   case NS_TYPE_UTS:
     return "uts";
+  case NS_TYPE_MNT:
+    return "mnt";
   default:
     return "";
   }
@@ -67,6 +72,9 @@ void ns_put(struct ns_common *ns)
   case NS_TYPE_UTS:
     uts_ns_free((struct uts_namespace *)ns);
     break;
+  case NS_TYPE_MNT:
+    mnt_ns_free((struct mnt_namespace *)ns);
+    break;
   default:
     break;
   }
@@ -86,6 +94,7 @@ void nsproxy_put(struct nsproxy *proxy)
   if (__atomic_sub_fetch(&proxy->refcount, 1, __ATOMIC_ACQ_REL) != 0)
     return;
   ns_put(&proxy->uts->ns);
+  ns_put(&proxy->mnt->ns);
   oom_slab_free(proxy, sizeof(*proxy));
 }
 
@@ -121,6 +130,21 @@ int32_t nsproxy_unshare(struct nsproxy *old, uint32_t flags,
     proxy->uts = old->uts;
     ns_get(&proxy->uts->ns);
   }
+  if (flags & CLONE_NEWNS)
+  {
+    proxy->mnt = mnt_ns_copy(old->mnt);
+    if (!proxy->mnt)
+    {
+      ns_put(&proxy->uts->ns);
+      oom_slab_free(proxy, sizeof(*proxy));
+      return -KERR_NOMEM;
+    }
+  }
+  else
+  {
+    proxy->mnt = old->mnt;
+    ns_get(&proxy->mnt->ns);
+  }
   *out = proxy;
   return 0;
 }
@@ -132,16 +156,21 @@ int32_t nsproxy_install(struct nsproxy *old, struct ns_common *ns,
   if (!proxy)
     return -KERR_NOMEM;
   proxy->uts = old->uts;
+  proxy->mnt = old->mnt;
   switch (ns->type)
   {
   case NS_TYPE_UTS:
     proxy->uts = (struct uts_namespace *)ns;
+    break;
+  case NS_TYPE_MNT:
+    proxy->mnt = (struct mnt_namespace *)ns;
     break;
   default:
     oom_slab_free(proxy, sizeof(*proxy));
     return -KERR_INVAL;
   }
   ns_get(&proxy->uts->ns);
+  ns_get(&proxy->mnt->ns);
   *out = proxy;
   return 0;
 }
@@ -152,6 +181,8 @@ struct ns_common *nsproxy_ns(struct nsproxy *proxy, uint32_t type)
   {
   case NS_TYPE_UTS:
     return &proxy->uts->ns;
+  case NS_TYPE_MNT:
+    return &proxy->mnt->ns;
   default:
     return NULL;
   }

@@ -10,4 +10,5 @@ extern const struct vfs_fs_ops vfs_procfs_ops;
 extern const struct vfs_fs_ops vfs_sysfs_ops;
 extern const struct vfs_fs_ops vfs_tmpfs_ops;
 void *vfs_tmpfs_create(void);
+void vfs_tmpfs_destroy(void *instance);
 void vfs_backends_sync(void);

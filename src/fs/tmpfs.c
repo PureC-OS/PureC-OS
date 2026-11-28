@@ -58,6 +58,19 @@ void *vfs_tmpfs_create(void) {
   return fs;
 }
 
+static void release_data(struct tmpfs *fs, struct node *node);
+
+void vfs_tmpfs_destroy(void *instance) {
+  struct tmpfs *fs = instance;
+  if (!fs)
+    return;
+  for (int32_t i = 0; i < TMPFS_MAX_NODES; i++)
+    if (fs->nodes[i].used && fs->nodes[i].physical)
+      release_data(fs, &fs->nodes[i]);
+  uint64_t pages = (sizeof(struct tmpfs) + TMPFS_PAGE - 1) / TMPFS_PAGE;
+  pmm_free_contiguous(pmm_virtual_to_physical((uint64_t)(uintptr_t)fs), pages);
+}
+
 static int32_t find_child(struct tmpfs *fs, int32_t parent, const char *name, uint32_t length) {
   for (int32_t i = 0; i < TMPFS_MAX_NODES; i++) {
     if (!fs->nodes[i].used || i == TMPFS_ROOT || fs->nodes[i].parent != parent)
