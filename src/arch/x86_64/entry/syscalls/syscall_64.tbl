@@ -234,3 +234,5 @@
 233	common	uname	sys_uname
 234	common	sethostname	sys_sethostname
 235	common	setdomainname	sys_setdomainname
+236	common	mount	sys_mount
+237	common	umount2	sys_umount2

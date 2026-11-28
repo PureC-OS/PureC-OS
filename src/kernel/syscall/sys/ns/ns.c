@@ -31,6 +31,8 @@ long sys_unshare(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
     return 0;
   if (!ns_admin())
     return -KERR_PERM;
+  if (flags & CLONE_NEWNS)
+    vfs_mounts_sync();
   return process_ns_unshare((uint32_t)flags);
 }
 
@@ -77,6 +79,8 @@ long sys_clone(uint64_t a1, uint64_t a2, uint64_t a3, uint64_t a4,
     return -KERR_INVAL;
   if (ns_flags && !ns_admin())
     return -KERR_PERM;
+  if (ns_flags & CLONE_NEWNS)
+    vfs_mounts_sync();
   long result = process_fork_ns(syscall_current_regs(), (uint32_t)ns_flags);
   if (result == -1)
     return -KERR_AGAIN;

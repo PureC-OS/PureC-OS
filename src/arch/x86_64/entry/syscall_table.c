@@ -212,4 +212,6 @@ const sys_call_ptr_t sys_call_table[SYS_NR] = {
     [SYS_UNAME] = sys_uname,
     [SYS_SETHOSTNAME] = sys_sethostname,
     [SYS_SETDOMAINNAME] = sys_setdomainname,
+    [SYS_MOUNT] = sys_mount,
+    [SYS_UMOUNT2] = sys_umount2,
 };

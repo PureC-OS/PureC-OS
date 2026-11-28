@@ -139,12 +139,13 @@ static void generate_stat(struct pbuf *out, uint32_t pid) {
   emit(out, "ticks %llu\n", (unsigned long long)timer_ticks());
 }
 
+static void emit_mount(const char *source, const char *path, const char *type,
+                       bool read_only, void *arg) {
+  emit(arg, "%s %s %s %s 0 0\n", source, path, type, read_only ? "ro" : "rw");
+}
+
 static void generate_mounts(struct pbuf *out, uint32_t pid) {
-  (void)pid;
-  struct vfs_mount_info info;
-  for (uint32_t index = 0; vfs_mounts_info(index, &info) == 0; index++)
-    emit(out, "%s %s %s %s 0 0\n", info.source, info.path, info.type,
-         (info.flags & 1U) ? "ro" : "rw");
+  (void)vfs_mounts_visit(pid, emit_mount, out);
 }
 
 static void generate_interrupts(struct pbuf *out, uint32_t pid) {
@@ -309,7 +310,7 @@ static const struct proc_entry root_entries[] = {
     {"partitions", generate_partitions}};
 
 static const struct proc_entry pid_entries[] = {
-    {"status", generate_pid_status}, {"name", generate_pid_name},
+    {"mounts", generate_mounts}, {"status", generate_pid_status}, {"name", generate_pid_name},
     {"cmdline", generate_pid_cmdline}, {"cwd", generate_pid_cwd}};
 
 #define ROOT_COUNT (sizeof(root_entries) / sizeof(root_entries[0]))

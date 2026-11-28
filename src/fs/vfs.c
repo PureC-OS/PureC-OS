@@ -19,6 +19,7 @@ static mutex_t vfs_mutex;
 #include "vfs.h"
 #include "vfs_alias.h"
 #include "vfs_backends.h"
+#include "vfs_fat32.h"
 #include "ext2/include/ext2_bcache.h"
 #include "vfs_mount.h"
 #include "vfs_path.h"
@@ -1905,20 +1906,225 @@ int32_t vfs_user_lookup(const char *name, uint32_t uid,
   return 0;
 }
 
-int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out) {
+struct mounts_dump {
+  vfs_mounts_fn emit;
+  void *arg;
+};
+
+static void dump_mount(const struct vfs_mount *mount, void *arg) {
+  struct mounts_dump *dump = arg;
+  const char *type = mount->ops->name;
+  if (strcmp(type, "fat32") == 0)
+    type = "vfat";
+  dump->emit(mount->super->source, mount->path, type,
+             (mount->flags & VFS_MOUNT_READ_ONLY) != 0, dump->arg);
+}
+
+int32_t vfs_mounts_visit(uint32_t pid, vfs_mounts_fn emit, void *arg) {
   MUTEX_SCOPE(&vfs_mutex);
   ensure_mounts();
-  const struct vfs_mount *mount = vfs_mount_get(index);
-  if (!mount || !out)
+  struct mnt_namespace *ns = 0;
+  struct ns_common *held = 0;
+  if (pid && pid != (uint32_t)process_current_pid()) {
+    held = process_ns_get(pid, NS_TYPE_MNT);
+    ns = (struct mnt_namespace *)held;
+  } else {
+    ns = mnt_ns_current();
+  }
+  if (!ns)
     return FS_ERROR_NOT_FOUND;
-  strncpy(out->path, mount->path, sizeof(out->path) - 1);
-  out->path[sizeof(out->path) - 1] = '\0';
-  strncpy(out->source, mount->source, sizeof(out->source) - 1);
-  out->source[sizeof(out->source) - 1] = '\0';
-  strncpy(out->type, mount->ops->name, sizeof(out->type) - 1);
-  out->type[sizeof(out->type) - 1] = '\0';
-  out->flags = mount->flags;
+  struct mounts_dump dump = {emit, arg};
+  vfs_mount_foreach(ns, dump_mount, &dump);
+  ns_put(held);
   return 0;
+}
+
+void vfs_mounts_sync(void) {
+  MUTEX_SCOPE(&vfs_mutex);
+  ensure_mounts();
+}
+
+static int32_t mount_errno(int32_t status) {
+  switch (status) {
+  case FS_ERROR_NOT_FOUND:
+    return -KERR_NOENT;
+  case FS_ERROR_INVALID:
+    return -KERR_INVAL;
+  case FS_ERROR_NO_SPACE:
+    return -KERR_NOMEM;
+  case FS_ERROR_EXISTS:
+    return -KERR_EXIST;
+  case FS_ERROR_NOT_DIR:
+    return -KERR_NOTDIR;
+  case FS_ERROR_BUSY:
+    return -KERR_BUSY;
+  case FS_ERROR_DENIED:
+    return -KERR_ACCES;
+  case FS_ERROR_LOOP:
+    return -KERR_LOOP;
+  default:
+    return -KERR_IO;
+  }
+}
+
+#define MS_RDONLY 1U
+#define MS_REMOUNT 32U
+#define MS_BIND 4096U
+#define MS_MOVE 8192U
+#define MS_REC 16384U
+#define MS_UNBINDABLE (1U << 17)
+#define MS_PRIVATE (1U << 18)
+#define MS_SLAVE (1U << 19)
+#define MS_SHARED (1U << 20)
+#define MS_PROPAGATION (MS_UNBINDABLE | MS_PRIVATE | MS_SLAVE | MS_SHARED)
+#define MNT_DETACH 2U
+#define MNT_EXPIRE 4U
+#define MNT_FORCE 1U
+#define UMOUNT_NOFOLLOW 8U
+
+static int32_t existing_directory(const char *path, char *canonical,
+                                  uint32_t capacity, struct vfs_resolved *out) {
+  int32_t status = resolve(path, out);
+  if (status < 0)
+    return mount_errno(status);
+  struct file_stat_info info;
+  status = vfs_stat(out->path, &info);
+  if (status < 0)
+    return mount_errno(status);
+  if (!info.is_directory)
+    return -KERR_NOTDIR;
+  if (strlen(out->path) + 1 > capacity)
+    return -KERR_NAMETOOLONG;
+  strcpy(canonical, out->path);
+  return 0;
+}
+
+static const char *device_basename(const char *source) {
+  if (strncmp(source, "/dev/", 5) == 0)
+    return source + 5;
+  return source;
+}
+
+static int32_t make_super(const char *source, const char *fstype,
+                          uint32_t *flags, struct vfs_super **out) {
+  const struct vfs_fs_ops *ops = 0;
+  void *context = 0;
+  void (*destroy)(void *) = 0;
+  if (strcmp(fstype, "tmpfs") == 0) {
+    context = vfs_tmpfs_create();
+    if (!context)
+      return -KERR_NOMEM;
+    ops = &vfs_tmpfs_ops;
+    destroy = vfs_tmpfs_destroy;
+  } else if (strcmp(fstype, "proc") == 0 || strcmp(fstype, "procfs") == 0) {
+    ops = &vfs_procfs_ops;
+    *flags |= VFS_MOUNT_READ_ONLY;
+  } else if (strcmp(fstype, "sysfs") == 0) {
+    ops = &vfs_sysfs_ops;
+    *flags |= VFS_MOUNT_READ_ONLY;
+  } else if (strcmp(fstype, "kernelfs") == 0) {
+    ops = &vfs_kernelfs_ops;
+    *flags |= VFS_MOUNT_READ_ONLY;
+  } else if (strcmp(fstype, "devtmpfs") == 0 || strcmp(fstype, "devfs") == 0) {
+    ops = &vfs_devfs_ops;
+  } else if (strcmp(fstype, "ext2") == 0) {
+    if (!ext2_is_mounted() ||
+        strcmp(device_basename(source), ext2_device_name()) != 0)
+      return -KERR_NODEV;
+    ops = &vfs_ext2_ops;
+  } else if (strcmp(fstype, "vfat") == 0 || strcmp(fstype, "fat32") == 0) {
+    int32_t device = block_device_find(device_basename(source));
+    if (device < 0)
+      return -KERR_NODEV;
+    if (!vfs_fat32_open_device((uint32_t)device, &ops, &context))
+      return -KERR_BUSY;
+  } else {
+    return -KERR_NODEV;
+  }
+  struct vfs_super *super = vfs_super_create(ops, context, source, destroy);
+  if (!super) {
+    if (destroy)
+      destroy(context);
+    return -KERR_NOMEM;
+  }
+  *out = super;
+  return 0;
+}
+
+int32_t vfs_mount_syscall(const char *source, const char *target,
+                          const char *fstype, uint32_t flags,
+                          const char *data) {
+  (void)data;
+  MUTEX_SCOPE(&vfs_mutex);
+  ensure_mounts();
+  struct mnt_namespace *ns = mnt_ns_current();
+  struct vfs_resolved resolved;
+  char path[VFS_PATH_MAX];
+  int32_t status = existing_directory(target, path, sizeof(path), &resolved);
+  if (status < 0)
+    return status;
+  uint32_t mount_flags = (flags & MS_RDONLY) ? VFS_MOUNT_READ_ONLY : 0;
+  if (flags & MS_MOVE)
+    return -KERR_INVAL;
+  if (flags & MS_REMOUNT) {
+    struct vfs_mount *mount = vfs_mount_at_in(ns, path);
+    if (!mount)
+      return -KERR_INVAL;
+    mount->flags = mount_flags;
+    return 0;
+  }
+  if (flags & MS_BIND) {
+    if (!source)
+      return -KERR_INVAL;
+    struct vfs_resolved from;
+    char from_path[VFS_PATH_MAX];
+    status = existing_directory(source, from_path, sizeof(from_path), &from);
+    if (status < 0)
+      return status;
+    const char *root = strcmp(from.relative, "/") == 0 ? "" : from.relative;
+    status = vfs_mount_bind(ns, from.mount, from_path, root, path,
+                            (flags & MS_REC) != 0);
+    if (status < 0)
+      return mount_errno(status);
+    struct vfs_mount *bound = vfs_mount_at_in(ns, path);
+    if (bound && (flags & MS_RDONLY))
+      bound->flags |= VFS_MOUNT_READ_ONLY;
+    return 0;
+  }
+  if (flags & MS_PROPAGATION)
+    return vfs_mount_at_in(ns, path) ? 0 : -KERR_INVAL;
+  if (!fstype)
+    return -KERR_INVAL;
+  if (strcmp(path, "/") == 0)
+    return -KERR_BUSY;
+  struct vfs_super *super = 0;
+  status = make_super(source ? source : fstype, fstype, &mount_flags, &super);
+  if (status < 0)
+    return status;
+  status = vfs_mount_add_super(ns, path, super, 0, mount_flags);
+  vfs_super_put(super);
+  return status < 0 ? mount_errno(status) : 0;
+}
+
+int32_t vfs_umount_syscall(const char *target, uint32_t flags) {
+  if (flags & ~(MNT_FORCE | MNT_DETACH | MNT_EXPIRE | UMOUNT_NOFOLLOW))
+    return -KERR_INVAL;
+  if ((flags & MNT_EXPIRE) && (flags & (MNT_FORCE | MNT_DETACH)))
+    return -KERR_INVAL;
+  if (flags & MNT_EXPIRE)
+    return -KERR_INVAL;
+  MUTEX_SCOPE(&vfs_mutex);
+  ensure_mounts();
+  struct mnt_namespace *ns = mnt_ns_current();
+  struct vfs_resolved resolved;
+  char path[VFS_PATH_MAX];
+  int32_t status = existing_directory(target, path, sizeof(path), &resolved);
+  if (status < 0)
+    return status;
+  if (!vfs_mount_at_in(ns, path))
+    return -KERR_INVAL;
+  status = vfs_mount_detach(ns, path, (flags & MNT_DETACH) != 0);
+  return status < 0 ? mount_errno(status) : 0;
 }
 
 int32_t vfs_format_device(const char *device_name,

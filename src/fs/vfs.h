@@ -19,15 +19,16 @@
 /* true when "/" is a disk file system: its files win over the boot image copies */
 bool vfs_root_on_disk(void);
 
-struct vfs_mount_info {
-  char path[512];
-  char source[64];
-  char type[16];
-  uint32_t flags;
-};
+typedef void (*vfs_mounts_fn)(const char *source, const char *path,
+                            const char *type, bool read_only, void *arg);
 
 void vfs_selftest(void);
-int32_t vfs_mounts_info(uint32_t index, struct vfs_mount_info *out);
+int32_t vfs_mounts_visit(uint32_t pid, vfs_mounts_fn emit, void *arg);
+void vfs_mounts_sync(void);
+int32_t vfs_mount_syscall(const char *source, const char *target,
+                          const char *fstype, uint32_t flags,
+                          const char *data);
+int32_t vfs_umount_syscall(const char *target, uint32_t flags);
 bool vfs_mount_root(void);
 bool vfs_mount_initramfs(void);
 bool vfs_mount_root_with_fs(uint8_t fs_type);

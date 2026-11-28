@@ -217,3 +217,5 @@ long sys_clone(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 long sys_uname(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 long sys_sethostname(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 long sys_setdomainname(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+long sys_mount(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+long sys_umount2(uint64_t, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);

@@ -236,6 +236,8 @@
 #define SYS_UNAME 233
 #define SYS_SETHOSTNAME 234
 #define SYS_SETDOMAINNAME 235
+#define SYS_MOUNT 236
+#define SYS_UMOUNT2 237
 
-#define SYS_NR 236
-#define SYS_MAX 235
+#define SYS_NR 238
+#define SYS_MAX 237

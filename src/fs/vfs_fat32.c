@@ -89,26 +89,65 @@ bool vfs_fat32_mount_boot_device(uint32_t device) {
   return mount_esp(device, esp);
 }
 
-static bool mount_esp(uint32_t device, uint32_t esp) {
+static bool fat32_attached;
+static uint32_t fat32_attached_device;
+static uint32_t fat32_attached_lba;
+static const struct vfs_fs_ops *fat32_attached_ops;
+static void *fat32_attached_context;
+
+static bool open_device(uint32_t device, bool force,
+                        const struct vfs_fs_ops **ops, void **context) {
+  uint32_t esp = find_esp(device);
+  if (!esp)
+    return false;
+  if (fat32_attached && !force) {
+    if (fat32_attached_device != device || fat32_attached_lba != esp)
+      return false;
+    *ops = fat32_attached_ops;
+    *context = fat32_attached_context;
+    return true;
+  }
   if (!devman_load_module(FAT32_MODULE_NAME, FAT32_MODULE_PATH)) {
-    klog(KLOG_WARN, "fat32: module not available, /boot stays on the root fs");
+    klog(KLOG_WARN, "fat32: module not available");
     return false;
   }
   uint64_t abi = kmod_get(FAT32_MODULE_NAME, FAT32_SYM_ABI);
   uint64_t attach = kmod_get(FAT32_MODULE_NAME, FAT32_SYM_ATTACH);
-  uint64_t ops = kmod_get(FAT32_MODULE_NAME, FAT32_SYM_OPS);
-  if (!abi || !attach || !ops ||
+  uint64_t module_ops = kmod_get(FAT32_MODULE_NAME, FAT32_SYM_OPS);
+  if (!abi || !attach || !module_ops ||
       ((fat32_abi_fn)abi)() != FAT32_MODULE_ABI) {
     klog(KLOG_WARN, "fat32: module ABI mismatch");
     return false;
   }
-  void *context = ((fat32_attach_fn)attach)(device, esp);
-  if (!context) {
+  void *volume = ((fat32_attach_fn)attach)(device, esp);
+  if (!volume) {
     klogf(KLOG_WARN, "fat32: dev %u lba %u is not a FAT32 volume", device, esp);
     return false;
   }
-  if (vfs_mount_replace("/boot", (const struct vfs_fs_ops *)ops, context,
-                        "esp", 0) < 0) {
+  fat32_attached = true;
+  fat32_attached_device = device;
+  fat32_attached_lba = esp;
+  fat32_attached_ops = (const struct vfs_fs_ops *)module_ops;
+  fat32_attached_context = volume;
+  *ops = fat32_attached_ops;
+  *context = volume;
+  return true;
+}
+
+bool vfs_fat32_open_device(uint32_t device, const struct vfs_fs_ops **ops,
+                           void **context) {
+  return open_device(device, false, ops, context);
+}
+
+static bool mount_esp(uint32_t device, uint32_t esp) {
+  const struct vfs_fs_ops *ops;
+  void *context;
+  if (!open_device(device, true, &ops, &context)) {
+    klogf(KLOG_WARN, "fat32: dev %u lba %u cannot be mounted on /boot", device,
+          esp);
+    return false;
+  }
+  if (vfs_mount_replace("/boot", ops, context, "esp", 0) < 0) {
     klog(KLOG_WARN, "fat32: cannot mount /boot");
     return false;
   }
