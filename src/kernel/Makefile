@@ -84,6 +84,7 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	kernel/syscall/syscall.c \
 	kernel/syscall/sys/common.c \
 	kernel/syscall/sys/fs/fs.c \
+	kernel/syscall/sys/fs/mount.c \
 	kernel/syscall/sys/process/process.c \
 	kernel/syscall/sys/signal/signal.c \
 	kernel/syscall/sys/thread/thread.c \
@@ -95,6 +96,7 @@ C_SOURCES := $(ARCH_C_SOURCES) \
 	kernel/syscall/sys/ns/ns.c \
 	kernel/ns/nsproxy.c \
 	kernel/ns/uts.c \
+	kernel/ns/mnt.c \
 	kernel/syscall/sys/tty/tty.c \
 	kernel/syscall/sys/display/display.c \
 	kernel/syscall/sys/audio/audio.c \
