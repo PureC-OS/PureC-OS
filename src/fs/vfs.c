@@ -2,6 +2,7 @@
 static mutex_t vfs_mutex;
 #include "../io/storage/block_device.h"
 #include "../kernel/diagnostics/klog.h"
+#include "../kernel/ns/mnt.h"
 #include "../kernel/process/process.h"
 #include "../kernel/process/scheduler.h"
 #include "../kernel/syscall/syscall.h"
@@ -54,8 +55,10 @@ struct vfs_handle {
 struct vfs_resolved {
   struct vfs_mount *mount;
   const char *relative;
+  const char *rest;
+  uint32_t root_length;
   char path[VFS_PATH_MAX];
-  char root[2];
+  char rel[VFS_PATH_MAX];
 };
 
 static struct vfs_handle *handles;
@@ -90,12 +93,20 @@ static bool live_mode;
 static bool tmpfs_synced;
 
 static void mount_tmpfs(const char *path, const char *const *seed) {
-  if (vfs_mount_at(path))
+  if (vfs_mount_at_in(&init_mnt_ns, path))
     return;
   void *instance = vfs_tmpfs_create();
   if (!instance)
     return;
-  if (vfs_mount_add(path, &vfs_tmpfs_ops, instance, "tmpfs", 0) < 0)
+  struct vfs_super *super =
+      vfs_super_create(&vfs_tmpfs_ops, instance, "tmpfs", vfs_tmpfs_destroy);
+  if (!super) {
+    vfs_tmpfs_destroy(instance);
+    return;
+  }
+  int32_t added = vfs_mount_add_super(&init_mnt_ns, path, super, 0, 0);
+  vfs_super_put(super);
+  if (added < 0)
     return;
   for (uint32_t i = 0; seed && seed[i]; i++)
     (void)vfs_tmpfs_ops.create_directory(instance, seed[i]);
@@ -107,7 +118,7 @@ static void mount_tmpfs(const char *path, const char *const *seed) {
 }
 
 static void unmount_live_tmpfs(const char *path) {
-  const struct vfs_mount *mount = vfs_mount_at(path);
+  const struct vfs_mount *mount = vfs_mount_at_in(&init_mnt_ns, path);
   if (mount && mount->ops == &vfs_tmpfs_ops)
     (void)vfs_mount_remove(path);
 }
@@ -152,9 +163,9 @@ static void ensure_mounts(void) {
 }
 
 static void log_mount(const char *path) {
-  const struct vfs_mount *mount = vfs_mount_at(path);
+  const struct vfs_mount *mount = vfs_mount_at_in(&init_mnt_ns, path);
   if (mount)
-    klogf(KLOG_INFO, "vfs: %s on %s type %s%s", mount->source, mount->path,
+    klogf(KLOG_INFO, "vfs: %s on %s type %s%s", mount->super->source, mount->path,
           mount->ops->name,
           (mount->flags & VFS_MOUNT_READ_ONLY) ? " (ro)" : "");
 }
@@ -180,8 +191,10 @@ static int32_t splice_link(const struct vfs_resolved *resolved,
                            uint32_t consumed, const char *target, char *out,
                            uint32_t capacity) {
   char joined[VFS_PATH_MAX * 2];
-  uint32_t prefix = (uint32_t)(resolved->relative - resolved->path);
+  uint32_t prefix = (uint32_t)(resolved->rest - resolved->path);
   const char *rest = resolved->relative + consumed;
+  consumed = consumed > resolved->root_length ? consumed - resolved->root_length
+                                              : 0;
   uint32_t length = 0;
   if (target[0] != '/') {
     uint32_t base = prefix + consumed;
@@ -229,12 +242,13 @@ static int32_t resolve_mode(const char *input, struct vfs_resolved *resolved,
   for (uint32_t hops = 0;; hops++) {
     if (vfs_alias_resolve(current, resolved->path, sizeof(resolved->path)) < 0)
       return FS_ERROR_INVALID;
-    resolved->mount = vfs_mount_find(resolved->path, &resolved->relative,
-                                     resolved->root, sizeof(resolved->root));
+    resolved->mount = vfs_mount_find(
+        resolved->path, &resolved->relative, resolved->rel,
+        sizeof(resolved->rel), &resolved->rest, &resolved->root_length);
     if (!resolved->mount)
       return FS_ERROR_NOT_FOUND;
     const struct vfs_fs_ops *ops = resolved->mount->ops;
-    if (!ops->link_walk || resolved->relative == resolved->root ||
+    if (!ops->link_walk || (!resolved->rest[0] && !resolved->root_length) ||
         !mount_ready(resolved->mount))
       return 0;
     char target[VFS_PATH_MAX];
@@ -268,6 +282,13 @@ static const char *const virtual_dirs[] = {"/mnt", "/opt", "/srv", "/usr/local",
                                            "/usr/local/bin", "/lost+found"};
 
 #define VIRTUAL_DIR_COUNT (sizeof(virtual_dirs) / sizeof(virtual_dirs[0]))
+
+static const char *child_name(const char *directory, uint32_t mount_children,
+                              const char *const *virtual_names, uint32_t index) {
+  if (index < mount_children)
+    return vfs_mount_child_name(directory, index);
+  return virtual_names[index - mount_children];
+}
 
 static bool is_virtual_dir(const char *path) {
   if (!live_mode)
@@ -316,7 +337,7 @@ static void parent_of(const char *path, char *out, uint32_t capacity) {
 
 static struct vfs_mount *meta_mount(const char *path, const char **relative,
                                     char *buffer, uint32_t capacity) {
-  struct vfs_mount *mount = vfs_mount_find(path, relative, buffer, capacity);
+  struct vfs_mount *mount = vfs_mount_find(path, relative, buffer, capacity, 0, 0);
   if (!mount || !mount->ops->get_meta || !mount->ops->set_meta ||
       !mount_ready(mount))
     return 0;
@@ -329,7 +350,7 @@ static bool overlay_file_meta(const char *path, struct vfs_perm_meta *meta) {
   if (!initramfs_is_mounted() || !initramfs_find(path, &data, &size))
     return false;
   const char *relative;
-  char buffer[2];
+  char buffer[VFS_PATH_MAX];
   struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
   if ((vfs_root_on_disk() || strncmp(path, "/etc/", 5) == 0) && mount &&
       mount->ops->get_meta(mount->context, relative, meta) >= 0)
@@ -359,7 +380,7 @@ static void effective_meta(const char *path, bool directory,
   if (!directory && overlay_file_meta(path, meta))
     return;
   const char *relative;
-  char buffer[2];
+  char buffer[VFS_PATH_MAX];
   struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
   if (mount && mount->ops->get_meta(mount->context, relative, meta) >= 0)
     return;
@@ -369,7 +390,7 @@ static void effective_meta(const char *path, bool directory,
 
 static int32_t store_meta(const char *path, const struct vfs_perm_meta *meta) {
   const char *relative;
-  char buffer[2];
+  char buffer[VFS_PATH_MAX];
   struct vfs_mount *mount = meta_mount(path, &relative, buffer, sizeof(buffer));
   if (mount && !(mount->flags & VFS_MOUNT_READ_ONLY))
     return mount->ops->set_meta(mount->context, relative, meta);
@@ -659,7 +680,7 @@ static int32_t vfs_open_checked(const char *path, bool check) {
   }
   h->type = VFS_HANDLE_BACKEND;
   h->backend_descriptor = backend;
-  h->mount = resolved.mount;
+  h->mount = vfs_mount_ref(resolved.mount);
   return VFS_FD_BASE + idx;
 }
 
@@ -787,7 +808,7 @@ int32_t vfs_open_flags(const char *path, uint32_t flags) {
     int32_t backend = wops->open(resolved.mount->context, resolved.relative);
     if (backend >= 0) {
       h->backend_descriptor = backend;
-      h->mount = resolved.mount;
+      h->mount = vfs_mount_ref(resolved.mount);
     }
   }
   if (h->backend_descriptor >= 0) {
@@ -1011,6 +1032,7 @@ int32_t vfs_close(int32_t descriptor) {
        (writable && h->backend_descriptor >= 0)) &&
       h->mount && h->mount->ops->close)
     r = h->mount->ops->close(h->mount->context, h->backend_descriptor);
+  vfs_mount_unref(h->mount);
   memset(h, 0, sizeof(*h));
   (void)writable;
   return r;
@@ -1414,10 +1436,10 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
   if (ops->list && mount_ready(resolved.mount))
     backend = ops->list(resolved.mount->context, resolved.relative, entries,
                         capacity);
-  const char *children[VFS_MOUNT_MAX + 8];
-  uint32_t child_count = vfs_mount_children(resolved.path, children,
-                                            VFS_MOUNT_MAX);
-  child_count += virtual_children(resolved.path, children + child_count, 8);
+  const char *virtual_names[VIRTUAL_DIR_COUNT];
+  uint32_t mount_children = vfs_mount_child_count(resolved.path);
+  uint32_t child_count = mount_children + virtual_children(
+      resolved.path, virtual_names, VIRTUAL_DIR_COUNT);
   bool is_root = path_equals(resolved.path, "/");
   bool extra = overlay_dir(resolved.path);
   if (backend < 0 && !is_root && !child_count && !extra && !is_virtual_dir(resolved.path))
@@ -1433,9 +1455,9 @@ int32_t vfs_list(const char *path, struct fs_directory_entry *entries,
     count++;
   }
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
-    if (short_has(entries, count, children[i]))
+    if (short_has(entries, count, child_name(resolved.path, mount_children, virtual_names, i)))
       continue;
-    copy_name(entries[count].name, children[i]);
+    copy_name(entries[count].name, child_name(resolved.path, mount_children, virtual_names, i));
     entries[count].size = 0;
     entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
     count++;
@@ -1471,10 +1493,10 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
   if (ops->list_long && mount_ready(resolved.mount))
     backend = ops->list_long(resolved.mount->context, resolved.relative,
                              entries, capacity);
-  const char *children[VFS_MOUNT_MAX + 8];
-  uint32_t child_count = vfs_mount_children(resolved.path, children,
-                                            VFS_MOUNT_MAX);
-  child_count += virtual_children(resolved.path, children + child_count, 8);
+  const char *virtual_names[VIRTUAL_DIR_COUNT];
+  uint32_t mount_children = vfs_mount_child_count(resolved.path);
+  uint32_t child_count = mount_children + virtual_children(
+      resolved.path, virtual_names, VIRTUAL_DIR_COUNT);
   bool is_root = path_equals(resolved.path, "/");
   bool extra = overlay_dir(resolved.path);
   if (backend < 0 && !is_root && !child_count && !extra && !is_virtual_dir(resolved.path))
@@ -1488,9 +1510,9 @@ int32_t vfs_list_long(const char *path, struct fs_directory_entry_long *entries,
     count++;
   }
   for (uint32_t i = 0; i < child_count && count < capacity; i++) {
-    if (long_has(entries, count, children[i]))
+    if (long_has(entries, count, child_name(resolved.path, mount_children, virtual_names, i)))
       continue;
-    copy_name_long(entries[count].name, children[i]);
+    copy_name_long(entries[count].name, child_name(resolved.path, mount_children, virtual_names, i));
     entries[count].size = 0;
     entries[count].attributes = FS_ATTRIBUTE_DIRECTORY;
     count++;
