@@ -118,6 +118,17 @@ static void unlink_locked(struct mnt_namespace *ns, struct vfs_mount *mount) {
   }
 }
 
+static void link_locked(struct mnt_namespace *ns, struct vfs_mount *mount) {
+  struct vfs_mount *existing = at_locked(ns, mount->path);
+  if (existing)
+    unlink_locked(ns, existing);
+  struct vfs_mount **tail = &ns->mounts;
+  while (*tail)
+    tail = &(*tail)->next;
+  *tail = mount;
+  ns->count++;
+}
+
 static int32_t add_locked(struct mnt_namespace *ns, const char *path,
                           struct vfs_super *super, const char *root,
                           uint32_t flags) {
@@ -128,14 +139,7 @@ static int32_t add_locked(struct mnt_namespace *ns, const char *path,
   struct vfs_mount *mount = new_mount(normalized, root, super, flags);
   if (!mount)
     return FS_ERROR_NO_SPACE;
-  struct vfs_mount *existing = at_locked(ns, normalized);
-  if (existing)
-    unlink_locked(ns, existing);
-  struct vfs_mount **tail = &ns->mounts;
-  while (*tail)
-    tail = &(*tail)->next;
-  *tail = mount;
-  ns->count++;
+  link_locked(ns, mount);
   return 0;
 }
 
@@ -209,35 +213,51 @@ int32_t vfs_mount_bind(struct mnt_namespace *ns, struct vfs_mount *source,
       vfs_path_normalize(source_path, from, sizeof(from)) < 0)
     return FS_ERROR_INVALID;
   MUTEX_SCOPE(&mnt_lock);
-  struct vfs_mount *first = ns->mounts;
-  uint32_t flags = source->flags;
-  struct vfs_super *super = vfs_super_get(source->super);
-  int32_t status = add_locked(ns, target_path, super, source_root, flags);
-  vfs_super_put(super);
-  if (status < 0 || !recursive)
-    return status;
-  uint32_t from_length = (uint32_t)strlen(from);
-  uint32_t target_length = (uint32_t)strlen(target_path);
-  for (struct vfs_mount *mount = first; mount; mount = mount->next) {
-    if (mount == source || equal(mount->path, from) ||
-        !under(mount->path, from))
-      continue;
-    const char *suffix = from_length == 1 ? mount->path : mount->path + from_length;
+  struct vfs_mount *chain = 0;
+  struct vfs_mount **chain_tail = &chain;
+  if (recursive) {
+    uint32_t from_length = (uint32_t)strlen(from);
+    uint32_t target_length = (uint32_t)strlen(target_path);
     uint32_t base = target_length == 1 ? 0 : target_length;
-    uint32_t length = base + (uint32_t)strlen(suffix) + 1;
-    char *joined = oom_slab_alloc(length);
-    if (!joined)
-      return FS_ERROR_NO_SPACE;
-    memcpy(joined, target_path, base);
-    strcpy(joined + base, suffix);
-    super = vfs_super_get(mount->super);
-    status = add_locked(ns, joined, super, mount->root, mount->flags);
-    vfs_super_put(super);
-    oom_slab_free(joined, length);
-    if (status < 0)
-      return status;
+    for (struct vfs_mount *mount = ns->mounts; mount; mount = mount->next) {
+      if (mount == source || equal(mount->path, from) ||
+          !under(mount->path, from))
+        continue;
+      const char *suffix =
+          from_length == 1 ? mount->path : mount->path + from_length;
+      uint32_t length = base + (uint32_t)strlen(suffix) + 1;
+      char *joined = oom_slab_alloc(length);
+      struct vfs_mount *copy = 0;
+      if (joined) {
+        memcpy(joined, target_path, base);
+        strcpy(joined + base, suffix);
+        copy = new_mount(joined, mount->root, mount->super, mount->flags);
+        oom_slab_free(joined, length);
+      }
+      if (!copy) {
+        while (chain) {
+          struct vfs_mount *drop = chain;
+          chain = drop->next;
+          vfs_mount_unref(drop);
+        }
+        return FS_ERROR_NO_SPACE;
+      }
+      *chain_tail = copy;
+      chain_tail = &copy->next;
+    }
   }
-  return 0;
+  int32_t status =
+      add_locked(ns, target_path, source->super, source_root, source->flags);
+  while (chain) {
+    struct vfs_mount *copy = chain;
+    chain = copy->next;
+    copy->next = 0;
+    if (status < 0)
+      vfs_mount_unref(copy);
+    else
+      link_locked(ns, copy);
+  }
+  return status;
 }
 
 struct vfs_mount *vfs_mount_at_in(struct mnt_namespace *ns, const char *path) {
