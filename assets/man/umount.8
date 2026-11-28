@@ -1,0 +1,25 @@
+NAME
+       umount - detach a file system from the directory tree
+
+SYNOPSIS
+       umount [-lf] TARGET...
+
+DESCRIPTION
+       Detach the mount at each TARGET from the mount namespace of the
+       calling process. TARGET must be a mount point. Requires root.
+
+       Without -l, umount fails with "Device or resource busy" when a file
+       on the mount is open, or when other mounts exist below it. The
+       directory of a process is not checked.
+
+OPTIONS
+       -l, --lazy
+           remove the mount, and every mount below it, from the namespace
+           at once. Open files keep working; the file system is released
+           when the last one is closed
+
+       -f, --force
+           accepted and ignored
+
+SEE ALSO
+       mount(8), unshare(1)

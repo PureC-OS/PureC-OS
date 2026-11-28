@@ -1,0 +1,58 @@
+NAME
+       mount - attach a file system to the directory tree
+
+SYNOPSIS
+       mount
+       mount -t TYPE [-o OPTIONS] SOURCE TARGET
+       mount --bind|--rbind SOURCE TARGET
+       mount -o remount[,ro|rw] TARGET
+       mount --make-[r]private|shared|slave|unbindable TARGET
+
+DESCRIPTION
+       Without arguments, print the mount table of the calling process
+       (the contents of /proc/self/mounts). With arguments, mount a file
+       system on TARGET, which must be an existing directory. Requires
+       root.
+
+       Every mount namespace has its own mount table. A mount made after
+       unshare -m is visible only inside that namespace. A mount made over
+       a directory that is already a mount point replaces that mount in
+       the current namespace; mounts are not stacked.
+
+OPTIONS
+       -t, --types TYPE
+           tmpfs, proc, sysfs, devtmpfs, kernelfs, vfat (SOURCE is a block
+           device such as /dev/sda, its EFI system partition is used) or
+           ext2 (only the device that holds the running root file system)
+
+       -o, --options LIST
+           comma separated: ro, rw, remount, bind, rbind and the accepted
+           but ignored nosuid, nodev, noexec, sync, noatime, relatime and
+           similar. Other words are passed to the file system as data and
+           are currently ignored
+
+       -r, --read-only
+           same as -o ro
+
+       -B, --bind
+           make SOURCE visible at TARGET. SOURCE may be a subdirectory of a
+           mounted file system. Only directories can be bound
+
+       -R, --rbind
+           like --bind, and also copy every mount below SOURCE
+
+       --make-private, --make-rprivate, --make-shared, --make-slave
+           accepted and ignored: all mounts are private
+
+NOTES
+       The vfat driver is a single instance. A second vfat device cannot be
+       mounted while another one is attached, and ext2 cannot be mounted on
+       a second device.
+
+EXAMPLES
+       sudo mount -t tmpfs tmpfs /mnt
+       sudo mount --bind /usr/share /mnt
+       sudo mount -o remount,ro /mnt
+
+SEE ALSO
+       umount(8), unshare(1), nsenter(1)

@@ -13,6 +13,9 @@ OPTIONS
            new UTS namespace (host name and domain name)
 
        -m, --mount
+           new mount namespace: the mount table is copied; mount and umount
+           inside it do not affect the parent
+
        -p, --pid
        -i, --ipc
        -n, --net
@@ -24,6 +27,8 @@ OPTIONS
 EXAMPLES
        sudo unshare -u sh
        hostname box
+       sudo unshare -m sh
+       mount -t tmpfs tmpfs /mnt
 
 SEE ALSO
-       nsenter(1), hostname(1)
+       nsenter(1), hostname(1), mount(8)
